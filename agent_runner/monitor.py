@@ -378,3 +378,74 @@ def run_all_detectors(
         detect_network_fail(events, log_tails),
     ]
     return [a for a in candidates if a is not None]
+
+
+# ---------------------------------------------------------------------------
+# Remote source + auto-stop dispatch (Task 3.3)
+# ---------------------------------------------------------------------------
+
+import subprocess  # noqa: TID251, E402 — monitor needs ssh + local stop subprocess
+
+
+def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> str:
+    """Run a single shell command over ssh; returns stdout (raises on error)."""
+    r = subprocess.run(
+        ["ssh", host, cmd],
+        capture_output=True, text=True, timeout=timeout, check=False,
+    )
+    if r.returncode != 0:
+        return r.stdout  # caller decides what to do
+    return r.stdout
+
+
+@dataclass(frozen=True)
+class RemoteSource:
+    """Mirrors LocalSource but fetches paths via ssh ls; reads via cat."""
+    host: str
+    project: str
+
+    def _remote_log_dir(self) -> str:
+        return f"~/.agent-runner/{self.project}/logs"
+
+    def _list(self, glob: str) -> list[Path]:
+        out = run_remote_command(self.host, f"ls -1 {self._remote_log_dir()}/{glob} 2>/dev/null")
+        return [Path(line.strip()) for line in out.splitlines() if line.strip()]
+
+    def events_files(self) -> list[Path]:
+        return self._list("events-*.jsonl")
+
+    def metrics_files(self) -> list[Path]:
+        return self._list("metrics-*.jsonl")
+
+    def rounds_dir(self) -> Path:
+        return Path(f"{self._remote_log_dir()}/rounds")
+
+    def status_path(self) -> Path:
+        return Path(f"{self._remote_log_dir()}/status.json")
+
+    def orphan_path(self) -> Path:
+        return Path(f"{self._remote_log_dir()}/orphan-state.json")
+
+
+def _call_local_stop(project: str, log_dir: Path) -> None:
+    """Issue a graceful local stop via the in-process api (avoids subprocess hop).
+
+    Late import to avoid circular dependency at module load time (api imports
+    monitor for peek).
+    """
+    from agent_runner import api
+    api.stop(project)
+
+
+def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> None:
+    """Act on a single alert. No-op for non-stop alerts; auto-stop fires real signal."""
+    if alert.auto_action != "stop_service":
+        return
+    if host is None:
+        _call_local_stop(project, log_dir)
+    else:
+        run_remote_command(
+            host,
+            f"agent-runner stop --config ~/.agent-runner/{project}/agent-runner.toml",
+            timeout=30,
+        )

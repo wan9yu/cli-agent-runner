@@ -39,12 +39,13 @@ line-length = 100
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"subprocess".msg = "Only agent_runtime.py, vcs_state.py, and scaffold.py may use subprocess"
+"subprocess".msg = "Only agent_runtime.py, vcs_state.py, scaffold.py, and monitor.py may use subprocess"
 
 [tool.ruff.lint.per-file-ignores]
 "agent_runner/agent_runtime.py" = ["TID251"]
 "agent_runner/vcs_state.py" = ["TID251"]
 "agent_runner/scaffold.py" = ["TID251"]
+"agent_runner/monitor.py" = ["TID251"]
 "tests/**/*.py" = ["TID251"]
 
 [tool.pytest.ini_options]
