@@ -133,12 +133,37 @@ def render_event_kinds_list() -> str:
     return "\n".join(f"- `{k}`" for k in sorted(KNOWN_EVENT_KINDS))
 
 
+def render_verb_table() -> str:
+    """Walk the argparse subparsers and render a verb table."""
+    from agent_runner.cli import _build_parser
+
+    parser = _build_parser()
+    # Find the sub-parsers action — there's exactly one.
+    sub_action = next(
+        a for a in parser._actions
+        if a.__class__.__name__ == "_SubParsersAction"
+    )
+    rows = [
+        "| Verb | Description |",
+        "|---|---|",
+    ]
+    for verb, _sp in sub_action.choices.items():
+        # Argparse stores help text via `sub_action._choices_actions` indexed by add order.
+        help_text = next(
+            (c.help for c in sub_action._choices_actions if c.dest == verb),
+            "",
+        ) or ""
+        rows.append(f"| `{verb}` | {help_text} |")
+    return "\n".join(rows)
+
+
 RENDERERS: dict[str, object] = {
     "defenses-table": render_defenses_table,
     "alert-kinds": render_alert_kinds_list,
     "detector-list": render_detector_list,
     "event-kinds": render_event_kinds_list,
     "config-schema": render_config_schema_table,
+    "verb-table": render_verb_table,
 }
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")

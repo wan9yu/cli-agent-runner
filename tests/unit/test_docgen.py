@@ -140,6 +140,18 @@ def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() ->
     assert any("monitor_alert_emitted" in line for line in bullets)
 
 
+def test_given_render_verb_table_when_called_then_lists_all_subcommands() -> None:
+    from agent_runner._docgen import render_verb_table
+
+    md = render_verb_table()
+    # Each verb appears
+    for verb in ("init", "install", "uninstall", "start", "stop", "kill",
+                 "cancel", "restart", "status", "round", "serve",
+                 "peek", "watch", "monitor"):
+        assert f"`{verb}`" in md, f"verb {verb!r} missing"
+    assert "| Verb | Description |" in md
+
+
 def test_given_render_config_schema_table_when_called_then_lists_sections() -> None:
     from agent_runner._docgen import render_config_schema_table
 
