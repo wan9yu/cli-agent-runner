@@ -84,9 +84,7 @@ def run(
             now = time.time()
             if ret is not None:
                 duration = now - start
-                return RunResult(
-                    exit_code=ret, duration_s=duration, timed_out=False, pid=proc.pid
-                )
+                return RunResult(exit_code=ret, duration_s=duration, timed_out=False, pid=proc.pid)
             if now - start > timeout_s:
                 _kill_pgroup(proc)
                 duration = time.time() - start
@@ -100,8 +98,8 @@ def run(
 
 
 CRITICAL_ENV_DEFAULTS: dict[str, str] = {
-    "DISABLE_AUTOUPDATER": "1",          # do not let claude self-update mid-loop
-    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh", # full effort, not default
+    "DISABLE_AUTOUPDATER": "1",  # do not let claude self-update mid-loop
+    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",  # full effort, not default
 }
 
 
@@ -122,6 +120,8 @@ def install_sigterm_reaper(reaper: Callable[[], None]) -> object:
 
     Returns the previous SIGTERM handler so caller can restore it.
     """
+
     def _handler(_signum: int, _frame: object) -> None:
         reaper()
+
     return signal.signal(signal.SIGTERM, _handler)

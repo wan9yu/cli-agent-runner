@@ -35,14 +35,14 @@ def fake_agent_script(tmp_path: Path) -> Path:
     """A 5-line bash script controlled by FAKE_AGENT_BEHAVIOR env var."""
     script = tmp_path / "fake-agent.sh"
     script.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'echo "fake agent starting" >&2\n'
         'case "${FAKE_AGENT_BEHAVIOR:-succeed}" in\n'
-        '  succeed) exit 0 ;;\n'
+        "  succeed) exit 0 ;;\n"
         '  dirty)   echo x > "$WORK_DIR/dirty.txt"; exit 0 ;;\n'
-        '  hang)    sleep 9999 ;;\n'
-        '  crash)   exit 137 ;;\n'
-        'esac\n'
+        "  hang)    sleep 9999 ;;\n"
+        "  crash)   exit 137 ;;\n"
+        "esac\n"
     )
     script.chmod(0o755)
     return script

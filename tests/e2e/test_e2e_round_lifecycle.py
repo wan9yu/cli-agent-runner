@@ -12,7 +12,9 @@ from .conftest import _ssh
 
 
 def test_given_fake_agent_succeeds_on_pi_when_round_runs_then_status_marks_completed(
-    pi_install_agent_runner: str, pi_config: str, pi_workdir: str,
+    pi_install_agent_runner: str,
+    pi_config: str,
+    pi_workdir: str,
 ) -> None:
     cmd = (
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
@@ -27,7 +29,9 @@ def test_given_fake_agent_succeeds_on_pi_when_round_runs_then_status_marks_compl
 
 
 def test_given_three_supervisor_invocations_on_pi_when_runs_then_round_num_monotonic(
-    pi_install_agent_runner: str, pi_config: str, pi_workdir: str,
+    pi_install_agent_runner: str,
+    pi_config: str,
+    pi_workdir: str,
 ) -> None:
     base = (
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
@@ -40,7 +44,9 @@ def test_given_three_supervisor_invocations_on_pi_when_runs_then_round_num_monot
 
 
 def test_given_fake_agent_dirty_on_pi_when_round_runs_then_orphan_stashed(
-    pi_install_agent_runner: str, pi_config: str, pi_workdir: str,
+    pi_install_agent_runner: str,
+    pi_config: str,
+    pi_workdir: str,
 ) -> None:
     cmd_dirty = (
         f"FAKE_AGENT_BEHAVIOR=dirty WORK_DIR={pi_workdir} "
@@ -58,7 +64,9 @@ def test_given_fake_agent_dirty_on_pi_when_round_runs_then_orphan_stashed(
 
 
 def test_given_fake_agent_hangs_on_pi_when_timeout_exceeds_then_killed(
-    pi_install_agent_runner: str, pi_config: str, pi_workdir: str,
+    pi_install_agent_runner: str,
+    pi_config: str,
+    pi_workdir: str,
 ) -> None:
     cmd = (
         f"FAKE_AGENT_BEHAVIOR=hang WORK_DIR={pi_workdir} "
@@ -71,7 +79,9 @@ def test_given_fake_agent_hangs_on_pi_when_timeout_exceeds_then_killed(
 
 
 def test_given_concurrent_supervisor_on_pi_when_second_starts_then_exits_with_lock(
-    pi_install_agent_runner: str, pi_config: str, pi_workdir: str,
+    pi_install_agent_runner: str,
+    pi_config: str,
+    pi_workdir: str,
 ) -> None:
     """Spawn one in background (long-hanging via FAKE_AGENT_BEHAVIOR=hang),
     then try to start a second; second must fail with non-zero exit."""

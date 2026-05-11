@@ -58,6 +58,7 @@ def _check_agent_cli(cfg: Config) -> CheckResult:
 
 def _check_work_dir_is_git(cfg: Config) -> CheckResult:
     from agent_runner.vcs_state import is_git_repo
+
     if not is_git_repo(cfg.runtime.work_dir):
         return CheckResult(
             "work_dir_is_git_repo",
@@ -103,10 +104,7 @@ def _check_prompt_smoke(cfg: Config) -> CheckResult:
         return CheckResult(
             "prompt_smoke_passes",
             False,
-            reason=(
-                f"prompt is {len(prompt.encode('utf-8'))} bytes "
-                f"< {_MIN_PROMPT_BYTES} minimum"
-            ),
+            reason=(f"prompt is {len(prompt.encode('utf-8'))} bytes < {_MIN_PROMPT_BYTES} minimum"),
             how_to_fix="add substantive content — a stub prompt suggests a broken config",
         )
     return CheckResult("prompt_smoke_passes", True)

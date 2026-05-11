@@ -87,7 +87,8 @@ def test_given_prompt_with_yaml_frontmatter_when_battery_runs_then_smoke_passes(
 
 
 def test_given_escape_hatch_env_set_when_battery_runs_then_returns_empty(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AGENT_RUNNER_SKIP_STARTUP_CHECK", "1")
     cfg = _cfg(tmp_git_repo)

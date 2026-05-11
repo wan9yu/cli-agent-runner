@@ -47,7 +47,8 @@ def _make_config(
 
 
 def test_given_first_round_when_run_then_status_round_num_is_one(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     result = run_one_round(cfg)
@@ -58,7 +59,8 @@ def test_given_first_round_when_run_then_status_round_num_is_one(
 
 
 def test_given_three_runs_when_invoked_sequentially_then_round_num_increments(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     for expected in (1, 2, 3):
@@ -68,7 +70,8 @@ def test_given_three_runs_when_invoked_sequentially_then_round_num_increments(
 
 
 def test_given_phases_configured_when_run_then_phase_in_round_context(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script, phases=["a", "b"])
     run_one_round(cfg)
@@ -80,7 +83,8 @@ def test_given_phases_configured_when_run_then_phase_in_round_context(
 
 
 def test_given_phases_unconfigured_when_run_then_phase_field_absent(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script, phases=None)
     run_one_round(cfg)
@@ -89,7 +93,8 @@ def test_given_phases_unconfigured_when_run_then_phase_field_absent(
 
 
 def test_given_corrupt_status_when_run_then_recovers_and_emits_event(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
@@ -120,7 +125,8 @@ def test_given_no_existing_lock_when_acquire_then_returns_fd(tmp_path: Path) -> 
 
 
 def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_agent(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     cfg.prompt.file.unlink()  # break prompt — startup smoke fails

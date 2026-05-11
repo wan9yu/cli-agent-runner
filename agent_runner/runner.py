@@ -36,9 +36,7 @@ def _acquire_lock_or_raise(lock_path: Path) -> int:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as e:
         os.close(fd)
-        raise LockHeldError(
-            f"another agent-runner is holding {lock_path}"
-        ) from e
+        raise LockHeldError(f"another agent-runner is holding {lock_path}") from e
     return fd
 
 
@@ -63,9 +61,7 @@ def _phase_for(round_num: int, phases: list[str] | None) -> tuple[str | None, in
     return phases[idx], idx
 
 
-def _previous_block(
-    prev: context_store.Status | None, dirty_last: bool
-) -> dict[str, Any] | None:
+def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
     if prev is None:
         return None
     return {
@@ -102,9 +98,7 @@ def run_one_round(cfg: Config) -> RoundResult:
                 f"STARTUP FAIL: {r.name}: {r.reason} | how-to-fix: {r.how_to_fix}",
                 file=sys.stderr,
             )
-            events.emit(
-                log_dir, "smoke_check_failed", reason=f"{r.name}: {r.reason}"
-            )
+            events.emit(log_dir, "smoke_check_failed", reason=f"{r.name}: {r.reason}")
         sys.exit(1)
 
     # Concurrency lock (per-project)
@@ -156,10 +150,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir(exist_ok=True)
-    log_path = (
-        rounds_dir
-        / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
-    )
+    log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
 
     prompt = prompt_loader.assemble_prompt(
         cfg.prompt.file,
@@ -167,9 +158,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         inject_context=cfg.prompt.inject_context,
     )
 
-    events.emit(
-        log_dir, "agent_spawn", round_num=round_num, timeout_s=cfg.runtime.round_timeout_s
-    )
+    events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=cfg.runtime.round_timeout_s)
     result = agent_runtime.run(
         command=cfg.agent.command,
         prompt_arg_template=cfg.agent.prompt_arg_template,

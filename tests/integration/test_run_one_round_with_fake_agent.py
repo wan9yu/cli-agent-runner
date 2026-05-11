@@ -52,7 +52,9 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
 
 
 def test_given_fake_agent_succeeds_when_round_runs_then_status_marks_completed(
-    tmp_git_repo: Path, fake_agent_script: Path, monkeypatch,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
@@ -64,7 +66,9 @@ def test_given_fake_agent_succeeds_when_round_runs_then_status_marks_completed(
 
 
 def test_given_fake_agent_leaves_dirty_tree_when_round_completes_then_orphan_stashed(
-    tmp_git_repo: Path, fake_agent_script: Path, monkeypatch,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
@@ -81,7 +85,9 @@ def test_given_fake_agent_leaves_dirty_tree_when_round_completes_then_orphan_sta
 
 
 def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
-    tmp_git_repo: Path, fake_agent_script: Path, monkeypatch,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "hang")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
@@ -97,7 +103,9 @@ def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
 
 
 def test_given_fake_agent_crashes_when_round_runs_then_exit_code_propagated(
-    tmp_git_repo: Path, fake_agent_script: Path, monkeypatch,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "crash")
     cfg = _cfg(tmp_git_repo, fake_agent_script)

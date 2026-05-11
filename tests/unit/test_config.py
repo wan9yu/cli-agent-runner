@@ -92,7 +92,8 @@ def test_given_nonexistent_toml_when_loaded_then_raises_filenotfound(tmp_path: P
 
 
 def test_given_work_dir_dot_when_loaded_then_project_resolves_to_cwd_basename(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """work_dir='.' should resolve to actual cwd, not literal 'default'."""
     monkeypatch.chdir(tmp_path)

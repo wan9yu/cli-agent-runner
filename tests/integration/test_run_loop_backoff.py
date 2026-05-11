@@ -19,9 +19,7 @@ def test_given_failing_command_when_run_loop_runs_then_backs_off_exponentially(
     """Mock agent-runner with a failing script; assert backoff sequence in stderr."""
     fake_cmd = tmp_path / "agent-runner"
     fake_cmd.write_text(
-        "#!/usr/bin/env bash\n"
-        f"echo 'invocation' >> {tmp_path}/invocations\n"
-        "exit 1\n"
+        f"#!/usr/bin/env bash\necho 'invocation' >> {tmp_path}/invocations\nexit 1\n"
     )
     fake_cmd.chmod(0o755)
 

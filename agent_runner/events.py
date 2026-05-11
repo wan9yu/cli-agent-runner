@@ -7,28 +7,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-KNOWN_EVENT_KINDS = frozenset({
-    "round_start",
-    "agent_spawn",
-    "agent_exit",
-    "dirty_detected",
-    "orphan_stashed",
-    "orphan_idempotent_skip",
-    "orphan_stash_failed",
-    "round_timeout_kill",
-    "sigterm_received",
-    "status_recovered",
-    "smoke_check_failed",
-    "round_end",
-})
+KNOWN_EVENT_KINDS = frozenset(
+    {
+        "round_start",
+        "agent_spawn",
+        "agent_exit",
+        "dirty_detected",
+        "orphan_stashed",
+        "orphan_idempotent_skip",
+        "orphan_stash_failed",
+        "round_timeout_kill",
+        "sigterm_received",
+        "status_recovered",
+        "smoke_check_failed",
+        "round_end",
+    }
+)
 
 
 def _now_ms_utc() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def emit(log_dir: Path, kind: str, **fields: Any) -> None:

@@ -58,9 +58,7 @@ def test_given_first_round_context_when_written_then_omits_previous_field(
 def test_given_phases_unconfigured_when_writing_round_context_then_phase_field_absent(
     tmp_log_dir: Path,
 ) -> None:
-    write_round_context(
-        tmp_log_dir, round_num=2, started_at="2026-05-11T15:00:00.000Z", phase=None
-    )
+    write_round_context(tmp_log_dir, round_num=2, started_at="2026-05-11T15:00:00.000Z", phase=None)
     ctx = read_round_context(tmp_log_dir)
     assert "phase" not in ctx
 

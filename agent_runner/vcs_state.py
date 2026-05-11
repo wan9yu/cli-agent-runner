@@ -19,8 +19,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class StashRef:
-    sha: str       # full commit SHA — IMMUTABLE under concurrent stash
-    message: str   # human-readable label set at creation
+    sha: str  # full commit SHA — IMMUTABLE under concurrent stash
+    message: str  # human-readable label set at creation
 
 
 def is_git_repo(path: Path) -> bool:

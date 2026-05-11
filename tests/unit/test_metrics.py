@@ -35,7 +35,8 @@ def test_given_log_metrics_when_called_then_appends_jsonl_with_event_field(
 
 
 def test_given_log_metrics_in_different_months_when_called_then_separate_files(
-    tmp_log_dir: Path, monkeypatch,
+    tmp_log_dir: Path,
+    monkeypatch,
 ) -> None:
     """Same monthly-naming convention as events.jsonl."""
     from datetime import UTC, datetime

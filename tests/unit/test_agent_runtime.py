@@ -151,7 +151,7 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         pid_file.unlink(missing_ok=True)
 
 
-def test_given_critical_env_defaults_when_inspected_then_contains_disable_autoupdater_and_effort() -> None:  # noqa: E501
+def test_given_critical_env_defaults_when_inspected_then_contains_autoupdater_and_effort() -> None:
     assert CRITICAL_ENV_DEFAULTS["DISABLE_AUTOUPDATER"] == "1"
     assert CRITICAL_ENV_DEFAULTS["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
 
@@ -165,6 +165,7 @@ def test_given_user_env_when_merged_with_critical_then_critical_wins() -> None:
 
 def test_given_install_sigterm_reaper_when_called_then_returns_previous_handler() -> None:
     import signal as _sig
+
     prev = install_sigterm_reaper(lambda: None)
     assert prev is not None
     _sig.signal(_sig.SIGTERM, prev)  # restore

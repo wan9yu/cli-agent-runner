@@ -80,9 +80,7 @@ def pi_fake_agent(pi_workdir: str) -> str:
     import base64
 
     encoded = base64.b64encode(body.encode()).decode()
-    _ssh(
-        f"echo '{encoded}' | base64 -d > {script_path} && chmod +x {script_path}"
-    )
+    _ssh(f"echo '{encoded}' | base64 -d > {script_path} && chmod +x {script_path}")
     return script_path
 
 
