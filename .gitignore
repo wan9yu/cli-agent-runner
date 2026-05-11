@@ -16,3 +16,11 @@ dist/
 .idea/
 .vscode/
 *.swp
+
+# hatch-vcs generated
+agent_runner/_version.py
+
+# Coverage outputs
+.coverage
+coverage.xml
+htmlcov/
