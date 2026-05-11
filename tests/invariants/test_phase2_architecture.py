@@ -1,0 +1,98 @@
+"""Architectural invariants for Phase 2.
+
+- serve_cmd.py imports from a strict allowlist (no business logic)
+- cli command files call api.X (not direct module imports)
+- Critic stubs only — no concrete implementations in critic.py
+- All api_types are frozen dataclasses
+- KNOWN_ALERT_KINDS in monitor.py matches the 9 detectors
+"""
+
+from __future__ import annotations
+
+import ast
+import inspect
+from pathlib import Path
+
+PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+ALLOWED_SERVE_IMPORTS = {
+    "os", "sys", "signal", "subprocess", "time", "pathlib",
+    "agent_runner",   # only sub-imports below
+}
+ALLOWED_SERVE_FROM = [
+    ("agent_runner.cli.common", {"cfg_from_args"}),
+    ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
+]
+
+
+def _imports_in(file: Path) -> tuple[set[str], list[tuple[str, set[str]]]]:
+    tree = ast.parse(file.read_text())
+    plain: set[str] = set()
+    from_imports: list[tuple[str, set[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                plain.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                from_imports.append((node.module, {a.name for a in node.names}))
+    return plain, from_imports
+
+
+def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
+    plain, froms = _imports_in(PKG / "cli/serve_cmd.py")
+    bad_plain = plain - ALLOWED_SERVE_IMPORTS - {"agent_runner.cli", "agent_runner.cli.common",
+                                                  "agent_runner.lifecycle"}
+    assert not bad_plain, f"serve_cmd has unsanctioned imports: {bad_plain}"
+    for mod, names in froms:
+        if mod.startswith("agent_runner"):
+            allowed = next((n for m, n in ALLOWED_SERVE_FROM if m == mod), None)
+            assert allowed is not None, f"serve_cmd imports {mod} (not in allowlist)"
+            extra = names - allowed
+            assert not extra, f"serve_cmd imports {extra} from {mod} (not allowed)"
+
+
+def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() -> None:
+    """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
+    offenders: list[str] = []
+    for f in (PKG / "cli").glob("*_cmd.py"):
+        if f.name in ("round_cmd.py", "serve_cmd.py"):
+            continue
+        text = f.read_text()
+        if "from agent_runner import api" not in text and "from agent_runner.api" not in text \
+           and "import agent_runner.api" not in text:
+            offenders.append(f.name)
+    assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
+
+
+def test_given_critic_module_when_inspected_then_only_protocols() -> None:
+    from agent_runner import critic
+    classes = [m for _, m in inspect.getmembers(critic, inspect.isclass)
+               if m.__module__ == "agent_runner.critic"]
+    for cls in classes:
+        is_protocol = (
+            getattr(cls, "_is_protocol", False)
+            or getattr(cls, "_is_runtime_protocol", False)
+        )
+        assert is_protocol, f"{cls.__name__} is not a Protocol — Phase 2 forbids concrete Critics"
+
+
+def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
+    import dataclasses
+
+    from agent_runner import api_types
+    cls_names = ["Alert", "InitResult", "InstallResult", "ProjectState",
+                 "RoundView", "ServiceStatus", "SystemMetrics"]
+    for name in cls_names:
+        cls = getattr(api_types, name)
+        assert dataclasses.is_dataclass(cls), f"{name} not a dataclass"
+        assert cls.__dataclass_params__.frozen, f"{name} not frozen"
+
+
+def test_given_known_alert_kinds_when_inspected_then_matches_nine_detectors() -> None:
+    from agent_runner.monitor import KNOWN_ALERT_KINDS
+    expected = {
+        "timeout_rate", "hung", "orphan_chain",
+        "disk_warning", "disk_critical", "mem_pressure",
+        "smoke_fail_rate", "oauth_fail", "network_fail",
+    }
+    assert KNOWN_ALERT_KINDS == expected
