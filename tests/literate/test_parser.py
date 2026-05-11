@@ -49,3 +49,19 @@ def test_given_two_bash_blocks_when_parsed_then_keeps_order() -> None:
     md = "```bash\necho one\n```\n\n```bash\necho two\n```\n"
     blocks = parse_literate_blocks(md)
     assert [b.code.strip() for b in blocks] == ["echo one", "echo two"]
+
+
+def test_given_blank_line_between_markers_when_parsed_then_run_ends_at_blank() -> None:
+    """Markers must be contiguous; a blank line ends the marker run for that block.
+
+    Without this rule, a visual separator after a block's markers would silently
+    bind the next markers (intended for a later block) to this one.
+    """
+    md = (
+        "```bash\necho first\n```\n"
+        "<!-- assert: first -->\n"
+        "\n"  # blank line — ends marker run for the first block
+        "<!-- assert: second -->\n"  # NOT attached to the first block
+    )
+    [block] = parse_literate_blocks(md)
+    assert block.expected_substring == "first"

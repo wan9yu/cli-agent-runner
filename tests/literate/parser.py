@@ -7,6 +7,10 @@ Markdown DSL on top of standard markdown:
 * ``<!-- assert-status: N -->`` — block must exit with code N (default 0).
 * ``<!-- skip-test -->`` — skip executing the next-prior bash block.
 * ``<!-- env: KEY=VAL -->`` — inject env vars (may repeat).
+
+Markers must be contiguous — a blank line after a block's markers ends the
+marker run, so visual separators between blocks don't accidentally bind
+later markers to the earlier block.
 """
 
 from __future__ import annotations
@@ -53,8 +57,7 @@ def parse_literate_blocks(md_text: str) -> list[LiterateBlock]:
             while i < len(lines):
                 ln = lines[i].strip()
                 if not ln:
-                    i += 1
-                    continue
+                    break  # blank ends the marker run for this block
                 if not ln.startswith("<!--"):
                     break
                 if m := _ASSERT_RE.search(ln):

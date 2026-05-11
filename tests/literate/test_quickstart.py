@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,8 +27,10 @@ def test_given_quickstart_when_each_bash_block_run_then_passes(
         pytest.skip("docs/quickstart.md not yet present")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path))
-    venv_bin = Path(__file__).resolve().parent.parent.parent / ".venv" / "bin"
-    monkeypatch.setenv("PATH", f"{venv_bin}:{os.environ['PATH']}")
+    # Use the currently-active interpreter's bin dir — works whether the test
+    # runner is .venv, .tox, uv, or a system Python.
+    interp_bin = Path(sys.executable).parent
+    monkeypatch.setenv("PATH", f"{interp_bin}:{os.environ['PATH']}")
 
     blocks = parse_literate_blocks(QUICKSTART.read_text(encoding="utf-8"))
     assert blocks, "quickstart.md has no bash blocks — literate runner is a no-op"
