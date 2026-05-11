@@ -12,6 +12,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 export PATH="$HOME/.agent-runner-pkg/.venv/bin:$PATH"
 ```
+<!-- skip-test -->
 
 ## 2. Initialise your project
 
@@ -19,15 +20,25 @@ export PATH="$HOME/.agent-runner-pkg/.venv/bin:$PATH"
 cd ~/myproject               # must be a git repo
 agent-runner init            # writes agent-runner.toml + prompts/main.md + .gitignore
 ```
+<!-- skip-test -->
 
 Edit `prompts/main.md` to describe what the agent should do per round.
 Edit `agent-runner.toml` if you need to change `round_timeout_s` or `[phases]`.
+
+Verify your scaffolding succeeded in a fresh repo:
+
+```bash
+git init -q -b main && echo init > README.md && git -c commit.gpgsign=false add . && git -c commit.gpgsign=false commit -q -m init
+agent-runner init --no-commit
+```
+<!-- assert: agent-runner.toml -->
 
 ## 3. Run one round manually
 
 ```bash
 agent-runner round
 ```
+<!-- skip-test -->
 
 Expect a Claude session to start, run, commit, and exit. Logs land in
 `~/.agent-runner/<project>/logs/`.
@@ -37,6 +48,7 @@ Expect a Claude session to start, run, commit, and exit. Logs land in
 ```bash
 agent-runner install --monitor
 ```
+<!-- skip-test -->
 
 This writes two systemd units (`agent-runner@<project>.service` and
 `agent-runner-monitor@<project>.service`), enables them, and starts them.
@@ -54,6 +66,7 @@ agent-runner monitor                    # tail anomaly stream
 
 journalctl --user -u agent-runner@myproject -f   # systemd logs
 ```
+<!-- skip-test -->
 
 To stop:
 
@@ -62,6 +75,7 @@ agent-runner stop          # graceful (waits for current round)
 agent-runner kill          # force (5s grace then SIGKILL)
 agent-runner cancel        # SIGINT to claude (best-effort wrap-up)
 ```
+<!-- skip-test -->
 
 ## 中文摘要
 
