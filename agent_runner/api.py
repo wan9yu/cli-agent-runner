@@ -246,8 +246,11 @@ def peek(project: str | Path | None = None, *,
     base_state = monitor.assemble_project_state(src, project=_project_name(work_dir))
     parsed_events = monitor.parse_events_from_jsonl_files(src.events_files())
     round_num = round_view.resolve_round_arg(round, log_dir)
-    current = (round_view.build_round_view(log_dir, round_num, parsed_events, want_log=log)
-               if round_num is not None else base_state.current_round)
+    current: Any = base_state.current_round
+    if round_num is not None:
+        current = round_view.build_round_view(log_dir, round_num, parsed_events, want_log=log)
+        if current is None:
+            raise KeyError(f"round {round_num} not found under {log_dir}/rounds/")
     recent = parsed_events[-events:] if events else []
 
     state = ProjectState(

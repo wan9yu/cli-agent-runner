@@ -109,6 +109,16 @@ def test_given_peek_with_events_when_called_then_populates_recent_events(
     assert state.recent_events[-1]["event"] == "round_end"
 
 
+def test_given_peek_with_missing_round_when_called_then_raises_keyerror(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    with pytest.raises(KeyError, match="round 99"):
+        api.peek(tmp_git_repo, round=99)
+
+
 def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
