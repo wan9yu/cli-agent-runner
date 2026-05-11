@@ -50,19 +50,29 @@ def atomic_write_json(path: Path, payload: dict[str, Any] | list[Any]) -> None:
         raise
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    """Read + parse JSON; return None on missing file or parse failure.
+
+    Single TOCTOU-free read replaces three near-identical exists+read patterns.
+    """
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
 def write_status(log_dir: Path, status: Status) -> None:
-    payload = {k: v for k, v in asdict(status).items() if v is not None or k in ("running",)}
+    payload = {k: v for k, v in asdict(status).items() if v is not None or isinstance(v, bool)}
     atomic_write_json(log_dir / STATUS_FILE, payload)
 
 
 def read_status(log_dir: Path) -> Status | None:
-    p = log_dir / STATUS_FILE
-    if not p.exists():
+    data = _read_json(log_dir / STATUS_FILE)
+    if data is None:
         return None
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
         return Status(**data)
-    except (json.JSONDecodeError, TypeError):
+    except TypeError:
         return None
 
 
@@ -86,13 +96,7 @@ def write_round_context(
 
 
 def read_round_context(log_dir: Path) -> dict[str, Any] | None:
-    p = log_dir / CONTEXT_FILE
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
+    return _read_json(log_dir / CONTEXT_FILE)
 
 
 def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
@@ -100,12 +104,12 @@ def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
 
 
 def read_orphan_state(log_dir: Path) -> OrphanState | None:
-    p = log_dir / ORPHAN_FILE
-    if not p.exists():
+    data = _read_json(log_dir / ORPHAN_FILE)
+    if data is None:
         return None
     try:
-        return OrphanState(**json.loads(p.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, TypeError):
+        return OrphanState(**data)
+    except TypeError:
         return None
 
 

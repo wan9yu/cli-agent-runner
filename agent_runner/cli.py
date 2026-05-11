@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import deque
 from pathlib import Path
 
 from agent_runner import context_store
@@ -39,9 +40,14 @@ def _print_metrics(log_dir: Path, count: int) -> int:
     if not files:
         print("no metrics yet")
         return 0
-    lines = files[-1].read_text().splitlines()[-count:]
-    for line in lines:
-        if line.strip():
+    # deque(maxlen=N) keeps constant memory; the file iterator avoids loading
+    # the whole month-file into a list (relevant once it accumulates ~tens of
+    # thousands of lines).
+    with files[-1].open(encoding="utf-8") as f:
+        last = deque(f, maxlen=count)
+    for line in last:
+        line = line.rstrip("\n")
+        if line:
             print(line)
     return 0
 

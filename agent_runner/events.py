@@ -25,15 +25,22 @@ KNOWN_EVENT_KINDS = frozenset(
 )
 
 
-def _now_ms_utc() -> str:
+def now_iso_ms() -> str:
+    """UTC ISO-8601 timestamp with millisecond precision and trailing 'Z'.
+
+    Shared helper — also used by metrics.py and runner.py for matching format.
+    """
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def emit(log_dir: Path, kind: str, **fields: Any) -> None:
-    """Append one event line to events-YYYY-MM.jsonl (UTC). File auto-created."""
+    """Append one event line to events-YYYY-MM.jsonl (UTC).
+
+    Caller must ensure ``log_dir`` exists (runner.run_one_round does this once
+    per round; tests use the ``tmp_log_dir`` fixture which creates it).
+    """
     if kind not in KNOWN_EVENT_KINDS:
         raise ValueError(f"unknown event kind: {kind!r}")
-    log_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(UTC)
     month = now.strftime("%Y-%m")
     ts = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")

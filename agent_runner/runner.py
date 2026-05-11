@@ -23,6 +23,7 @@ from agent_runner import (
     vcs_state,
 )
 from agent_runner.config import Config
+from agent_runner.events import now_iso_ms
 
 
 class LockHeldError(RuntimeError):
@@ -48,10 +49,6 @@ class RoundResult:
     timed_out: bool
     dirty_files: list[str]
     stashed: bool
-
-
-def _now_iso_ms() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _phase_for(round_num: int, phases: list[str] | None) -> tuple[str | None, int]:
@@ -118,7 +115,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases)
-    started_at = _now_iso_ms()
+    started_at = now_iso_ms()
 
     orphan = context_store.read_orphan_state(log_dir)
     orphan_block: dict[str, Any] | None = None
@@ -140,13 +137,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         orphan_stash=orphan_block,
     )
     events.emit(log_dir, "round_start", round_num=round_num, phase=phase)
-    metrics.log_metrics(
-        log_dir,
-        log_dir_for_disk=log_dir,
-        event="round_start",
-        round_num=round_num,
-        phase=phase,
-    )
+    metrics.log_metrics(log_dir, event="round_start", round_num=round_num, phase=phase)
 
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir(exist_ok=True)
@@ -196,7 +187,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
                     files=dirty,
                     stashed_ref=ref.sha,
                     stash_message=ref.message,
-                    timestamp=_now_iso_ms(),
+                    timestamp=now_iso_ms(),
                     phase=phase,
                 ),
             )
@@ -219,7 +210,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
             reason=f"exceeded round_timeout_s={cfg.runtime.round_timeout_s}",
         )
 
-    completed_at = _now_iso_ms()
+    completed_at = now_iso_ms()
     context_store.write_status(
         log_dir,
         context_store.Status(
@@ -232,13 +223,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
             phase_index=phase_idx,
         ),
     )
-    metrics.log_metrics(
-        log_dir,
-        log_dir_for_disk=log_dir,
-        event="round_end",
-        round_num=round_num,
-        phase=phase,
-    )
+    metrics.log_metrics(log_dir, event="round_end", round_num=round_num, phase=phase)
     events.emit(log_dir, "round_end", round_num=round_num)
 
     return RoundResult(

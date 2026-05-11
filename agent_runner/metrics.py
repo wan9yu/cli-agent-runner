@@ -13,9 +13,7 @@ from typing import Any
 
 import psutil
 
-
-def _now_ms_utc() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+from agent_runner.events import now_iso_ms
 
 
 def collect(disk_path: Path) -> dict[str, Any]:
@@ -46,18 +44,22 @@ def collect(disk_path: Path) -> dict[str, Any]:
 def log_metrics(
     log_dir: Path,
     *,
-    log_dir_for_disk: Path,
     event: str = "periodic",
     round_num: int | None = None,
     phase: str | None = None,
 ) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
+    """Append one metrics sample to metrics-YYYY-MM.jsonl (UTC).
+
+    Caller must ensure ``log_dir`` exists. Disk-usage stats are sampled from
+    ``log_dir``'s partition (callers that wanted a different mount can reach
+    for psutil directly — single-mount is the only real-world case so far).
+    """
     month = datetime.now(UTC).strftime("%Y-%m")
     path = log_dir / f"metrics-{month}.jsonl"
     payload: dict[str, Any] = {
-        "ts": _now_ms_utc(),
+        "ts": now_iso_ms(),
         "event": event,
-        **collect(log_dir_for_disk),
+        **collect(log_dir),
     }
     if round_num is not None:
         payload["round_num"] = round_num

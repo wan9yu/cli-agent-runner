@@ -24,7 +24,7 @@ def test_given_collect_when_called_then_returns_dict_with_mem_and_disk_fields(
 def test_given_log_metrics_when_called_then_appends_jsonl_with_event_field(
     tmp_log_dir: Path,
 ) -> None:
-    log_metrics(tmp_log_dir, log_dir_for_disk=tmp_log_dir, event="periodic", round_num=5)
+    log_metrics(tmp_log_dir, event="periodic", round_num=5)
     files = list(tmp_log_dir.glob("metrics-*.jsonl"))
     assert len(files) == 1
     rows = [json.loads(line) for line in files[0].read_text().splitlines() if line.strip()]
@@ -49,5 +49,5 @@ def test_given_log_metrics_in_different_months_when_called_then_separate_files(
             return datetime(2026, 4, 30, 23, 0, tzinfo=UTC)
 
     monkeypatch.setattr(m, "datetime", FakeDt)
-    log_metrics(tmp_log_dir, log_dir_for_disk=tmp_log_dir, event="periodic")
+    log_metrics(tmp_log_dir, event="periodic")
     assert (tmp_log_dir / "metrics-2026-04.jsonl").exists()

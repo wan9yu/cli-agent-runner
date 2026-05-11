@@ -23,16 +23,25 @@ class StashRef:
     message: str  # human-readable label set at creation
 
 
+def _git(repo: Path, *args: str, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+    """Single sanctioned wrapper for git CLI invocations.
+
+    Centralises cwd / capture / text / timeout so individual call sites stay
+    one-liners and the noqa pragma lives in exactly one place.
+    """
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def is_git_repo(path: Path) -> bool:
     if not path.is_dir():
         return False
-    r = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    r = _git(path, "rev-parse", "--is-inside-work-tree")
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
@@ -42,13 +51,7 @@ def detect_dirty_files(repo: Path) -> list[str]:
     Uses ``git status --porcelain -z`` (NUL-separated, rename pairs split into
     two records). Returns the new-path side of any rename; old paths are skipped.
     """
-    r = subprocess.run(
-        ["git", "status", "--porcelain", "-z"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    r = _git(repo, "status", "--porcelain", "-z")
     if r.returncode != 0:
         return []
     out: list[str] = []
@@ -85,55 +88,24 @@ def set_diff_vs_head(repo: Path, path: Path) -> set[str]:
 
     :param path: file path relative to ``repo`` root (joined as ``repo / path``).
     """
-    head = subprocess.run(
-        ["git", "show", f"HEAD:{path}"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    head = _git(repo, "show", f"HEAD:{path}")
     if head.returncode != 0:
         return set()
-    wt_path = repo / path
-    if not wt_path.exists():
+    try:
+        wt_text = (repo / path).read_text(encoding="utf-8")
+    except FileNotFoundError:
         return set()
     head_lines = set(head.stdout.splitlines())
-    wt_lines = set(wt_path.read_text(encoding="utf-8").splitlines())
+    wt_lines = set(wt_text.splitlines())
     return wt_lines - head_lines
 
 
-def list_recent_stashes(repo: Path) -> list[StashRef]:
-    r = subprocess.run(
-        ["git", "stash", "list", "--format=%H %ct %s"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if r.returncode != 0:
-        return []
-    out: list[StashRef] = []
-    for line in r.stdout.strip().splitlines():
-        parts = line.split(" ", 2)
-        if len(parts) != 3:
-            continue
-        sha, _ct, raw_subj = parts
-        msg = raw_subj.split(": ", 1)[1] if ": " in raw_subj else raw_subj
-        out.append(StashRef(sha=sha, message=msg))
-    return out
+def _parse_stash_line(line: str) -> tuple[str, int, str] | None:
+    """Parse a ``git stash list --format=%H %ct %s`` line into (sha, ct, msg).
 
-
-def _recent_orphan_for_round(repo: Path, round_num: int, window_s: int) -> StashRef | None:
-    r = subprocess.run(
-        ["git", "stash", "list", "--format=%H %ct %s"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if r.returncode != 0 or not r.stdout.strip():
-        return None
-    line = r.stdout.strip().splitlines()[0]
+    Strips the ``On <branch>: `` / ``WIP on <branch>: `` prefix from the
+    subject so msg is the original message supplied at stash time.
+    """
     parts = line.split(" ", 2)
     if len(parts) != 3:
         return None
@@ -143,6 +115,36 @@ def _recent_orphan_for_round(repo: Path, round_num: int, window_s: int) -> Stash
     except ValueError:
         return None
     msg = raw_subj.split(": ", 1)[1] if ": " in raw_subj else raw_subj
+    return sha, ct, msg
+
+
+def list_recent_stashes(repo: Path, limit: int | None = None) -> list[StashRef]:
+    args = ["stash", "list", "--format=%H %ct %s"]
+    if limit is not None:
+        args.insert(2, f"-{limit}")
+    r = _git(repo, *args)
+    if r.returncode != 0:
+        return []
+    out: list[StashRef] = []
+    for line in r.stdout.strip().splitlines():
+        parsed = _parse_stash_line(line)
+        if parsed is None:
+            continue
+        sha, _ct, msg = parsed
+        out.append(StashRef(sha=sha, message=msg))
+    return out
+
+
+def _recent_orphan_for_round(repo: Path, round_num: int, window_s: int) -> StashRef | None:
+    # Only the top stash matters for idempotency; -1 caps git's work as the
+    # reflog grows over the project's lifetime.
+    r = _git(repo, "stash", "list", "-1", "--format=%H %ct %s")
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    parsed = _parse_stash_line(r.stdout.strip().splitlines()[0])
+    if parsed is None:
+        return None
+    sha, ct, msg = parsed
     if not msg.startswith(f"ORPHAN R{round_num}"):
         return None
     if (time.time() - ct) > window_s:
@@ -171,22 +173,10 @@ def stash_orphan(
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
-    push = subprocess.run(
-        ["git", "stash", "push", "-u", "-m", msg],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    push = _git(repo, "stash", "push", "-u", "-m", msg, timeout=30)
     if push.returncode != 0:
         return None
-    listing = subprocess.run(
-        ["git", "stash", "list", "-1", "--format=%H %s"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    listing = _git(repo, "stash", "list", "-1", "--format=%H %s")
     if listing.returncode != 0 or not listing.stdout.strip():
         return None
     sha, _, raw_subj = listing.stdout.strip().partition(" ")
@@ -202,13 +192,7 @@ def _resolve_stash_selector(repo: Path, sha: str) -> str | None:
     selector (that would defeat the SHA-lock invariant under concurrent
     auto-stash).
     """
-    r = subprocess.run(
-        ["git", "stash", "list", "--format=%gd %H"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    r = _git(repo, "stash", "list", "--format=%gd %H")
     if r.returncode != 0:
         return None
     for line in r.stdout.splitlines():
@@ -227,14 +211,7 @@ def drop_stash(repo: Path, sha: str) -> bool:
     sel = _resolve_stash_selector(repo, sha)
     if sel is None:
         return False
-    r = subprocess.run(
-        ["git", "stash", "drop", sel],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return r.returncode == 0
+    return _git(repo, "stash", "drop", sel).returncode == 0
 
 
 def pop_stash(repo: Path, sha: str) -> bool:
@@ -242,11 +219,4 @@ def pop_stash(repo: Path, sha: str) -> bool:
     sel = _resolve_stash_selector(repo, sha)
     if sel is None:
         return False
-    r = subprocess.run(
-        ["git", "stash", "pop", sel],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return r.returncode == 0
+    return _git(repo, "stash", "pop", sel).returncode == 0

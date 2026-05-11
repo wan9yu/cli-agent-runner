@@ -12,9 +12,10 @@ from typing import Any
 
 
 def load_prompt(prompt_file: Path) -> str:
-    if not prompt_file.exists():
-        raise FileNotFoundError(f"prompt file not found: {prompt_file}")
-    return prompt_file.read_text(encoding="utf-8")
+    try:
+        return prompt_file.read_text(encoding="utf-8")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"prompt file not found: {prompt_file}") from e
 
 
 def strip_yaml_frontmatter(text: str) -> str:
