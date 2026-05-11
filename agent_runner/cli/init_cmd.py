@@ -1,4 +1,29 @@
-# agent_runner/cli/init_cmd.py — STUB until Task 5.3
+"""init subcommand — scaffold project."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from agent_runner import api
+from agent_runner.cli.common import emit, fail
+
+
 def add_parser(sub, parent) -> None:
-    p = sub.add_parser("init", parents=[parent], help="Scaffold project (stub)")
-    p.set_defaults(func=lambda _a: print("init: not implemented yet") or 1)
+    p = sub.add_parser("init", parents=[parent], help="Scaffold agent-runner project files")
+    p.add_argument("--force", action="store_true", help="Overwrite existing toml")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--commit", dest="commit", action="store_true", default=True,
+                   help="git commit the new files (default)")
+    g.add_argument("--no-commit", dest="commit", action="store_false",
+                   help="Skip git commit")
+    p.set_defaults(func=cmd)
+
+
+def cmd(args) -> int:
+    work_dir = Path.cwd()
+    try:
+        result = api.init(work_dir, force=args.force, commit=args.commit)
+    except (FileExistsError, RuntimeError) as e:
+        return fail(str(e))
+    emit(result, json_mode=getattr(args, "json", False))
+    return 0
