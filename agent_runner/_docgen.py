@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import typing
+from collections.abc import Callable
 from pathlib import Path
 
 from agent_runner.config import (
@@ -44,10 +45,7 @@ def _default_label(field: dataclasses.Field) -> str:
     if field.default is not dataclasses.MISSING:
         return repr(field.default)
     if field.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
-        try:
-            return repr(field.default_factory())
-        except Exception:
-            return "factory"
+        return repr(field.default_factory())
     return "—"
 
 
@@ -155,7 +153,7 @@ def render_verb_table() -> str:
     return "\n".join(rows)
 
 
-RENDERERS: dict[str, object] = {
+RENDERERS: dict[str, Callable[[], str]] = {
     "defenses-table": render_defenses_table,
     "alert-kinds": render_alert_kinds_list,
     "detector-list": render_detector_list,
@@ -184,7 +182,10 @@ def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
                 raise ValueError(
                     f"{md.name}: unknown gen marker {name!r} — valid names: {sorted(RENDERERS)}"
                 )
-            text = replace_block(text, name, RENDERERS[name]())
+            try:
+                text = replace_block(text, name, RENDERERS[name]())
+            except ValueError as e:
+                raise ValueError(f"{md.name}: {e}") from e
         out[md] = text
         if write:
             md.write_text(text, encoding="utf-8")

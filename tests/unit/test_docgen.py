@@ -92,6 +92,18 @@ def test_given_unknown_gen_name_when_render_then_raises(tmp_path: Path) -> None:
         render(docs_dir=tmp_path, write=False)
 
 
+def test_given_unclosed_marker_in_file_when_render_then_error_names_the_file(
+    tmp_path: Path,
+) -> None:
+    """ValueError from replace_block must include the failing file's name."""
+    from agent_runner._docgen import render
+
+    bad = tmp_path / "bad.md"
+    bad.write_text("<!-- gen:defenses-table -->\nstuff but no close\n")
+    with pytest.raises(ValueError, match="bad.md"):
+        render(docs_dir=tmp_path, write=False)
+
+
 def test_given_render_alert_kinds_list_when_called_then_returns_bullet_list() -> None:
     from agent_runner._docgen import render_alert_kinds_list
 
