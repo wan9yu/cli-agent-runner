@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from agent_runner.context_store import (
+    STATUS_FILE,
     OrphanState,
     Status,
     atomic_write_json,
@@ -42,7 +43,7 @@ def test_given_no_status_file_when_read_then_returns_none(tmp_log_dir: Path) -> 
 
 
 def test_given_corrupt_status_when_read_then_returns_none(tmp_log_dir: Path) -> None:
-    (tmp_log_dir / "status.json").write_text("not json {")
+    (tmp_log_dir / STATUS_FILE).write_text("not json {")
     assert read_status(tmp_log_dir) is None
 
 

@@ -60,7 +60,7 @@ def read_status(log_dir: Path) -> Status | None:
     if not p.exists():
         return None
     try:
-        data = json.loads(p.read_text())
+        data = json.loads(p.read_text(encoding="utf-8"))
         return Status(**data)
     except (json.JSONDecodeError, TypeError):
         return None
@@ -90,7 +90,7 @@ def read_round_context(log_dir: Path) -> dict[str, Any] | None:
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
 
@@ -104,7 +104,7 @@ def read_orphan_state(log_dir: Path) -> OrphanState | None:
     if not p.exists():
         return None
     try:
-        return OrphanState(**json.loads(p.read_text()))
+        return OrphanState(**json.loads(p.read_text(encoding="utf-8")))
     except (json.JSONDecodeError, TypeError):
         return None
 
