@@ -104,3 +104,26 @@ def test_given_unknown_gen_name_when_render_then_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="does-not-exist"):
         render(docs_dir=tmp_path, write=False)
+
+
+def test_given_render_alert_kinds_list_when_called_then_returns_bullet_list() -> None:
+    from agent_runner._docgen import render_alert_kinds_list
+
+    md = render_alert_kinds_list()
+    # Bullet list, alphabetised, 9 entries
+    bullets = [line for line in md.splitlines() if line.startswith("- ")]
+    assert len(bullets) == 9
+    assert any("oauth_fail" in line for line in bullets)
+    assert any("disk_critical" in line for line in bullets)
+
+
+def test_given_render_detector_list_when_called_then_marks_auto_stop_kinds() -> None:
+    from agent_runner._docgen import render_detector_list
+
+    md = render_detector_list()
+    # Flag the two auto-stop detectors with **auto-stop**
+    assert "oauth_fail" in md
+    assert "disk_critical" in md
+    assert "**auto-stop**" in md
+    # Notify-only kinds get no flag
+    assert "timeout_rate" in md
