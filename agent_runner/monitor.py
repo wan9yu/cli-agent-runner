@@ -43,6 +43,11 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
     }
 )
 
+# Subset of KNOWN_ALERT_KINDS whose detectors set auto_action="stop_service".
+# Continuing in either state actively harms the host (burning API quota / writing
+# to a near-full disk), so monitor.on_alert calls api.stop on these.
+AUTO_STOP_ALERTS: frozenset[str] = frozenset({"oauth_fail", "disk_critical"})
+
 SHORT_EXIT_THRESHOLD_S = 60
 
 _AUTH_PATTERNS = re.compile(

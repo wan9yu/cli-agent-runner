@@ -22,9 +22,7 @@ from agent_runner.config import (
 )
 from agent_runner.defenses import catalog
 from agent_runner.events import KNOWN_EVENT_KINDS
-from agent_runner.monitor import KNOWN_ALERT_KINDS
-
-_AUTO_STOP_DETECTORS = frozenset({"oauth_fail", "disk_critical"})
+from agent_runner.monitor import AUTO_STOP_ALERTS, KNOWN_ALERT_KINDS
 
 _SECTIONS = [
     ("agent", AgentConfig),
@@ -119,7 +117,7 @@ def render_detector_list() -> str:
     """Bullet list of detectors; auto-stop kinds flagged inline."""
     lines: list[str] = []
     for k in sorted(KNOWN_ALERT_KINDS):
-        suffix = " — **auto-stop**" if k in _AUTO_STOP_DETECTORS else ""
+        suffix = " — **auto-stop**" if k in AUTO_STOP_ALERTS else ""
         lines.append(f"- `{k}`{suffix}")
     return "\n".join(lines)
 
