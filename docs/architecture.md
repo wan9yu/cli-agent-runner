@@ -43,21 +43,23 @@ The catalog is the **single source of truth**. `peek`, `status`, the start
 banner, and (Phase 3) the LLM Critic all read it. Adding a new defense = one
 entry here + automatic surfacing everywhere.
 
-## Phase 1 defense roster (11 entries)
+## Phase 1 defense roster
 
+<!-- gen:defenses-table -->
 | Defense | Codifies | Guarded by |
 |---|---|---|
-| `round_timeout_s` | R1128 (TaskOutput poll loop) | `tests/invariants/test_round_timeout_is_hard_wall.py` |
-| `process_group_isolation` | #307 | `tests/unit/test_agent_runtime.py` |
-| `sigterm_reaper` | R725 (dual-claude race) | — |
-| `orphan_stash_idempotency_s` | R820 (3 phantom stashes/sec) | `tests/invariants/test_orphan_stash_idempotency.py` |
-| `sha_locked_stash` | §9 IMMUTABLE | `tests/invariants/test_stash_uses_sha_not_index.py` |
-| `set_diff_classification` | R2110 | `tests/invariants/test_set_diff_for_auto_tool_classification.py` |
-| `critical_envs_injection` | autoupdater + effort | `tests/invariants/test_agent_subprocess_injects_critical_envs.py` |
-| `startup_smoke_check` | R721 + #446 (4h silent burn) | `tests/invariants/test_prompt_smoke_check_contracts.py` |
-| `flock_concurrency` | (Phase 1 design) | — |
-| `atomic_state_writes` | data integrity | `tests/invariants/test_atomic_write_enforced.py` |
-| `event_kind_registry` | typo prevention | `tests/invariants/test_event_kind_registry.py` |
+| `round_timeout_s` | R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger | `—` |
+| `process_group_isolation` | #307 — process group reaping for descendant cleanup | `tests/unit/test_agent_runtime.py` |
+| `sigterm_reaper` | R725 — SIGTERM-during-round dual-claude race | `—` |
+| `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `—` |
+| `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
+| `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
+| `critical_envs_injection` | DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL stop claude self-updates mid-loop | `—` |
+| `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn | `—` |
+| `flock_concurrency` | Phase 1 design — prevent concurrent supervisors corrupting state | `—` |
+| `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
+| `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
+<!-- /gen:defenses-table -->
 
 ## Monitor: 9 detectors
 
