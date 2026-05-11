@@ -321,7 +321,6 @@ def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def assemble_project_state(source: StateSource, *, project: str) -> ProjectState:
-    events = parse_events_from_jsonl_files(source.events_files())
     metrics = parse_events_from_jsonl_files(source.metrics_files())
     status = read_json(source.status_path()) or {}
     orphan = read_json(source.orphan_path())
@@ -334,7 +333,6 @@ def assemble_project_state(source: StateSource, *, project: str) -> ProjectState
         load_1m=latest.get("load_1m"),
         cpu_pct=latest.get("cpu_pct"),
     )
-    del events  # detectors consume events directly; assembly returns aggregate state only
     return ProjectState(
         project=project,
         status=status,
