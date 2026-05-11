@@ -5,12 +5,23 @@ with `python3.11+`, `git`, and the `claude` CLI on PATH.
 
 ## 1. Install agent-runner
 
+Install the package — the PyPI distribution name is `cli-agent-runner` and the
+installed CLI command is `agent-runner`:
+
 ```bash
-git clone https://github.com/wan9yu/cli-agent-runner.git ~/.agent-runner-pkg
-cd ~/.agent-runner-pkg
-python3 -m venv .venv
-.venv/bin/pip install -e .
-export PATH="$HOME/.agent-runner-pkg/.venv/bin:$PATH"
+pip install cli-agent-runner
+```
+<!-- skip-test -->
+
+On systems that block `pip install` into the system Python (Debian/Ubuntu PEP 668),
+use `pipx` (recommended for CLI tools) or a venv:
+
+```bash
+pipx install cli-agent-runner
+# OR
+python3 -m venv ~/.agent-runner-venv
+~/.agent-runner-venv/bin/pip install cli-agent-runner
+export PATH="$HOME/.agent-runner-venv/bin:$PATH"
 ```
 <!-- skip-test -->
 
@@ -79,7 +90,8 @@ agent-runner cancel        # SIGINT to claude (best-effort wrap-up)
 
 ## 中文摘要
 
-5 步搭通：`pip install -e .` → `agent-runner init` → `agent-runner round`
+5 步搭通：`pip install cli-agent-runner` 装包（命令名仍是 `agent-runner`）→
+`agent-runner init` 在你的 git repo 里生成 `agent-runner.toml` → `agent-runner round`
 跑通一轮 → `agent-runner install --monitor` 装 systemd 服务（含 monitor 副服务）
 → `agent-runner peek / watch / monitor` 观察。停服三种语义：`stop`（优雅，
 等当前轮）/ `kill`（强制）/ `cancel`（向 claude 发 SIGINT 提示收尾）。

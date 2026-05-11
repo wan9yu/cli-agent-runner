@@ -55,7 +55,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 ### Build & CI
 - GitHub Actions matrix: Python 3.11/3.12/3.13 × ubuntu / macos.
 - Codecov-uploaded coverage from one canonical matrix cell.
-- Tag-triggered release with TestPyPI smoke stage before PyPI.
+- Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
+  gated by a manual approval on the `pypi` GitHub environment.
 
 [Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.1
