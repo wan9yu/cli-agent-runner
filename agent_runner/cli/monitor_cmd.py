@@ -15,13 +15,13 @@ def add_parser(sub, parent) -> None:
                        help="Anomaly detection daemon (local or remote via --host)")
     p.add_argument("--host", type=str, default=None,
                    metavar="SSH-ALIAS", help="Watch a remote agent-runner via ssh")
-    p.add_argument("--interval", type=int, default=30,
+    p.add_argument("--interval", type=int, default=None,
                    metavar="SECONDS", help="Poll interval (default 30s, 60s for remote)")
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
-    interval = args.interval if args.interval != 30 or args.host is None else 60
+    interval = args.interval if args.interval is not None else (60 if args.host else 30)
     json_mode = getattr(args, "json", False)
     try:
         for alert in api.monitor_loop(Path.cwd(), host=args.host, interval_s=interval):
