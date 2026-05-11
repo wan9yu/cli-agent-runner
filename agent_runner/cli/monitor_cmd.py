@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 from agent_runner import api
-from agent_runner.cli.common import _to_jsonable
+from agent_runner.cli.common import _to_jsonable, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -24,7 +23,8 @@ def cmd(args) -> int:
     interval = args.interval if args.interval is not None else (60 if args.host else 30)
     json_mode = getattr(args, "json", False)
     try:
-        for alert in api.monitor_loop(Path.cwd(), host=args.host, interval_s=interval):
+        work_dir = work_dir_from_args(args)
+        for alert in api.monitor_loop(work_dir, host=args.host, interval_s=interval):
             if json_mode:
                 print(json.dumps(_to_jsonable(alert)))
                 sys.stdout.flush()

@@ -5,10 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from pathlib import Path
 
 from agent_runner import api
-from agent_runner.cli.common import emit, fail
+from agent_runner.cli.common import emit, fail, work_dir_from_args
 
 
 def _round_arg(s: str) -> int | str:
@@ -42,7 +41,7 @@ def add_parser(sub, parent) -> None:
 def cmd_peek(args) -> int:
     try:
         result = api.peek(
-            Path.cwd(), round=args.round, log=args.log,
+            work_dir_from_args(args), round=args.round, log=args.log,
             events=args.events, select=args.select,
         )
     except KeyError as e:

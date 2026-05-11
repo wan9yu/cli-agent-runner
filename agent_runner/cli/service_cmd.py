@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_runner import api
-from agent_runner.cli.common import emit
+from agent_runner.cli.common import emit, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -24,31 +22,31 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd_start(args) -> int:
-    emit(api.start(Path.cwd()), json_mode=getattr(args, "json", False))
+    emit(api.start(work_dir_from_args(args)), json_mode=getattr(args, "json", False))
     return 0
 
 
 def cmd_stop(args) -> int:
-    emit(api.stop(Path.cwd()), json_mode=getattr(args, "json", False))
+    emit(api.stop(work_dir_from_args(args)), json_mode=getattr(args, "json", False))
     return 0
 
 
 def cmd_kill(args) -> int:
-    emit(api.kill(Path.cwd()), json_mode=getattr(args, "json", False))
+    emit(api.kill(work_dir_from_args(args)), json_mode=getattr(args, "json", False))
     return 0
 
 
 def cmd_cancel(args) -> int:
-    api.cancel(Path.cwd())
+    api.cancel(work_dir_from_args(args))
     return 0
 
 
 def cmd_restart(args) -> int:
-    emit(api.restart(Path.cwd(), force=args.force),
+    emit(api.restart(work_dir_from_args(args), force=args.force),
          json_mode=getattr(args, "json", False))
     return 0
 
 
 def cmd_status(args) -> int:
-    emit(api.status(Path.cwd()), json_mode=getattr(args, "json", False))
+    emit(api.status(work_dir_from_args(args)), json_mode=getattr(args, "json", False))
     return 0

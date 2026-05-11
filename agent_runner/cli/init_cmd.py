@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_runner import api
-from agent_runner.cli.common import emit, fail
+from agent_runner.cli.common import emit, fail, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -20,7 +18,7 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    work_dir = Path.cwd()
+    work_dir = work_dir_from_args(args)
     try:
         result = api.init(work_dir, force=args.force, commit=args.commit)
     except (FileExistsError, RuntimeError) as e:

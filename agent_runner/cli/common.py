@@ -16,6 +16,14 @@ def cfg_from_args(args) -> Config:
     return load_config(args.config)
 
 
+def work_dir_from_args(args) -> Path:
+    """Resolve the project work_dir from --config's parent, falling back to cwd."""
+    cfg = getattr(args, "config", None)
+    if cfg is None:
+        return Path.cwd().resolve()
+    return Path(cfg).resolve().parent
+
+
 def emit(value: Any, *, json_mode: bool) -> None:
     if json_mode:
         print(json.dumps(_to_jsonable(value), indent=2, default=str))

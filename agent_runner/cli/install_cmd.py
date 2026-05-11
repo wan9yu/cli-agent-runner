@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_runner import api
-from agent_runner.cli.common import emit, fail
+from agent_runner.cli.common import emit, fail, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -23,7 +21,7 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd_install(args) -> int:
-    work_dir = Path.cwd()
+    work_dir = work_dir_from_args(args)
     try:
         result = api.install(work_dir, system=args.system, with_monitor=args.monitor)
     except (NotImplementedError, FileNotFoundError) as e:
@@ -33,6 +31,6 @@ def cmd_install(args) -> int:
 
 
 def cmd_uninstall(args) -> int:
-    work_dir = Path.cwd()
+    work_dir = work_dir_from_args(args)
     api.uninstall(work_dir)
     return 0
