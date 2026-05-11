@@ -1,3 +1,5 @@
+> **[中文](README.zh.md)** · English
+
 # agent-runner
 
 A restart-on-exit supervisor for autonomous CLI agents. Spawn an agent (Claude
@@ -107,18 +109,3 @@ POSIX-only (Linux, macOS). Tested under Python 3.11+ on x86_64 and aarch64.
 ## License
 
 MIT.
-
-## 中文摘要
-
-**agent-runner** 把任意 CLI agent（Claude Code、自研 agent 等）包装成可被
-systemd / launchd 拉起的长服务，每轮跑完退出、外层 supervisor 重启，
-中间有 11 条防御（轮超时、孤儿 stash、SHA 锁、smoke 检测等）确保不重蹈
-production 翻车的几个经典坑。
-
-三层架构：**Round**（一轮 agent）/ **Loop**（serve 薄壳，≤60 LOC）/
-**Witness**（monitor 9 个检测器，OAuth 失败 + 磁盘 95% 时自动停服避免烧 quota / 写满盘）。
-
-13 个 CLI 动词，分两组：生命周期（init/install/start/stop/kill/cancel/restart/status/round/serve/uninstall）与观察（peek/watch/monitor）。
-观察三视角对称，共用 `--round / --log / --events / --select / --json` 下钻参数。
-
-完整文档在 [`docs/`](docs/) 目录，英文为主、每篇都附中文摘要。
