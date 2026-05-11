@@ -73,5 +73,7 @@ def test_given_event_kinds_set_when_inspected_then_contains_all_lifecycle_events
         "status_recovered",
         "smoke_check_failed",
         "round_end",
+        "monitor_alert_emitted",
+        "monitor_auto_stop_triggered",
     }
     assert expected.issubset(KNOWN_EVENT_KINDS)

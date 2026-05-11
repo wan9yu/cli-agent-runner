@@ -21,6 +21,9 @@ KNOWN_EVENT_KINDS = frozenset(
         "status_recovered",
         "smoke_check_failed",
         "round_end",
+        # Phase 2 monitor events
+        "monitor_alert_emitted",  # any detector fired (info/warning)
+        "monitor_auto_stop_triggered",  # critical alert triggered service stop
     }
 )
 
