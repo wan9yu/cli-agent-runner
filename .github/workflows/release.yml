@@ -7,9 +7,11 @@ on:
 permissions:
   contents: read
 
-# Trusted Publishing: each `environment` name below MUST match the
-# `Environment name` field in the corresponding PyPI/TestPyPI pending
-# publisher config. A mismatch fails publish with an opaque OIDC error.
+# Trusted Publishing: the `environment` name below MUST match the
+# `Environment name` field in the PyPI pending publisher config.
+# A mismatch fails publish with an opaque OIDC error.
+# Note: TestPyPI stage intentionally omitted — first release verification
+# happens via the manual approval gate on the `pypi` environment.
 
 concurrency:
   group: release-${{ github.ref }}
@@ -37,27 +39,8 @@ jobs:
           name: dist
           path: dist/
 
-  publish-testpypi:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/project/cli-agent-runner/
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          attestations: true
-
   publish-pypi:
-    needs: publish-testpypi
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
