@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.config import Config, load_config
+from agent_runner.config import load_config
 
 
 def _write_toml(tmp_path: Path, body: str) -> Path:
@@ -58,13 +58,17 @@ list = ["diverge", "converge"]
     assert cfg.phases == ["diverge", "converge"]
 
 
-def test_given_missing_required_field_when_loaded_then_raises_with_field_name(tmp_path: Path) -> None:
+def test_given_missing_required_field_when_loaded_then_raises_with_field_name(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(tmp_path, "[agent]\ncommand = []\n")
     with pytest.raises(ValueError, match="agent.prompt_arg_template"):
         load_config(toml)
 
 
-def test_given_log_dir_with_project_placeholder_when_loaded_then_substituted(tmp_path: Path) -> None:
+def test_given_log_dir_with_project_placeholder_when_loaded_then_substituted(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -85,3 +89,26 @@ file = "./p.md"
 def test_given_nonexistent_toml_when_loaded_then_raises_filenotfound(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_config(tmp_path / "nope.toml")
+
+
+def test_given_work_dir_dot_when_loaded_then_project_resolves_to_cwd_basename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """work_dir='.' should resolve to actual cwd, not literal 'default'."""
+    monkeypatch.chdir(tmp_path)
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["-p", "{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/{project}/logs"
+[prompt]
+file = "./p.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.work_dir.name == tmp_path.name
+    assert tmp_path.name in str(cfg.runtime.log_dir)

@@ -65,7 +65,8 @@ def load_config(toml_path: Path) -> Config:
         command=list(_require(raw, "agent", "command")),
         prompt_arg_template=list(_require(raw, "agent", "prompt_arg_template")),
     )
-    work_dir = _expand_path(str(_require(raw, "runtime", "work_dir")), "")
+    raw_work_dir = str(_require(raw, "runtime", "work_dir"))
+    work_dir = _expand_path(raw_work_dir, "").resolve()
     project_name = work_dir.name or "default"
 
     runtime_d = raw.get("runtime", {})
