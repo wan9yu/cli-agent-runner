@@ -41,7 +41,16 @@ def _project_name(work_dir: Path) -> str:
 
 
 def _log_dir(work_dir: Path) -> Path:
-    return work_dir / "logs"
+    """Return the configured log_dir from agent-runner.toml.
+
+    Falls back to the conventional ~/.agent-runner/<project>/logs only when
+    the toml is missing. This keeps `api.status` / `api.stop` aligned with
+    where `serve_cmd.py` actually writes serve.pid.
+    """
+    cfg_path = work_dir / "agent-runner.toml"
+    if cfg_path.exists():
+        return load_config(cfg_path).runtime.log_dir
+    return Path.home() / ".agent-runner" / _project_name(work_dir) / "logs"
 
 
 def _user_systemd_dir() -> Path:

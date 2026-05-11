@@ -9,6 +9,7 @@ import pytest
 
 from agent_runner import api
 from agent_runner.api_types import InitResult, ServiceMode, ServiceStatus
+from agent_runner.config import load_config
 
 
 def test_given_git_repo_when_api_init_then_returns_init_result(tmp_git_repo: Path) -> None:
@@ -26,10 +27,14 @@ def test_given_no_systemd_no_pid_when_api_status_then_returns_mode_none(tmp_git_
     assert s.active is False
 
 
-def test_given_pid_file_with_self_pid_when_status_then_active_true(tmp_git_repo: Path) -> None:
+def test_given_pid_file_with_self_pid_when_status_then_active_true(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    log_dir = tmp_git_repo / "logs"
-    log_dir.mkdir(exist_ok=True)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text(str(os.getpid()))
     s = api.status(tmp_git_repo)
     assert s.mode == ServiceMode.PID_FILE
@@ -37,30 +42,42 @@ def test_given_pid_file_with_self_pid_when_status_then_active_true(tmp_git_repo:
     assert s.pid == os.getpid()
 
 
-def test_given_pid_file_with_dead_pid_when_status_then_active_false(tmp_git_repo: Path) -> None:
+def test_given_pid_file_with_dead_pid_when_status_then_active_false(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    log_dir = tmp_git_repo / "logs"
-    log_dir.mkdir(exist_ok=True)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("999999999")
     s = api.status(tmp_git_repo)
     assert s.mode == ServiceMode.PID_FILE
     assert s.active is False
 
 
-def test_given_pid_file_when_api_stop_then_sends_sigterm(tmp_git_repo: Path) -> None:
+def test_given_pid_file_when_api_stop_then_sends_sigterm(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    log_dir = tmp_git_repo / "logs"
-    log_dir.mkdir(exist_ok=True)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
     with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
         api.stop(tmp_git_repo)
         send.assert_called_with(12345, signal.SIGTERM)
 
 
-def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(tmp_git_repo: Path) -> None:
+def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    log_dir = tmp_git_repo / "logs"
-    log_dir.mkdir(exist_ok=True)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
     with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send, \
          patch("agent_runner.api.pid_alive", side_effect=[True, False]):
@@ -69,10 +86,14 @@ def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(tmp_git_re
         assert signal.SIGTERM in sent
 
 
-def test_given_pid_file_when_api_cancel_then_sends_sigusr1(tmp_git_repo: Path) -> None:
+def test_given_pid_file_when_api_cancel_then_sends_sigusr1(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    log_dir = tmp_git_repo / "logs"
-    log_dir.mkdir(exist_ok=True)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
     with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
         api.cancel(tmp_git_repo)
