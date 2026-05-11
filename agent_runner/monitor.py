@@ -333,10 +333,7 @@ def assemble_project_state(source: StateSource, *, project: str) -> ProjectState
         load_1m=latest.get("load_1m"),
         cpu_pct=latest.get("cpu_pct"),
     )
-    # Phase 2: monitor doesn't compute current_round / recent_rounds —
-    # those come from the api.peek path which has more context. Monitor
-    # focuses on aggregate detectors over events.
-    _ = events  # kept for future Phase 2 expansions
+    del events  # detectors consume events directly; assembly returns aggregate state only
     return ProjectState(
         project=project,
         status=status,
@@ -421,12 +418,8 @@ class RemoteSource:
         return Path(f"{self._remote_log_dir()}/orphan-state.json")
 
 
-def _call_local_stop(project: str, log_dir: Path) -> None:
-    """Issue a graceful local stop via the in-process api (avoids subprocess hop).
-
-    Late import to avoid circular dependency at module load time (api imports
-    monitor for peek).
-    """
+def _call_local_stop(project: str) -> None:
+    # Late import: api imports monitor for peek, so we defer the reverse direction.
     from agent_runner import api
     api.stop(project)
 
@@ -436,7 +429,7 @@ def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> 
     if alert.auto_action != "stop_service":
         return
     if host is None:
-        _call_local_stop(project, log_dir)
+        _call_local_stop(project)
     else:
         run_remote_command(
             host,

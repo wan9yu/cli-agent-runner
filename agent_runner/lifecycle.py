@@ -8,7 +8,6 @@ project is managed by systemd-user or a plain serve process.
 from __future__ import annotations
 
 import os
-import signal as _signal
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,10 +65,3 @@ def detect_service_mode(project: str, *, log_dir: Path) -> ServiceMode:
     if (log_dir / "serve.pid").exists():
         return ServiceMode.PID_FILE
     return ServiceMode.NONE
-
-
-# Convenience exports for cli/service_cmd.py
-SIGTERM = _signal.SIGTERM
-SIGINT = _signal.SIGINT
-SIGUSR1 = _signal.SIGUSR1
-SIGKILL = _signal.SIGKILL

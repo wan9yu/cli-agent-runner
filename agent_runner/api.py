@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from agent_runner import lifecycle
 from agent_runner.api_types import (
     InitResult,
     InstallResult,
@@ -24,7 +25,6 @@ from agent_runner.api_types import (
     ServiceStatus,
     select_path,
 )
-from agent_runner import lifecycle
 from agent_runner.config import load_config
 from agent_runner.lifecycle import (
     PIDFile,

@@ -42,7 +42,7 @@ def test_given_critical_alert_local_when_on_alert_then_calls_local_stop(tmp_log_
               context={}, ts="t", auto_action="stop_service")
     with patch("agent_runner.monitor._call_local_stop") as stop:
         on_alert(a, project="myproj", host=None, log_dir=tmp_log_dir)
-        stop.assert_called_once_with("myproj", tmp_log_dir)
+        stop.assert_called_once_with("myproj")
 
 
 def test_given_critical_alert_remote_when_on_alert_then_calls_ssh_stop(tmp_log_dir: Path) -> None:
