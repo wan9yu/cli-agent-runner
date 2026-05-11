@@ -379,15 +379,18 @@ def run_all_detectors(
 import subprocess  # noqa: TID251, E402 — monitor needs ssh + local stop subprocess
 
 
-def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> str:
-    """Run a single shell command over ssh; returns stdout (raises on error)."""
+def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, str]:
+    """Run a single shell command over ssh; returns (returncode, stdout).
+
+    Callers decide whether to treat non-zero as fatal. ``RemoteSource._list``
+    tolerates non-zero (missing files glob to empty), but ``on_alert`` remote
+    stop should not silently swallow ssh failures.
+    """
     r = subprocess.run(
         ["ssh", host, cmd],
         capture_output=True, text=True, timeout=timeout, check=False,
     )
-    if r.returncode != 0:
-        return r.stdout  # caller decides what to do
-    return r.stdout
+    return r.returncode, r.stdout
 
 
 @dataclass(frozen=True)
@@ -400,7 +403,9 @@ class RemoteSource:
         return f"~/.agent-runner/{self.project}/logs"
 
     def _list(self, glob: str) -> list[Path]:
-        out = run_remote_command(self.host, f"ls -1 {self._remote_log_dir()}/{glob} 2>/dev/null")
+        _rc, out = run_remote_command(
+            self.host, f"ls -1 {self._remote_log_dir()}/{glob} 2>/dev/null"
+        )
         return [Path(line.strip()) for line in out.splitlines() if line.strip()]
 
     def events_files(self) -> list[Path]:
