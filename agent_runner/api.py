@@ -12,13 +12,17 @@ import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from agent_runner.api_types import (
     InitResult,
     InstallResult,
+    ProjectState,
     ServiceMode,
     ServiceStatus,
+    select_path,
 )
 from agent_runner.config import load_config
 from agent_runner.lifecycle import (
@@ -221,3 +225,91 @@ def _log_dir_for_project(project: str | Path) -> Path:
     if p is not None:
         return _log_dir(p)
     return Path.home() / ".agent-runner" / project / "logs"
+
+
+# ---------------------------------------------------------------------------
+# Observation: peek / monitor_loop / _poll_once
+#
+# Imported lazily to avoid pulling monitor + defenses at module load time
+# for callers that only use lifecycle verbs.
+
+from agent_runner import defenses, monitor  # noqa: E402
+
+
+def peek(project: str | Path | None = None, *, round: int | None = None,
+         select: str | None = None) -> ProjectState | Any:
+    """Build a ProjectState snapshot. With select, return that subtree."""
+    work_dir = project if isinstance(project, Path) else Path.cwd()
+    cfg_path = work_dir / "agent-runner.toml"
+    cfg = load_config(cfg_path)
+    log_dir = cfg.runtime.log_dir
+    pname = _project_name(work_dir)
+
+    src = monitor.LocalSource(log_dir=log_dir)
+    base_state = monitor.assemble_project_state(src, project=pname)
+
+    state = ProjectState(
+        project=base_state.project,
+        status=base_state.status,
+        defenses=[
+            {
+                "name": d.name,
+                "value": d.value,
+                "codifies": d.codifies,
+                "guarded_by": str(d.guarded_by) if d.guarded_by else None,
+                "current_state": d.current_state,
+            }
+            for d in defenses.catalog(cfg)
+        ],
+        current_round=base_state.current_round,
+        recent_rounds=base_state.recent_rounds,
+        orphan=base_state.orphan,
+        system=base_state.system,
+        service=status(project if project is not None else work_dir),
+    )
+    if select is None:
+        return state
+    return select_path(state, select)
+
+
+def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
+    work_dir = project if isinstance(project, Path) else Path.cwd()
+    cfg = load_config(work_dir / "agent-runner.toml")
+    src: monitor.StateSource
+    if host is None:
+        src = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
+    else:
+        src = monitor.RemoteSource(host=host, project=_project_name(work_dir))
+    events = monitor.parse_events_from_jsonl_files(src.events_files())
+    metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
+    log_tails = monitor.load_round_log_tails(src.rounds_dir())
+    return monitor.run_all_detectors(
+        events=events, metrics=metrics, log_tails=log_tails,
+        round_timeout_s=cfg.runtime.round_timeout_s,
+    )
+
+
+def monitor_loop(project: str | Path | None = None, *, host: str | None = None,
+                 interval_s: int = 30) -> Iterator[monitor.Alert]:
+    """Yield alerts as they're detected. Caller decides what to do.
+
+    The loop dedups alerts by (detector, json.dumps(context)) within session.
+    """
+    import json as _json
+    seen: set[str] = set()
+    work_dir = project if isinstance(project, Path) else Path.cwd()
+    cfg = load_config(work_dir / "agent-runner.toml")
+    while True:
+        for alert in _poll_once(work_dir, host=host):
+            key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            yield alert
+            monitor.on_alert(
+                alert,
+                project=_project_name(work_dir),
+                host=host,
+                log_dir=cfg.runtime.log_dir,
+            )
+        time.sleep(interval_s)
