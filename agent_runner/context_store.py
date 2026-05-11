@@ -50,7 +50,7 @@ def atomic_write_json(path: Path, payload: dict[str, Any] | list[Any]) -> None:
         raise
 
 
-def _read_json(path: Path) -> dict[str, Any] | None:
+def read_json(path: Path) -> dict[str, Any] | None:
     """Read + parse JSON; return None on missing file or parse failure.
 
     Single TOCTOU-free read replaces three near-identical exists+read patterns.
@@ -67,7 +67,7 @@ def write_status(log_dir: Path, status: Status) -> None:
 
 
 def read_status(log_dir: Path) -> Status | None:
-    data = _read_json(log_dir / STATUS_FILE)
+    data = read_json(log_dir / STATUS_FILE)
     if data is None:
         return None
     try:
@@ -96,7 +96,7 @@ def write_round_context(
 
 
 def read_round_context(log_dir: Path) -> dict[str, Any] | None:
-    return _read_json(log_dir / CONTEXT_FILE)
+    return read_json(log_dir / CONTEXT_FILE)
 
 
 def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
@@ -104,7 +104,7 @@ def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
 
 
 def read_orphan_state(log_dir: Path) -> OrphanState | None:
-    data = _read_json(log_dir / ORPHAN_FILE)
+    data = read_json(log_dir / ORPHAN_FILE)
     if data is None:
         return None
     try:

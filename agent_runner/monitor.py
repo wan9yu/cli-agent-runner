@@ -25,6 +25,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
+from agent_runner.context_store import read_json
 from agent_runner.events import now_iso_ms
 
 KNOWN_ALERT_KINDS: frozenset[str] = frozenset({
@@ -314,13 +315,6 @@ def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = 50) -> dict[int,
     return tails
 
 
-def _read_json(path: Path) -> dict[str, Any] | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-
 def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics[-1] if metrics else {}
 
@@ -328,8 +322,8 @@ def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
 def assemble_project_state(source: StateSource, *, project: str) -> ProjectState:
     events = parse_events_from_jsonl_files(source.events_files())
     metrics = parse_events_from_jsonl_files(source.metrics_files())
-    status = _read_json(source.status_path()) or {}
-    orphan = _read_json(source.orphan_path())
+    status = read_json(source.status_path()) or {}
+    orphan = read_json(source.orphan_path())
     latest = _latest_metric_dict(metrics)
     system = SystemMetrics(
         mem_total_mb=int(latest.get("mem_total_mb", 0)),
