@@ -1,5 +1,7 @@
 > **[中文](README.zh.md)** · English
 
+[![CI](https://github.com/wan9yu/agent-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/wan9yu/agent-runner/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/cli-agent-runner.svg)](https://pypi.org/project/cli-agent-runner/) [![Python](https://img.shields.io/pypi/pyversions/cli-agent-runner.svg)](https://pypi.org/project/cli-agent-runner/) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![codecov](https://codecov.io/gh/wan9yu/agent-runner/branch/main/graph/badge.svg)](https://codecov.io/gh/wan9yu/agent-runner) [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 # agent-runner
 
 A restart-on-exit supervisor for autonomous CLI agents. Spawn an agent (Claude
