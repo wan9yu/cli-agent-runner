@@ -99,6 +99,9 @@ AGENT_RUNNER_E2E_PI=1 pytest tests/e2e/   # opt-in pi e2e (needs ssh alias `pi`)
 ruff check . && ruff format --check .
 ```
 
+Some `docs/*.md` blocks are generated from code — `./build.sh docs` rewrites
+the `<!-- gen:* -->` regions, and `./build.sh check` verifies they are fresh.
+
 POSIX-only (Linux, macOS). Tested under Python 3.11+ on x86_64 and aarch64.
 
 ## License
