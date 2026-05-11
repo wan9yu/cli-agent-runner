@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-runner"
+version = "0.0.1"
+requires-python = ">=3.11"
+description = "Restart-on-exit supervisor for autonomous CLI agents"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "wangyu", email = "wangyu@go2imagination.com" }]
+dependencies = [
+    "psutil>=5.9",
+]
+
+[project.scripts]
+agent-runner = "agent_runner.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "vulture>=2.13",
+]
+e2e = [
+    "pytest>=8",
+    "fabric>=3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_runner"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess".msg = "Only agent_runtime.py and vcs_state.py may use subprocess"
+
+[tool.ruff.lint.per-file-ignores]
+"agent_runner/agent_runtime.py" = ["TID251"]
+"agent_runner/vcs_state.py" = ["TID251"]
+"tests/**/*.py" = ["TID251"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
