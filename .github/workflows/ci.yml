@@ -6,15 +6,25 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-flight runs on the same PR ref when a new push lands.
+# Push-to-main runs always complete (cancel-in-progress only on PRs).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test py${{ matrix.python }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13"]
         os: [ubuntu-latest, macos-latest]
+    # Steps below mirror ./build.sh check, inlined for per-step Actions UI
+    # granularity AND because coverage requires extra pytest flags not in
+    # the local `test` task. CONTRIBUTING.md states the parity intentionally.
     steps:
       - uses: actions/checkout@v4
         with:

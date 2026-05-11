@@ -6,11 +6,19 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+
+# Trusted Publishing: each `environment` name below MUST match the
+# `Environment name` field in the corresponding PyPI/TestPyPI pending
+# publisher config. A mismatch fails publish with an opaque OIDC error.
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +40,7 @@ jobs:
   publish-testpypi:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: testpypi
       url: https://test.pypi.org/project/cli-agent-runner/
@@ -45,10 +54,12 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          attestations: true
 
   publish-pypi:
     needs: publish-testpypi
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/project/cli-agent-runner/
@@ -60,3 +71,5 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
