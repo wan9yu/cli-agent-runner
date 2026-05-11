@@ -33,10 +33,13 @@ def _now_ms_utc() -> str:
 
 def emit(log_dir: Path, kind: str, **fields: Any) -> None:
     """Append one event line to events-YYYY-MM.jsonl (UTC). File auto-created."""
-    assert kind in KNOWN_EVENT_KINDS, f"unknown event kind: {kind!r}"
+    if kind not in KNOWN_EVENT_KINDS:
+        raise ValueError(f"unknown event kind: {kind!r}")
     log_dir.mkdir(parents=True, exist_ok=True)
-    month = datetime.now(UTC).strftime("%Y-%m")
+    now = datetime.now(UTC)
+    month = now.strftime("%Y-%m")
+    ts = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     path = log_dir / f"events-{month}.jsonl"
-    payload = {"ts": _now_ms_utc(), "event": kind, **fields}
+    payload = {"ts": ts, "event": kind, **fields}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")

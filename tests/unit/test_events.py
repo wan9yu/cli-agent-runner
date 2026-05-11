@@ -27,10 +27,10 @@ def test_given_known_event_kind_when_emit_then_writes_json_line(
     assert rows[0]["ts"].endswith("Z")
 
 
-def test_given_unknown_event_kind_when_emit_then_raises_assertion(
+def test_given_unknown_event_kind_when_emit_then_raises_value_error(
     tmp_log_dir: Path,
 ) -> None:
-    with pytest.raises(AssertionError, match="unknown event kind"):
+    with pytest.raises(ValueError, match="unknown event kind"):
         emit(tmp_log_dir, "made_up_event_xyz", round_num=1)
 
 
