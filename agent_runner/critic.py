@@ -20,8 +20,8 @@ from agent_runner.api_types import ProjectState
 class Finding(Protocol):
     """A single observation emitted by a Critic."""
 
-    severity: str            # "info" | "warning" | "critical"
-    detector: str            # critic-defined identifier
+    severity: str  # "info" | "warning" | "critical"
+    detector: str  # critic-defined identifier
     message: str
     suggested_action: str | None
 

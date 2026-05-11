@@ -15,9 +15,7 @@ def test_given_config_arg_when_resolved_then_returns_parent_dir(tmp_path: Path) 
     assert work_dir_from_args(args) == tmp_path.resolve()
 
 
-def test_given_no_config_attr_when_resolved_then_returns_cwd(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_given_no_config_attr_when_resolved_then_returns_cwd(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace()
     assert work_dir_from_args(args) == tmp_path.resolve()

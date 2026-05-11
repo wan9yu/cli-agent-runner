@@ -27,13 +27,12 @@ def _seed_logs(work_dir: Path) -> None:
     )
     rounds = log_dir / "rounds"
     rounds.mkdir(parents=True, exist_ok=True)
-    (rounds / "R1-2026-05-12.log").write_text(
-        "line-1\nline-2\nline-3-with-error\nline-4\nline-5\n"
-    )
+    (rounds / "R1-2026-05-12.log").write_text("line-1\nline-2\nline-3-with-error\nline-4\nline-5\n")
 
 
 def test_given_seeded_logs_when_api_peek_then_returns_project_state(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -45,7 +44,8 @@ def test_given_seeded_logs_when_api_peek_then_returns_project_state(
 
 
 def test_given_state_when_peek_with_select_then_returns_subtree(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -55,7 +55,8 @@ def test_given_state_when_peek_with_select_then_returns_subtree(
 
 
 def test_given_invalid_select_when_peek_then_raises_keyerror(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -65,7 +66,8 @@ def test_given_invalid_select_when_peek_then_raises_keyerror(
 
 
 def test_given_no_alerts_when_poll_once_then_returns_empty(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -75,7 +77,8 @@ def test_given_no_alerts_when_poll_once_then_returns_empty(
 
 
 def test_given_peek_with_round_latest_when_called_then_populates_current_round(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -87,7 +90,8 @@ def test_given_peek_with_round_latest_when_called_then_populates_current_round(
 
 
 def test_given_peek_with_log_flag_when_called_then_populates_log_tail(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -99,7 +103,8 @@ def test_given_peek_with_log_flag_when_called_then_populates_log_tail(
 
 
 def test_given_peek_with_events_when_called_then_populates_recent_events(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -110,7 +115,8 @@ def test_given_peek_with_events_when_called_then_populates_recent_events(
 
 
 def test_given_peek_with_missing_round_when_called_then_raises_keyerror(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -120,7 +126,8 @@ def test_given_peek_with_missing_round_when_called_then_raises_keyerror(
 
 
 def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)

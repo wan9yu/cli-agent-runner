@@ -17,6 +17,7 @@ def test_given_defenses_catalog_when_loaded_then_each_entry_has_required_fields(
         VcsConfig,
     )
     from agent_runner.defenses import catalog
+
     cfg = Config(
         agent=AgentConfig(command=["x"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(work_dir=Path("/tmp"), log_dir=Path("/tmp/logs")),
@@ -40,6 +41,7 @@ def test_given_defenses_invariant_paths_when_resolved_then_all_exist_or_none() -
         VcsConfig,
     )
     from agent_runner.defenses import catalog
+
     cfg = Config(
         agent=AgentConfig(command=["x"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(work_dir=Path("/tmp"), log_dir=Path("/tmp/logs")),
@@ -68,5 +70,6 @@ def test_given_codebase_when_scanned_then_no_paramiko_or_fabric_runtime_deps() -
 def test_given_emit_calls_for_monitor_events_when_scanned_then_in_known_event_kinds() -> None:
     """Belt-and-suspenders: monitor's two new event kinds must be in KNOWN_EVENT_KINDS."""
     from agent_runner.events import KNOWN_EVENT_KINDS
+
     assert "monitor_alert_emitted" in KNOWN_EVENT_KINDS
     assert "monitor_auto_stop_triggered" in KNOWN_EVENT_KINDS

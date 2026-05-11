@@ -10,12 +10,23 @@ from agent_runner.cli.common import _to_jsonable, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
-    p = sub.add_parser("monitor", parents=[parent],
-                       help="Anomaly detection daemon (local or remote via --host)")
-    p.add_argument("--host", type=str, default=None,
-                   metavar="SSH-ALIAS", help="Watch a remote agent-runner via ssh")
-    p.add_argument("--interval", type=int, default=None,
-                   metavar="SECONDS", help="Poll interval (default 30s, 60s for remote)")
+    p = sub.add_parser(
+        "monitor", parents=[parent], help="Anomaly detection daemon (local or remote via --host)"
+    )
+    p.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        metavar="SSH-ALIAS",
+        help="Watch a remote agent-runner via ssh",
+    )
+    p.add_argument(
+        "--interval",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help="Poll interval (default 30s, 60s for remote)",
+    )
     p.set_defaults(func=cmd)
 
 

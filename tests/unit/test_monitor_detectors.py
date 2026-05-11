@@ -23,9 +23,15 @@ def _ev(event: str, **fields) -> dict:
 
 def test_given_known_alert_kinds_when_inspected_then_contains_all_nine() -> None:
     expected = {
-        "timeout_rate", "hung", "orphan_chain",
-        "disk_warning", "disk_critical", "mem_pressure",
-        "smoke_fail_rate", "oauth_fail", "network_fail",
+        "timeout_rate",
+        "hung",
+        "orphan_chain",
+        "disk_warning",
+        "disk_critical",
+        "mem_pressure",
+        "smoke_fail_rate",
+        "oauth_fail",
+        "network_fail",
     }
     assert expected == KNOWN_ALERT_KINDS
 
@@ -34,10 +40,14 @@ def test_given_three_of_ten_rounds_timed_out_when_detect_then_returns_warning_al
     events = []
     for i in range(10):
         events.append(_ev("round_start", round_num=i))
-        events.append(_ev(
-            "agent_exit", round_num=i,
-            timed_out=(i < 3), exit_code=-1 if i < 3 else 0,
-        ))
+        events.append(
+            _ev(
+                "agent_exit",
+                round_num=i,
+                timed_out=(i < 3),
+                exit_code=-1 if i < 3 else 0,
+            )
+        )
         events.append(_ev("round_end", round_num=i))
     a = detect_timeout_rate(events, window=10, threshold=0.2)
     assert a is not None
@@ -50,10 +60,14 @@ def test_given_one_of_ten_rounds_timed_out_when_detect_then_no_alert() -> None:
     events = []
     for i in range(10):
         events.append(_ev("round_start", round_num=i))
-        events.append(_ev(
-            "agent_exit", round_num=i,
-            timed_out=(i == 0), exit_code=-1 if i == 0 else 0,
-        ))
+        events.append(
+            _ev(
+                "agent_exit",
+                round_num=i,
+                timed_out=(i == 0),
+                exit_code=-1 if i == 0 else 0,
+            )
+        )
         events.append(_ev("round_end", round_num=i))
     assert detect_timeout_rate(events, window=10, threshold=0.2) is None
 
@@ -126,8 +140,15 @@ def test_given_short_exit_with_oauth_pattern_when_detect_then_returns_auto_stop_
         timed_out = False
         exit_code = 1 if i < 3 else 0
         duration = 5.0 if i < 3 else 200.0
-        events.append(_ev("agent_exit", round_num=i,
-                          duration_s=duration, exit_code=exit_code, timed_out=timed_out))
+        events.append(
+            _ev(
+                "agent_exit",
+                round_num=i,
+                duration_s=duration,
+                exit_code=exit_code,
+                timed_out=timed_out,
+            )
+        )
         events.append(_ev("round_end", round_num=i))
         if i < 3:
             log_tails[i] = "Error: 401 Unauthorized — invalid API key"
@@ -144,9 +165,15 @@ def test_given_short_exit_with_network_pattern_when_detect_then_returns_warning_
     log_tails = {}
     for i in range(10):
         events.append(_ev("round_start", round_num=i))
-        events.append(_ev("agent_exit", round_num=i,
-                          duration_s=5.0 if i < 3 else 200.0,
-                          exit_code=1 if i < 3 else 0, timed_out=False))
+        events.append(
+            _ev(
+                "agent_exit",
+                round_num=i,
+                duration_s=5.0 if i < 3 else 200.0,
+                exit_code=1 if i < 3 else 0,
+                timed_out=False,
+            )
+        )
         events.append(_ev("round_end", round_num=i))
         log_tails[i] = "connection refused" if i < 3 else "ok"
     a = detect_network_fail(events, log_tails, window=10, threshold=0.2)

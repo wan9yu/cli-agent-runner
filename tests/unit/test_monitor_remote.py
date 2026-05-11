@@ -30,24 +30,42 @@ def test_given_remote_source_when_files_listed_then_returns_remote_paths() -> No
 
 
 def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing() -> None:
-    a = Alert(severity="warning", detector="timeout_rate", message="m",
-              context={}, ts="t", auto_action="none")
+    a = Alert(
+        severity="warning",
+        detector="timeout_rate",
+        message="m",
+        context={},
+        ts="t",
+        auto_action="none",
+    )
     with patch("agent_runner.monitor.subprocess.run") as run:
         on_alert(a, project="myproj", host=None, log_dir=Path("/tmp/fake"))
         run.assert_not_called()
 
 
 def test_given_critical_alert_local_when_on_alert_then_calls_local_stop(tmp_log_dir: Path) -> None:
-    a = Alert(severity="critical", detector="oauth_fail", message="m",
-              context={}, ts="t", auto_action="stop_service")
+    a = Alert(
+        severity="critical",
+        detector="oauth_fail",
+        message="m",
+        context={},
+        ts="t",
+        auto_action="stop_service",
+    )
     with patch("agent_runner.monitor._call_local_stop") as stop:
         on_alert(a, project="myproj", host=None, log_dir=tmp_log_dir)
         stop.assert_called_once_with("myproj")
 
 
 def test_given_critical_alert_remote_when_on_alert_then_calls_ssh_stop(tmp_log_dir: Path) -> None:
-    a = Alert(severity="critical", detector="oauth_fail", message="m",
-              context={}, ts="t", auto_action="stop_service")
+    a = Alert(
+        severity="critical",
+        detector="oauth_fail",
+        message="m",
+        context={},
+        ts="t",
+        auto_action="stop_service",
+    )
     with patch("agent_runner.monitor.run_remote_command") as rc:
         rc.return_value = (0, "")
         on_alert(a, project="myproj", host="pi", log_dir=tmp_log_dir)

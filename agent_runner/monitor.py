@@ -29,11 +29,19 @@ from agent_runner.context_store import read_json
 from agent_runner.events import emit as emit_event
 from agent_runner.events import now_iso_ms
 
-KNOWN_ALERT_KINDS: frozenset[str] = frozenset({
-    "timeout_rate", "hung", "orphan_chain",
-    "disk_warning", "disk_critical", "mem_pressure",
-    "smoke_fail_rate", "oauth_fail", "network_fail",
-})
+KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
+    {
+        "timeout_rate",
+        "hung",
+        "orphan_chain",
+        "disk_warning",
+        "disk_critical",
+        "mem_pressure",
+        "smoke_fail_rate",
+        "oauth_fail",
+        "network_fail",
+    }
+)
 
 SHORT_EXIT_THRESHOLD_S = 60
 
@@ -52,12 +60,17 @@ _NETWORK_PATTERNS = re.compile(
 )
 
 
-def _alert(detector: str, severity: str, message: str, context: dict[str, Any],
-           auto_action: str = "none") -> Alert:
+def _alert(
+    detector: str, severity: str, message: str, context: dict[str, Any], auto_action: str = "none"
+) -> Alert:
     assert detector in KNOWN_ALERT_KINDS, f"unknown alert kind: {detector!r}"
     return Alert(
-        severity=severity, detector=detector, message=message,
-        context=context, ts=now_iso_ms(), auto_action=auto_action,
+        severity=severity,
+        detector=detector,
+        message=message,
+        context=context,
+        ts=now_iso_ms(),
+        auto_action=auto_action,
     )
 
 
@@ -66,8 +79,9 @@ def _last_n_round_exits(events: list[dict[str, Any]], n: int) -> list[dict[str, 
     return exits[-n:]
 
 
-def detect_timeout_rate(events: list[dict[str, Any]], *, window: int = 10,
-                        threshold: float = 0.2) -> Alert | None:
+def detect_timeout_rate(
+    events: list[dict[str, Any]], *, window: int = 10, threshold: float = 0.2
+) -> Alert | None:
     recent = _last_n_round_exits(events, window)
     if len(recent) < window:
         return None
@@ -76,14 +90,16 @@ def detect_timeout_rate(events: list[dict[str, Any]], *, window: int = 10,
     if rate < threshold:
         return None
     return _alert(
-        "timeout_rate", "warning",
+        "timeout_rate",
+        "warning",
         f"{timed}/{len(recent)} recent rounds timed out (>{threshold:.0%})",
         {"rate": rate, "threshold": threshold, "window": window},
     )
 
 
-def detect_hung(events: list[dict[str, Any]], *, now: datetime,
-                factor: float = 1.5, round_timeout_s: int = 1800) -> Alert | None:
+def detect_hung(
+    events: list[dict[str, Any]], *, now: datetime, factor: float = 1.5, round_timeout_s: int = 1800
+) -> Alert | None:
     """A round_start without a matching round_end after round_timeout_s * factor."""
     open_rounds: dict[int, str] = {}
     for e in events:
@@ -98,10 +114,10 @@ def detect_hung(events: list[dict[str, Any]], *, now: datetime,
         elapsed = (now - started).total_seconds()
         if elapsed > round_timeout_s * factor:
             return _alert(
-                "hung", "warning",
+                "hung",
+                "warning",
                 f"Round {rn} started {elapsed:.0f}s ago with no round_end",
-                {"round_num": rn, "elapsed_s": elapsed,
-                 "threshold_s": round_timeout_s * factor},
+                {"round_num": rn, "elapsed_s": elapsed, "threshold_s": round_timeout_s * factor},
             )
     return None
 
@@ -124,10 +140,10 @@ def detect_orphan_chain(events: list[dict[str, Any]], *, threshold: int = 3) -> 
                 streak = 0
     if streak >= threshold:
         return _alert(
-            "orphan_chain", "warning",
+            "orphan_chain",
+            "warning",
             f"{streak} consecutive rounds with orphan_stashed (>= {threshold})",
-            {"streak": streak, "threshold": threshold,
-             "last_round": last_round_with_orphan},
+            {"streak": streak, "threshold": threshold, "last_round": last_round_with_orphan},
         )
     return None
 
@@ -139,72 +155,83 @@ def _latest(metrics: list[dict[str, Any]], key: str) -> Any:
     return None
 
 
-def detect_disk_warning(metrics: list[dict[str, Any]], *,
-                        threshold_pct: float = 90.0) -> Alert | None:
+def detect_disk_warning(
+    metrics: list[dict[str, Any]], *, threshold_pct: float = 90.0
+) -> Alert | None:
     val = _latest(metrics, "disk_used_pct")
     if val is None or val < threshold_pct:
         return None
     if val >= 95.0:  # leave the >=95 case to detect_disk_critical
         return None
     return _alert(
-        "disk_warning", "warning",
+        "disk_warning",
+        "warning",
         f"disk_used_pct {val} >= {threshold_pct}",
-        {"value": val, "threshold": threshold_pct,
-         "hint": "Free space soon — clean ~/.agent-runner/<project>/logs/"},
+        {
+            "value": val,
+            "threshold": threshold_pct,
+            "hint": "Free space soon — clean ~/.agent-runner/<project>/logs/",
+        },
     )
 
 
-def detect_disk_critical(metrics: list[dict[str, Any]], *,
-                         threshold_pct: float = 95.0) -> Alert | None:
+def detect_disk_critical(
+    metrics: list[dict[str, Any]], *, threshold_pct: float = 95.0
+) -> Alert | None:
     val = _latest(metrics, "disk_used_pct")
     if val is None or val < threshold_pct:
         return None
     return _alert(
-        "disk_critical", "critical",
+        "disk_critical",
+        "critical",
         f"disk_used_pct {val} >= {threshold_pct} — auto-stopping service",
-        {"value": val, "threshold": threshold_pct,
-         "hint": "Stop and clean disk before resuming"},
+        {"value": val, "threshold": threshold_pct, "hint": "Stop and clean disk before resuming"},
         auto_action="stop_service",
     )
 
 
-def detect_mem_pressure(metrics: list[dict[str, Any]], *,
-                        threshold_mb: int = 200) -> Alert | None:
+def detect_mem_pressure(metrics: list[dict[str, Any]], *, threshold_mb: int = 200) -> Alert | None:
     val = _latest(metrics, "mem_available_mb")
     if val is None or val >= threshold_mb:
         return None
     return _alert(
-        "mem_pressure", "warning",
+        "mem_pressure",
+        "warning",
         f"mem_available_mb {val} < {threshold_mb}",
-        {"value": val, "threshold": threshold_mb,
-         "hint": "Investigate memory leak or move to a larger host"},
+        {
+            "value": val,
+            "threshold": threshold_mb,
+            "hint": "Investigate memory leak or move to a larger host",
+        },
     )
 
 
-def detect_smoke_fail_rate(events: list[dict[str, Any]], *,
-                           window: int = 10, threshold: float = 0.1) -> Alert | None:
+def detect_smoke_fail_rate(
+    events: list[dict[str, Any]], *, window: int = 10, threshold: float = 0.1
+) -> Alert | None:
     ends = [e for e in events if e.get("event") == "round_end"]
     if len(ends) < window:
         return None
     recent_round_nums = [e.get("round_num") for e in ends[-window:]]
     fails = sum(
-        1 for e in events
+        1
+        for e in events
         if e.get("event") == "smoke_check_failed" and e.get("round_num") in recent_round_nums
     )
     rate = fails / window
     if rate < threshold:
         return None
     return _alert(
-        "smoke_fail_rate", "warning",
+        "smoke_fail_rate",
+        "warning",
         f"{fails}/{window} recent rounds had smoke_check_failed",
-        {"rate": rate, "threshold": threshold,
-         "hint": "Inspect events.jsonl for failure reasons"},
+        {"rate": rate, "threshold": threshold, "hint": "Inspect events.jsonl for failure reasons"},
     )
 
 
-def _short_exit_with_pattern(events: list[dict[str, Any]],
-                             log_tails: dict[int, str],
-                             pattern: re.Pattern[str], window: int) -> tuple[int, int]:
+def _short_exit_with_pattern(
+    events: list[dict[str, Any]], log_tails: dict[int, str], pattern: re.Pattern[str], window: int
+) -> tuple[int, int]:
     recent = _last_n_round_exits(events, window)
     matches = 0
     for e in recent:
@@ -219,30 +246,50 @@ def _short_exit_with_pattern(events: list[dict[str, Any]],
     return matches, len(recent)
 
 
-def detect_oauth_fail(events: list[dict[str, Any]], log_tails: dict[int, str], *,
-                      window: int = 10, threshold: float = 0.2) -> Alert | None:
+def detect_oauth_fail(
+    events: list[dict[str, Any]],
+    log_tails: dict[int, str],
+    *,
+    window: int = 10,
+    threshold: float = 0.2,
+) -> Alert | None:
     matches, total = _short_exit_with_pattern(events, log_tails, _AUTH_PATTERNS, window)
     if total < window or matches / total < threshold:
         return None
     return _alert(
-        "oauth_fail", "critical",
+        "oauth_fail",
+        "critical",
         f"{matches}/{total} recent rounds short-exited with auth failure pattern",
-        {"matches": matches, "window": total, "threshold": threshold,
-         "hint": "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY"},
+        {
+            "matches": matches,
+            "window": total,
+            "threshold": threshold,
+            "hint": "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY",
+        },
         auto_action="stop_service",
     )
 
 
-def detect_network_fail(events: list[dict[str, Any]], log_tails: dict[int, str], *,
-                        window: int = 10, threshold: float = 0.2) -> Alert | None:
+def detect_network_fail(
+    events: list[dict[str, Any]],
+    log_tails: dict[int, str],
+    *,
+    window: int = 10,
+    threshold: float = 0.2,
+) -> Alert | None:
     matches, total = _short_exit_with_pattern(events, log_tails, _NETWORK_PATTERNS, window)
     if total < window or matches / total < threshold:
         return None
     return _alert(
-        "network_fail", "warning",
+        "network_fail",
+        "warning",
         f"{matches}/{total} recent rounds short-exited with network error pattern",
-        {"matches": matches, "window": total, "threshold": threshold,
-         "hint": "Check upstream Anthropic status or local DNS / VPN"},
+        {
+            "matches": matches,
+            "window": total,
+            "threshold": threshold,
+            "hint": "Check upstream Anthropic status or local DNS / VPN",
+        },
     )
 
 
@@ -386,7 +433,10 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
     """
     r = subprocess.run(
         ["ssh", host, cmd],
-        capture_output=True, text=True, timeout=timeout, check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
     )
     return r.returncode, r.stdout
 
@@ -394,6 +444,7 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
 @dataclass(frozen=True)
 class RemoteSource:
     """Mirrors LocalSource but fetches paths via ssh ls; reads via cat."""
+
     host: str
     project: str
 
@@ -425,6 +476,7 @@ class RemoteSource:
 def _call_local_stop(project: str) -> None:
     # Late import: api imports monitor for peek, so we defer the reverse direction.
     from agent_runner import api
+
     api.stop(project)
 
 
@@ -432,16 +484,21 @@ def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> 
     """Record the alert to events.jsonl and, if auto_action==stop_service, stop the service."""
     if log_dir.is_dir():
         emit_event(
-            log_dir, "monitor_alert_emitted",
-            detector=alert.detector, severity=alert.severity,
-            message=alert.message, auto_action=alert.auto_action,
+            log_dir,
+            "monitor_alert_emitted",
+            detector=alert.detector,
+            severity=alert.severity,
+            message=alert.message,
+            auto_action=alert.auto_action,
         )
     if alert.auto_action != "stop_service":
         return
     if log_dir.is_dir():
         emit_event(
-            log_dir, "monitor_auto_stop_triggered",
-            detector=alert.detector, host=host,
+            log_dir,
+            "monitor_auto_stop_triggered",
+            detector=alert.detector,
+            host=host,
         )
     if host is None:
         _call_local_stop(project)

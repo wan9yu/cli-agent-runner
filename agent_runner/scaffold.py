@@ -106,9 +106,18 @@ def scaffold_project(work_dir: Path, *, force: bool, commit: bool) -> InitResult
     if commit:
         subprocess.run(["git", "add", "."], cwd=work_dir, check=True)
         r = subprocess.run(
-            ["git", "-c", "commit.gpgsign=false", "commit", "-q",
-             "-m", "chore: agent-runner initial config"],
-            cwd=work_dir, capture_output=True, text=True,
+            [
+                "git",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "chore: agent-runner initial config",
+            ],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
         )
         committed = r.returncode == 0  # may fail if nothing changed
 

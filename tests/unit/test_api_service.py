@@ -28,7 +28,8 @@ def test_given_no_systemd_no_pid_when_api_status_then_returns_mode_none(tmp_git_
 
 
 def test_given_pid_file_with_self_pid_when_status_then_active_true(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -43,7 +44,8 @@ def test_given_pid_file_with_self_pid_when_status_then_active_true(
 
 
 def test_given_pid_file_with_dead_pid_when_status_then_active_false(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -57,7 +59,8 @@ def test_given_pid_file_with_dead_pid_when_status_then_active_false(
 
 
 def test_given_pid_file_when_api_stop_then_sends_sigterm(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -71,7 +74,8 @@ def test_given_pid_file_when_api_stop_then_sends_sigterm(
 
 
 def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -79,15 +83,18 @@ def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
-    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send, \
-         patch("agent_runner.api.pid_alive", side_effect=[True, False]):
+    with (
+        patch("agent_runner.api.send_signal_to_pid", return_value=True) as send,
+        patch("agent_runner.api.pid_alive", side_effect=[True, False]),
+    ):
         api.kill(tmp_git_repo)
         sent = [c.args[1] for c in send.call_args_list]
         assert signal.SIGTERM in sent
 
 
 def test_given_pid_file_when_api_cancel_then_sends_sigusr1(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
@@ -101,11 +108,13 @@ def test_given_pid_file_when_api_cancel_then_sends_sigusr1(
 
 
 def test_given_install_with_no_systemctl_when_called_then_returns_install_result(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir",
-                        lambda: tmp_git_repo / "fake-systemd")
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
+    )
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
     result = api.install(tmp_git_repo, system=False, with_monitor=False)
     assert result.unit_path.exists()
@@ -113,11 +122,13 @@ def test_given_install_with_no_systemctl_when_called_then_returns_install_result
 
 
 def test_given_install_with_monitor_when_called_then_writes_two_units(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir",
-                        lambda: tmp_git_repo / "fake-systemd")
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
+    )
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
     assert result.unit_path.exists()
@@ -126,7 +137,8 @@ def test_given_install_with_monitor_when_called_then_writes_two_units(
 
 
 def test_given_installed_unit_when_uninstall_then_removes_file(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     fake_systemd = tmp_git_repo / "fake-systemd"

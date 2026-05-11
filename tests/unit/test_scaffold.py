@@ -50,7 +50,10 @@ def test_given_commit_true_when_scaffold_then_creates_git_commit(tmp_git_repo: P
     assert result.committed is True
     log = subprocess.run(
         ["git", "log", "--format=%s", "-1"],
-        cwd=tmp_git_repo, capture_output=True, text=True, check=True,
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert "agent-runner" in log
 

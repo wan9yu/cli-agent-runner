@@ -9,7 +9,8 @@ from agent_runner.service_unit import monitor_unit_filename, serve_unit_filename
 
 
 def test_given_install_dry_run_when_called_then_writes_unit_files(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)

@@ -32,20 +32,23 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Restart-on-exit supervisor for autonomous CLI agents.",
     )
     parser.add_argument(
-        "--config", type=Path, default=Path("./agent-runner.toml"),
+        "--config",
+        type=Path,
+        default=Path("./agent-runner.toml"),
         help="Path to agent-runner.toml (default: ./agent-runner.toml)",
     )
-    parser.add_argument("--json", action="store_true",
-                        help="Machine-readable JSON output (where supported)")
+    parser.add_argument(
+        "--json", action="store_true", help="Machine-readable JSON output (where supported)"
+    )
 
     # Parent parser shared by every subparser so the same flags can also be
     # placed AFTER the verb. SUPPRESS keeps the subparser from overwriting
     # values supplied to the main parser when the flag is omitted.
     parent = argparse.ArgumentParser(add_help=False)
-    parent.add_argument("--config", type=Path, default=argparse.SUPPRESS,
-                        help=argparse.SUPPRESS)
-    parent.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
-                        help=argparse.SUPPRESS)
+    parent.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    parent.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
+    )
 
     sub = parser.add_subparsers(dest="command", required=False)
 

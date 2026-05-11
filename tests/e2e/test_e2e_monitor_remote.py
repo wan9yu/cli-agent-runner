@@ -4,7 +4,9 @@ from .conftest import _ssh
 
 
 def test_given_seeded_disk_critical_on_pi_when_local_monitor_polls_then_alert(
-    pi_install_agent_runner: str, pi_workdir: str, pi_config: str,
+    pi_install_agent_runner: str,
+    pi_workdir: str,
+    pi_config: str,
 ) -> None:
     seed_metric = (
         '{"ts":"2026-05-12T10:00:00.000Z","event":"round_end",'

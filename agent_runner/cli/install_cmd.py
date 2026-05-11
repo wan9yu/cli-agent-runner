@@ -7,16 +7,24 @@ from agent_runner.cli.common import emit, fail, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
-    p = sub.add_parser("install", parents=[parent],
-                       help="Generate systemd user unit, enable + start")
-    p.add_argument("--system", action="store_true",
-                   help="Install at system level (not yet supported in Phase 2)")
-    p.add_argument("--monitor", action="store_true",
-                   help="Also install monitor sidekick service for auto-stop on critical alerts")
+    p = sub.add_parser(
+        "install", parents=[parent], help="Generate systemd user unit, enable + start"
+    )
+    p.add_argument(
+        "--system",
+        action="store_true",
+        help="Install at system level (not yet supported in Phase 2)",
+    )
+    p.add_argument(
+        "--monitor",
+        action="store_true",
+        help="Also install monitor sidekick service for auto-stop on critical alerts",
+    )
     p.set_defaults(func=cmd_install)
 
-    u = sub.add_parser("uninstall", parents=[parent],
-                       help="Stop, disable, and remove systemd user unit(s)")
+    u = sub.add_parser(
+        "uninstall", parents=[parent], help="Stop, disable, and remove systemd user unit(s)"
+    )
     u.set_defaults(func=cmd_uninstall)
 
 

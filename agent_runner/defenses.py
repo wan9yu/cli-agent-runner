@@ -75,8 +75,7 @@ def catalog(cfg: Config) -> list[Defense]:
             name="critical_envs_injection",
             value=list(CRITICAL_ENV_DEFAULTS.keys()),
             codifies=(
-                "DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL "
-                "stop claude self-updates mid-loop"
+                "DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL stop claude self-updates mid-loop"
             ),
             guarded_by=None,
             current_state="active",

@@ -16,22 +16,19 @@ case "${1:-help}" in
     "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate
     ;;
   lint)
-    # ruff format --check intentionally omitted — current source has known
-    # format drift vs. ruff defaults that would expand 3 modules past their
-    # LOC ratchet caps. A future "format sweep" commit will reconcile both.
-    "$PY" -m ruff check .
+    "$PY" -m ruff check . && "$PY" -m ruff format --check .
     ;;
   check)
     "$0" lint
     "$0" test
     "$0" literate
-    "$0" docs
+    "$0" docs            # NOTE: must run before git diff --exit-code below
     git diff --exit-code docs/
     ;;
   e2e)
     AGENT_RUNNER_E2E_PI=1 "$PY" -m pytest tests/e2e/ -v
     ;;
-  help|*)
+  help)
     cat <<HELP
 Usage: $0 <task>
 
@@ -42,5 +39,9 @@ Usage: $0 <task>
   check     Full local-CI sweep: lint + test + literate + docs (gate).
   e2e       Pi e2e suite (needs ssh alias 'pi' and AGENT_RUNNER_E2E_PI=1).
 HELP
+    ;;
+  *)
+    echo "build.sh: unknown task '$1' — run \`$0 help\` for usage" >&2
+    exit 2
     ;;
 esac

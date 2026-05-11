@@ -19,6 +19,4 @@ def test_given_docs_when_rendered_in_memory_then_matches_on_disk() -> None:
         if got != want:
             diffs.append(path.name)
     if diffs:
-        pytest.fail(
-            f"docs out of date: {diffs}. Run `./build.sh docs` and commit."
-        )
+        pytest.fail(f"docs out of date: {diffs}. Run `./build.sh docs` and commit.")

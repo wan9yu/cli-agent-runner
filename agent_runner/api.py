@@ -70,15 +70,16 @@ def _systemctl_user(*args: str) -> None:
 # ---------------------------------------------------------------------------
 # init / install / uninstall
 
-def init(work_dir: Path | None = None, *, force: bool = False,
-         commit: bool = True) -> InitResult:
+
+def init(work_dir: Path | None = None, *, force: bool = False, commit: bool = True) -> InitResult:
     if work_dir is None:
         work_dir = Path.cwd()
     return scaffold_project(work_dir, force=force, commit=commit)
 
 
-def install(work_dir: Path | None = None, *, system: bool = False,
-            with_monitor: bool = False) -> InstallResult:
+def install(
+    work_dir: Path | None = None, *, system: bool = False, with_monitor: bool = False
+) -> InstallResult:
     if work_dir is None:
         work_dir = Path.cwd()
     if system:
@@ -105,8 +106,9 @@ def install(work_dir: Path | None = None, *, system: bool = False,
         _systemctl_user("enable", monitor_unit_filename(project))
         _systemctl_user("start", monitor_unit_filename(project))
 
-    return InstallResult(unit_path=serve_path, monitor_unit_path=monitor_path,
-                         enabled=True, started=True)
+    return InstallResult(
+        unit_path=serve_path, monitor_unit_path=monitor_path, enabled=True, started=True
+    )
 
 
 def uninstall(work_dir: Path | None = None) -> bool:
@@ -127,6 +129,7 @@ def uninstall(work_dir: Path | None = None) -> bool:
 
 # ---------------------------------------------------------------------------
 # Lifecycle: start / stop / kill / cancel / restart / status
+
 
 def start(project: str | Path) -> ServiceStatus:
     pname = _resolve_project(project)
@@ -233,12 +236,17 @@ def _log_dir_for_project(project: str | Path) -> Path:
 from agent_runner import defenses, monitor  # noqa: E402
 
 
-def peek(project: str | Path | None = None, *,
-         round: int | str | None = None, log: bool = False,
-         events: int | None = None,
-         select: str | None = None) -> ProjectState | Any:
+def peek(
+    project: str | Path | None = None,
+    *,
+    round: int | str | None = None,
+    log: bool = False,
+    events: int | None = None,
+    select: str | None = None,
+) -> ProjectState | Any:
     """Build a ProjectState snapshot. With select, return that subtree."""
     from agent_runner import round_view
+
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
     log_dir = cfg.runtime.log_dir
@@ -257,9 +265,13 @@ def peek(project: str | Path | None = None, *,
         project=base_state.project,
         status=base_state.status,
         defenses=[
-            {"name": d.name, "value": d.value, "codifies": d.codifies,
-             "guarded_by": str(d.guarded_by) if d.guarded_by else None,
-             "current_state": d.current_state}
+            {
+                "name": d.name,
+                "value": d.value,
+                "codifies": d.codifies,
+                "guarded_by": str(d.guarded_by) if d.guarded_by else None,
+                "current_state": d.current_state,
+            }
             for d in defenses.catalog(cfg)
         ],
         current_round=current,
@@ -284,18 +296,22 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
     log_tails = monitor.load_round_log_tails(src.rounds_dir())
     return monitor.run_all_detectors(
-        events=events, metrics=metrics, log_tails=log_tails,
+        events=events,
+        metrics=metrics,
+        log_tails=log_tails,
         round_timeout_s=cfg.runtime.round_timeout_s,
     )
 
 
-def monitor_loop(project: str | Path | None = None, *, host: str | None = None,
-                 interval_s: int = 30) -> Iterator[monitor.Alert]:
+def monitor_loop(
+    project: str | Path | None = None, *, host: str | None = None, interval_s: int = 30
+) -> Iterator[monitor.Alert]:
     """Yield alerts as they're detected. Caller decides what to do.
 
     The loop dedups alerts by (detector, json.dumps(context)) within session.
     """
     import json as _json
+
     seen: set[str] = set()
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")

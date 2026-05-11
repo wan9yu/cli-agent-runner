@@ -30,20 +30,25 @@ file = "{prompt}"
     subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
     subprocess.run(
         ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
-        cwd=tmp_git_repo, check=True,
+        cwd=tmp_git_repo,
+        check=True,
     )
     return toml
 
 
 def test_given_serve_once_with_succeed_then_runs_one_round_and_exits(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     toml = _write_toml(tmp_git_repo, fake_agent_script)
     env = os.environ.copy()
     env["FAKE_AGENT_BEHAVIOR"] = "succeed"
     r = subprocess.run(
         [sys.executable, "-m", "agent_runner.cli", "--config", str(toml), "serve", "--once"],
-        env=env, capture_output=True, text=True, timeout=30,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert r.returncode == 0
     status = json.loads((tmp_git_repo / "logs" / "status.json").read_text())
@@ -51,7 +56,8 @@ def test_given_serve_once_with_succeed_then_runs_one_round_and_exits(
 
 
 def test_given_serve_when_sigterm_received_then_exits_after_current_round(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     toml = _write_toml(tmp_git_repo, fake_agent_script, round_timeout=10)
     env = os.environ.copy()

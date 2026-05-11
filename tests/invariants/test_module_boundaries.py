@@ -40,8 +40,14 @@ def _string_literals_in(file: Path) -> list[str]:
 def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subprocess() -> None:
     offenders: list[str] = []
     for f in PKG.glob("*.py"):
-        if f.name in ("agent_runtime.py", "vcs_state.py", "scaffold.py", "monitor.py",
-                      "api.py", "__init__.py"):
+        if f.name in (
+            "agent_runtime.py",
+            "vcs_state.py",
+            "scaffold.py",
+            "monitor.py",
+            "api.py",
+            "__init__.py",
+        ):
             continue
         if "subprocess" in _imports_in(f):
             offenders.append(f.name)

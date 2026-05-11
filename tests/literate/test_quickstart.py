@@ -19,7 +19,8 @@ QUICKSTART = Path(__file__).resolve().parent.parent.parent / "docs" / "quickstar
 
 
 def test_given_quickstart_when_each_bash_block_run_then_passes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if not QUICKSTART.exists():
         pytest.skip("docs/quickstart.md not yet present")
@@ -37,7 +38,10 @@ def test_given_quickstart_when_each_bash_block_run_then_passes(
         env = {**os.environ, **block.env}
         r = subprocess.run(
             ["bash", "-c", block.code],
-            cwd=tmp_path, capture_output=True, text=True, env=env,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            env=env,
             timeout=60,
         )
         assert r.returncode == block.expected_status, (

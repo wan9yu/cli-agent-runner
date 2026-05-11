@@ -8,13 +8,7 @@ from agent_runner._docgen import render_defenses_table, replace_block
 
 
 def test_given_text_with_block_when_replaced_then_returns_new_content_between_markers() -> None:
-    text = (
-        "intro line\n"
-        "<!-- gen:foo -->\n"
-        "OLD CONTENT\n"
-        "<!-- /gen:foo -->\n"
-        "trailing line\n"
-    )
+    text = "intro line\n<!-- gen:foo -->\nOLD CONTENT\n<!-- /gen:foo -->\ntrailing line\n"
     got = replace_block(text, "foo", "NEW CONTENT")
     assert "OLD CONTENT" not in got
     assert "NEW CONTENT" in got
@@ -65,11 +59,7 @@ def test_given_docs_dir_with_marker_when_render_then_writes_table(
 
     arch = tmp_path / "architecture.md"
     arch.write_text(
-        "intro\n"
-        "<!-- gen:defenses-table -->\n"
-        "PLACEHOLDER\n"
-        "<!-- /gen:defenses-table -->\n"
-        "outro\n"
+        "intro\n<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\noutro\n"
     )
     out = render(docs_dir=tmp_path, write=True)
     assert arch in out
@@ -86,9 +76,7 @@ def test_given_render_with_write_false_when_called_then_does_not_touch_disk(
     from agent_runner._docgen import render
 
     arch = tmp_path / "architecture.md"
-    original = (
-        "<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\n"
-    )
+    original = "<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\n"
     arch.write_text(original)
     out = render(docs_dir=tmp_path, write=False)
     assert arch.read_text() == original  # disk unchanged
@@ -99,9 +87,7 @@ def test_given_unknown_gen_name_when_render_then_raises(tmp_path: Path) -> None:
     from agent_runner._docgen import render
 
     arch = tmp_path / "x.md"
-    arch.write_text(
-        "<!-- gen:does-not-exist -->\nfoo\n<!-- /gen:does-not-exist -->\n"
-    )
+    arch.write_text("<!-- gen:does-not-exist -->\nfoo\n<!-- /gen:does-not-exist -->\n")
     with pytest.raises(ValueError, match="does-not-exist"):
         render(docs_dir=tmp_path, write=False)
 
@@ -145,9 +131,22 @@ def test_given_render_verb_table_when_called_then_lists_all_subcommands() -> Non
 
     md = render_verb_table()
     # Each verb appears
-    for verb in ("init", "install", "uninstall", "start", "stop", "kill",
-                 "cancel", "restart", "status", "round", "serve",
-                 "peek", "watch", "monitor"):
+    for verb in (
+        "init",
+        "install",
+        "uninstall",
+        "start",
+        "stop",
+        "kill",
+        "cancel",
+        "restart",
+        "status",
+        "round",
+        "serve",
+        "peek",
+        "watch",
+        "monitor",
+    ):
         assert f"`{verb}`" in md, f"verb {verb!r} missing"
     assert "| Verb | Description |" in md
 

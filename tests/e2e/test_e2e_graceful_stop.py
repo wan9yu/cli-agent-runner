@@ -7,7 +7,9 @@ from .conftest import _ssh
 
 
 def test_given_serve_running_when_stop_then_exits_after_current_round(
-    pi_install_agent_runner: str, pi_workdir: str, pi_config: str,
+    pi_install_agent_runner: str,
+    pi_workdir: str,
+    pi_config: str,
 ) -> None:
     bg = (
         f"nohup bash -c 'FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "

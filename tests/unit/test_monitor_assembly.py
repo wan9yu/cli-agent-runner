@@ -23,9 +23,15 @@ def _seed(tmp_log_dir: Path) -> None:
         '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end",'
         '"disk_used_pct":50.0,"mem_available_mb":4000}\n'
     )
-    (tmp_log_dir / "status.json").write_text(json.dumps({
-        "round_num": 1, "running": False, "last_exit_code": 0,
-    }))
+    (tmp_log_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "round_num": 1,
+                "running": False,
+                "last_exit_code": 0,
+            }
+        )
+    )
     rounds = tmp_log_dir / "rounds"
     rounds.mkdir(exist_ok=True)
     (rounds / "R1-20260512T100000.log").write_text("agent ran fine\n")
@@ -69,7 +75,9 @@ def test_given_clean_history_when_run_all_detectors_then_no_alerts(
     metrics = parse_events_from_jsonl_files(src.metrics_files())
     log_tails = load_round_log_tails(src.rounds_dir(), tail_lines=50)
     alerts = run_all_detectors(
-        events=events, metrics=metrics, log_tails=log_tails,
+        events=events,
+        metrics=metrics,
+        log_tails=log_tails,
         round_timeout_s=1800,
     )
     assert alerts == []
@@ -86,7 +94,10 @@ def test_given_disk_98_pct_when_run_all_detectors_then_critical_with_auto_stop(
     src = LocalSource(log_dir=tmp_log_dir)
     metrics = parse_events_from_jsonl_files(src.metrics_files())
     alerts = run_all_detectors(
-        events=[], metrics=metrics, log_tails={}, round_timeout_s=1800,
+        events=[],
+        metrics=metrics,
+        log_tails={},
+        round_timeout_s=1800,
     )
     crit = [a for a in alerts if a.detector == "disk_critical"]
     assert len(crit) == 1

@@ -41,8 +41,14 @@ def test_given_round_with_log_when_built_then_round_view_has_tail(tmp_path: Path
     (tmp_path / "rounds" / "R1-2026.log").write_text("line1\nline2\nline3\n")
     events = [
         {"ts": "2026-05-01T00:00:00Z", "event": "round_start", "round_num": 1},
-        {"ts": "2026-05-01T00:00:01Z", "event": "agent_exit", "round_num": 1,
-         "exit_code": 0, "duration_s": 42.0, "timed_out": False},
+        {
+            "ts": "2026-05-01T00:00:01Z",
+            "event": "agent_exit",
+            "round_num": 1,
+            "exit_code": 0,
+            "duration_s": 42.0,
+            "timed_out": False,
+        },
     ]
     rv = build_round_view(tmp_path, 1, events, want_log=True)
     assert rv is not None

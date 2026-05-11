@@ -9,7 +9,8 @@ from agent_runner.cli import main
 
 
 def test_given_init_subcommand_in_git_repo_when_invoked_then_creates_files(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
     rc = main(["init", "--no-commit"])
@@ -19,33 +20,43 @@ def test_given_init_subcommand_in_git_repo_when_invoked_then_creates_files(
 
 
 def test_given_install_when_invoked_then_calls_api_install(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
     main(["init", "--no-commit"])
     with patch("agent_runner.api.install") as install:
-        install.return_value = type("R", (), {"unit_path": tmp_git_repo / "u.service",
-                                               "monitor_unit_path": None})()
+        install.return_value = type(
+            "R", (), {"unit_path": tmp_git_repo / "u.service", "monitor_unit_path": None}
+        )()
         rc = main(["install"])
         assert rc == 0
         install.assert_called_once()
 
 
 def test_given_install_with_monitor_flag_when_invoked_then_passes_with_monitor_true(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
     main(["init", "--no-commit"])
     with patch("agent_runner.api.install") as install:
-        install.return_value = type("R", (), {"unit_path": tmp_git_repo / "u.service",
-                                               "monitor_unit_path": tmp_git_repo / "m.service"})()
+        install.return_value = type(
+            "R",
+            (),
+            {
+                "unit_path": tmp_git_repo / "u.service",
+                "monitor_unit_path": tmp_git_repo / "m.service",
+            },
+        )()
         main(["install", "--monitor"])
         kwargs = install.call_args.kwargs
         assert kwargs["with_monitor"] is True
 
 
 def test_given_uninstall_when_invoked_then_calls_api_uninstall(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
     main(["init", "--no-commit"])

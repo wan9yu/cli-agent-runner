@@ -60,9 +60,7 @@ def render_config_schema_table() -> str:
         parts.append("| Field | Type | Default |")
         parts.append("|---|---|---|")
         for f in dataclasses.fields(dc):
-            parts.append(
-                f"| `{f.name}` | `{_type_label(f.type)}` | {_default_label(f)} |"
-            )
+            parts.append(f"| `{f.name}` | `{_type_label(f.type)}` | {_default_label(f)} |")
         parts.append("")
     return "\n".join(parts).rstrip()
 
@@ -139,20 +137,20 @@ def render_verb_table() -> str:
 
     parser = _build_parser()
     # Find the sub-parsers action — there's exactly one.
-    sub_action = next(
-        a for a in parser._actions
-        if a.__class__.__name__ == "_SubParsersAction"
-    )
+    sub_action = next(a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction")
     rows = [
         "| Verb | Description |",
         "|---|---|",
     ]
     for verb, _sp in sub_action.choices.items():
         # Argparse stores help text via `sub_action._choices_actions` indexed by add order.
-        help_text = next(
-            (c.help for c in sub_action._choices_actions if c.dest == verb),
-            "",
-        ) or ""
+        help_text = (
+            next(
+                (c.help for c in sub_action._choices_actions if c.dest == verb),
+                "",
+            )
+            or ""
+        )
         rows.append(f"| `{verb}` | {help_text} |")
     return "\n".join(rows)
 
@@ -184,8 +182,7 @@ def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
             name = match.group(1)
             if name not in RENDERERS:
                 raise ValueError(
-                    f"{md.name}: unknown gen marker {name!r} — "
-                    f"valid names: {sorted(RENDERERS)}"
+                    f"{md.name}: unknown gen marker {name!r} — valid names: {sorted(RENDERERS)}"
                 )
             text = replace_block(text, name, RENDERERS[name]())
         out[md] = text

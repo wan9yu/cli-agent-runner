@@ -107,7 +107,5 @@ def select_path(tree: Any, path: str) -> Any:
             else:
                 cur = getattr(cur, part)
         except (AttributeError, IndexError, KeyError) as e:
-            raise KeyError(
-                f"path segment {part!r} not found in select path {path!r}"
-            ) from e
+            raise KeyError(f"path segment {part!r} not found in select path {path!r}") from e
     return cur

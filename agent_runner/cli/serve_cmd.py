@@ -45,13 +45,15 @@ def cmd(args) -> int:
     try:
         while not stop["requested"]:
             r = subprocess.run(
-                [sys.executable, "-m", "agent_runner.cli",
-                 "--config", str(args.config), "round"],
+                [sys.executable, "-m", "agent_runner.cli", "--config", str(args.config), "round"],
             )
             if args.once or stop["requested"]:
                 break
-            delay = (cfg.runtime.restart_delay_s if r.returncode == 0
-                     else cfg.runtime.restart_delay_s * 2)
+            delay = (
+                cfg.runtime.restart_delay_s
+                if r.returncode == 0
+                else cfg.runtime.restart_delay_s * 2
+            )
             time.sleep(delay)
     finally:
         pid_file.unlink()

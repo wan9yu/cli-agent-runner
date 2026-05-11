@@ -15,8 +15,13 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 ALLOWED_SERVE_IMPORTS = {
-    "os", "sys", "signal", "subprocess", "time", "pathlib",
-    "agent_runner",   # only sub-imports below
+    "os",
+    "sys",
+    "signal",
+    "subprocess",
+    "time",
+    "pathlib",
+    "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner.cli.common", {"cfg_from_args"}),
@@ -40,8 +45,11 @@ def _imports_in(file: Path) -> tuple[set[str], list[tuple[str, set[str]]]]:
 
 def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
     plain, froms = _imports_in(PKG / "cli/serve_cmd.py")
-    bad_plain = plain - ALLOWED_SERVE_IMPORTS - {"agent_runner.cli", "agent_runner.cli.common",
-                                                  "agent_runner.lifecycle"}
+    bad_plain = (
+        plain
+        - ALLOWED_SERVE_IMPORTS
+        - {"agent_runner.cli", "agent_runner.cli.common", "agent_runner.lifecycle"}
+    )
     assert not bad_plain, f"serve_cmd has unsanctioned imports: {bad_plain}"
     for mod, names in froms:
         if mod.startswith("agent_runner"):
@@ -58,20 +66,26 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
         if f.name in ("round_cmd.py", "serve_cmd.py"):
             continue
         text = f.read_text()
-        if "from agent_runner import api" not in text and "from agent_runner.api" not in text \
-           and "import agent_runner.api" not in text:
+        if (
+            "from agent_runner import api" not in text
+            and "from agent_runner.api" not in text
+            and "import agent_runner.api" not in text
+        ):
             offenders.append(f.name)
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
 
 
 def test_given_critic_module_when_inspected_then_only_protocols() -> None:
     from agent_runner import critic
-    classes = [m for _, m in inspect.getmembers(critic, inspect.isclass)
-               if m.__module__ == "agent_runner.critic"]
+
+    classes = [
+        m
+        for _, m in inspect.getmembers(critic, inspect.isclass)
+        if m.__module__ == "agent_runner.critic"
+    ]
     for cls in classes:
-        is_protocol = (
-            getattr(cls, "_is_protocol", False)
-            or getattr(cls, "_is_runtime_protocol", False)
+        is_protocol = getattr(cls, "_is_protocol", False) or getattr(
+            cls, "_is_runtime_protocol", False
         )
         assert is_protocol, f"{cls.__name__} is not a Protocol — Phase 2 forbids concrete Critics"
 
@@ -80,8 +94,16 @@ def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
     import dataclasses
 
     from agent_runner import api_types
-    cls_names = ["Alert", "InitResult", "InstallResult", "ProjectState",
-                 "RoundView", "ServiceStatus", "SystemMetrics"]
+
+    cls_names = [
+        "Alert",
+        "InitResult",
+        "InstallResult",
+        "ProjectState",
+        "RoundView",
+        "ServiceStatus",
+        "SystemMetrics",
+    ]
     for name in cls_names:
         cls = getattr(api_types, name)
         assert dataclasses.is_dataclass(cls), f"{name} not a dataclass"
@@ -90,9 +112,16 @@ def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
 
 def test_given_known_alert_kinds_when_inspected_then_matches_nine_detectors() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
+
     expected = {
-        "timeout_rate", "hung", "orphan_chain",
-        "disk_warning", "disk_critical", "mem_pressure",
-        "smoke_fail_rate", "oauth_fail", "network_fail",
+        "timeout_rate",
+        "hung",
+        "orphan_chain",
+        "disk_warning",
+        "disk_critical",
+        "mem_pressure",
+        "smoke_fail_rate",
+        "oauth_fail",
+        "network_fail",
     }
     assert KNOWN_ALERT_KINDS == expected

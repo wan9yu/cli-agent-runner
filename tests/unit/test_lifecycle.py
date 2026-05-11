@@ -60,7 +60,8 @@ def test_given_pid_file_present_when_detect_then_returns_pid_file(tmp_path: Path
 
 
 def test_given_systemd_unit_file_when_detect_then_returns_systemd_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_systemd = tmp_path / "systemd-user"
     fake_systemd.mkdir()

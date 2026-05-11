@@ -27,13 +27,15 @@ file = "{prompt}"
     subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
     subprocess.run(
         ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
-        cwd=tmp_git_repo, check=True,
+        cwd=tmp_git_repo,
+        check=True,
     )
     return toml
 
 
 def test_given_round_command_when_invoked_then_status_file_written(
-    tmp_git_repo: Path, fake_agent_script: Path,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
     rc = main(["--config", str(toml), "round"])
@@ -43,7 +45,10 @@ def test_given_round_command_when_invoked_then_status_file_written(
 
 
 def test_given_round_from_external_cwd_when_config_flag_used_then_finds_toml(
-    tmp_git_repo: Path, fake_agent_script: Path, tmp_path: Path, monkeypatch,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """Regression guard: cli must honor --config from a cwd outside the project."""
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
@@ -57,7 +62,9 @@ def test_given_round_from_external_cwd_when_config_flag_used_then_finds_toml(
 
 
 def test_given_status_subcommand_when_invoked_then_returns_zero(
-    tmp_git_repo: Path, fake_agent_script: Path, capsys,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    capsys,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
     rc = main(["--config", str(toml), "status"])
@@ -66,7 +73,9 @@ def test_given_status_subcommand_when_invoked_then_returns_zero(
 
 
 def test_given_status_subcommand_after_one_round_when_invoked_then_completes(
-    tmp_git_repo: Path, fake_agent_script: Path, capsys,
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    capsys,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
     main(["--config", str(toml), "round"])

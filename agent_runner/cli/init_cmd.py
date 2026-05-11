@@ -10,10 +10,14 @@ def add_parser(sub, parent) -> None:
     p = sub.add_parser("init", parents=[parent], help="Scaffold agent-runner project files")
     p.add_argument("--force", action="store_true", help="Overwrite existing toml")
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--commit", dest="commit", action="store_true", default=True,
-                   help="git commit the new files (default)")
-    g.add_argument("--no-commit", dest="commit", action="store_false",
-                   help="Skip git commit")
+    g.add_argument(
+        "--commit",
+        dest="commit",
+        action="store_true",
+        default=True,
+        help="git commit the new files (default)",
+    )
+    g.add_argument("--no-commit", dest="commit", action="store_false", help="Skip git commit")
     p.set_defaults(func=cmd)
 
 
