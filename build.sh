@@ -15,6 +15,11 @@ case "${1:-help}" in
   test)
     "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate
     ;;
+  coverage)
+    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate \
+      --cov --cov-report=term --cov-report=html
+    echo "HTML report: htmlcov/index.html"
+    ;;
   lint)
     "$PY" -m ruff check . && "$PY" -m ruff format --check .
     ;;
@@ -37,6 +42,7 @@ Usage: $0 <task>
   test      Unit + integration suite.
   lint      ruff check + ruff format --check.
   check     Full local-CI sweep: lint + test + literate + docs (gate).
+  coverage  Run unit + integration tests with coverage (HTML + terminal).
   e2e       Pi e2e suite (needs ssh alias 'pi' and AGENT_RUNNER_E2E_PI=1).
 HELP
     ;;
