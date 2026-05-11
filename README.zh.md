@@ -147,4 +147,4 @@ Phase 2（运维界面）已发。Phase 3（LLM Critic）留了接口：`[llm]` 
 
 ## License
 
-MIT.
+[Apache License 2.0](LICENSE).

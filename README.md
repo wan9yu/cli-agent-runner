@@ -108,4 +108,4 @@ POSIX-only (Linux, macOS). Tested under Python 3.11+ on x86_64 and aarch64.
 
 ## License
 
-MIT.
+[Apache License 2.0](LICENSE).
