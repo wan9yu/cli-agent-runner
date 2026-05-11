@@ -5,8 +5,8 @@ Thanks for your interest in contributing!
 ## Development setup
 
 ```bash
-git clone https://github.com/wan9yu/agent-runner.git
-cd agent-runner
+git clone https://github.com/wan9yu/cli-agent-runner.git
+cd cli-agent-runner
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ./build.sh check

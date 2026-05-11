@@ -35,11 +35,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wan9yu/agent-runner"
-Documentation = "https://github.com/wan9yu/agent-runner#readme"
-Repository = "https://github.com/wan9yu/agent-runner"
-Issues = "https://github.com/wan9yu/agent-runner/issues"
-Changelog = "https://github.com/wan9yu/agent-runner/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/wan9yu/cli-agent-runner"
+Documentation = "https://github.com/wan9yu/cli-agent-runner#readme"
+Repository = "https://github.com/wan9yu/cli-agent-runner"
+Issues = "https://github.com/wan9yu/cli-agent-runner/issues"
+Changelog = "https://github.com/wan9yu/cli-agent-runner/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agent-runner = "agent_runner.cli:main"

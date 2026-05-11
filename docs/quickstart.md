@@ -6,7 +6,7 @@ with `python3.11+`, `git`, and the `claude` CLI on PATH.
 ## 1. Install agent-runner
 
 ```bash
-git clone https://github.com/wan9yu/agent-runner.git ~/.agent-runner-pkg
+git clone https://github.com/wan9yu/cli-agent-runner.git ~/.agent-runner-pkg
 cd ~/.agent-runner-pkg
 python3 -m venv .venv
 .venv/bin/pip install -e .

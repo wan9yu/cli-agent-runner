@@ -7,7 +7,7 @@ The latest tagged release. We do not back-port security fixes to older versions.
 ## Reporting a vulnerability
 
 Please report security issues privately via GitHub Security Advisories:
-<https://github.com/wan9yu/agent-runner/security/advisories/new>
+<https://github.com/wan9yu/cli-agent-runner/security/advisories/new>
 
 If GitHub Security Advisories is not workable for you, email
 `wangyu@go2imagination.com` with the subject line `agent-runner security`.

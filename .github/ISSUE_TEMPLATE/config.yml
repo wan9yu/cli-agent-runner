@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or usage help
-    url: https://github.com/wan9yu/agent-runner/discussions
+    url: https://github.com/wan9yu/cli-agent-runner/discussions
     about: For usage questions, please open a discussion.

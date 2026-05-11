@@ -39,5 +39,5 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Codecov-uploaded coverage from one canonical matrix cell.
 - Tag-triggered release with TestPyPI smoke stage before PyPI.
 
-[Unreleased]: https://github.com/wan9yu/agent-runner/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/wan9yu/agent-runner/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.0
