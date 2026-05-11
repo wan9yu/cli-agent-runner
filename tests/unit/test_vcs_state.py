@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from agent_runner.vcs_state import (
@@ -41,6 +42,22 @@ def test_given_modified_file_when_set_diff_then_returns_lines_in_wt_not_in_head(
     assert "init" not in novel  # was already in HEAD
 
 
-def test_given_path_outside_repo_when_set_diff_then_raises_or_empty(tmp_git_repo: Path) -> None:
+def test_given_missing_file_when_set_diff_then_returns_empty(
+    tmp_git_repo: Path,
+) -> None:
     novel = set_diff_vs_head(tmp_git_repo, Path("does-not-exist.md"))
     assert novel == set()
+
+
+def test_given_renamed_file_when_detect_dirty_then_returns_new_path_only(
+    tmp_git_repo: Path,
+) -> None:
+    # Create + commit a file, then rename via git mv (staged rename)
+    (tmp_git_repo / "a.txt").write_text("data\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=tmp_git_repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "add a.txt"], cwd=tmp_git_repo, check=True)
+    subprocess.run(["git", "mv", "a.txt", "b.txt"], cwd=tmp_git_repo, check=True)
+    dirty = detect_dirty_files(tmp_git_repo)
+    assert "b.txt" in dirty
+    assert "a.txt" not in dirty
+    assert " -> " not in str(dirty)  # no malformed combined string
