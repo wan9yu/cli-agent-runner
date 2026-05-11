@@ -26,6 +26,7 @@ from agent_runner.api_types import (
     SystemMetrics,
 )
 from agent_runner.context_store import read_json
+from agent_runner.events import emit as emit_event
 from agent_runner.events import now_iso_ms
 
 KNOWN_ALERT_KINDS: frozenset[str] = frozenset({
@@ -425,9 +426,20 @@ def _call_local_stop(project: str) -> None:
 
 
 def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> None:
-    """Act on a single alert. No-op for non-stop alerts; auto-stop fires real signal."""
+    """Record the alert to events.jsonl and, if auto_action==stop_service, stop the service."""
+    if log_dir.is_dir():
+        emit_event(
+            log_dir, "monitor_alert_emitted",
+            detector=alert.detector, severity=alert.severity,
+            message=alert.message, auto_action=alert.auto_action,
+        )
     if alert.auto_action != "stop_service":
         return
+    if log_dir.is_dir():
+        emit_event(
+            log_dir, "monitor_auto_stop_triggered",
+            detector=alert.detector, host=host,
+        )
     if host is None:
         _call_local_stop(project)
     else:
