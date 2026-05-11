@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-12
+
+Post-release polish: PyPI install path is documented as the primary entry,
+the repository was renamed for naming parity with the distribution, and the
+release workflow now auto-creates GitHub Releases.
+
+### Changed
+- README + README.zh now show `pip install cli-agent-runner` as the primary
+  install path; the previous `git clone` flow moved to the Development section.
+- Repository renamed from `wan9yu/agent-runner` to `wan9yu/cli-agent-runner`
+  for parity with the PyPI distribution name. All in-tree URL references
+  updated; GitHub redirects keep old links working.
+
+### Build & CI
+- Release workflow now creates a GitHub Release after PyPI publish, attaches
+  the sdist + wheel as release artifacts, and pulls release notes from the
+  matching CHANGELOG section.
+
 ## [0.1.0] — 2026-05-12
 
 Initial public release on PyPI as `cli-agent-runner`.
@@ -39,5 +57,6 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Codecov-uploaded coverage from one canonical matrix cell.
 - Tag-triggered release with TestPyPI smoke stage before PyPI.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.1
 [0.1.0]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.0
