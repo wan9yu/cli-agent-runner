@@ -50,3 +50,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+
+[tool.vulture]
+paths = ["agent_runner"]
+min_confidence = 80
+exclude = ["tests/"]
+ignore_decorators = ["@pytest.fixture"]
