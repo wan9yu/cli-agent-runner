@@ -3,41 +3,45 @@
 `agent-runner.toml` lives in your project's working directory. `agent-runner init`
 writes a templated copy you can edit.
 
-## `[agent]`
+## TOML schema
 
-| Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
-| `command` | list[str] | yes | — | argv to spawn the agent process |
-| `prompt_arg_template` | list[str] | yes | — | how to inject the prompt; `{prompt}` is substituted |
+<!-- gen:config-schema -->
+### `[agent]`
 
-## `[runtime]`
+| Field | Type | Default |
+|---|---|---|
+| `command` | `list[str]` | — |
+| `prompt_arg_template` | `list[str]` | — |
 
-| Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
-| `work_dir` | str (path) | yes | — | git repo to operate in (`.` = cwd) |
-| `log_dir` | str (path) | yes | — | state + logs; `{project}` substituted |
-| `round_timeout_s` | int | no | 1800 | wall-clock kill threshold |
-| `restart_delay_s` | int | no | 3 | sleep between rounds in `serve` |
+### `[runtime]`
 
-## `[prompt]`
+| Field | Type | Default |
+|---|---|---|
+| `work_dir` | `Path` | — |
+| `log_dir` | `Path` | — |
+| `round_timeout_s` | `int` | 1800 |
+| `restart_delay_s` | `int` | 3 |
 
-| Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
-| `file` | str (path) | yes | — | the .md prompt to feed the agent each round |
-| `inject_context` | bool | no | true | prepend round-context JSON block above the prompt |
+### `[prompt]`
+
+| Field | Type | Default |
+|---|---|---|
+| `file` | `Path` | — |
+| `inject_context` | `bool` | True |
+
+### `[vcs]`
+
+| Field | Type | Default |
+|---|---|---|
+| `orphan_action` | `str` | 'stash' |
+| `stash_idempotency_s` | `int` | 5 |
+<!-- /gen:config-schema -->
 
 ## `[phases]` (optional)
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `list` | list[str] | (none → no phase rotation) | round N gets `phases[(N-1) % len(phases)]` |
-
-## `[vcs]`
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `orphan_action` | str | "stash" | only "stash" supported in Phase 1+2 |
-| `stash_idempotency_s` | int | 5 | window inside which duplicate stashes are deduped |
 
 ## `[monitor]` (optional, defaults shown)
 

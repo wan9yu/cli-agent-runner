@@ -4,6 +4,27 @@ All commands accept `--config PATH` (default `./agent-runner.toml`) and `--json`
 where supported. Drill-down flags (`--round` / `--log` / `--events` / `--select`)
 are shared between `peek`, `watch`, and `monitor`.
 
+## At a glance
+
+<!-- gen:verb-table -->
+| Verb | Description |
+|---|---|
+| `init` | Scaffold agent-runner project files |
+| `install` | Generate systemd user unit, enable + start |
+| `uninstall` | Stop, disable, and remove systemd user unit(s) |
+| `start` | Start the service |
+| `stop` | Graceful stop (waits for current round) |
+| `kill` | Force terminate (5s grace then SIGKILL) |
+| `cancel` | Best-effort: SIGINT to claude (commit-and-exit hint) |
+| `restart` | stop + start (use --force for kill semantics) |
+| `status` | Show current service state |
+| `peek` | peek project state with optional drill-down |
+| `watch` | watch project state with optional drill-down |
+| `monitor` | Anomaly detection daemon (local or remote via --host) |
+| `serve` | Long-running supervisor loop |
+| `round` | Run one round and exit |
+<!-- /gen:verb-table -->
+
 ## Lifecycle
 
 ### `agent-runner init`

@@ -73,6 +73,37 @@ Three categories by `auto_action`:
 `oauth_fail`, `disk_critical`. Continuing in either state is harmful (burning
 API quota / writing to a near-full disk).
 
+<!-- gen:detector-list -->
+- `disk_critical` — **auto-stop**
+- `disk_warning`
+- `hung`
+- `mem_pressure`
+- `network_fail`
+- `oauth_fail` — **auto-stop**
+- `orphan_chain`
+- `smoke_fail_rate`
+- `timeout_rate`
+<!-- /gen:detector-list -->
+
+## Known event kinds
+
+<!-- gen:event-kinds -->
+- `agent_exit`
+- `agent_spawn`
+- `dirty_detected`
+- `monitor_alert_emitted`
+- `monitor_auto_stop_triggered`
+- `orphan_idempotent_skip`
+- `orphan_stash_failed`
+- `orphan_stashed`
+- `round_end`
+- `round_start`
+- `round_timeout_kill`
+- `sigterm_received`
+- `smoke_check_failed`
+- `status_recovered`
+<!-- /gen:event-kinds -->
+
 ## Phase 3 hooks (reserved, not implemented)
 
 - `[llm]` config block in `agent-runner.toml`
