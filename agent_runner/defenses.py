@@ -1,0 +1,112 @@
+"""Structured catalog of supervisor defenses.
+
+Each defense is a tuple of (current value, what historical incident it codifies,
+which invariant test guards it, current health). This is the single source of
+truth — peek/status/start banner all import from here.
+
+Adding a new defense = one entry here + auto-surfaces everywhere via the API.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from agent_runner.agent_runtime import CRITICAL_ENV_DEFAULTS
+from agent_runner.config import Config
+
+
+@dataclass(frozen=True)
+class Defense:
+    name: str
+    value: Any
+    codifies: str | None
+    guarded_by: Path | None
+    current_state: str  # "active" | "degraded" | "off"
+
+
+def catalog(cfg: Config) -> list[Defense]:
+    """Return the 11-entry defense catalog parameterised by current config."""
+    return [
+        Defense(
+            name="round_timeout_s",
+            value=cfg.runtime.round_timeout_s,
+            codifies="R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="process_group_isolation",
+            value="start_new_session=True",
+            codifies="#307 — process group reaping for descendant cleanup",
+            guarded_by=Path("tests/unit/test_agent_runtime.py"),
+            current_state="active",
+        ),
+        Defense(
+            name="sigterm_reaper",
+            value="install_sigterm_reaper",
+            codifies="R725 — SIGTERM-during-round dual-claude race",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="orphan_stash_idempotency_s",
+            value=cfg.vcs.stash_idempotency_s,
+            codifies="R820 — same-second 3 phantom stashes",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="sha_locked_stash",
+            value="drop/pop accept SHA only",
+            codifies="§9 IMMUTABLE — batch drop by index breaks under concurrent stash",
+            guarded_by=Path("tests/invariants/test_stash_uses_sha_not_index.py"),
+            current_state="active",
+        ),
+        Defense(
+            name="set_diff_classification",
+            value="set_diff_vs_head",
+            codifies="R2110 — rotation-only diff via +-line scan misclassifies",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="critical_envs_injection",
+            value=list(CRITICAL_ENV_DEFAULTS.keys()),
+            codifies=(
+                "DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL "
+                "stop claude self-updates mid-loop"
+            ),
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="startup_smoke_check",
+            value="6 checks (config / log_dir / agent_cli / git / prompt_file / prompt_smoke)",
+            codifies="R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="flock_concurrency",
+            value="agent-runner.lock",
+            codifies="Phase 1 design — prevent concurrent supervisors corrupting state",
+            guarded_by=None,
+            current_state="active",
+        ),
+        Defense(
+            name="atomic_state_writes",
+            value="tmp + fsync + rename",
+            codifies="Data integrity — crashes never leave half-written state files",
+            guarded_by=Path("tests/invariants/test_atomic_write_enforced.py"),
+            current_state="active",
+        ),
+        Defense(
+            name="event_kind_registry",
+            value="KNOWN_EVENT_KINDS frozenset (14 kinds)",
+            codifies="Prevent events.emit() typos / unregistered kinds slipping past CI",
+            guarded_by=Path("tests/invariants/test_event_kind_registry.py"),
+            current_state="active",
+        ),
+    ]
