@@ -5,8 +5,12 @@ branches based on prior round state (§7 IMMUTABLE).
 
 from __future__ import annotations
 
+import fcntl
+import os
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from agent_runner import (
@@ -15,9 +19,27 @@ from agent_runner import (
     events,
     metrics,
     prompt_loader,
+    startup_check,
     vcs_state,
 )
 from agent_runner.config import Config
+
+
+class LockHeldError(RuntimeError):
+    pass
+
+
+def _acquire_lock_or_raise(lock_path: Path) -> int:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as e:
+        os.close(fd)
+        raise LockHeldError(
+            f"another agent-runner is holding {lock_path}"
+        ) from e
+    return fd
 
 
 @dataclass(frozen=True)
@@ -71,6 +93,30 @@ def _round_context_for_prompt(
 def run_one_round(cfg: Config) -> RoundResult:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    # L3: startup precondition battery (R721 + #446 defense)
+    failures = [r for r in startup_check.run_battery(cfg) if not r.ok]
+    if failures:
+        for r in failures:
+            print(
+                f"STARTUP FAIL: {r.name}: {r.reason} | how-to-fix: {r.how_to_fix}",
+                file=sys.stderr,
+            )
+            events.emit(
+                log_dir, "smoke_check_failed", reason=f"{r.name}: {r.reason}"
+            )
+        sys.exit(1)
+
+    # Concurrency lock (per-project)
+    lock_fd = _acquire_lock_or_raise(log_dir / "agent-runner.lock")
+    try:
+        return _run_one_round_inner(cfg)
+    finally:
+        os.close(lock_fd)
+
+
+def _run_one_round_inner(cfg: Config) -> RoundResult:
+    log_dir = cfg.runtime.log_dir
 
     prev_status = context_store.read_status(log_dir)
     if (log_dir / "status.json").exists() and prev_status is None:

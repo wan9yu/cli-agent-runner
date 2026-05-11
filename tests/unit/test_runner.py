@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+import pytest
 
 from agent_runner.config import (
     AgentConfig,
@@ -11,7 +14,7 @@ from agent_runner.config import (
     RuntimeConfig,
     VcsConfig,
 )
-from agent_runner.runner import run_one_round
+from agent_runner.runner import LockHeldError, _acquire_lock_or_raise, run_one_round
 
 
 def _make_config(
@@ -96,3 +99,31 @@ def test_given_corrupt_status_when_run_then_recovers_and_emits_event(
     assert events_files, "events.jsonl should have been written"
     events = [json.loads(line) for line in events_files[0].read_text().splitlines()]
     assert any(e["event"] == "status_recovered" for e in events)
+
+
+def test_given_lock_held_when_acquire_then_raises_lockheld(tmp_path: Path) -> None:
+    lock_path = tmp_path / "agent-runner.lock"
+    fd = _acquire_lock_or_raise(lock_path)
+    try:
+        with pytest.raises(LockHeldError):
+            _acquire_lock_or_raise(lock_path)
+    finally:
+        os.close(fd)
+
+
+def test_given_no_existing_lock_when_acquire_then_returns_fd(tmp_path: Path) -> None:
+    fd = _acquire_lock_or_raise(tmp_path / "agent-runner.lock")
+    try:
+        assert isinstance(fd, int)
+    finally:
+        os.close(fd)
+
+
+def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_agent(
+    tmp_git_repo: Path, fake_agent_script: Path,
+) -> None:
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+    cfg.prompt.file.unlink()  # break prompt — startup smoke fails
+    with pytest.raises(SystemExit) as exc:
+        run_one_round(cfg)
+    assert exc.value.code == 1
