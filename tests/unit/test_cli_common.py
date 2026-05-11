@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pytest
+
 from agent_runner.cli.common import work_dir_from_args
 
 
@@ -27,3 +29,11 @@ def test_given_relative_default_config_path_when_resolved_then_returns_cwd(
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(config=Path("./agent-runner.toml"))
     assert work_dir_from_args(args) == tmp_path.resolve()
+
+
+def test_given_config_with_wrong_filename_when_resolved_then_raises(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(config=tmp_path / "custom-name.toml")
+    with pytest.raises(ValueError, match="agent-runner.toml"):
+        work_dir_from_args(args)

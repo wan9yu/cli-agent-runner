@@ -17,11 +17,21 @@ def cfg_from_args(args) -> Config:
 
 
 def work_dir_from_args(args) -> Path:
-    """Resolve the project work_dir from --config's parent, falling back to cwd."""
+    """Resolve the project work_dir from --config's parent, falling back to cwd.
+
+    The api functions hardcode ``work_dir / "agent-runner.toml"`` for config loading,
+    so callers cannot rename the toml. Reject a mismatching filename loudly here
+    instead of letting api read the wrong file (or a missing file) silently.
+    """
     cfg = getattr(args, "config", None)
     if cfg is None:
         return Path.cwd().resolve()
-    return Path(cfg).resolve().parent
+    cfg_path = Path(cfg).resolve()
+    if cfg_path.name != "agent-runner.toml":
+        raise ValueError(
+            f"--config must point at a file named 'agent-runner.toml', got {cfg_path.name!r}"
+        )
+    return cfg_path.parent
 
 
 def emit(value: Any, *, json_mode: bool) -> None:

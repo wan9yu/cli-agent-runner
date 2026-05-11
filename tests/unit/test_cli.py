@@ -42,6 +42,20 @@ def test_given_round_command_when_invoked_then_status_file_written(
     assert status["round_num"] == 1
 
 
+def test_given_round_from_external_cwd_when_config_flag_used_then_finds_toml(
+    tmp_git_repo: Path, fake_agent_script: Path, tmp_path: Path, monkeypatch,
+) -> None:
+    """Regression guard: cli must honor --config from a cwd outside the project."""
+    toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
+    other_cwd = tmp_path / "elsewhere"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    rc = main(["--config", str(toml), "round"])
+    assert rc == 0
+    status = json.loads((tmp_git_repo / "logs" / "status.json").read_text())
+    assert status["round_num"] == 1
+
+
 def test_given_status_subcommand_when_invoked_then_returns_zero(
     tmp_git_repo: Path, fake_agent_script: Path, capsys,
 ) -> None:
