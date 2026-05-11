@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import dataclasses
+from pathlib import Path
+
+import pytest
+
+from agent_runner.api_types import (
+    Alert,
+    InitResult,
+    InstallResult,
+    ProjectState,
+    RoundView,
+    ServiceMode,
+    ServiceStatus,
+    SystemMetrics,
+    select_path,
+)
+
+
+def test_given_all_api_types_when_inspected_then_are_frozen_dataclasses() -> None:
+    classes = (
+        Alert,
+        InitResult,
+        InstallResult,
+        ProjectState,
+        RoundView,
+        ServiceStatus,
+        SystemMetrics,
+    )
+    for cls in classes:
+        assert dataclasses.is_dataclass(cls), f"{cls.__name__} not a dataclass"
+        assert cls.__dataclass_params__.frozen, f"{cls.__name__} not frozen"
+
+
+def test_given_service_mode_enum_when_inspected_then_has_three_values() -> None:
+    assert {m.value for m in ServiceMode} == {"systemd_user", "pid_file", "none"}
+
+
+def test_given_alert_when_constructed_then_has_required_fields() -> None:
+    a = Alert(
+        severity="warning",
+        detector="timeout_rate",
+        message="3/10 rounds timed out",
+        context={"rate": 0.3, "threshold": 0.2},
+        ts="2026-05-12T10:00:00.000Z",
+        auto_action="none",
+    )
+    assert a.severity == "warning"
+    assert a.auto_action == "none"
+
+
+def test_given_select_path_dot_notation_when_resolved_then_returns_subtree() -> None:
+    state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
+    assert select_path(state, "mem_available_mb") == 4000
+
+
+def test_given_select_path_with_list_index_when_resolved_then_returns_item() -> None:
+    rv = RoundView(
+        round_num=1,
+        phase=None,
+        started_at="t",
+        duration_so_far_s=None,
+        pid=None,
+        exit_code=0,
+        timed_out=False,
+        log_path=Path("/x.log"),
+        log_tail=None,
+        recent_events=[{"event": "round_start"}, {"event": "round_end"}],
+    )
+    assert select_path(rv, "recent_events.0.event") == "round_start"
+    assert select_path(rv, "recent_events.1.event") == "round_end"
+
+
+def test_given_select_path_with_missing_segment_when_resolved_then_raises_keyerror() -> None:
+    state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
+    with pytest.raises(KeyError, match="nonexistent"):
+        select_path(state, "nonexistent")
+
+
+def test_given_alert_auto_action_when_default_then_is_none_string() -> None:
+    a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
+    assert a.auto_action == "none"
