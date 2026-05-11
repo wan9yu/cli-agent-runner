@@ -1,0 +1,18 @@
+# Internal working notes (specs, plans, drafts) — not for public repo.
+docs/internal/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
