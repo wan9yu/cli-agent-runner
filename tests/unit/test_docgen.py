@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent_runner._docgen import render_defenses_table, replace_block
@@ -54,3 +56,51 @@ def test_given_render_defenses_table_when_called_then_paths_render_relative() ->
     # No absolute paths should leak — guarded_by is rendered as repo-relative.
     assert "/Users/" not in md
     assert "tests/unit/test_agent_runtime.py" in md  # one known guarded_by
+
+
+def test_given_docs_dir_with_marker_when_render_then_writes_table(
+    tmp_path: Path,
+) -> None:
+    from agent_runner._docgen import render
+
+    arch = tmp_path / "architecture.md"
+    arch.write_text(
+        "intro\n"
+        "<!-- gen:defenses-table -->\n"
+        "PLACEHOLDER\n"
+        "<!-- /gen:defenses-table -->\n"
+        "outro\n"
+    )
+    out = render(docs_dir=tmp_path, write=True)
+    assert arch in out
+    rewritten = arch.read_text()
+    assert "PLACEHOLDER" not in rewritten
+    assert "round_timeout_s" in rewritten
+    assert "<!-- gen:defenses-table -->" in rewritten
+    assert "<!-- /gen:defenses-table -->" in rewritten
+
+
+def test_given_render_with_write_false_when_called_then_does_not_touch_disk(
+    tmp_path: Path,
+) -> None:
+    from agent_runner._docgen import render
+
+    arch = tmp_path / "architecture.md"
+    original = (
+        "<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\n"
+    )
+    arch.write_text(original)
+    out = render(docs_dir=tmp_path, write=False)
+    assert arch.read_text() == original  # disk unchanged
+    assert "round_timeout_s" in out[arch]  # but rendered text returned
+
+
+def test_given_unknown_gen_name_when_render_then_raises(tmp_path: Path) -> None:
+    from agent_runner._docgen import render
+
+    arch = tmp_path / "x.md"
+    arch.write_text(
+        "<!-- gen:does-not-exist -->\nfoo\n<!-- /gen:does-not-exist -->\n"
+    )
+    with pytest.raises(ValueError, match="does-not-exist"):
+        render(docs_dir=tmp_path, write=False)

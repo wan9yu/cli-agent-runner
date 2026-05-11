@@ -65,3 +65,45 @@ def render_defenses_table() -> str:
         guarded = str(d.guarded_by) if d.guarded_by is not None else "—"
         lines.append(f"| `{d.name}` | {codifies} | `{guarded}` |")
     return "\n".join(lines)
+
+
+RENDERERS: dict[str, object] = {
+    "defenses-table": render_defenses_table,
+}
+
+_GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")
+
+
+def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
+    """Render every ``<!-- gen:NAME -->`` block in ``docs_dir/*.md``.
+
+    Returns a {path: rendered_text} mapping. When ``write=True`` also writes
+    the rewritten text back to each path.
+
+    Raises ``ValueError`` when a marker references an unknown renderer name.
+    """
+    out: dict[Path, str] = {}
+    for md in sorted(docs_dir.glob("*.md")):
+        text = md.read_text(encoding="utf-8")
+        for match in _GEN_OPEN.finditer(text):
+            name = match.group(1)
+            if name not in RENDERERS:
+                raise ValueError(
+                    f"{md.name}: unknown gen marker {name!r} — "
+                    f"valid names: {sorted(RENDERERS)}"
+                )
+            text = replace_block(text, name, RENDERERS[name]())
+        out[md] = text
+        if write:
+            md.write_text(text, encoding="utf-8")
+    return out
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parent.parent
+    render(docs_dir=repo_root / "docs")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
