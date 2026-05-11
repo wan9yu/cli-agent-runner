@@ -1,0 +1,15 @@
+[Unit]
+Description=Agent Runner Supervisor
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/your/project
+ExecStart=/path/to/.venv/bin/agent-runner --config /path/to/agent-runner.toml round
+Restart=always
+RestartSec=3
+StartLimitBurst=0
+
+[Install]
+WantedBy=multi-user.target
