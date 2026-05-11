@@ -7,7 +7,9 @@ renderer registry so the substitution rule is testable in isolation.
 
 from __future__ import annotations
 
+import dataclasses
 import re
+import typing
 from pathlib import Path
 
 from agent_runner.config import (
@@ -22,6 +24,47 @@ from agent_runner.events import KNOWN_EVENT_KINDS
 from agent_runner.monitor import KNOWN_ALERT_KINDS
 
 _AUTO_STOP_DETECTORS = frozenset({"oauth_fail", "disk_critical"})
+
+_SECTIONS = [
+    ("agent", AgentConfig),
+    ("runtime", RuntimeConfig),
+    ("prompt", PromptConfig),
+    ("vcs", VcsConfig),
+]
+
+
+def _type_label(t: typing.Any) -> str:
+    # dataclasses.fields exposes `.type` as a string (PEP 563), so we render
+    # the raw annotation. Strip ``Path`` / ``Path | None`` wrappers cosmetically.
+    s = str(t).replace("pathlib.", "")
+    return s
+
+
+def _default_label(field: dataclasses.Field) -> str:
+    if field.default is not dataclasses.MISSING:
+        return repr(field.default)
+    if field.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+        try:
+            return repr(field.default_factory())
+        except Exception:
+            return "factory"
+    return "—"
+
+
+def render_config_schema_table() -> str:
+    """Markdown sub-sections per Config dataclass with field/type/default."""
+    parts: list[str] = []
+    for name, dc in _SECTIONS:
+        parts.append(f"### `[{name}]`")
+        parts.append("")
+        parts.append("| Field | Type | Default |")
+        parts.append("|---|---|---|")
+        for f in dataclasses.fields(dc):
+            parts.append(
+                f"| `{f.name}` | `{_type_label(f.type)}` | {_default_label(f)} |"
+            )
+        parts.append("")
+    return "\n".join(parts).rstrip()
 
 
 def replace_block(text: str, name: str, new_content: str) -> str:
@@ -95,6 +138,7 @@ RENDERERS: dict[str, object] = {
     "alert-kinds": render_alert_kinds_list,
     "detector-list": render_detector_list,
     "event-kinds": render_event_kinds_list,
+    "config-schema": render_config_schema_table,
 }
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")

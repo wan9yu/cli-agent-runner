@@ -138,3 +138,21 @@ def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() ->
     assert len(bullets) >= 12
     assert any("round_start" in line for line in bullets)
     assert any("monitor_alert_emitted" in line for line in bullets)
+
+
+def test_given_render_config_schema_table_when_called_then_lists_sections() -> None:
+    from agent_runner._docgen import render_config_schema_table
+
+    md = render_config_schema_table()
+    # Each section name appears as a sub-heading
+    assert "### `[agent]`" in md
+    assert "### `[runtime]`" in md
+    assert "### `[prompt]`" in md
+    assert "### `[vcs]`" in md
+    # Spot-check fields
+    assert "command" in md
+    assert "round_timeout_s" in md
+    assert "stash_idempotency_s" in md
+    # Defaults are shown for fields that have them
+    assert "1800" in md
+    assert "stash" in md  # vcs.orphan_action default
