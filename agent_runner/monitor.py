@@ -10,11 +10,21 @@ live further down (Tasks 3.2 / 3.3).
 
 from __future__ import annotations
 
+import json
 import re
-from datetime import datetime
-from typing import Any
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Protocol
 
-from agent_runner.api_types import Alert
+from agent_runner.api_types import (
+    Alert,
+    ProjectState,
+    ServiceMode,
+    ServiceStatus,
+    SystemMetrics,
+)
 from agent_runner.events import now_iso_ms
 
 KNOWN_ALERT_KINDS: frozenset[str] = frozenset({
@@ -232,3 +242,139 @@ def detect_network_fail(events: list[dict[str, Any]], log_tails: dict[int, str],
         {"matches": matches, "window": total, "threshold": threshold,
          "hint": "Check upstream Anthropic status or local DNS / VPN"},
     )
+
+
+# ---------------------------------------------------------------------------
+# State-tree assembly (Task 3.2)
+# ---------------------------------------------------------------------------
+
+
+class StateSource(Protocol):
+    """Local or remote source — returns paths to read."""
+
+    def events_files(self) -> list[Path]: ...
+    def metrics_files(self) -> list[Path]: ...
+    def rounds_dir(self) -> Path: ...
+    def status_path(self) -> Path: ...
+    def orphan_path(self) -> Path: ...
+
+
+@dataclass(frozen=True)
+class LocalSource:
+    log_dir: Path
+
+    def events_files(self) -> list[Path]:
+        return sorted(self.log_dir.glob("events-*.jsonl"))
+
+    def metrics_files(self) -> list[Path]:
+        return sorted(self.log_dir.glob("metrics-*.jsonl"))
+
+    def rounds_dir(self) -> Path:
+        return self.log_dir / "rounds"
+
+    def status_path(self) -> Path:
+        return self.log_dir / "status.json"
+
+    def orphan_path(self) -> Path:
+        return self.log_dir / "orphan-state.json"
+
+
+def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
+def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = 50) -> dict[int, str]:
+    tails: dict[int, str] = {}
+    if not rounds_dir.is_dir():
+        return tails
+    for f in rounds_dir.glob("R*-*.log"):
+        try:
+            num = int(f.name.split("-", 1)[0][1:])
+        except (ValueError, IndexError):
+            continue
+        try:
+            lines = f.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            continue
+        tails[num] = "\n".join(lines[-tail_lines:])
+    return tails
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    return metrics[-1] if metrics else {}
+
+
+def assemble_project_state(source: StateSource, *, project: str) -> ProjectState:
+    events = parse_events_from_jsonl_files(source.events_files())
+    metrics = parse_events_from_jsonl_files(source.metrics_files())
+    status = _read_json(source.status_path()) or {}
+    orphan = _read_json(source.orphan_path())
+    latest = _latest_metric_dict(metrics)
+    system = SystemMetrics(
+        mem_total_mb=int(latest.get("mem_total_mb", 0)),
+        mem_available_mb=int(latest.get("mem_available_mb", 0)),
+        disk_used_pct=float(latest.get("disk_used_pct", 0.0)),
+        disk_free_gb=float(latest.get("disk_free_gb", 0.0)),
+        load_1m=latest.get("load_1m"),
+        cpu_pct=latest.get("cpu_pct"),
+    )
+    # Phase 2: monitor doesn't compute current_round / recent_rounds —
+    # those come from the api.peek path which has more context. Monitor
+    # focuses on aggregate detectors over events.
+    _ = events  # kept for future Phase 2 expansions
+    return ProjectState(
+        project=project,
+        status=status,
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=orphan,
+        system=system,
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+
+
+def run_all_detectors(
+    *,
+    events: list[dict[str, Any]],
+    metrics: list[dict[str, Any]],
+    log_tails: dict[int, str],
+    round_timeout_s: int = 1800,
+    now: datetime | None = None,
+) -> list[Alert]:
+    """Run all 9 detectors; returns alerts (empty = healthy)."""
+    if now is None:
+        now = datetime.now(UTC)
+    candidates = [
+        detect_timeout_rate(events),
+        detect_hung(events, now=now, round_timeout_s=round_timeout_s),
+        detect_orphan_chain(events),
+        detect_disk_warning(metrics),
+        detect_disk_critical(metrics),
+        detect_mem_pressure(metrics),
+        detect_smoke_fail_rate(events),
+        detect_oauth_fail(events, log_tails),
+        detect_network_fail(events, log_tails),
+    ]
+    return [a for a in candidates if a is not None]
