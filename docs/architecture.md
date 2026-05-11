@@ -4,18 +4,16 @@
 
 ```
 ┌──────────────────────────────────────────┐
-│ Layer 4: The Critic (Phase 3, reserved)  │  LLM/invariant feedback loop
+│ Layer 3: The Witness                     │  agent-runner monitor
 ├──────────────────────────────────────────┤
-│ Layer 3: The Witness (Phase 2)           │  agent-runner monitor
+│ Layer 2: The Loop                        │  agent-runner serve (≤60 LOC)
 ├──────────────────────────────────────────┤
-│ Layer 2: The Loop (Phase 1+2)            │  agent-runner serve (≤60 LOC)
-├──────────────────────────────────────────┤
-│ Layer 1: The Round (Phase 1)             │  agent-runner round
+│ Layer 1: The Round                       │  agent-runner round
 └──────────────────────────────────────────┘
 ```
 
 Each layer can run without the layer above. The Witness can watch a remote
-Loop. Phase 3 Critic will analyse multiple Loops cross-project.
+Loop.
 
 ## Three-view symmetry (operator surface)
 
@@ -39,11 +37,11 @@ Each entry carries:
 - `guarded_by` — the invariant test that prevents regression
 - `current_state` — `active` | `degraded` | `off`
 
-The catalog is the **single source of truth**. `peek`, `status`, the start
-banner, and (Phase 3) the LLM Critic all read it. Adding a new defense = one
-entry here + automatic surfacing everywhere.
+The catalog is the **single source of truth**. `peek`, `status`, and the
+start banner all read it. Adding a new defense = one entry here + automatic
+surfacing everywhere.
 
-## Phase 1 defense roster
+## Defense roster
 
 <!-- gen:defenses-table -->
 | Defense | Codifies | Guarded by |
@@ -56,7 +54,7 @@ entry here + automatic surfacing everywhere.
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
 | `critical_envs_injection` | DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL stop claude self-updates mid-loop | `—` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn | `—` |
-| `flock_concurrency` | Phase 1 design — prevent concurrent supervisors corrupting state | `—` |
+| `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `—` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
@@ -104,18 +102,8 @@ API quota / writing to a near-full disk).
 - `status_recovered`
 <!-- /gen:event-kinds -->
 
-## Phase 3 hooks (reserved, not implemented)
-
-- `[llm]` config block in `agent-runner.toml`
-- `agent_runner.critic` — `Critic` and `Finding` Protocol stubs
-
-When Phase 3 lands, concrete Critics will analyse `ProjectState` snapshots and
-emit `Finding` objects. The current architecture leaves the seam open without
-committing to an implementation.
-
 ## 中文摘要
 
-四层架构：Round（一轮 agent）/ Loop（serve 薄壳）/ Witness（monitor）/ Critic（Phase 3 反思层）。
+三层架构：Round（一轮 agent）/ Loop（serve 薄壳）/ Witness（monitor）。
 三视角对称：peek（快照）/ watch（快照循环）/ monitor（异常检测），共用下钻参数。
-防御以结构化目录形式存在（11 条），每条防御自描述「防的是哪条 argus 教训、被哪个 invariant test 守、当前状态」。
-Phase 3 占位：`[llm]` 配置段 + `Critic` Protocol，留接口不实现。
+防御以结构化目录形式存在（11 条），每条防御自描述「防的是哪条历史教训、被哪个 invariant test 守、当前状态」。

@@ -56,7 +56,7 @@ oauth_fail_threshold = 2     # number of last-10 rounds matching auth pattern be
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables
 all auto-stop behaviour and reduces monitor to alert-only.
 
-## `[llm]` (Phase 3 — reserved, not yet used)
+## `[llm]` (reserved, not yet used)
 
 ```toml
 # [llm]
@@ -67,12 +67,11 @@ all auto-stop behaviour and reduces monitor to alert-only.
 # enabled_for = []
 ```
 
-Phase 2 leaves the `[llm]` section commented out as a forward-compatibility
-hook. Phase 3 will introduce LLM-augmented commands; current builds ignore the
-section if you uncomment it.
+The `[llm]` section is a forward-compatibility placeholder; current builds
+ignore it if you uncomment.
 
 ## 中文摘要
 
 主要小节：`[agent]` 命令模板、`[runtime]` 工作目录与日志目录、`[prompt]` 提示词位置、
 `[phases]` 可选阶段轮转、`[vcs]` stash 控制、`[monitor]` 可选自动停服策略、
-`[llm]` 留给 Phase 3 的占位段。
+`[llm]` 占位段（暂不解析）。

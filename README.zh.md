@@ -151,11 +151,6 @@ pip install -e ".[dev]"
 
 只支持 POSIX（Linux / macOS）。Python 3.11+。x86_64 与 aarch64 都跑过。
 
-## 项目状态
-
-Phase 2（运维界面）已发。Phase 3（LLM Critic）留了接口：`[llm]` 配置段 +
-`agent_runner.critic` Protocol stubs，实现待定。
-
 ## License
 
 [Apache License 2.0](LICENSE).

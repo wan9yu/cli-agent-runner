@@ -93,12 +93,6 @@ agent-runner monitor --json | jq -c   # pipe to downstream consumers
 - [`docs/runbook.md`](docs/runbook.md) — operator troubleshooting (OAuth, disk, orphan)
 - [`docs/architecture.md`](docs/architecture.md) — 3-layer model, defenses-as-data
 
-## Status
-
-Phase 2 (operator surface) shipped. Phase 3 (LLM-augmented Critic) reserved —
-`[llm]` config block and `agent_runner.critic` Protocol stubs are in place,
-implementation TBD.
-
 ## Development
 
 ```bash

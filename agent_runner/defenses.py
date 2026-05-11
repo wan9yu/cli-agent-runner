@@ -90,7 +90,7 @@ def catalog(cfg: Config) -> list[Defense]:
         Defense(
             name="flock_concurrency",
             value="agent-runner.lock",
-            codifies="Phase 1 design — prevent concurrent supervisors corrupting state",
+            codifies="Architectural — prevent concurrent supervisors corrupting state",
             guarded_by=None,
             current_state="active",
         ),

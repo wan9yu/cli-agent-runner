@@ -44,7 +44,7 @@ Generate and install systemd user unit(s):
 
 - Always: `~/.config/systemd/user/agent-runner@<project>.service`
 - With `--monitor`: also `agent-runner-monitor@<project>.service`
-- `--system`: NotImplementedError in Phase 2 (TODO Phase 3+)
+- `--system`: not yet implemented (raises `NotImplementedError`)
 
 After writing, runs `systemctl --user daemon-reload`, `enable`, `start`.
 
