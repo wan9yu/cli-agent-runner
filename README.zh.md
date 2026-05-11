@@ -34,15 +34,19 @@ supervisor 重启 —— 这是核心模式。中间穿插 11 条防御，避开
 - `serve` 包住 round 形成长服务
 - `monitor` 可以从本机也可以远程通过 ssh 观测一台 pi 上的 supervisor
 
+## 安装
+
+```bash
+pip install cli-agent-runner
+```
+
+CLI 命令仍是 `agent-runner`（PyPI 包名加 `cli-` 前缀只是为了规避命名冲突，
+导入名 `agent_runner` 和命令名都不变）。
+
 ## 上手
 
 ```bash
-git clone https://github.com/wan9yu/agent-runner.git
-cd agent-runner
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# 在你的项目目录里：
+cd your-project
 agent-runner init                 # 生成 agent-runner.toml + prompts/main.md
 $EDITOR agent-runner.toml         # 把 agent.command 指向你的 CLI
 agent-runner install --monitor    # 装 systemd user unit（serve + monitor）
@@ -134,6 +138,11 @@ agent-runner monitor --json | jq -c   # 输出 JSON 给下游 consumer
 ## 开发
 
 ```bash
+git clone https://github.com/wan9yu/agent-runner.git
+cd agent-runner
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
 ./build.sh check    # lint + 单元 + 集成 + literate + docs 一致性，本地 CI 全套
 ./build.sh test     # 仅 230+ 单元 + 集成测试
 ./build.sh literate # 仅跑 quickstart.md 的可执行块

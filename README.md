@@ -19,15 +19,19 @@ OAuth burn loops, full disks, runaway memory.
 └──────────────────────────────────────────┘
 ```
 
+## Install
+
+```bash
+pip install cli-agent-runner
+```
+
+The installed CLI command is `agent-runner` (the PyPI distribution name is
+prefixed for namespace disambiguation; the import name and command are not).
+
 ## Quick start
 
 ```bash
-git clone https://github.com/wan9yu/agent-runner.git
-cd agent-runner
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# In your project directory:
+cd your-project
 agent-runner init                 # scaffold agent-runner.toml + prompts/main.md
 $EDITOR agent-runner.toml         # point agent.command at your CLI
 agent-runner install --monitor    # systemd user units for serve + monitor
@@ -98,9 +102,14 @@ implementation TBD.
 ## Development
 
 ```bash
-pytest -q --ignore=tests/e2e        # 207 unit + integration tests
-AGENT_RUNNER_E2E_PI=1 pytest tests/e2e/   # opt-in pi e2e (needs ssh alias `pi`)
-ruff check . && ruff format --check .
+git clone https://github.com/wan9yu/agent-runner.git
+cd agent-runner
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+./build.sh check                          # full local-CI sweep
+./build.sh test                           # unit + integration only
+AGENT_RUNNER_E2E_PI=1 ./build.sh e2e      # opt-in pi e2e (needs ssh alias `pi`)
 ```
 
 Some `docs/*.md` blocks are generated from code — `./build.sh docs` rewrites
