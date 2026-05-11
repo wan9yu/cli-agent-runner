@@ -1,7 +1,10 @@
 """Git operations — ONLY module that calls git CLI.
 
 Stash safety rules (R820 + §9 IMMUTABLE):
-- All stash refs locked by SHA, not stash@{N} index (race-safe under concurrent stash).
+- API is SHA-locked: callers pass and store SHA only, never stash@{N} index.
+  Internal drop/pop translate SHA -> current selector immediately before each
+  git call. Safe against caller-side index drift; single-supervisor-per-repo
+  design means external concurrent ``git stash push`` is not a defended scenario.
 - "Auto-tool change vs human change" detection uses set-based diff vs HEAD,
   not unified-diff +/-line parsing (R2110 lesson).
 """
