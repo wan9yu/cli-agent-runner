@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.agent_runtime import RunResult, run
+from agent_runner.agent_runtime import (
+    CRITICAL_ENV_DEFAULTS,
+    RunResult,
+    install_sigterm_reaper,
+    merge_critical_envs,
+    run,
+)
 
 
 def _bash_script(tmp_path: Path, body: str) -> Path:
@@ -143,3 +149,22 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         with pytest.raises(ProcessLookupError):
             os.kill(child_pid, 0)
         pid_file.unlink(missing_ok=True)
+
+
+def test_given_critical_env_defaults_when_inspected_then_contains_disable_autoupdater_and_effort() -> None:  # noqa: E501
+    assert CRITICAL_ENV_DEFAULTS["DISABLE_AUTOUPDATER"] == "1"
+    assert CRITICAL_ENV_DEFAULTS["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
+
+
+def test_given_user_env_when_merged_with_critical_then_critical_wins() -> None:
+    merged = merge_critical_envs({"DISABLE_AUTOUPDATER": "0", "FOO": "bar"})
+    assert merged["DISABLE_AUTOUPDATER"] == "1"  # critical override
+    assert merged["FOO"] == "bar"  # user env preserved
+    assert merged["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
+
+
+def test_given_install_sigterm_reaper_when_called_then_returns_previous_handler() -> None:
+    import signal as _sig
+    prev = install_sigterm_reaper(lambda: None)
+    assert prev is not None
+    _sig.signal(_sig.SIGTERM, prev)  # restore

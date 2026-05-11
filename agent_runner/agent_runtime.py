@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,3 +97,31 @@ def run(
             time.sleep(0.2)
     finally:
         log_file.close()
+
+
+CRITICAL_ENV_DEFAULTS: dict[str, str] = {
+    "DISABLE_AUTOUPDATER": "1",          # do not let claude self-update mid-loop
+    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh", # full effort, not default
+}
+
+
+def merge_critical_envs(user_env: dict[str, str]) -> dict[str, str]:
+    """Merge user env with CRITICAL_ENV_DEFAULTS — critical always wins."""
+    merged = dict(user_env)
+    merged.update(CRITICAL_ENV_DEFAULTS)
+    return merged
+
+
+def install_sigterm_reaper(reaper: Callable[[], None]) -> object:
+    """Install a SIGTERM handler that calls ``reaper()`` first.
+
+    R725 defense: when supervisor receives SIGTERM (e.g. systemctl stop, manual
+    kill), bash wrapper would otherwise respawn fresh runner while old claude
+    keeps running → two claudes race on the same git tree, second commit can
+    swallow first commit's chat-room entry. Reaper terminates pgroup first.
+
+    Returns the previous SIGTERM handler so caller can restore it.
+    """
+    def _handler(_signum: int, _frame: object) -> None:
+        reaper()
+    return signal.signal(signal.SIGTERM, _handler)
