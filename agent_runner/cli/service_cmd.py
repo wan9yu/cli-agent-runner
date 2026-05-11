@@ -1,5 +1,54 @@
-# agent_runner/cli/service_cmd.py — STUB until Task 5.4
+"""service subcommands — start / stop / kill / cancel / restart / status."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from agent_runner import api
+from agent_runner.cli.common import emit
+
+
 def add_parser(sub, parent) -> None:
-    for verb in ("start", "stop", "kill", "cancel", "restart", "status"):
-        p = sub.add_parser(verb, parents=[parent], help=f"{verb} (stub)")
-        p.set_defaults(func=lambda _a, v=verb: print(f"{v}: not implemented yet") or 1)
+    for verb, fn, help_text in (
+        ("start",   cmd_start,   "Start the service"),
+        ("stop",    cmd_stop,    "Graceful stop (waits for current round)"),
+        ("kill",    cmd_kill,    "Force terminate (5s grace then SIGKILL)"),
+        ("cancel",  cmd_cancel,  "Best-effort: SIGINT to claude (commit-and-exit hint)"),
+        ("restart", cmd_restart, "stop + start (use --force for kill semantics)"),
+        ("status",  cmd_status,  "Show current service state"),
+    ):
+        p = sub.add_parser(verb, parents=[parent], help=help_text)
+        if verb == "restart":
+            p.add_argument("--force", action="store_true", help="Use kill instead of stop")
+        p.set_defaults(func=fn)
+
+
+def cmd_start(args) -> int:
+    emit(api.start(Path.cwd()), json_mode=getattr(args, "json", False))
+    return 0
+
+
+def cmd_stop(args) -> int:
+    emit(api.stop(Path.cwd()), json_mode=getattr(args, "json", False))
+    return 0
+
+
+def cmd_kill(args) -> int:
+    emit(api.kill(Path.cwd()), json_mode=getattr(args, "json", False))
+    return 0
+
+
+def cmd_cancel(args) -> int:
+    api.cancel(Path.cwd())
+    return 0
+
+
+def cmd_restart(args) -> int:
+    emit(api.restart(Path.cwd(), force=args.force),
+         json_mode=getattr(args, "json", False))
+    return 0
+
+
+def cmd_status(args) -> int:
+    emit(api.status(Path.cwd()), json_mode=getattr(args, "json", False))
+    return 0
