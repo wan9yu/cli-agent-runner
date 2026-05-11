@@ -25,6 +25,11 @@ def _seed_logs(work_dir: Path) -> None:
     (log_dir / "status.json").write_text(
         json.dumps({"round_num": 1, "running": False, "last_exit_code": 0})
     )
+    rounds = log_dir / "rounds"
+    rounds.mkdir(parents=True, exist_ok=True)
+    (rounds / "R1-2026-05-12.log").write_text(
+        "line-1\nline-2\nline-3-with-error\nline-4\nline-5\n"
+    )
 
 
 def test_given_seeded_logs_when_api_peek_then_returns_project_state(
@@ -67,6 +72,41 @@ def test_given_no_alerts_when_poll_once_then_returns_empty(
     _seed_logs(tmp_git_repo)
     alerts = api._poll_once(tmp_git_repo, host=None)
     assert alerts == []
+
+
+def test_given_peek_with_round_latest_when_called_then_populates_current_round(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    state = api.peek(tmp_git_repo, round="latest")
+    assert state.current_round is not None
+    assert state.current_round.round_num == 1
+    assert state.current_round.exit_code == 0
+
+
+def test_given_peek_with_log_flag_when_called_then_populates_log_tail(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    state = api.peek(tmp_git_repo, round="latest", log=True)
+    assert state.current_round is not None
+    assert state.current_round.log_tail is not None
+    assert "line-3-with-error" in state.current_round.log_tail
+
+
+def test_given_peek_with_events_when_called_then_populates_recent_events(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    state = api.peek(tmp_git_repo, events=2)
+    assert len(state.recent_events) == 2
+    assert state.recent_events[-1]["event"] == "round_end"
 
 
 def test_given_seeded_disk_critical_when_poll_once_then_alert_present(

@@ -233,40 +233,40 @@ def _log_dir_for_project(project: str | Path) -> Path:
 from agent_runner import defenses, monitor  # noqa: E402
 
 
-def peek(project: str | Path | None = None, *, round: int | None = None,
+def peek(project: str | Path | None = None, *,
+         round: int | str | None = None, log: bool = False,
+         events: int | None = None,
          select: str | None = None) -> ProjectState | Any:
     """Build a ProjectState snapshot. With select, return that subtree."""
+    from agent_runner import round_view
     work_dir = project if isinstance(project, Path) else Path.cwd()
-    cfg_path = work_dir / "agent-runner.toml"
-    cfg = load_config(cfg_path)
+    cfg = load_config(work_dir / "agent-runner.toml")
     log_dir = cfg.runtime.log_dir
-    pname = _project_name(work_dir)
-
     src = monitor.LocalSource(log_dir=log_dir)
-    base_state = monitor.assemble_project_state(src, project=pname)
+    base_state = monitor.assemble_project_state(src, project=_project_name(work_dir))
+    parsed_events = monitor.parse_events_from_jsonl_files(src.events_files())
+    round_num = round_view.resolve_round_arg(round, log_dir)
+    current = (round_view.build_round_view(log_dir, round_num, parsed_events, want_log=log)
+               if round_num is not None else base_state.current_round)
+    recent = parsed_events[-events:] if events else []
 
     state = ProjectState(
         project=base_state.project,
         status=base_state.status,
         defenses=[
-            {
-                "name": d.name,
-                "value": d.value,
-                "codifies": d.codifies,
-                "guarded_by": str(d.guarded_by) if d.guarded_by else None,
-                "current_state": d.current_state,
-            }
+            {"name": d.name, "value": d.value, "codifies": d.codifies,
+             "guarded_by": str(d.guarded_by) if d.guarded_by else None,
+             "current_state": d.current_state}
             for d in defenses.catalog(cfg)
         ],
-        current_round=base_state.current_round,
+        current_round=current,
         recent_rounds=base_state.recent_rounds,
         orphan=base_state.orphan,
         system=base_state.system,
         service=status(project if project is not None else work_dir),
+        recent_events=recent,
     )
-    if select is None:
-        return state
-    return select_path(state, select)
+    return state if select is None else select_path(state, select)
 
 
 def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
