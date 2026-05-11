@@ -44,7 +44,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
 [tool.ruff.lint.per-file-ignores]
 "agent_runner/agent_runtime.py" = ["TID251"]
 "agent_runner/vcs_state.py" = ["TID251"]
-"tests/**/*.py" = ["TID251"]
+"tests/**/*.py" = ["TID251", "E501", "F401"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
