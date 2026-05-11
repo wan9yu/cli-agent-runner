@@ -18,6 +18,7 @@ from agent_runner.config import (
     VcsConfig,
 )
 from agent_runner.defenses import catalog
+from agent_runner.events import KNOWN_EVENT_KINDS
 from agent_runner.monitor import KNOWN_ALERT_KINDS
 
 _AUTO_STOP_DETECTORS = frozenset({"oauth_fail", "disk_critical"})
@@ -84,10 +85,16 @@ def render_detector_list() -> str:
     return "\n".join(lines)
 
 
+def render_event_kinds_list() -> str:
+    """Flat bullet list of all known event kinds, alphabetised."""
+    return "\n".join(f"- `{k}`" for k in sorted(KNOWN_EVENT_KINDS))
+
+
 RENDERERS: dict[str, object] = {
     "defenses-table": render_defenses_table,
     "alert-kinds": render_alert_kinds_list,
     "detector-list": render_detector_list,
+    "event-kinds": render_event_kinds_list,
 }
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")

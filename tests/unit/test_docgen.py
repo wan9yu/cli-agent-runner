@@ -127,3 +127,14 @@ def test_given_render_detector_list_when_called_then_marks_auto_stop_kinds() -> 
     assert "**auto-stop**" in md
     # Notify-only kinds get no flag
     assert "timeout_rate" in md
+
+
+def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() -> None:
+    from agent_runner._docgen import render_event_kinds_list
+
+    md = render_event_kinds_list()
+    bullets = [line for line in md.splitlines() if line.startswith("- ")]
+    # 14 known events (including 2 Phase 2 monitor events)
+    assert len(bullets) >= 12
+    assert any("round_start" in line for line in bullets)
+    assert any("monitor_alert_emitted" in line for line in bullets)
