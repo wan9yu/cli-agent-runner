@@ -37,23 +37,25 @@ def _string_literals_in(file: Path) -> list[str]:
     return out
 
 
-def test_given_codebase_when_scanned_then_only_agent_runtime_and_vcs_state_import_subprocess() -> (
-    None
-):
+def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subprocess() -> None:
     offenders: list[str] = []
     for f in PKG.glob("*.py"):
-        if f.name in ("agent_runtime.py", "vcs_state.py", "__init__.py"):
+        if f.name in ("agent_runtime.py", "vcs_state.py", "scaffold.py", "__init__.py"):
             continue
         if "subprocess" in _imports_in(f):
             offenders.append(f.name)
     assert offenders == [], f"subprocess imported in non-sanctioned modules: {offenders}"
 
 
-def test_given_codebase_when_scanned_then_only_vcs_state_calls_git_cli() -> None:
-    """Look for any list literal whose first element is the string 'git' outside vcs_state."""
+def test_given_codebase_when_scanned_then_only_sanctioned_modules_call_git_cli() -> None:
+    """Look for any list literal whose first element is the string 'git' outside sanctioned modules.
+
+    vcs_state.py is the primary git CLI caller. scaffold.py is permitted a single `git add` +
+    `git commit` sequence for the optional initial commit during `agent-runner init`.
+    """
     offenders: list[tuple[str, int]] = []
     for f in PKG.glob("*.py"):
-        if f.name in ("vcs_state.py", "__init__.py"):
+        if f.name in ("vcs_state.py", "scaffold.py", "__init__.py"):
             continue
         tree = ast.parse(f.read_text())
         for node in ast.walk(tree):
@@ -61,7 +63,7 @@ def test_given_codebase_when_scanned_then_only_vcs_state_calls_git_cli() -> None
                 first = node.elts[0]
                 if isinstance(first, ast.Constant) and first.value == "git":
                     offenders.append((f.name, node.lineno))
-    assert offenders == [], f"git CLI call outside vcs_state.py: {offenders}"
+    assert offenders == [], f"git CLI call outside sanctioned modules: {offenders}"
 
 
 def test_given_runner_module_when_scanned_then_does_not_read_events_jsonl() -> None:
