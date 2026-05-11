@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import sys
 import time
 from pathlib import Path
 
@@ -39,7 +39,7 @@ def cmd_peek(args) -> int:
 
 def cmd_watch(args) -> int:
     while True:
-        os.system("clear")  # noqa: S605 — terminal control, not user input
+        sys.stdout.write("\x1b[2J\x1b[H")
         rc = cmd_peek(args)
         if rc != 0:
             return rc
