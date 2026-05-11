@@ -24,6 +24,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     select_path,
 )
+from agent_runner import lifecycle
 from agent_runner.config import load_config
 from agent_runner.lifecycle import (
     PIDFile,
@@ -57,10 +58,6 @@ def _log_dir(work_dir: Path) -> Path:
     return Path.home() / ".agent-runner" / _project_name(work_dir) / "logs"
 
 
-def _user_systemd_dir() -> Path:
-    return Path.home() / ".config" / "systemd" / "user"
-
-
 def _venv_bin() -> Path:
     """Where this Python interpreter lives — for ExecStart."""
     return Path(sys.executable).parent
@@ -90,7 +87,7 @@ def install(work_dir: Path | None = None, *, system: bool = False,
     cfg = load_config(cfg_path)
     project = _project_name(work_dir)
 
-    units_dir = _user_systemd_dir()
+    units_dir = lifecycle._user_systemd_dir()
     units_dir.mkdir(parents=True, exist_ok=True)
 
     serve_path = units_dir / serve_unit_filename(project)
@@ -116,7 +113,7 @@ def uninstall(work_dir: Path | None = None) -> bool:
     if work_dir is None:
         work_dir = Path.cwd()
     project = _project_name(work_dir)
-    units_dir = _user_systemd_dir()
+    units_dir = lifecycle._user_systemd_dir()
     serve = units_dir / serve_unit_filename(project)
     monitor = units_dir / monitor_unit_filename(project)
     for p in (serve, monitor):
@@ -205,7 +202,7 @@ def status(project: str | Path) -> ServiceStatus:
         pid = PIDFile(log_dir / "serve.pid").read()
         return ServiceStatus(mode=mode, active=pid is not None and pid_alive(pid), pid=pid)
     if mode == ServiceMode.SYSTEMD_USER:
-        unit = _user_systemd_dir() / serve_unit_filename(pname)
+        unit = lifecycle._user_systemd_dir() / serve_unit_filename(pname)
         return ServiceStatus(mode=mode, active=True, unit_file=unit)
     return ServiceStatus(mode=ServiceMode.NONE, active=False)
 

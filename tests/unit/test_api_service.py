@@ -104,7 +104,7 @@ def test_given_install_with_no_systemctl_when_called_then_returns_install_result
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.api._user_systemd_dir",
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir",
                         lambda: tmp_git_repo / "fake-systemd")
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
     result = api.install(tmp_git_repo, system=False, with_monitor=False)
@@ -116,7 +116,7 @@ def test_given_install_with_monitor_when_called_then_writes_two_units(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.api._user_systemd_dir",
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir",
                         lambda: tmp_git_repo / "fake-systemd")
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
@@ -130,7 +130,7 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     fake_systemd = tmp_git_repo / "fake-systemd"
-    monkeypatch.setattr("agent_runner.api._user_systemd_dir", lambda: fake_systemd)
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
     api.install(tmp_git_repo, system=False, with_monitor=True)
     api.uninstall(tmp_git_repo)
