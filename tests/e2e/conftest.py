@@ -18,13 +18,13 @@ PI_HOST = "pi"
 E2E_FLAG = "AGENT_RUNNER_E2E_PI"
 
 
-def _ssh(cmd: str, check: bool = True) -> subprocess.CompletedProcess:
+def _ssh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["ssh", PI_HOST, cmd],
         capture_output=True,
         text=True,
         check=check,
-        timeout=120,
+        timeout=timeout,
     )
 
 
@@ -104,7 +104,8 @@ def pi_install_agent_runner(pi_workdir: str) -> str:
     tar_basename = tar.rsplit("/", 1)[-1]
     _ssh(
         f"cd {pi_pkg_dir} && tar xzf {tar_basename} && "
-        "python3 -m venv .venv && .venv/bin/pip install -q -e ."
+        "python3 -m venv .venv && .venv/bin/pip install -q -e .",
+        timeout=600,
     )
     return f"{pi_pkg_dir}/.venv/bin/agent-runner"
 
