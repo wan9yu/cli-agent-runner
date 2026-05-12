@@ -140,3 +140,11 @@ def test_given_known_event_kinds_view_when_contains_checked_then_works_for_both(
     assert "round_start" in events.KNOWN_EVENT_KINDS
     assert "plug_y" in events.KNOWN_EVENT_KINDS
     assert "nonexistent" not in events.KNOWN_EVENT_KINDS
+
+
+def test_given_hook_failed_when_checked_then_in_builtin_kinds() -> None:
+    """hook_failed is a built-in event kind in 0.1.4+.
+
+    Used by runner to surface plugin hook exceptions without crashing.
+    """
+    assert "hook_failed" in events._BUILTIN_KINDS

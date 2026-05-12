@@ -38,6 +38,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "round_end",
         "monitor_alert_emitted",
         "monitor_auto_stop_triggered",
+        "hook_failed",
     }
 )
 
