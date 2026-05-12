@@ -29,6 +29,7 @@ writes a templated copy you can edit.
 |---|---|---|
 | `file` | `Path` | — |
 | `inject_context` | `bool` | True |
+| `context_injection_mode` | `Literal['prepend', 'file', 'none']` | 'prepend' |
 
 ### `[vcs]`
 

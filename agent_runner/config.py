@@ -5,6 +5,10 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+
+_VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,7 @@ class RuntimeConfig:
 class PromptConfig:
     file: Path
     inject_context: bool = True
+    context_injection_mode: Literal["prepend", "file", "none"] = "prepend"
 
 
 @dataclass(frozen=True)
@@ -80,9 +85,16 @@ def load_config(toml_path: Path) -> Config:
         restart_delay_s=int(runtime_d.get("restart_delay_s", 3)),
     )
     prompt_d = raw.get("prompt", {})
+    mode = prompt_d.get("context_injection_mode", "prepend")
+    if mode not in _VALID_INJECTION_MODES:
+        raise ValueError(
+            f"prompt.context_injection_mode must be one of {sorted(_VALID_INJECTION_MODES)}, "
+            f"got {mode!r}"
+        )
     prompt = PromptConfig(
-        file=_expand_path(str(_require(raw, "prompt", "file")), project_name),
+        file=_expand_path(str(_require(prompt_d, "file")), project_name),
         inject_context=bool(prompt_d.get("inject_context", True)),
+        context_injection_mode=mode,  # type: ignore[arg-type]
     )
     vcs_d = raw.get("vcs", {})
     vcs = VcsConfig(
