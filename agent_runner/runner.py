@@ -103,6 +103,24 @@ def _stitch_enricher_slices(
     return out
 
 
+def _run_pre_round_hooks(hook_ctx: hooks.HookContext, log_dir: Path) -> None:
+    """Invoke registered PreRoundHook plugins. Failures are isolated."""
+    import traceback as tb_mod
+
+    for hook in hooks.pre_round_hooks():
+        try:
+            hook.before_round(hook_ctx)
+        except Exception as exc:
+            payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
+            events.emit(
+                log_dir,
+                "hook_failed",
+                hook_name=hook.name,
+                hook_kind="pre_round",
+                **payload,
+            )
+
+
 def run_one_round(cfg: Config) -> RoundResult:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -157,6 +175,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         phase=phase,
         agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
     )
+    _run_pre_round_hooks(hook_ctx, log_dir)
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
 
     # Merge the previous/orphan blocks BEFORE writing (preserving prior behavior)
