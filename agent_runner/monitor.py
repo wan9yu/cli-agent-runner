@@ -20,6 +20,7 @@ from typing import Any, Protocol
 
 from agent_runner.api_types import (
     Alert,
+    Detector,
     ProjectState,
     ServiceMode,
     ServiceStatus,
@@ -48,6 +49,24 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
 # Continuing in either state actively harms the host (burning API quota / writing
 # to a near-full disk), so monitor.on_alert calls api.stop on these.
 AUTO_STOP_ALERTS: frozenset[str] = frozenset({"oauth_fail", "disk_critical"})
+
+_PLUGIN_DETECTORS: list[Detector] = []
+
+
+def register_detector(detector: Detector) -> None:
+    """Register a plugin detector. Rejects duplicate names."""
+    for existing in _PLUGIN_DETECTORS:
+        if getattr(existing, "name", None) == detector.name:
+            raise ValueError(
+                f"detector {detector.name!r} already registered; refusing to add a second"
+            )
+    _PLUGIN_DETECTORS.append(detector)
+
+
+def plugin_detectors() -> list[str]:
+    """Sorted list of registered plugin detector names (for peek --json)."""
+    return sorted(d.name for d in _PLUGIN_DETECTORS)
+
 
 SHORT_EXIT_THRESHOLD_S = 60
 
