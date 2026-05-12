@@ -9,12 +9,20 @@ git clone https://github.com/wan9yu/cli-agent-runner.git
 cd cli-agent-runner
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+git config core.hooksPath .githooks    # enables the commit-msg lint hook
 ./build.sh check
 ```
 
 `./build.sh check` runs the full local-CI sweep: ruff (lint + format), unit
 + integration tests, the literate quickstart, and the docs CI gate. It's
 what GitHub Actions runs on every push and PR.
+
+`git config core.hooksPath .githooks` activates the in-repo
+[`.githooks/commit-msg`](.githooks/commit-msg) hook which rejects commit
+messages containing `Co-Authored-By:` trailers, robot emojis, or other
+AI-tool attribution patterns. The same check runs in CI (`lint-commits`
+job) and as a pytest invariant (`tests/invariants/test_no_ai_signatures.py`)
+— defense in depth.
 
 ## Workflow
 

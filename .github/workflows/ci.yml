@@ -13,6 +13,54 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint-commits:
+    name: lint commit messages (no AI-tool attribution)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR: scan only new commits the PR introduces (base..head).
+          # Push to main: scan the just-pushed commits (before..after).
+          # fetch-depth=0 ensures both refs are available.
+          fetch-depth: 0
+      - name: scan new commit messages
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GH_EVENT" = "pull_request" ]; then
+            RANGE="${BASE_REF}..${HEAD_REF}"
+          else
+            # push event; before is 0..0 on first push or branch creation
+            if [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="HEAD~1..HEAD"
+            else
+              RANGE="${BEFORE_SHA}..HEAD"
+            fi
+          fi
+          echo "Scanning commit-message bodies in $RANGE"
+          # Collect messages joined by NUL bytes; grep -P for fixed alternation.
+          BODIES=$(git log --format='%B%x00' "$RANGE" || true)
+          if [ -z "$BODIES" ]; then
+            echo "  (no commits in range)"
+            exit 0
+          fi
+          PATTERN='(Co-Authored-By:|🤖|Generated with Claude|Generated with \[Cursor\]|noreply@anthropic\.com)'
+          if printf '%s' "$BODIES" | grep -i -E -q "$PATTERN"; then
+            echo "::error::AI-tool attribution detected in new commit messages."
+            echo "Offending lines:"
+            printf '%s' "$BODIES" | grep -i -n -E "$PATTERN" || true
+            echo ""
+            echo "Strip Co-Authored-By trailers, 🤖, 'Generated with ...',"
+            echo "and noreply@anthropic.com refs, then force-push the fixed range."
+            exit 1
+          fi
+          echo "  clean"
+
   test:
     name: test py${{ matrix.python }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

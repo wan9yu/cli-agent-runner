@@ -1,0 +1,33 @@
+#!/bin/sh
+# Reject commit messages that contain AI-tool attribution.
+#
+# Rationale: this repository's history is curated to credit only the human
+# author. AI-tool trailers (Co-Authored-By: Claude, 🤖 Generated with ..., etc.)
+# create false "claude" / "anthropic" entries in GitHub's Contributors widget
+# and bloat commit log noise.
+#
+# Activate per clone:    git config core.hooksPath .githooks
+# Bypass (rarely needed): git commit --no-verify
+
+MSG_FILE="$1"
+
+# Strip git-comment lines before checking
+CONTENT=$(grep -v '^#' "$MSG_FILE" || true)
+
+# Case-insensitive regex; tab/space tolerant
+FORBIDDEN_REGEX='([Cc]o-[Aa]uthored-[Bb]y:|🤖|[Gg]enerated with [Cc]laude|[Gg]enerated with \[Cursor\]|noreply@anthropic\.com)'
+
+if printf '%s\n' "$CONTENT" | grep -E -q "$FORBIDDEN_REGEX"; then
+    echo "" >&2
+    echo "commit-msg hook: AI-tool attribution detected in commit message." >&2
+    echo "" >&2
+    echo "Offending lines:" >&2
+    printf '%s\n' "$CONTENT" | grep -E -n "$FORBIDDEN_REGEX" | sed 's/^/  /' >&2
+    echo "" >&2
+    echo "Strip Co-Authored-By trailers, 🤖, 'Generated with ...', and" >&2
+    echo "noreply@anthropic.com refs, then retry." >&2
+    echo "" >&2
+    echo "(Bypass: git commit --no-verify — use sparingly, requires explicit" >&2
+    echo " review since CI lint-commits job will also reject the push.)" >&2
+    exit 1
+fi
