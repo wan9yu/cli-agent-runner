@@ -44,3 +44,42 @@ def test_given_loader_called_then_uses_correct_entry_points_group() -> None:
     with patch("importlib.metadata.entry_points", return_value=[]) as mock_ep:
         _load_event_kind_plugins()
     mock_ep.assert_called_once_with(group="agent_runner.event_kinds")
+
+
+def test_given_failing_hook_plugin_when_loader_runs_then_warns_but_does_not_crash() -> None:
+    """Hook plugin import failures degrade to UserWarning, same as event_kinds."""
+    from agent_runner import _load_hook_plugins
+
+    bad_ep = MagicMock()
+    bad_ep.name = "bad-hook"
+    bad_ep.load.side_effect = RuntimeError("simulated hook import failure")
+
+    with patch("importlib.metadata.entry_points", return_value=[bad_ep]):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _load_hook_plugins()
+        assert any("bad-hook" in str(w.message) for w in caught), (
+            f"expected warning mentioning 'bad-hook'; got {[str(w.message) for w in caught]}"
+        )
+
+
+def test_given_loader_called_then_uses_three_hook_groups() -> None:
+    """The hook loader queries exactly the three documented entry_points groups."""
+    from agent_runner import _load_hook_plugins
+
+    call_groups: list[str] = []
+
+    def fake_eps(group):
+        call_groups.append(group)
+        return []
+
+    with patch("importlib.metadata.entry_points", side_effect=fake_eps):
+        _load_hook_plugins()
+
+    assert sorted(call_groups) == sorted(
+        [
+            "agent_runner.pre_round_hooks",
+            "agent_runner.context_enrichers",
+            "agent_runner.post_round_hooks",
+        ]
+    )
