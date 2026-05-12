@@ -61,3 +61,41 @@ def test_given_commit_true_when_scaffold_then_creates_git_commit(tmp_git_repo: P
 def test_given_non_git_dir_when_scaffold_then_raises(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="not a git"):
         scaffold_project(tmp_path, force=False, commit=False)
+
+
+def test_given_aider_preset_when_scaffold_then_aider_toml_written(
+    tmp_git_repo: Path,
+) -> None:
+    from agent_runner.scaffold import scaffold_project
+
+    result = scaffold_project(tmp_git_repo, preset="aider", force=False, commit=False)
+    toml_text = (tmp_git_repo / "agent-runner.toml").read_text()
+    assert 'command = ["aider"' in toml_text
+    assert "--yes-always" in toml_text
+    assert "prompt_arg_template" in toml_text
+    assert tmp_git_repo.name in toml_text  # {project} substituted
+    assert "{project}" not in toml_text  # no unsubstituted placeholders
+    assert result.work_dir == tmp_git_repo
+    assert result.preset == "aider"
+
+
+def test_given_unknown_preset_when_scaffold_then_raises(tmp_git_repo: Path) -> None:
+    import pytest
+
+    from agent_runner.scaffold import scaffold_project
+
+    with pytest.raises((FileNotFoundError, ValueError)):
+        scaffold_project(tmp_git_repo, preset="nonexistent", force=False, commit=False)
+
+
+def test_given_claude_preset_when_scaffold_then_includes_agent_env_block(
+    tmp_git_repo: Path,
+) -> None:
+    """0.1.7: claude.toml carries [agent.env] DISABLE_AUTOUPDATER explicitly."""
+    from agent_runner.scaffold import scaffold_project
+
+    scaffold_project(tmp_git_repo, preset="claude", force=False, commit=False)
+    toml_text = (tmp_git_repo / "agent-runner.toml").read_text()
+    assert "[agent.env]" in toml_text
+    assert 'DISABLE_AUTOUPDATER = "1"' in toml_text
+    assert 'CLAUDE_CODE_EFFORT_LEVEL = "xhigh"' in toml_text
