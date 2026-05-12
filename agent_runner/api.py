@@ -332,5 +332,6 @@ def monitor_loop(
                 project=_project_name(work_dir),
                 host=host,
                 log_dir=cfg.runtime.log_dir,
+                allowed_stop_names=cfg.monitor.auto_stop_on,
             )
         time.sleep(interval_s)

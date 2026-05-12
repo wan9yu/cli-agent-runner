@@ -534,8 +534,24 @@ def _call_local_stop(project: str) -> None:
     api.stop(project)
 
 
-def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> None:
-    """Record the alert to events.jsonl and, if auto_action==stop_service, stop the service."""
+def on_alert(
+    alert: Alert,
+    *,
+    project: str,
+    host: str | None,
+    log_dir: Path,
+    allowed_stop_names: list[str] | None = None,
+) -> None:
+    """Record the alert and, if auto_action==stop_service AND the detector
+    name is in ``allowed_stop_names``, stop the service.
+
+    ``allowed_stop_names`` defaults to the legacy builtin pair when not
+    supplied; callers with access to ``cfg.monitor.auto_stop_on`` should
+    pass it through so operators can opt plugin detectors in/out.
+    """
+    effective_allowed = (
+        allowed_stop_names if allowed_stop_names is not None else ["oauth_fail", "disk_critical"]
+    )
     if log_dir.is_dir():
         emit_event(
             log_dir,
@@ -547,6 +563,8 @@ def on_alert(alert: Alert, *, project: str, host: str | None, log_dir: Path) -> 
         )
     if alert.auto_action != "stop_service":
         return
+    if alert.detector not in effective_allowed:
+        return  # gated — operator has not opted this detector into auto-stop
     if log_dir.is_dir():
         emit_event(
             log_dir,
