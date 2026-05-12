@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-05-13
+
+### Migration for existing 0.1.6 users (DOWNSTREAM CONSUMERS READ THIS)
+
+If you maintain an `agent-runner.toml` by hand (rather than via `agent-runner init`),
+you must add an `[agent.env]` block to preserve the Claude self-update suppression
+that 0.1.6 injected implicitly. **Without this, mid-loop self-updates can race with
+the supervisor.**
+
+Add to your `agent-runner.toml`:
+
+```toml
+[agent.env]
+DISABLE_AUTOUPDATER = "1"
+CLAUDE_CODE_EFFORT_LEVEL = "xhigh"
+```
+
+Or regenerate cleanly:
+
+```bash
+agent-runner init --preset claude --force
+```
+
+Plugin authors (Argus Gateway, etc.): no public API was renamed or removed
+from your import surface. The deleted symbols (`agent_runner.agent_runtime.CRITICAL_ENV_DEFAULTS`,
+`agent_runner.agent_runtime.merge_critical_envs`) were internal — not part of
+the documented plugin API. A new public-API contract test
+(`tests/contract/test_public_api_surface.py`) locks in `api_types`, `events`,
+`hooks`, `monitor`, `detector_helpers` import surfaces so future refactors
+can't silently drop names you rely on.
+
+### Added
+- `agent-runner init --preset {claude,aider}` selects between bundled CLI presets
+  (default: `claude`). New preset directory: `agent_runner/presets/`.
+- `[agent.env]` TOML block — per-CLI env injections, replacing the hardcoded
+  `CRITICAL_ENV_DEFAULTS` constant. Empty dict by default.
+- `docs/recipes/aider.md` — aider integration recipe.
+- `tests/contract/test_public_api_surface.py` — public-API surface snapshot for
+  plugin authors.
+
+### Changed
+- Core code (`agent_runtime.py`, `config.py`, `runner.py`, `scaffold.py`,
+  `defenses.py`) is now truly provider-agnostic: zero hardcoded Claude defaults.
+  Claude remains the reference example throughout the docs, but its specifics
+  live in `agent_runner/presets/claude.toml` (shipped as package data).
+- `MonitorConfig.auth_fail_hint` default is now empty string; per-CLI hint
+  comes from the preset.
+- `PEEK_SCHEMA_VERSION` bumped 1.3 → 1.4. `InitResult` gains `preset: str` field.
+- `agent_runner/defenses.py` `critical_envs_injection` row now reads from
+  `cfg.agent.env.keys()` (not the deleted constant); state is "active" iff
+  the config defines any env injections, else "off".
+
+### Removed
+- `agent_runner.agent_runtime.CRITICAL_ENV_DEFAULTS` constant.
+- `agent_runner.agent_runtime.merge_critical_envs()` function.
+- `agent_runner.config._DEFAULT_AUTH_HINT` constant's Claude-specific default
+  string (replaced with `""`; per-CLI hint now in preset files).
+
 ## [0.1.6] - 2026-05-12
 
 Zero-feature maintenance release — internal cleanup pass after the 0.1.x plugin

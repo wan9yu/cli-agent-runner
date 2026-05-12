@@ -11,9 +11,9 @@ PRESET_NAMES = ["claude", "aider"]
 
 
 def _preset_text(name: str) -> str:
-    return (
-        importlib.resources.files("agent_runner.presets") / f"{name}.toml"
-    ).read_text(encoding="utf-8")
+    return (importlib.resources.files("agent_runner.presets") / f"{name}.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.parametrize("name", PRESET_NAMES)

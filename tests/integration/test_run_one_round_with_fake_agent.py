@@ -120,9 +120,7 @@ def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
     script = tmp_git_repo / "env-check-agent.sh"
     record = tmp_git_repo / "env-record.txt"
     script.write_text(
-        "#!/usr/bin/env bash\n"
-        f'echo "MY_FLAG=${{MY_FLAG:-unset}}" > "{record}"\n'
-        "exit 0\n"
+        f'#!/usr/bin/env bash\necho "MY_FLAG=${{MY_FLAG:-unset}}" > "{record}"\nexit 0\n'
     )
     script.chmod(0o755)
 
