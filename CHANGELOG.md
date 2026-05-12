@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-12
+
+### Added
+- `cfg.agent.name` — optional provider identifier; defaults to `None` (consumers may fall back to `command[0]`)
+- `cfg.prompt.context_injection_mode` — `prepend` (default) / `file` / `none`; controls how round-context reaches the agent
+- `cfg.monitor.auth_fail_patterns` and `cfg.monitor.auth_fail_hint` — generalize the OAuth-fail detector for any provider
+- `cfg.plugins` — placeholder for 0.1.3+ plugin enable/disable; parsed-but-unused in 0.1.2
+- `peek --json` now emits top-level `schema_version: "1.0"` and `plugins: {}` namespace
+
+### Changed
+- `startup_check` prompt-smoke error text reframed away from provider-specific wording
+- `scaffold.py` generated TOML annotates `[agent]` block as the reference; encourages swapping for other CLIs
+- Public docs (architecture, quickstart, configuration) reframed: the reference agent is one of many supported CLIs
+- `monitor.detect_oauth_fail` now reads patterns + hint from `cfg.monitor` (SSOT migrated from a hardcoded module constant to `MonitorConfig`)
+
+### Backward compatibility
+- All defaults preserve the existing prepend-mode behavior
+- Existing `agent-runner.toml` files continue to load without modification
+- Existing tests pass without modification
+
 ## [0.1.1] — 2026-05-12
 
 Post-release polish: PyPI install path is documented as the primary entry,
