@@ -48,6 +48,28 @@ writes a templated copy you can edit.
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
 <!-- /gen:config-schema -->
 
+## `[agent.env]` (optional)
+
+`[agent.env]` is a flat `dict[str, str]` of environment variables injected into
+the agent subprocess **per round**. This is preset-supplied per CLI: e.g. the
+claude preset sets `DISABLE_AUTOUPDATER=1` to prevent mid-loop self-updates;
+the aider preset omits `[agent.env]` entirely. Override these values in your
+project's `agent-runner.toml` only when you need to deviate from the preset
+default. The runtime merges `[agent.env]` on top of the supervisor's own env;
+unset (empty string) does not unset an inherited variable.
+
+## `[monitor].auth_fail_hint` (preset-supplied)
+
+The TOML schema default for `auth_fail_hint` is `""` — that's the "no-hint"
+sentinel. **Presets supply a per-CLI hint** so operators get actionable
+guidance without authoring it themselves:
+
+- `--preset claude` → recommend `claude /login` / refresh `ANTHROPIC_API_KEY`.
+- `--preset aider` → verify provider env var (`OPENAI_API_KEY` /
+  `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / etc.); run `aider --models`.
+
+Override in your `agent-runner.toml` if you ship a custom CLI.
+
 ## `[phases]` (optional)
 
 | Field | Type | Default | Notes |
@@ -75,8 +97,8 @@ phase, orphan stash info, etc.) is delivered to the agent:
 - `prepend` (default): wraps the context as a fenced `json round-context` markdown block
   and prepends to the prompt. The agent reads it as the first thing in its input.
 - `file`: skips the prepend; the supervisor still writes `round-context.json` into
-  `runtime.log_dir` so the agent can read it explicitly. Useful for non-claude CLIs
-  whose argv treatment differs.
+  `runtime.log_dir` so the agent can read it explicitly. Useful for CLIs whose
+  argv treatment differs from claude's stdin-style flow.
 - `none`: skips both the prepend and any built-in injection. Plugins (0.1.3+) or the
   agent itself handle context delivery. No backward-compat path — opt-in only.
 
@@ -85,9 +107,13 @@ phase, orphan stash info, etc.) is delivered to the agent:
 ## Monitor pattern overrides
 
 `monitor.auth_fail_patterns` and `monitor.auth_fail_hint` let you tune the OAuth-fail
-detector for non-claude providers. Defaults match claude's auth error vocabulary
-(`401`, `unauthorized`, `oauth`, etc.) and recommend `claude /login`. To customize
-for, say, an OpenAI-CLI agent:
+detector per agent CLI. The default `auth_fail_patterns` regex is broad
+(`401`, `unauthorized`, `oauth`, generic `auth*_failed/error/expired`, expired
+sessions) and matches most providers' auth error vocabulary; the
+`auth_fail_hint` default is `""`, with presets supplying the per-CLI text
+(`--preset claude` recommends `claude /login`, `--preset aider` points at the
+provider env vars). To customize further — say, narrowing patterns for an
+OpenAI-CLI agent:
 
 ```toml
 [monitor]

@@ -27,7 +27,7 @@ agent-runner start
 
 ## Troubleshooting
 
-### OAuth failures (claude rejects requests)
+### OAuth / auth failures (agent rejects requests)
 
 **Symptom:** `monitor` reports `[CRIT] oauth_fail — N/10 recent rounds short-exited`.
 The service auto-stops by default.
@@ -43,11 +43,21 @@ journalctl --user -u agent-runner@<project> --since "30 min ago" | grep -i 'auth
 
 ```bash
 # On the supervisor host (NOT in agent-runner's subprocess):
+
+# For the claude preset:
 claude /login
 # OR refresh the API key
 export ANTHROPIC_API_KEY=sk-...   # then restart your shell or systemctl --user
+
+# For the aider preset (provider varies):
+export OPENAI_API_KEY=sk-...      # or ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / etc.
+aider --models                    # confirm aider sees the provider
+
 agent-runner start
 ```
+
+The `auth_fail_hint` shown in `peek` / `monitor` is preset-supplied and tells
+you which env var / login command applies to your CLI.
 
 ### Network failures (connection errors)
 
@@ -88,7 +98,7 @@ journalctl --user -u agent-runner@<project> --since "10 min ago"
 ### Stuck round
 
 ```bash
-agent-runner peek --round latest --log               # see what claude is doing
+agent-runner peek --round latest --log               # see what the agent is doing
 agent-runner kill                                    # force terminate
 # investigate the round log:
 ls -la ~/.agent-runner/<project>/logs/rounds/        # most recent R*.log
@@ -111,7 +121,8 @@ agent-runner start
 
 ## 中文摘要
 
-故障手册按场景：OAuth 401（自动停服 → `claude /login` / 刷新 key 后 `start`）；
+故障手册按场景：OAuth/auth 401（自动停服 → 刷新对应 provider 凭据，例如
+claude 用 `claude /login`、aider 用 `export OPENAI_API_KEY=...` 后 `start`）；
 网络抖（仅报警，自愈）；orphan stash 抢救（**用 SHA 不要用 stash@{N}**）；
 服务启不来（看 journalctl 找 STARTUP FAIL）；卡轮 → `kill`；磁盘 95%
 自动停服 → 清理日志后 `start`。

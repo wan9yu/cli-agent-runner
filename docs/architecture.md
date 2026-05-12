@@ -15,11 +15,11 @@
 Each layer can run without the layer above. The Witness can watch a remote
 Loop.
 
-**Provider-agnostic by design.** The reference agent is `claude` because
-that's what we run in production, but the supervisor's defenses,
-observability, and lifecycle make no claude-specific assumptions in core.
-Set `[agent].command` to any prompt-arg CLI and the same Round / Loop /
-Witness layers apply.
+**Provider-agnostic by design.** The reference agents are `claude` (default
+preset) and `aider` (added in 0.1.7) because those are what we run in
+production, but the supervisor's defenses, observability, and lifecycle make
+no CLI-specific assumptions in core. Set `[agent].command` to any prompt-arg
+CLI and the same Round / Loop / Witness layers apply.
 
 ## Three-view symmetry (operator surface)
 
