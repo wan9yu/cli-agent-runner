@@ -47,12 +47,16 @@ _DEFAULT_AUTH_PATTERNS: list[str] = [
 ]
 _DEFAULT_AUTH_HINT: str = "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY"
 
+# Default allow-list of detector names whose ``stop_service`` action is honored.
+# Plugin detectors must be added explicitly by the operator to opt them in.
+_DEFAULT_AUTO_STOP_ON: tuple[str, ...] = ("oauth_fail", "disk_critical")
+
 
 @dataclass(frozen=True)
 class MonitorConfig:
     auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
-    auto_stop_on: list[str] = field(default_factory=lambda: ["oauth_fail", "disk_critical"])
+    auto_stop_on: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTO_STOP_ON))
 
 
 @dataclass(frozen=True)
@@ -123,7 +127,7 @@ def load_config(toml_path: Path) -> Config:
     monitor = MonitorConfig(
         auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
-        auto_stop_on=list(monitor_d.get("auto_stop_on", ["oauth_fail", "disk_critical"])),
+        auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
     )
     phases_d = raw.get("phases", {})
     phases = list(phases_d["list"]) if "list" in phases_d else None

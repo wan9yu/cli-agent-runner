@@ -104,6 +104,15 @@ def now_iso_ms() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def parse_iso_ms(ts: str) -> datetime:
+    """Parse an ISO-8601 timestamp produced by :func:`now_iso_ms` (trailing ``Z``).
+
+    Centralizes the ``replace("Z", "+00:00")`` workaround so the eventual cleanup
+    (once ``datetime.fromisoformat`` accepts ``Z`` natively) is a single edit.
+    """
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
 def emit(log_dir: Path, kind: str, **fields: Any) -> None:
     """Append one event line to events-YYYY-MM.jsonl (UTC).
 

@@ -303,6 +303,8 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,
     )
+    if not monitor._PLUGIN_DETECTORS:
+        return builtin  # skip ProjectState assembly when no plugins to feed
     state = monitor.assemble_project_state(src, project=_project_name(work_dir))
     plugin = monitor.run_plugin_detectors(state)
     return builtin + plugin

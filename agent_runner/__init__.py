@@ -11,63 +11,39 @@ _HOOK_GROUPS = (
 )
 
 
-def _load_event_kind_plugins() -> None:
-    """Discover and load entry_points plugins that register custom event kinds.
+def _load_plugins_from_group(group: str) -> None:
+    """Discover and load entry_points in ``group``, isolating per-plugin failures.
 
-    Called once at package import. Failures are non-fatal — a broken plugin
-    must not crash the supervisor. Each failure surfaces as a ``UserWarning``
-    so operators can spot misconfigured plugins without losing the service.
+    Called at package import. A broken plugin must not crash the supervisor;
+    each failure surfaces as a ``UserWarning``.
     """
     import warnings
     from importlib.metadata import entry_points
 
-    for ep in entry_points(group="agent_runner.event_kinds"):
+    for ep in entry_points(group=group):
         try:
             ep.load()
         except Exception as e:
             warnings.warn(
-                f"failed to load agent_runner.event_kinds plugin {ep.name!r}: {e}",
-                stacklevel=2,
+                f"failed to load {group} plugin {ep.name!r}: {e}",
+                stacklevel=3,
             )
+
+
+def _load_event_kind_plugins() -> None:
+    """Load plugins that register custom event kinds via ``events.register_event_kind``."""
+    _load_plugins_from_group("agent_runner.event_kinds")
 
 
 def _load_hook_plugins() -> None:
-    """Discover and load entry_points plugins that register pre/post round
-    hooks and context enrichers.
-
-    Same failure-isolation contract as :func:`_load_event_kind_plugins`.
-    """
-    import warnings
-    from importlib.metadata import entry_points
-
+    """Load plugins that register pre_round / context_enricher / post_round hooks."""
     for group in _HOOK_GROUPS:
-        for ep in entry_points(group=group):
-            try:
-                ep.load()
-            except Exception as e:
-                warnings.warn(
-                    f"failed to load {group} plugin {ep.name!r}: {e}",
-                    stacklevel=2,
-                )
+        _load_plugins_from_group(group)
 
 
 def _load_detector_plugins() -> None:
-    """Discover and load entry_points plugins that register custom monitor
-    detectors via :func:`agent_runner.monitor.register_detector`.
-
-    Same failure-isolation contract as the other loaders.
-    """
-    import warnings
-    from importlib.metadata import entry_points
-
-    for ep in entry_points(group="agent_runner.detectors"):
-        try:
-            ep.load()
-        except Exception as e:
-            warnings.warn(
-                f"failed to load agent_runner.detectors plugin {ep.name!r}: {e}",
-                stacklevel=2,
-            )
+    """Load plugins that register custom monitor detectors via ``monitor.register_detector``."""
+    _load_plugins_from_group("agent_runner.detectors")
 
 
 _load_event_kind_plugins()

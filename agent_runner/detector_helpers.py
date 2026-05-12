@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_runner.api_types import ProjectState
+from agent_runner.events import parse_iso_ms
 
 
 def cumulative_window_check(
@@ -56,7 +57,7 @@ def cumulative_window_check(
             continue
         ts = e.get("ts", "")
         try:
-            ts_parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            ts_parsed = parse_iso_ms(ts)
         except (ValueError, AttributeError):
             continue
         if ts_parsed.timestamp() >= cutoff:
@@ -80,11 +81,19 @@ def dual_source_silence(
     hang requires both to be stale simultaneously.
     """
     now = time.time()
-    sched_stale = (not scheduler_log.exists()) or (
-        now - scheduler_log.stat().st_mtime > threshold_s
-    )
-    round_stale = (not round_log.exists()) or (now - round_log.stat().st_mtime > threshold_s)
-    return sched_stale and round_stale
+    return _file_stale(scheduler_log, now, threshold_s) and _file_stale(round_log, now, threshold_s)
+
+
+def _file_stale(path: Path, now: float, threshold_s: float) -> bool:
+    """True if ``path`` is missing OR its mtime is older than ``threshold_s`` from ``now``.
+
+    Uses ``stat()`` + FileNotFoundError to avoid the TOCTOU race that ``exists()``
+    followed by ``stat()`` would introduce.
+    """
+    try:
+        return now - path.stat().st_mtime > threshold_s
+    except FileNotFoundError:
+        return True
 
 
 def phase_filter(state: ProjectState, *, exclude_phases: set[str]) -> bool:

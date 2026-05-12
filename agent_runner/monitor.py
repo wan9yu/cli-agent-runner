@@ -29,7 +29,7 @@ from agent_runner.api_types import (
 from agent_runner.config import _DEFAULT_AUTH_HINT, _DEFAULT_AUTH_PATTERNS
 from agent_runner.context_store import read_json
 from agent_runner.events import emit as emit_event
-from agent_runner.events import now_iso_ms
+from agent_runner.events import now_iso_ms, parse_iso_ms
 
 KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
     {
@@ -45,9 +45,11 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
     }
 )
 
-# Subset of KNOWN_ALERT_KINDS whose detectors set auto_action="stop_service".
-# Continuing in either state actively harms the host (burning API quota / writing
-# to a near-full disk), so monitor.on_alert calls api.stop on these.
+# Built-in detectors whose ``auto_action="stop_service"`` is honored by default
+# (continuing in either state actively harms the host: burning API quota / writing
+# to a near-full disk). Runtime gating reads ``cfg.monitor.auto_stop_on`` — this
+# frozenset is the legacy fallback used by ``on_alert`` when no allow-list is
+# supplied, and is surfaced by ``_docgen`` to document the default policy.
 AUTO_STOP_ALERTS: frozenset[str] = frozenset({"oauth_fail", "disk_critical"})
 
 _PLUGIN_DETECTORS: list[Detector] = []
@@ -130,7 +132,7 @@ def detect_hung(
         elif kind == "round_end" and rn in open_rounds:
             del open_rounds[rn]
     for rn, started_ts in open_rounds.items():
-        started = datetime.fromisoformat(started_ts.replace("Z", "+00:00"))
+        started = parse_iso_ms(started_ts)
         elapsed = (now - started).total_seconds()
         if elapsed > round_timeout_s * factor:
             return _alert(
@@ -550,7 +552,7 @@ def on_alert(
     pass it through so operators can opt plugin detectors in/out.
     """
     effective_allowed = (
-        allowed_stop_names if allowed_stop_names is not None else ["oauth_fail", "disk_critical"]
+        allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
     )
     if log_dir.is_dir():
         emit_event(

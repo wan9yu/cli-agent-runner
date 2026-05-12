@@ -24,7 +24,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
     "rel,limit",
     [
         ("cli/serve_cmd.py", 60),  # HARD cap — thin loop, signal-trapping only
-        ("api.py", 338),  # ratchet — raised +3 for plugin-detector wiring (Task 5)
+        ("api.py", 340),  # ratchet — raised +2 for plugin-detector short-circuit (simplify)
         ("monitor.py", 584),  # ratchet — raised +19 for allowed_stop_names gating (Task 6)
         ("defenses.py", 180),  # cap with ~70 LOC headroom for new defenses
     ],
