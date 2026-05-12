@@ -83,3 +83,25 @@ def test_given_loader_called_then_uses_three_hook_groups() -> None:
             "agent_runner.post_round_hooks",
         ]
     )
+
+
+def test_given_failing_detector_plugin_when_loader_runs_then_warns_but_does_not_crash() -> None:
+    from agent_runner import _load_detector_plugins
+
+    bad_ep = MagicMock()
+    bad_ep.name = "bad-detector"
+    bad_ep.load.side_effect = RuntimeError("simulated detector import failure")
+
+    with patch("importlib.metadata.entry_points", return_value=[bad_ep]):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _load_detector_plugins()
+        assert any("bad-detector" in str(w.message) for w in caught)
+
+
+def test_given_detector_loader_called_then_uses_correct_group() -> None:
+    from agent_runner import _load_detector_plugins
+
+    with patch("importlib.metadata.entry_points", return_value=[]) as mock_ep:
+        _load_detector_plugins()
+    mock_ep.assert_called_once_with(group="agent_runner.detectors")

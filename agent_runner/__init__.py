@@ -51,5 +51,25 @@ def _load_hook_plugins() -> None:
                 )
 
 
+def _load_detector_plugins() -> None:
+    """Discover and load entry_points plugins that register custom monitor
+    detectors via :func:`agent_runner.monitor.register_detector`.
+
+    Same failure-isolation contract as the other loaders.
+    """
+    import warnings
+    from importlib.metadata import entry_points
+
+    for ep in entry_points(group="agent_runner.detectors"):
+        try:
+            ep.load()
+        except Exception as e:
+            warnings.warn(
+                f"failed to load agent_runner.detectors plugin {ep.name!r}: {e}",
+                stacklevel=2,
+            )
+
+
 _load_event_kind_plugins()
 _load_hook_plugins()
+_load_detector_plugins()
