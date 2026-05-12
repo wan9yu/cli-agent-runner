@@ -19,7 +19,7 @@ from agent_runner.service_unit import (
 
 def _cfg(tmp_path: Path) -> Config:
     return Config(
-        agent=AgentConfig(command=["claude"], prompt_arg_template=["-p", "{prompt}"]),
+        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs", round_timeout_s=600),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),

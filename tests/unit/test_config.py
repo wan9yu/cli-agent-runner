@@ -18,7 +18,7 @@ def test_given_minimal_toml_when_loaded_then_returns_config_with_defaults(tmp_pa
         tmp_path,
         """
 [agent]
-command = ["claude", "--model", "claude-opus-4-7"]
+command = ["my-agent", "--model", "x"]
 prompt_arg_template = ["-p", "{prompt}"]
 
 [runtime]
@@ -30,7 +30,7 @@ file = "./prompts/main.md"
 """,
     )
     cfg = load_config(toml)
-    assert cfg.agent.command == ["claude", "--model", "claude-opus-4-7"]
+    assert cfg.agent.command == ["my-agent", "--model", "x"]
     assert cfg.runtime.round_timeout_s == 1800  # default
     assert cfg.runtime.restart_delay_s == 3
     assert cfg.prompt.inject_context is True  # default
@@ -43,7 +43,7 @@ def test_given_phases_in_toml_when_loaded_then_phases_list_populated(tmp_path: P
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["-p", "{prompt}"]
 [runtime]
 work_dir = "."
@@ -73,7 +73,7 @@ def test_given_log_dir_with_project_placeholder_when_loaded_then_substituted(
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["-p", "{prompt}"]
 [runtime]
 work_dir = "/home/me/myproj"
@@ -101,7 +101,7 @@ def test_given_work_dir_dot_when_loaded_then_project_resolves_to_cwd_basename(
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["-p", "{prompt}"]
 [runtime]
 work_dir = "."
@@ -141,7 +141,7 @@ def test_given_agent_without_name_when_loaded_then_name_is_none(tmp_path: Path) 
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 
 [runtime]
@@ -161,7 +161,7 @@ def test_given_injection_mode_explicit_when_loaded_then_mode_set(tmp_path: Path)
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -180,7 +180,7 @@ def test_given_injection_mode_absent_when_loaded_then_default_is_prepend(tmp_pat
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -198,7 +198,7 @@ def test_given_invalid_injection_mode_when_loaded_then_raises(tmp_path: Path) ->
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -217,7 +217,7 @@ def test_given_no_monitor_block_when_loaded_then_default_patterns(tmp_path: Path
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -237,7 +237,7 @@ def test_given_custom_auth_patterns_when_loaded_then_used(tmp_path: Path) -> Non
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -259,7 +259,7 @@ def test_given_no_plugins_block_when_loaded_then_plugins_is_none(tmp_path: Path)
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
@@ -277,7 +277,7 @@ def test_given_plugins_block_present_when_loaded_then_passes_through(tmp_path: P
         tmp_path,
         """
 [agent]
-command = ["claude"]
+command = ["my-agent"]
 prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."

@@ -57,3 +57,30 @@ def e2e_pi_enabled() -> bool:
 def in_repo_root() -> Iterator[Path]:
     """For invariant tests that must scan the real codebase."""
     yield Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def minimal_config(tmp_path: Path):
+    """Returns a Config with a neutral 'fake-agent' command, suitable for unit
+    tests that don't care which CLI is invoked. Use when you need a Config but
+    the specific [agent].command value is irrelevant."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("test prompt\n")
+    return Config(
+        agent=AgentConfig(
+            command=["fake-agent"],
+            prompt_arg_template=["-p", "{prompt}"],
+        ),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
+        prompt=PromptConfig(file=prompt_file, inject_context=True),
+        vcs=VcsConfig(),
+        phases=None,
+    )
