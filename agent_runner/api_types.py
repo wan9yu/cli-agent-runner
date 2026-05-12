@@ -77,6 +77,26 @@ class Alert:
 
 
 @dataclass(frozen=True)
+class RoundResult:
+    """Result of one ``run_one_round`` call.
+
+    Stable across 0.1.x for PostRoundHook consumers. Fields may be ADDED in
+    a minor; removed or retyped only on a major bump.
+    """
+
+    round_num: int
+    phase: str | None
+    started_at: str
+    ended_at: str
+    exit_code: int
+    duration_s: float
+    timed_out: bool
+    log_path: Path
+    dirty_files: list[str]
+    stashed: bool
+
+
+@dataclass(frozen=True)
 class InitResult:
     work_dir: Path
     files_created: list[Path]

@@ -8,7 +8,6 @@ from __future__ import annotations
 import fcntl
 import os
 import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,7 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
 from agent_runner.events import now_iso_ms
 
@@ -39,16 +39,6 @@ def _acquire_lock_or_raise(lock_path: Path) -> int:
         os.close(fd)
         raise LockHeldError(f"another agent-runner is holding {lock_path}") from e
     return fd
-
-
-@dataclass(frozen=True)
-class RoundResult:
-    round_num: int
-    exit_code: int
-    duration_s: float
-    timed_out: bool
-    dirty_files: list[str]
-    stashed: bool
 
 
 def _phase_for(round_num: int, phases: list[str] | None) -> tuple[str | None, int]:
@@ -229,9 +219,13 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     return RoundResult(
         round_num=round_num,
+        phase=phase,
+        started_at=started_at,
+        ended_at=completed_at,
         exit_code=result.exit_code,
         duration_s=result.duration_s,
         timed_out=result.timed_out,
+        log_path=log_path,
         dirty_files=dirty,
         stashed=stashed,
     )
