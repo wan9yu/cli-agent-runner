@@ -97,7 +97,10 @@ def _check_prompt_smoke(cfg: Config) -> CheckResult:
         return CheckResult(
             "prompt_smoke_passes",
             False,
-            reason=f"first char {prompt[0]!r} is forbidden (R721 — claude CLI rejects it)",
+            reason=(
+                f"first char {prompt[0]!r} is forbidden (R721 — agent CLI argv parsers "
+                f"may reject leading dash/whitespace as a flag terminator)"
+            ),
             how_to_fix="ensure the prompt body does not start with -, space, or newline",
         )
     if len(prompt.encode("utf-8")) < _MIN_PROMPT_BYTES:
