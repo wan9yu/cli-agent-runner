@@ -63,6 +63,12 @@ def test_given_peek_json_when_emitted_then_includes_schema_version(tmp_path: Pat
     payload = json.loads(result.stdout)
 
     assert "schema_version" in payload, f"missing schema_version: keys={list(payload)}"
-    assert payload["schema_version"] >= "1.0"
+    assert payload["schema_version"] >= "1.1", (
+        f"schema_version regressed: got {payload['schema_version']!r}, expected >= '1.1'"
+    )
     assert "plugins" in payload
     assert isinstance(payload["plugins"], dict)
+    assert "event_kinds" in payload["plugins"], (
+        f"plugins namespace missing event_kinds key: {payload['plugins']}"
+    )
+    assert isinstance(payload["plugins"]["event_kinds"], list)
