@@ -49,11 +49,6 @@ stash_idempotency_s = 5
 # auto_stop_on = ["oauth_fail", "disk_critical"]
 # disk_warning_pct = 90.0
 # disk_critical_pct = 95.0
-
-# [llm]                   # Phase 3 — reserved, not yet used
-# endpoint = "anthropic"
-# api_key_env = "ANTHROPIC_API_KEY"
-# model = "claude-haiku-4-5"
 """
 
 _PROMPT_TEMPLATE = """\

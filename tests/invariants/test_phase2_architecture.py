@@ -1,16 +1,14 @@
-"""Architectural invariants for Phase 2.
+"""Architectural invariants.
 
 - serve_cmd.py imports from a strict allowlist (no business logic)
 - cli command files call api.X (not direct module imports)
-- Critic stubs only — no concrete implementations in critic.py
 - All api_types are frozen dataclasses
-- KNOWN_ALERT_KINDS in monitor.py matches the 9 detectors
+- KNOWN_ALERT_KINDS in monitor.py matches the 9 builtin detectors
 """
 
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
@@ -73,21 +71,6 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
         ):
             offenders.append(f.name)
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
-
-
-def test_given_critic_module_when_inspected_then_only_protocols() -> None:
-    from agent_runner import critic
-
-    classes = [
-        m
-        for _, m in inspect.getmembers(critic, inspect.isclass)
-        if m.__module__ == "agent_runner.critic"
-    ]
-    for cls in classes:
-        is_protocol = getattr(cls, "_is_protocol", False) or getattr(
-            cls, "_is_runtime_protocol", False
-        )
-        assert is_protocol, f"{cls.__name__} is not a Protocol — Phase 2 forbids concrete Critics"
 
 
 def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:

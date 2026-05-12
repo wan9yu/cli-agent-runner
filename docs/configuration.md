@@ -66,20 +66,6 @@ oauth_fail_threshold = 2     # number of last-10 rounds matching auth pattern be
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables
 all auto-stop behaviour and reduces monitor to alert-only.
 
-## `[llm]` (reserved, not yet used)
-
-```toml
-# [llm]
-# endpoint = "anthropic"
-# api_key_env = "ANTHROPIC_API_KEY"
-# base_url = "https://api.anthropic.com"
-# model = "claude-haiku-4-5"
-# enabled_for = []
-```
-
-The `[llm]` section is a forward-compatibility placeholder; current builds
-ignore it if you uncomment.
-
 ## Context injection modes
 
 `prompt.context_injection_mode` controls how each round's context (round number,
@@ -114,5 +100,4 @@ auth_fail_hint = "Check OPENAI_API_KEY env var or rotate at platform.openai.com"
 ## 中文摘要
 
 主要小节：`[agent]` 命令模板、`[runtime]` 工作目录与日志目录、`[prompt]` 提示词位置、
-`[phases]` 可选阶段轮转、`[vcs]` stash 控制、`[monitor]` 可选自动停服策略、
-`[llm]` 占位段（暂不解析）。
+`[phases]` 可选阶段轮转、`[vcs]` stash 控制、`[monitor]` 可选自动停服策略。
