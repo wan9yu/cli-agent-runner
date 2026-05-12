@@ -121,6 +121,28 @@ def _run_pre_round_hooks(hook_ctx: hooks.HookContext, log_dir: Path) -> None:
             )
 
 
+def _run_post_round_hooks(
+    hook_ctx: hooks.HookContext,
+    result: RoundResult,
+    log_dir: Path,
+) -> None:
+    """Invoke registered PostRoundHook plugins. Failures are isolated."""
+    import traceback as tb_mod
+
+    for hook in hooks.post_round_hooks():
+        try:
+            hook.after_round(hook_ctx, result)
+        except Exception as exc:
+            payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
+            events.emit(
+                log_dir,
+                "hook_failed",
+                hook_name=hook.name,
+                hook_kind="post_round",
+                **payload,
+            )
+
+
 def run_one_round(cfg: Config) -> RoundResult:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -278,7 +300,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
     metrics.log_metrics(log_dir, event="round_end", round_num=round_num, phase=phase)
     events.emit(log_dir, "round_end", round_num=round_num)
 
-    return RoundResult(
+    round_result = RoundResult(
         round_num=round_num,
         phase=phase,
         started_at=started_at,
@@ -290,3 +312,5 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         dirty_files=dirty,
         stashed=stashed,
     )
+    _run_post_round_hooks(hook_ctx, round_result, log_dir)
+    return round_result
