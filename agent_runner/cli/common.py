@@ -12,7 +12,7 @@ from typing import Any
 from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, load_config
 
-PEEK_SCHEMA_VERSION = "1.0"
+PEEK_SCHEMA_VERSION = "1.1"
 
 
 def cfg_from_args(args) -> Config:
@@ -40,9 +40,11 @@ def work_dir_from_args(args) -> Path:
 def emit(value: Any, *, json_mode: bool) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
+            from agent_runner.events import plugin_event_kinds
+
             wrapped = {
                 "schema_version": PEEK_SCHEMA_VERSION,
-                "plugins": {},
+                "plugins": {"event_kinds": plugin_event_kinds()},
                 **_to_jsonable(value),
             }
             print(json.dumps(wrapped, indent=2, default=str))
