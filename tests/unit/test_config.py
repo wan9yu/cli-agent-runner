@@ -157,7 +157,9 @@ file = "prompts/main.md"
 
 
 def test_given_injection_mode_explicit_when_loaded_then_mode_set(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, """
+    toml = _write_toml(
+        tmp_path,
+        """
 [agent]
 command = ["claude"]
 prompt_arg_template = ["{prompt}"]
@@ -167,13 +169,16 @@ log_dir = "/tmp/logs"
 [prompt]
 file = "prompts/main.md"
 context_injection_mode = "file"
-""")
+""",
+    )
     cfg = load_config(toml)
     assert cfg.prompt.context_injection_mode == "file"
 
 
 def test_given_injection_mode_absent_when_loaded_then_default_is_prepend(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, """
+    toml = _write_toml(
+        tmp_path,
+        """
 [agent]
 command = ["claude"]
 prompt_arg_template = ["{prompt}"]
@@ -182,13 +187,16 @@ work_dir = "."
 log_dir = "/tmp/logs"
 [prompt]
 file = "prompts/main.md"
-""")
+""",
+    )
     cfg = load_config(toml)
     assert cfg.prompt.context_injection_mode == "prepend"
 
 
 def test_given_invalid_injection_mode_when_loaded_then_raises(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, """
+    toml = _write_toml(
+        tmp_path,
+        """
 [agent]
 command = ["claude"]
 prompt_arg_template = ["{prompt}"]
@@ -198,6 +206,7 @@ log_dir = "/tmp/logs"
 [prompt]
 file = "prompts/main.md"
 context_injection_mode = "magic"
-""")
+""",
+    )
     with pytest.raises(ValueError, match="context_injection_mode"):
         load_config(toml)
