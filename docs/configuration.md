@@ -79,6 +79,37 @@ all auto-stop behaviour and reduces monitor to alert-only.
 The `[llm]` section is a forward-compatibility placeholder; current builds
 ignore it if you uncomment.
 
+## Context injection modes
+
+`prompt.context_injection_mode` controls how each round's context (round number,
+phase, orphan stash info, etc.) is delivered to the agent:
+
+- `prepend` (default): wraps the context as a fenced `json round-context` markdown block
+  and prepends to the prompt. The agent reads it as the first thing in its input.
+- `file`: skips the prepend; the supervisor still writes `round-context.json` into
+  `runtime.log_dir` so the agent can read it explicitly. Useful for non-claude CLIs
+  whose argv treatment differs.
+- `none`: skips both the prepend and any built-in injection. Plugins (0.1.3+) or the
+  agent itself handle context delivery. No backward-compat path — opt-in only.
+
+`prompt.inject_context = false` overrides all modes (skips injection entirely).
+
+## Monitor pattern overrides
+
+`monitor.auth_fail_patterns` and `monitor.auth_fail_hint` let you tune the OAuth-fail
+detector for non-claude providers. Defaults match claude's auth error vocabulary
+(`401`, `unauthorized`, `oauth`, etc.) and recommend `claude /login`. To customize
+for, say, an OpenAI-CLI agent:
+
+```toml
+[monitor]
+auth_fail_patterns = [
+    "\\b(invalid_api_key|incorrect_api_key|401)\\b",
+]
+auth_fail_hint = "Check OPENAI_API_KEY env var or rotate at platform.openai.com"
+```
+<!-- skip-test -->
+
 ## 中文摘要
 
 主要小节：`[agent]` 命令模板、`[runtime]` 工作目录与日志目录、`[prompt]` 提示词位置、
