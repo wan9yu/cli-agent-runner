@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 class ServiceMode(StrEnum):
@@ -74,6 +74,27 @@ class Alert:
     context: dict[str, Any]
     ts: str
     auto_action: str = "none"
+
+
+@runtime_checkable
+class Detector(Protocol):
+    """Public plugin contract for monitor detectors.
+
+    Plugins implementing this Protocol can be registered via
+    ``monitor.register_detector`` (or auto-loaded via entry_points group
+    ``agent_runner.detectors``) and will be invoked alongside built-in
+    detectors during each monitor poll.
+
+    ``auto_action="stop_service"`` is honored only if the plugin's ``name``
+    appears in ``cfg.monitor.auto_stop_on`` — operators must explicitly
+    opt plugins into the auto-stop policy.
+    """
+
+    name: str
+    severity: str  # "info" | "warning" | "critical"
+    auto_action: str  # "none" | "stop_service"
+
+    def detect(self, state: ProjectState) -> Alert | None: ...
 
 
 @dataclass(frozen=True)
