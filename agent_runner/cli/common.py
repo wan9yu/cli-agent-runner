@@ -9,7 +9,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, load_config
+
+PEEK_SCHEMA_VERSION = "1.0"
 
 
 def cfg_from_args(args) -> Config:
@@ -36,7 +39,15 @@ def work_dir_from_args(args) -> Path:
 
 def emit(value: Any, *, json_mode: bool) -> None:
     if json_mode:
-        print(json.dumps(_to_jsonable(value), indent=2, default=str))
+        if isinstance(value, ProjectState):
+            wrapped = {
+                "schema_version": PEEK_SCHEMA_VERSION,
+                "plugins": {},
+                **_to_jsonable(value),
+            }
+            print(json.dumps(wrapped, indent=2, default=str))
+        else:
+            print(json.dumps(_to_jsonable(value), indent=2, default=str))
     else:
         print(_pretty(value))
 
