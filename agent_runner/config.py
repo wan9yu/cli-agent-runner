@@ -15,6 +15,7 @@ class AgentConfig:
     command: list[str]
     prompt_arg_template: list[str]
     name: str | None = None
+    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -38,14 +39,16 @@ class VcsConfig:
     stash_idempotency_s: int = 5
 
 
-# Default auth-failure detection regex — claude-aware. Migrated from monitor.py
-# to config.py as the SSOT for the oauth_fail detector. Plugins / non-claude
-# providers override via [monitor].auth_fail_patterns.
+# Default auth-failure detection regex — matches common OAuth/401/expired-session
+# vocabularies. Presets override [monitor].auth_fail_hint per CLI.
 _DEFAULT_AUTH_PATTERNS: list[str] = [
     r"\b(oauth|unauthorized|401|api[_ ]key|"
     r"auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b",
 ]
-_DEFAULT_AUTH_HINT: str = "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY"
+# Default auth-failure hint is empty — per-CLI hints come from preset files
+# (agent_runner/presets/*.toml) which write `[monitor].auth_fail_hint` into the
+# user's agent-runner.toml at scaffold time.
+_DEFAULT_AUTH_HINT: str = ""
 
 # Default allow-list of detector names whose ``stop_service`` action is honored.
 # Plugin detectors must be added explicitly by the operator to opt them in.
@@ -94,6 +97,7 @@ def load_config(toml_path: Path) -> Config:
         command=list(_require(agent_d, "command")),
         prompt_arg_template=list(_require(agent_d, "prompt_arg_template")),
         name=agent_d.get("name"),
+        env={str(k): str(v) for k, v in agent_d.get("env", {}).items()},
     )
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
     work_dir = _expand_path(raw_work_dir, "").resolve()

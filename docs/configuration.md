@@ -13,6 +13,7 @@ writes a templated copy you can edit.
 | `command` | `list[str]` | — |
 | `prompt_arg_template` | `list[str]` | — |
 | `name` | `str | None` | None |
+| `env` | `dict[str, str]` | {} |
 
 ### `[runtime]`
 
@@ -43,7 +44,7 @@ writes a templated copy you can edit.
 | Field | Type | Default |
 |---|---|---|
 | `auth_fail_patterns` | `list[str]` | ['\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b'] |
-| `auth_fail_hint` | `str` | 'Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY' |
+| `auth_fail_hint` | `str` | '' |
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
 <!-- /gen:config-schema -->
 

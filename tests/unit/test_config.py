@@ -230,7 +230,6 @@ file = "prompts/main.md"
     assert isinstance(cfg.monitor.auth_fail_patterns, list)
     assert len(cfg.monitor.auth_fail_patterns) >= 1
     assert isinstance(cfg.monitor.auth_fail_hint, str)
-    assert cfg.monitor.auth_fail_hint  # non-empty
 
 
 def test_given_custom_auth_patterns_when_loaded_then_used(tmp_path: Path) -> None:
@@ -329,3 +328,86 @@ auto_stop_on = ["oauth_fail", "disk_critical", "my_plugin_critical"]
     )
     cfg = load_config(toml)
     assert cfg.monitor.auto_stop_on == ["oauth_fail", "disk_critical", "my_plugin_critical"]
+
+
+def test_given_agent_env_block_when_loaded_then_env_populated(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+
+[agent.env]
+DISABLE_AUTOUPDATER = "1"
+SOME_FLAG = "yes"
+
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.agent.env == {"DISABLE_AUTOUPDATER": "1", "SOME_FLAG": "yes"}
+
+
+def test_given_no_agent_env_block_when_loaded_then_env_is_empty_dict(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.agent.env == {}
+
+
+def test_given_agent_env_non_string_values_when_loaded_then_coerced_to_str(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[agent.env]
+INT_FLAG = 42
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.agent.env == {"INT_FLAG": "42"}
+
+
+def test_given_no_auth_fail_hint_in_toml_when_loaded_then_default_is_empty_string(
+    tmp_path: Path,
+) -> None:
+    """0.1.7: default hint moves to preset files; bare config gets empty default."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.auth_fail_hint == ""
