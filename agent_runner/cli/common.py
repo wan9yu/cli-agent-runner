@@ -12,7 +12,7 @@ from typing import Any
 from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, load_config
 
-PEEK_SCHEMA_VERSION = "1.2"
+PEEK_SCHEMA_VERSION = "1.3"
 
 
 def cfg_from_args(args) -> Config:
@@ -42,12 +42,14 @@ def emit(value: Any, *, json_mode: bool) -> None:
         if isinstance(value, ProjectState):
             from agent_runner.events import plugin_event_kinds
             from agent_runner.hooks import plugin_context_enrichers
+            from agent_runner.monitor import plugin_detectors
 
             wrapped = {
                 "schema_version": PEEK_SCHEMA_VERSION,
                 "plugins": {
                     "event_kinds": plugin_event_kinds(),
                     "context_enrichers": plugin_context_enrichers(),
+                    "detectors": plugin_detectors(),
                 },
                 **_to_jsonable(value),
             }
