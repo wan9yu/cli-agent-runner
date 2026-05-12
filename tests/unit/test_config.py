@@ -291,3 +291,41 @@ disabled = ["future_plugin_name"]
     )
     cfg = load_config(toml)
     assert cfg.plugins == {"disabled": ["future_plugin_name"]}
+
+
+def test_given_no_auto_stop_on_when_loaded_then_default_includes_builtins(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.auto_stop_on == ["oauth_fail", "disk_critical"]
+
+
+def test_given_custom_auto_stop_on_when_loaded_then_used(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[monitor]
+auto_stop_on = ["oauth_fail", "disk_critical", "my_plugin_critical"]
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.auto_stop_on == ["oauth_fail", "disk_critical", "my_plugin_critical"]
