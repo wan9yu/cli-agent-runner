@@ -16,6 +16,7 @@ from pathlib import Path
 from agent_runner.config import (
     AgentConfig,
     Config,
+    MonitorConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -29,6 +30,7 @@ _SECTIONS = [
     ("runtime", RuntimeConfig),
     ("prompt", PromptConfig),
     ("vcs", VcsConfig),
+    ("monitor", MonitorConfig),
 ]
 
 

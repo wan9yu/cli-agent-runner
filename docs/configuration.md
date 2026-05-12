@@ -37,6 +37,13 @@ writes a templated copy you can edit.
 |---|---|---|
 | `orphan_action` | `str` | 'stash' |
 | `stash_idempotency_s` | `int` | 5 |
+
+### `[monitor]`
+
+| Field | Type | Default |
+|---|---|---|
+| `auth_fail_patterns` | `list[str]` | ['\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b'] |
+| `auth_fail_hint` | `str` | 'Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY' |
 <!-- /gen:config-schema -->
 
 ## `[phases]` (optional)

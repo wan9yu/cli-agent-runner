@@ -38,12 +38,29 @@ class VcsConfig:
     stash_idempotency_s: int = 5
 
 
+# Default auth-failure detection regex — claude-aware. Migrated from monitor.py
+# to config.py as the SSOT for the oauth_fail detector. Plugins / non-claude
+# providers override via [monitor].auth_fail_patterns.
+_DEFAULT_AUTH_PATTERNS: list[str] = [
+    r"\b(oauth|unauthorized|401|api[_ ]key|"
+    r"auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b",
+]
+_DEFAULT_AUTH_HINT: str = "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY"
+
+
+@dataclass(frozen=True)
+class MonitorConfig:
+    auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
+    auth_fail_hint: str = _DEFAULT_AUTH_HINT
+
+
 @dataclass(frozen=True)
 class Config:
     agent: AgentConfig
     runtime: RuntimeConfig
     prompt: PromptConfig
     vcs: VcsConfig = field(default_factory=VcsConfig)
+    monitor: MonitorConfig = field(default_factory=MonitorConfig)
     phases: list[str] | None = None
 
 
@@ -100,7 +117,14 @@ def load_config(toml_path: Path) -> Config:
         orphan_action=str(vcs_d.get("orphan_action", "stash")),
         stash_idempotency_s=int(vcs_d.get("stash_idempotency_s", 5)),
     )
+    monitor_d = raw.get("monitor", {})
+    monitor = MonitorConfig(
+        auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
+        auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
+    )
     phases_d = raw.get("phases", {})
     phases = list(phases_d["list"]) if "list" in phases_d else None
 
-    return Config(agent=agent, runtime=runtime, prompt=prompt, vcs=vcs, phases=phases)
+    return Config(
+        agent=agent, runtime=runtime, prompt=prompt, vcs=vcs, monitor=monitor, phases=phases
+    )

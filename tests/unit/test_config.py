@@ -210,3 +210,46 @@ context_injection_mode = "magic"
     )
     with pytest.raises(ValueError, match="context_injection_mode"):
         load_config(toml)
+
+
+def test_given_no_monitor_block_when_loaded_then_default_patterns(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert isinstance(cfg.monitor.auth_fail_patterns, list)
+    assert len(cfg.monitor.auth_fail_patterns) >= 1
+    assert isinstance(cfg.monitor.auth_fail_hint, str)
+    assert cfg.monitor.auth_fail_hint  # non-empty
+
+
+def test_given_custom_auth_patterns_when_loaded_then_used(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[monitor]
+auth_fail_patterns = ["custom_oauth_regex", "another_pattern"]
+auth_fail_hint = "Custom hint for non-claude provider"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.auth_fail_patterns == ["custom_oauth_regex", "another_pattern"]
+    assert cfg.monitor.auth_fail_hint == "Custom hint for non-claude provider"
