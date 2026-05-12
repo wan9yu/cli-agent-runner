@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 
 
@@ -94,7 +93,7 @@ def load_config(toml_path: Path) -> Config:
     prompt = PromptConfig(
         file=_expand_path(str(_require(prompt_d, "file")), project_name),
         inject_context=bool(prompt_d.get("inject_context", True)),
-        context_injection_mode=mode,  # type: ignore[arg-type]
+        context_injection_mode=mode,  # type: ignore[arg-type]  # narrowed by validation above
     )
     vcs_d = raw.get("vcs", {})
     vcs = VcsConfig(
