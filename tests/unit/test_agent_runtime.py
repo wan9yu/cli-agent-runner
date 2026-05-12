@@ -7,10 +7,8 @@ from pathlib import Path
 import pytest
 
 from agent_runner.agent_runtime import (
-    CRITICAL_ENV_DEFAULTS,
     RunResult,
     install_sigterm_reaper,
-    merge_critical_envs,
     run,
 )
 
@@ -151,16 +149,29 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         pid_file.unlink(missing_ok=True)
 
 
-def test_given_critical_env_defaults_when_inspected_then_contains_autoupdater_and_effort() -> None:
-    assert CRITICAL_ENV_DEFAULTS["DISABLE_AUTOUPDATER"] == "1"
-    assert CRITICAL_ENV_DEFAULTS["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
-
-
-def test_given_user_env_when_merged_with_critical_then_critical_wins() -> None:
-    merged = merge_critical_envs({"DISABLE_AUTOUPDATER": "0", "FOO": "bar"})
-    assert merged["DISABLE_AUTOUPDATER"] == "1"  # critical override
-    assert merged["FOO"] == "bar"  # user env preserved
-    assert merged["CLAUDE_CODE_EFFORT_LEVEL"] == "xhigh"
+def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0.1.7: agent_runtime injects nothing — caller's env_extra is verbatim."""
+    monkeypatch.delenv("DISABLE_AUTOUPDATER", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_EFFORT_LEVEL", raising=False)
+    script = _bash_script(
+        tmp_path,
+        'echo "AUTOUPDATER=${DISABLE_AUTOUPDATER:-unset}"; '
+        'echo "EFFORT=${CLAUDE_CODE_EFFORT_LEVEL:-unset}"; exit 0',
+    )
+    log = tmp_path / "out.log"
+    run(
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        log_path=log,
+        env_extra={},
+    )
+    text = log.read_text()
+    assert "AUTOUPDATER=unset" in text
+    assert "EFFORT=unset" in text
 
 
 def test_given_install_sigterm_reaper_when_called_then_returns_previous_handler() -> None:

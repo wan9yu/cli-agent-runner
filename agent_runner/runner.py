@@ -230,7 +230,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         prompt=prompt,
         timeout_s=cfg.runtime.round_timeout_s,
         log_path=log_path,
-        env_extra=agent_runtime.merge_critical_envs({}),
+        env_extra=dict(cfg.agent.env),
     )
     events.emit(
         log_dir,

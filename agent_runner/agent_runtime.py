@@ -1,10 +1,11 @@
-"""Agent subprocess management — ONLY module that spawns the claude CLI.
+"""Agent subprocess management — spawns the configured agent CLI process.
 
 Defenses encoded here:
 - R725: SIGTERM handler reaps process group before runner exits
 - R1128: ROUND_TIMEOUT is wall-clock hard wall (no activity-based extension)
 - #307: start_new_session=True isolates subprocess in its own pgrp
-- env injection: DISABLE_AUTOUPDATER=1 + CLAUDE_CODE_EFFORT_LEVEL caller-provided
+- env injection: per-CLI envs come from AgentConfig.env (preset-supplied);
+  no implicit injection in this module.
 """
 
 from __future__ import annotations
@@ -97,26 +98,14 @@ def run(
         log_file.close()
 
 
-CRITICAL_ENV_DEFAULTS: dict[str, str] = {
-    "DISABLE_AUTOUPDATER": "1",  # do not let claude self-update mid-loop
-    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",  # full effort, not default
-}
-
-
-def merge_critical_envs(user_env: dict[str, str]) -> dict[str, str]:
-    """Merge user env with CRITICAL_ENV_DEFAULTS — critical always wins."""
-    merged = dict(user_env)
-    merged.update(CRITICAL_ENV_DEFAULTS)
-    return merged
-
-
 def install_sigterm_reaper(reaper: Callable[[], None]) -> object:
     """Install a SIGTERM handler that calls ``reaper()`` first.
 
-    R725 defense: when supervisor receives SIGTERM (e.g. systemctl stop, manual
-    kill), bash wrapper would otherwise respawn fresh runner while old claude
-    keeps running → two claudes race on the same git tree, second commit can
-    swallow first commit's chat-room entry. Reaper terminates pgroup first.
+    R725 defense: when the supervisor receives SIGTERM (e.g. systemctl stop,
+    manual kill), the bash wrapper would otherwise respawn a fresh runner
+    while the old agent keeps running → two agent processes race on the same
+    git tree, the second commit can swallow the first commit's chat-room
+    entry. Reaper terminates pgroup first.
 
     Returns the previous SIGTERM handler so caller can restore it.
     """
