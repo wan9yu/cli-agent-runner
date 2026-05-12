@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-12
+
+### Added
+- `agent_runner.api_types.Detector` — public Protocol for plugin detectors
+  (attributes `name`, `severity`, `auto_action`; method `detect(state) -> Alert | None`).
+  `@runtime_checkable` — plugin classes structurally satisfying the shape are accepted
+- `agent_runner.monitor.register_detector(detector)` and `plugin_detectors()` — public
+  registration API + sorted list of currently-registered detector names
+- `agent_runner.monitor.run_plugin_detectors(state)` — invokes each registered plugin
+  detector with the assembled `ProjectState`; per-detector exceptions surface as
+  `UserWarning` (round continues)
+- `agent_runner` package now also discovers and loads entry_points in group
+  `agent_runner.detectors` at first import; failures degrade to `UserWarning`
+- `agent_runner.detector_helpers` module — three production-tested helpers for
+  plugin detector authors:
+  - `cumulative_window_check(events, *, kind, window_s, min_count)` —
+    sliding-window event counter; robust against wall-clock skew at boundaries
+  - `dual_source_silence(scheduler_log, round_log, threshold_s)` — both-source
+    silence check; avoids false positives during long rounds when only the
+    scheduler log is stale
+  - `phase_filter(state, *, exclude_phases)` — skip detection during phases
+    that intentionally produce no commits (e.g., retrospective rounds)
+- `MonitorConfig.auto_stop_on: list[str]` — explicit allow-list of detector
+  names whose `stop_service` action is honored. Defaults to
+  `["oauth_fail", "disk_critical"]` (builtin pair); operators must add plugin
+  detector names to opt them into auto-stop
+- `monitor.on_alert` gains `allowed_stop_names: list[str] | None` keyword
+  argument; backward-compatible default falls back to the legacy builtin pair
+- `peek --json` schema bumped to `"1.3"`; new `plugins.detectors: list[str]`
+  surfaces what's registered
+- `docs/plugins.md` gains a Detector Protocol chapter + DetectorHelpers
+  chapter with worked examples for each helper
+
+### Changed
+- `agent_runner.api._poll_once` now concatenates builtin detector alerts
+  with plugin detector alerts (`run_plugin_detectors(state)`) before returning
+- `agent_runner.api.monitor_loop` threads `cfg.monitor.auto_stop_on` into
+  `monitor.on_alert` for strict gating
+- `tests/invariants/test_peek_schema_version.py` tightened to require
+  `schema_version >= "1.3"` and the `plugins.detectors` list shape
+
+### Backward compatibility
+- Zero plugins installed → monitor behavior identical to 0.1.4
+- Existing 9 builtin detectors keep their current signatures unchanged
+- Existing `agent-runner.toml` files load without modification; default
+  `auto_stop_on` matches the previously-implicit behavior
+- `on_alert(...)` callers without the new kwarg continue to work via the
+  default `["oauth_fail", "disk_critical"]` allow-list
+
 ## [0.1.4] - 2026-05-12
 
 ### Added
