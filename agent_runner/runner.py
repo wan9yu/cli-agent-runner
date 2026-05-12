@@ -16,6 +16,7 @@ from agent_runner import (
     agent_runtime,
     context_store,
     events,
+    hooks,
     metrics,
     prompt_loader,
     startup_check,
@@ -73,6 +74,35 @@ def _round_context_for_prompt(
     return ctx
 
 
+def _stitch_enricher_slices(
+    base: dict[str, Any],
+    enrichers: list,
+    hook_ctx: hooks.HookContext,
+    log_dir: Path,
+) -> dict[str, Any]:
+    """Merge each enricher's slice under ``base[enricher.name]``.
+
+    Any exception is caught and emitted as a ``hook_failed`` event; the
+    round continues with whatever slices succeeded.
+    """
+    import traceback as tb_mod
+
+    out = dict(base)
+    for enricher in enrichers:
+        try:
+            out[enricher.name] = enricher.enrich(hook_ctx)
+        except Exception as exc:
+            payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
+            events.emit(
+                log_dir,
+                "hook_failed",
+                hook_name=enricher.name,
+                hook_kind="context_enricher",
+                **payload,
+            )
+    return out
+
+
 def run_one_round(cfg: Config) -> RoundResult:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -118,14 +148,26 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     previous_block = _previous_block(prev_status, dirty_last=bool(orphan))
 
-    context_store.write_round_context(
-        log_dir,
+    base_ctx = _round_context_for_prompt(round_num, started_at, phase, orphan_block)
+    hook_ctx = hooks.HookContext(
+        work_dir=cfg.runtime.work_dir,
+        log_dir=log_dir,
+        project=cfg.runtime.work_dir.resolve().name or "default",
         round_num=round_num,
-        started_at=started_at,
         phase=phase,
-        previous=previous_block,
-        orphan_stash=orphan_block,
+        agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
     )
+    enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
+
+    # Merge the previous/orphan blocks BEFORE writing (preserving prior behavior)
+    if previous_block is not None:
+        enriched_ctx["previous"] = previous_block
+    if orphan_block is not None:
+        enriched_ctx["orphan_stash"] = orphan_block
+
+    # Write the FULL enriched context to round-context.json
+    context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
+
     events.emit(log_dir, "round_start", round_num=round_num, phase=phase)
     metrics.log_metrics(log_dir, event="round_start", round_num=round_num, phase=phase)
 
@@ -135,7 +177,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     prompt = prompt_loader.assemble_prompt(
         cfg.prompt.file,
-        context=_round_context_for_prompt(round_num, started_at, phase, orphan_block),
+        context=enriched_ctx,
         inject_context=cfg.prompt.inject_context,
         mode=cfg.prompt.context_injection_mode,
     )
