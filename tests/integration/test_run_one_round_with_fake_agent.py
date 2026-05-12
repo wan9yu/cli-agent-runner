@@ -111,3 +111,44 @@ def test_given_fake_agent_crashes_when_round_runs_then_exit_code_propagated(
     cfg = _cfg(tmp_git_repo, fake_agent_script)
     result = run_one_round(cfg)
     assert result.exit_code == 137
+
+
+def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
+    tmp_git_repo: Path,
+) -> None:
+    """cfg.agent.env reaches the subprocess as env_extra -- no implicit injection."""
+    script = tmp_git_repo / "env-check-agent.sh"
+    record = tmp_git_repo / "env-record.txt"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "MY_FLAG=${{MY_FLAG:-unset}}" > "{record}"\n'
+        "exit 0\n"
+    )
+    script.chmod(0o755)
+
+    log_dir = tmp_git_repo / "logs"
+    prompt = tmp_git_repo / "p.md"
+    prompt.write_text("Test prompt body. " * 50)
+    (tmp_git_repo / ".gitignore").write_text("logs/\nenv-record.txt\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    cfg = Config(
+        agent=AgentConfig(
+            command=[str(script)],
+            prompt_arg_template=[],
+            env={"MY_FLAG": "passed-through"},
+        ),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=30),
+        prompt=PromptConfig(file=prompt, inject_context=False),
+        vcs=VcsConfig(),
+        phases=None,
+    )
+    run_one_round(cfg)
+
+    assert record.exists(), "fake agent didn't run -- check runner spawn path"
+    assert "MY_FLAG=passed-through" in record.read_text()
