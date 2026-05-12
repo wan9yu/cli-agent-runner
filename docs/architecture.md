@@ -95,6 +95,7 @@ API quota / writing to a near-full disk).
 - `agent_exit`
 - `agent_spawn`
 - `dirty_detected`
+- `hook_failed`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_triggered`
 - `orphan_idempotent_skip`
