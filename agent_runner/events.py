@@ -82,7 +82,7 @@ class _KnownEventKindsView:
         return isinstance(item, str) and _is_known(item)
 
     def __iter__(self) -> Iterator[str]:
-        yield from _BUILTIN_KINDS
+        yield from sorted(_BUILTIN_KINDS)
         yield from _PLUGIN_KINDS
 
     def __len__(self) -> int:

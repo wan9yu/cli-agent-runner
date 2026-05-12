@@ -103,7 +103,7 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="event_kind_registry",
-            value="KNOWN_EVENT_KINDS frozenset (14 kinds)",
+            value="KNOWN_EVENT_KINDS registry view (14 built-in kinds + plugin-extensible)",
             codifies="Prevent events.emit() typos / unregistered kinds slipping past CI",
             guarded_by=Path("tests/invariants/test_event_kind_registry.py"),
             current_state="active",
