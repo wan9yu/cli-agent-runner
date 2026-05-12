@@ -300,6 +300,8 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
         metrics=metrics,
         log_tails=log_tails,
         round_timeout_s=cfg.runtime.round_timeout_s,
+        auth_fail_patterns=cfg.monitor.auth_fail_patterns,
+        auth_fail_hint=cfg.monitor.auth_fail_hint,
     )
 
 
