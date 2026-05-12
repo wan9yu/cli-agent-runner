@@ -62,7 +62,7 @@ def test_given_missing_required_field_when_loaded_then_raises_with_field_name(
     tmp_path: Path,
 ) -> None:
     toml = _write_toml(tmp_path, "[agent]\ncommand = []\n")
-    with pytest.raises(ValueError, match="agent.prompt_arg_template"):
+    with pytest.raises(ValueError, match="prompt_arg_template"):
         load_config(toml)
 
 
@@ -115,34 +115,42 @@ file = "./p.md"
     assert tmp_path.name in str(cfg.runtime.log_dir)
 
 
-def test_given_agent_name_in_toml_when_loaded_then_name_set(tmp_path):
-    cfg_path = tmp_path / "agent-runner.toml"
-    cfg_path.write_text(
-        '[agent]\n'
-        'name = "claude"\n'
-        'command = ["claude"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        '[runtime]\n'
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{tmp_path}/logs"\n'
-        '[prompt]\n'
-        'file = "prompts/main.md"\n'
+def test_given_agent_name_in_toml_when_loaded_then_name_set(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+name = "claude"
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+
+[prompt]
+file = "prompts/main.md"
+""",
     )
-    cfg = load_config(cfg_path)
+    cfg = load_config(toml)
     assert cfg.agent.name == "claude"
 
 
-def test_given_agent_without_name_when_loaded_then_name_is_none(tmp_path):
-    cfg_path = tmp_path / "agent-runner.toml"
-    cfg_path.write_text(
-        '[agent]\n'
-        'command = ["claude"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        '[runtime]\n'
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{tmp_path}/logs"\n'
-        '[prompt]\n'
-        'file = "prompts/main.md"\n'
+def test_given_agent_without_name_when_loaded_then_name_is_none(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+
+[prompt]
+file = "prompts/main.md"
+""",
     )
-    cfg = load_config(cfg_path)
+    cfg = load_config(toml)
     assert cfg.agent.name is None

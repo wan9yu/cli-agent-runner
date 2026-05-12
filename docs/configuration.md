@@ -12,6 +12,7 @@ writes a templated copy you can edit.
 |---|---|---|
 | `command` | `list[str]` | — |
 | `prompt_arg_template` | `list[str]` | — |
+| `name` | `str | None` | None |
 
 ### `[runtime]`
 
