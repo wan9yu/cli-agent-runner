@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 def load_prompt(prompt_file: Path) -> str:
@@ -37,8 +37,9 @@ def assemble_prompt(
     *,
     context: dict[str, Any] | None,
     inject_context: bool,
+    mode: Literal["prepend", "file", "none"] = "prepend",
 ) -> str:
     body = strip_yaml_frontmatter(load_prompt(prompt_file))
-    if inject_context and context is not None:
+    if inject_context and context is not None and mode == "prepend":
         return _format_context_block(context) + body
     return body

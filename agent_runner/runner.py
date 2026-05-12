@@ -147,6 +147,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         cfg.prompt.file,
         context=_round_context_for_prompt(round_num, started_at, phase, orphan_block),
         inject_context=cfg.prompt.inject_context,
+        mode=cfg.prompt.context_injection_mode,
     )
 
     events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=cfg.runtime.round_timeout_s)

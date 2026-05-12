@@ -61,3 +61,69 @@ def test_given_prompt_with_frontmatter_when_assembled_then_frontmatter_stripped(
     p.write_text("---\ntitle: x\n---\nBody.")
     out = assemble_prompt(p, context=None, inject_context=False)
     assert out == "Body."
+
+
+# ---------------------------------------------------------------------------
+# context_injection_mode tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def prompt_file(tmp_path: Path) -> Path:
+    p = tmp_path / "main.md"
+    p.write_text("# Agent Prompt\nDo the work.\n")
+    return p
+
+
+def test_given_prepend_mode_when_assembled_then_context_prepended(prompt_file: Path) -> None:
+    out = assemble_prompt(
+        prompt_file,
+        context={"round_num": 1},
+        inject_context=True,
+        mode="prepend",
+    )
+    assert out.startswith("```json round-context\n")
+    assert '"round_num": 1' in out
+    assert "Do the work." in out
+
+
+def test_given_file_mode_when_assembled_then_no_prepend(prompt_file: Path) -> None:
+    out = assemble_prompt(
+        prompt_file,
+        context={"round_num": 1},
+        inject_context=True,
+        mode="file",
+    )
+    assert "round-context" not in out
+    assert out.startswith("# Agent Prompt")
+
+
+def test_given_none_mode_when_assembled_then_no_prepend(prompt_file: Path) -> None:
+    out = assemble_prompt(
+        prompt_file,
+        context={"round_num": 1},
+        inject_context=True,
+        mode="none",
+    )
+    assert "round-context" not in out
+    assert out.startswith("# Agent Prompt")
+
+
+def test_given_inject_context_false_when_assembled_then_no_prepend(prompt_file: Path) -> None:
+    out = assemble_prompt(
+        prompt_file,
+        context={"round_num": 1},
+        inject_context=False,
+        mode="prepend",
+    )
+    assert "round-context" not in out
+
+
+def test_given_default_mode_when_assembled_then_prepend(prompt_file: Path) -> None:
+    """mode defaults to 'prepend' for backward compat — call without mode kwarg."""
+    out = assemble_prompt(
+        prompt_file,
+        context={"round_num": 1},
+        inject_context=True,
+    )
+    assert out.startswith("```json round-context\n")
