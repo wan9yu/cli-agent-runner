@@ -1,13 +1,28 @@
-"""Structured event emitter — JSON Lines, monthly UTC naming."""
+"""Structured event emitter — JSON Lines, monthly UTC naming.
+
+Event kinds live in a two-tier registry:
+- ``_BUILTIN_KINDS`` — frozen set of names emitted by core supervisor code.
+- ``_PLUGIN_KINDS`` — mutable dict (name -> source label) populated by plugins
+  via ``register_event_kind``. Loaded once at package import from setuptools
+  ``entry_points`` group ``agent_runner.event_kinds``.
+
+Public API:
+- ``KNOWN_EVENT_KINDS`` — read-only union view; supports ``in`` and iteration.
+  Preserved so ``from agent_runner.events import KNOWN_EVENT_KINDS`` still works.
+- ``register_event_kind(name, *, source)`` — plugin entry point.
+- ``plugin_event_kinds()`` — sorted list of currently-registered plugin names.
+- ``emit(log_dir, kind, **fields)`` — append a structured event line.
+"""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-KNOWN_EVENT_KINDS = frozenset(
+_BUILTIN_KINDS: frozenset[str] = frozenset(
     {
         "round_start",
         "agent_spawn",
@@ -21,11 +36,63 @@ KNOWN_EVENT_KINDS = frozenset(
         "status_recovered",
         "smoke_check_failed",
         "round_end",
-        # Phase 2 monitor events
-        "monitor_alert_emitted",  # any detector fired (info/warning)
-        "monitor_auto_stop_triggered",  # critical alert triggered service stop
+        "monitor_alert_emitted",
+        "monitor_auto_stop_triggered",
     }
 )
+
+_PLUGIN_KINDS: dict[str, str] = {}
+
+
+def register_event_kind(name: str, *, source: str) -> None:
+    """Register a plugin-supplied event kind.
+
+    Raises ``ValueError`` if ``name`` collides with a built-in or with a
+    different plugin source. Idempotent when the same source re-registers
+    the same name (safe under repeated entry_points loading).
+    """
+    if name in _BUILTIN_KINDS:
+        raise ValueError(f"event kind {name!r} is built-in; cannot re-register")
+    existing = _PLUGIN_KINDS.get(name)
+    if existing is not None and existing != source:
+        raise ValueError(
+            f"event kind {name!r} already registered by {existing!r}; "
+            f"cannot re-register from {source!r}"
+        )
+    _PLUGIN_KINDS[name] = source
+
+
+def _is_known(name: str) -> bool:
+    return name in _BUILTIN_KINDS or name in _PLUGIN_KINDS
+
+
+def plugin_event_kinds() -> list[str]:
+    """Sorted list of currently-registered plugin event kind names."""
+    return sorted(_PLUGIN_KINDS)
+
+
+class _KnownEventKindsView:
+    """Read-only union view of built-in + plugin event kinds.
+
+    Backward compat for ``from agent_runner.events import KNOWN_EVENT_KINDS``.
+    Supports ``in`` and ``iter``; intentionally does NOT support mutation.
+    """
+
+    def __contains__(self, item: object) -> bool:
+        return isinstance(item, str) and _is_known(item)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from _BUILTIN_KINDS
+        yield from _PLUGIN_KINDS
+
+    def __len__(self) -> int:
+        return len(_BUILTIN_KINDS) + len(_PLUGIN_KINDS)
+
+    def __repr__(self) -> str:
+        return f"<KNOWN_EVENT_KINDS: {len(_BUILTIN_KINDS)} built-in + {len(_PLUGIN_KINDS)} plugin>"
+
+
+KNOWN_EVENT_KINDS = _KnownEventKindsView()
 
 
 def now_iso_ms() -> str:
@@ -42,7 +109,7 @@ def emit(log_dir: Path, kind: str, **fields: Any) -> None:
     Caller must ensure ``log_dir`` exists (runner.run_one_round does this once
     per round; tests use the ``tmp_log_dir`` fixture which creates it).
     """
-    if kind not in KNOWN_EVENT_KINDS:
+    if not _is_known(kind):
         raise ValueError(f"unknown event kind: {kind!r}")
     now = datetime.now(UTC)
     month = now.strftime("%Y-%m")
