@@ -295,7 +295,7 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
     events = monitor.parse_events_from_jsonl_files(src.events_files())
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
     log_tails = monitor.load_round_log_tails(src.rounds_dir())
-    return monitor.run_all_detectors(
+    builtin = monitor.run_all_detectors(
         events=events,
         metrics=metrics,
         log_tails=log_tails,
@@ -303,6 +303,9 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,
     )
+    state = monitor.assemble_project_state(src, project=_project_name(work_dir))
+    plugin = monitor.run_plugin_detectors(state)
+    return builtin + plugin
 
 
 def monitor_loop(
