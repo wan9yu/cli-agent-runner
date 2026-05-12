@@ -13,7 +13,7 @@ def add_parser(sub, parent) -> None:
     p.add_argument(
         "--system",
         action="store_true",
-        help="Install at system level (not yet supported in Phase 2)",
+        help="Install at system level (not yet supported)",
     )
     p.add_argument(
         "--monitor",

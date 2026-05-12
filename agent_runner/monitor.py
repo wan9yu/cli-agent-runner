@@ -1,11 +1,12 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
-Phase 2 ships 9 detectors. Two trigger ``auto_action="stop_service"``:
+9 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
 The detectors are pure functions; the loop, ssh fetch, and auto-stop wiring
-live further down (Tasks 3.2 / 3.3).
+live further down. Plugin detectors register via :func:`register_detector`
+and run alongside the builtins on every poll.
 """
 
 from __future__ import annotations

@@ -132,7 +132,7 @@ def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() ->
 
     md = render_event_kinds_list()
     bullets = [line for line in md.splitlines() if line.startswith("- ")]
-    # 14 known events (including 2 Phase 2 monitor events)
+    # >=12 known events (incl. 2 monitor events: alert_emitted, auto_stop_triggered)
     assert len(bullets) >= 12
     assert any("round_start" in line for line in bullets)
     assert any("monitor_alert_emitted" in line for line in bullets)

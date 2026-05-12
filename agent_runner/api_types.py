@@ -1,7 +1,7 @@
 """Dataclasses for the Python API state tree.
 
 These are the public types that ``agent_runner.api`` returns and that
-``cli/`` formats. Phase 3 LLM/Critic will read these structures.
+``cli/`` formats. Plugins (hooks, context enrichers, detectors) consume them.
 
 All frozen — state is immutable, no in-place mutation.
 """

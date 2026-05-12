@@ -2,8 +2,8 @@
 
 Every CLI subcommand has a corresponding api function. CLI files do
 ``api.X(...)`` and format the returned dataclass for display. External
-agents (Phase 3 outer Claude Code) can `from agent_runner import api`
-and skip CLI text parsing entirely.
+callers can ``from agent_runner import api`` and skip CLI text parsing
+entirely.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def install(
     if work_dir is None:
         work_dir = Path.cwd()
     if system:
-        raise NotImplementedError("--system install not yet implemented in Phase 2")
+        raise NotImplementedError("--system install not yet implemented")
     cfg_path = work_dir / "agent-runner.toml"
     cfg = load_config(cfg_path)
     project = _project_name(work_dir)

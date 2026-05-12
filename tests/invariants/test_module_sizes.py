@@ -1,14 +1,11 @@
-"""Phase 2 module-size guards.
+"""Module-size guards.
 
 Two kinds of caps:
 - HARD CAPS (architectural): serve_cmd <=60 (thin loop), cli/*_cmd <=90 (formatter only).
   These enforce the design intent that those layers stay thin.
-- RATCHET CAPS (drift prevention): api.py <=335, monitor.py <=520.
-  Sized to current implementation. They prevent future growth without explicit
-  refactor; they should be DECREASED when production code shrinks, never increased.
-
-Note: ratchet caps were reset on 2026-05-12 after a repo-wide ``ruff format``
-sweep that expanded multi-arg signatures into per-arg lines. New baseline.
+- RATCHET CAPS (drift prevention): api.py and monitor.py. Sized to current
+  implementation. They prevent future growth without explicit refactor; they
+  should be DECREASED when production code shrinks, never increased.
 """
 
 from __future__ import annotations
@@ -25,11 +22,11 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
     [
         ("cli/serve_cmd.py", 60),  # HARD cap — thin loop, signal-trapping only
         ("api.py", 340),  # ratchet — raised +2 for plugin-detector short-circuit (simplify)
-        ("monitor.py", 584),  # ratchet — raised +19 for allowed_stop_names gating (Task 6)
+        ("monitor.py", 586),  # ratchet — raised +2 for docstring update during cleanup
         ("defenses.py", 180),  # cap with ~70 LOC headroom for new defenses
     ],
 )
-def test_given_phase2_module_when_counted_then_under_limit(rel: str, limit: int) -> None:
+def test_given_core_module_when_counted_then_under_limit(rel: str, limit: int) -> None:
     """Module size guards. ``serve_cmd`` is HARD CAP (architectural).
     Others are RATCHET CAPS — reduce them when modules shrink, never raise.
     """
