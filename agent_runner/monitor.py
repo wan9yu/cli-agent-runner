@@ -444,6 +444,33 @@ def run_all_detectors(
     return [a for a in candidates if a is not None]
 
 
+def run_plugin_detectors(state: ProjectState) -> list[Alert]:
+    """Invoke every registered plugin detector with the current ProjectState.
+
+    Plugin failures are isolated: an exception inside one detector is logged
+    via ``UserWarning`` and the remaining detectors continue. No alert is
+    emitted on plugin crash — only the warning surfaces.
+
+    Builtin detectors run separately via ``run_all_detectors``; the two lists
+    of alerts are typically concatenated by the caller (``api._poll_once``).
+    """
+    import warnings
+
+    out: list[Alert] = []
+    for detector in _PLUGIN_DETECTORS:
+        try:
+            alert = detector.detect(state)
+        except Exception as e:
+            warnings.warn(
+                f"plugin detector {detector.name!r} raised during detect(): {e}",
+                stacklevel=2,
+            )
+            continue
+        if alert is not None:
+            out.append(alert)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Remote source + auto-stop dispatch (Task 3.3)
 # ---------------------------------------------------------------------------
