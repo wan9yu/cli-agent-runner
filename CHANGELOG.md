@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-12
+
+### Added
+- `agent_runner.hooks` module — three Protocol-typed plugin extension points:
+  `PreRoundHook` (runs after lock acquire, before context write),
+  `ContextEnricher` (returns a per-plugin slice stitched into `round-context.json`
+  under `base_context[enricher.name]`), and `PostRoundHook` (runs after agent exit,
+  before `round_end` event)
+- `agent_runner.hooks.HookContext` — narrow runtime context passed to all hooks
+  (`work_dir`, `log_dir`, `project`, `round_num`, `phase`, `agent_name`); does NOT
+  expose the full `Config` so internal refactors remain safe
+- `agent_runner.hooks.register_pre_round_hook` / `register_context_enricher` /
+  `register_post_round_hook` — public registration API; rejects duplicate `name`
+- `agent_runner.hooks.plugin_context_enrichers()` — sorted list of registered
+  enricher names, surfaced via `peek --json`
+- `agent_runner.api_types.RoundResult` — promoted from `runner.py`; superset of
+  the prior internal fields plus `phase`, `started_at`, `ended_at`, `log_path` for
+  stable `PostRoundHook` consumption
+- `agent_runner` package now also discovers and loads three new entry_points groups
+  at first import: `agent_runner.pre_round_hooks`, `agent_runner.context_enrichers`,
+  `agent_runner.post_round_hooks`; plugin failures degrade to a `UserWarning`
+- Built-in event kind `hook_failed` — emitted by the runner whenever a plugin hook
+  raises; payload includes `{hook_name, hook_kind, error_type, error_message, traceback}`
+  with traceback truncated to 2KB (head 1KB + tail 1KB joined by `[truncated]`)
+- `peek --json` schema bumped to `"1.2"`; new `plugins.context_enrichers: list[str]`
+- `docs/plugins.md` — new chapter with end-to-end ContextEnricher example
+- New invariant `tests/invariants/test_round_result_stable.py` guards `RoundResult`
+  field set + types across future minors
+
+### Changed
+- `agent_runner.runner.run_one_round` integrates hooks at three checkpoints; each
+  call is wrapped in `try/except` and surfaces failures via `hook_failed`
+- `tests/invariants/test_peek_schema_version.py` tightened to require
+  `schema_version >= "1.2"` and the `plugins.context_enrichers` list shape
+
+### Backward compatibility
+- Zero plugins installed → runner behavior identical to 0.1.3
+- `RoundResult` field set is a superset; every prior field is preserved
+- Existing 0.1.x user `agent-runner.toml` files load without modification
+
 ## [0.1.3] - 2026-05-12
 
 ### Added
