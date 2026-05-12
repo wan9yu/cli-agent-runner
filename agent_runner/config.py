@@ -11,6 +11,7 @@ from pathlib import Path
 class AgentConfig:
     command: list[str]
     prompt_arg_template: list[str]
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,9 +62,11 @@ def load_config(toml_path: Path) -> Config:
     with toml_path.open("rb") as f:
         raw = tomllib.load(f)
 
+    agent_d = raw.get("agent", {})
     agent = AgentConfig(
         command=list(_require(raw, "agent", "command")),
         prompt_arg_template=list(_require(raw, "agent", "prompt_arg_template")),
+        name=agent_d.get("name"),
     )
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
     work_dir = _expand_path(raw_work_dir, "").resolve()

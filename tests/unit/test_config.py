@@ -113,3 +113,36 @@ file = "./p.md"
     cfg = load_config(toml)
     assert cfg.runtime.work_dir.name == tmp_path.name
     assert tmp_path.name in str(cfg.runtime.log_dir)
+
+
+def test_given_agent_name_in_toml_when_loaded_then_name_set(tmp_path):
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(
+        '[agent]\n'
+        'name = "claude"\n'
+        'command = ["claude"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        '[runtime]\n'
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        '[prompt]\n'
+        'file = "prompts/main.md"\n'
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.agent.name == "claude"
+
+
+def test_given_agent_without_name_when_loaded_then_name_is_none(tmp_path):
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(
+        '[agent]\n'
+        'command = ["claude"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        '[runtime]\n'
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        '[prompt]\n'
+        'file = "prompts/main.md"\n'
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.agent.name is None
