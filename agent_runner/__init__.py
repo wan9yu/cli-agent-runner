@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-__version__ = "0.0.1"
+try:
+    from agent_runner._version import __version__
+except ImportError:  # editable install before hatch-vcs has generated _version.py
+    __version__ = "0.0.0+unknown"
 
 _HOOK_GROUPS = (
     "agent_runner.pre_round_hooks",
