@@ -154,3 +154,158 @@ The round itself continues — a broken plugin must not crash the supervisor.
   ...
 }
 ```
+
+## Custom monitor detectors (§3.3)
+
+0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
+detectors that run alongside the 9 builtins on every monitor poll.
+
+### Group + Protocol
+
+```toml
+[project.entry-points."agent_runner.detectors"]
+my_detector = "my_plugin.detectors:_register"
+```
+
+```python
+# my_plugin/detectors.py
+from agent_runner.api_types import Alert, ProjectState
+from agent_runner.monitor import register_detector
+
+
+class MyDetector:
+    name = "my_detector"
+    severity = "warning"     # "info" | "warning" | "critical"
+    auto_action = "none"     # "none" | "stop_service"
+
+    def detect(self, state: ProjectState) -> Alert | None:
+        if not _should_fire(state):
+            return None
+        return Alert(
+            severity=self.severity,
+            detector=self.name,
+            message="something is off",
+            context={"hint": "look here"},
+            ts="...",  # use events.now_iso_ms()
+            auto_action=self.auto_action,
+        )
+
+
+def _register() -> None:
+    register_detector(MyDetector())
+```
+
+`Detector` is a `@runtime_checkable` Protocol — `isinstance(obj, Detector)` returns
+True for any class with the four required attributes (`name`, `severity`,
+`auto_action`, `detect`).
+
+### Auto-stop opt-in
+
+A plugin detector that returns alerts with `auto_action="stop_service"` will
+NOT actually stop the supervisor unless its `name` appears in
+`cfg.monitor.auto_stop_on`. Operators must opt plugin detectors in explicitly:
+
+```toml
+# agent-runner.toml
+[monitor]
+auto_stop_on = ["oauth_fail", "disk_critical", "my_detector"]
+```
+
+The default `auto_stop_on` includes only the two built-in critical detectors
+(`oauth_fail`, `disk_critical`). This prevents a buggy or aggressive plugin
+detector from stopping production services without explicit operator consent.
+
+### Failure isolation
+
+If `detect(state)` raises an exception, the runner logs a `UserWarning` and
+the remaining detectors continue. No alert is emitted for the crashing
+detector. Other plugin detectors and all builtins still run normally.
+
+### `peek --json` surface
+
+```json
+{
+  "schema_version": "1.3",
+  "plugins": {
+    "event_kinds": [...],
+    "context_enrichers": [...],
+    "detectors": ["my_detector"]
+  },
+  ...
+}
+```
+
+## DetectorHelpers
+
+`agent_runner.detector_helpers` codifies three production-tested heuristic
+patterns. Use them in your detector's `detect()` to avoid false positives.
+
+### `cumulative_window_check(events, *, kind, window_s, min_count)`
+
+```python
+from agent_runner.detector_helpers import cumulative_window_check
+
+class CommitsStalledDetector:
+    name = "commits_stalled"
+    severity = "warning"
+    auto_action = "none"
+
+    def detect(self, state):
+        no_commits = not cumulative_window_check(
+            state.recent_events, kind="commit", window_s=3600, min_count=1
+        )
+        if no_commits:
+            return Alert(...)
+        return None
+```
+
+**Codifies the lesson:** snapshot-time `since` queries miss boundary events
+due to wall-clock skew between supervisor host and storage. Cumulative
+counting from explicit `ts` fields is robust.
+
+### `dual_source_silence(scheduler_log, round_log, threshold_s)`
+
+```python
+from agent_runner.detector_helpers import dual_source_silence
+
+class HangDetector:
+    name = "hang"
+    severity = "critical"
+    auto_action = "none"
+
+    def detect(self, state):
+        if state.current_round is None:
+            return None
+        if dual_source_silence(
+            state.current_round.log_path.parent.parent / "scheduler.log",
+            state.current_round.log_path,
+            threshold_s=600,
+        ):
+            return Alert(...)
+        return None
+```
+
+**Codifies the lesson:** single-source silence on the scheduler log fires
+false "log silent" alerts during legitimately long rounds (scheduler.log
+only writes on round boundaries). Both logs must be stale before alerting.
+
+### `phase_filter(state, *, exclude_phases)`
+
+```python
+from agent_runner.detector_helpers import phase_filter
+
+class NoCommitsDetector:
+    name = "no_commits"
+    severity = "warning"
+    auto_action = "none"
+
+    def detect(self, state):
+        if not phase_filter(state, exclude_phases={"retro", "review"}):
+            return None  # this phase legitimately produces zero commits
+        # ... actual detection logic
+        return None
+```
+
+**Codifies the lesson:** "0 commits in N rounds" detectors mis-fire on
+retrospective/reflection phases that intentionally produce zero commits.
+Pass the set of phase names where the detector should NOT run.
