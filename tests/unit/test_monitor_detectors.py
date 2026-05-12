@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from agent_runner.api_types import Alert
+from agent_runner.config import _DEFAULT_AUTH_HINT
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
     detect_disk_critical,
@@ -238,4 +239,4 @@ def test_given_default_patterns_when_detect_oauth_fail_then_existing_behavior():
 
     alert = detect_oauth_fail(events, log_tails)  # no patterns kwarg
     assert alert is not None
-    assert "claude" in alert.context["hint"].lower() or "ANTHROPIC" in alert.context["hint"]
+    assert alert.context["hint"] == _DEFAULT_AUTH_HINT
