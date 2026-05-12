@@ -11,7 +11,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
+
+Severity = Literal["info", "warning", "critical"]
+"""Alert / Detector severity level. ``critical`` is the only level that may
+trigger ``auto_action="stop_service"``."""
+
+AutoAction = Literal["none", "stop_service"]
+"""What the monitor does when this Alert fires. ``stop_service`` only takes
+effect if the detector's ``name`` is in ``cfg.monitor.auto_stop_on``."""
 
 
 class ServiceMode(StrEnum):
@@ -68,12 +76,12 @@ class ProjectState:
 
 @dataclass(frozen=True)
 class Alert:
-    severity: str
+    severity: Severity
     detector: str
     message: str
     context: dict[str, Any]
     ts: str
-    auto_action: str = "none"
+    auto_action: AutoAction = "none"
 
 
 @runtime_checkable
@@ -91,8 +99,8 @@ class Detector(Protocol):
     """
 
     name: str
-    severity: str  # "info" | "warning" | "critical"
-    auto_action: str  # "none" | "stop_service"
+    severity: Severity
+    auto_action: AutoAction
 
     def detect(self, state: ProjectState) -> Alert | None: ...
 

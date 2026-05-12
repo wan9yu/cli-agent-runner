@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from agent_runner._registry import ensure_unique
+
 _HEAD_BYTES = 1024
 _TAIL_BYTES = 1024
 _TRUNC_MARKER = "\n... [truncated] ...\n"
@@ -92,24 +94,18 @@ _CONTEXT_ENRICHERS: list[ContextEnricher] = []
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
 
 
-def _ensure_unique(name: str, existing: list, kind: str) -> None:
-    for item in existing:
-        if getattr(item, "name", None) == name:
-            raise ValueError(f"{kind} {name!r} already registered; refusing to add a second")
-
-
 def register_pre_round_hook(hook: PreRoundHook) -> None:
-    _ensure_unique(hook.name, _PRE_ROUND_HOOKS, "pre_round_hook")
+    ensure_unique(hook.name, _PRE_ROUND_HOOKS, "pre_round_hook")
     _PRE_ROUND_HOOKS.append(hook)
 
 
 def register_context_enricher(enricher: ContextEnricher) -> None:
-    _ensure_unique(enricher.name, _CONTEXT_ENRICHERS, "context_enricher")
+    ensure_unique(enricher.name, _CONTEXT_ENRICHERS, "context_enricher")
     _CONTEXT_ENRICHERS.append(enricher)
 
 
 def register_post_round_hook(hook: PostRoundHook) -> None:
-    _ensure_unique(hook.name, _POST_ROUND_HOOKS, "post_round_hook")
+    ensure_unique(hook.name, _POST_ROUND_HOOKS, "post_round_hook")
     _POST_ROUND_HOOKS.append(hook)
 
 

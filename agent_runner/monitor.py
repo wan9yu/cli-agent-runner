@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from agent_runner._registry import ensure_unique
 from agent_runner.api_types import (
     Alert,
     Detector,
@@ -58,11 +59,7 @@ _PLUGIN_DETECTORS: list[Detector] = []
 
 def register_detector(detector: Detector) -> None:
     """Register a plugin detector. Rejects duplicate names."""
-    for existing in _PLUGIN_DETECTORS:
-        if getattr(existing, "name", None) == detector.name:
-            raise ValueError(
-                f"detector {detector.name!r} already registered; refusing to add a second"
-            )
+    ensure_unique(detector.name, _PLUGIN_DETECTORS, "detector")
     _PLUGIN_DETECTORS.append(detector)
 
 
