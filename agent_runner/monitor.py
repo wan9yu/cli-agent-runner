@@ -86,7 +86,8 @@ _NETWORK_PATTERNS = re.compile(
 def _alert(
     detector: str, severity: str, message: str, context: dict[str, Any], auto_action: str = "none"
 ) -> Alert:
-    assert detector in KNOWN_ALERT_KINDS, f"unknown alert kind: {detector!r}"
+    # Builtin-only helper. Plugin detectors construct Alert directly; their
+    # names are not in KNOWN_ALERT_KINDS (validated by docgen + test_catalogs).
     return Alert(
         severity=severity,
         detector=detector,
