@@ -25,6 +25,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
+from agent_runner.config import _DEFAULT_AUTH_HINT, _DEFAULT_AUTH_PATTERNS
 from agent_runner.context_store import read_json
 from agent_runner.events import emit as emit_event
 from agent_runner.events import now_iso_ms
@@ -50,11 +51,6 @@ AUTO_STOP_ALERTS: frozenset[str] = frozenset({"oauth_fail", "disk_critical"})
 
 SHORT_EXIT_THRESHOLD_S = 60
 
-_AUTH_PATTERNS = re.compile(
-    r"\b(oauth|unauthorized|401|api[_ ]key|"
-    r"auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b",
-    re.IGNORECASE,
-)
 _NETWORK_PATTERNS = re.compile(
     r"\b(connection refused|econnrefused|dns|"
     r"name or service not known|connect(ion)? timed out|"
@@ -164,9 +160,7 @@ def detect_disk_warning(
     metrics: list[dict[str, Any]], *, threshold_pct: float = 90.0
 ) -> Alert | None:
     val = _latest(metrics, "disk_used_pct")
-    if val is None or val < threshold_pct:
-        return None
-    if val >= 95.0:  # leave the >=95 case to detect_disk_critical
+    if val is None or val < threshold_pct or val >= 95.0:  # >=95 handled by detect_disk_critical
         return None
     return _alert(
         "disk_warning",
@@ -234,31 +228,26 @@ def detect_smoke_fail_rate(
     )
 
 
-def _short_exit_with_pattern(
-    events: list[dict[str, Any]], log_tails: dict[int, str], pattern: re.Pattern[str], window: int
-) -> tuple[int, int]:
-    recent = _last_n_round_exits(events, window)
-    matches = 0
-    for e in recent:
-        rn = e.get("round_num")
-        dur = e.get("duration_s") or 0.0
-        exit_code = e.get("exit_code", 0)
-        timed_out = e.get("timed_out", False)
-        if dur < SHORT_EXIT_THRESHOLD_S and exit_code != 0 and not timed_out:
-            tail = log_tails.get(rn, "")
-            if pattern.search(tail):
-                matches += 1
-    return matches, len(recent)
-
-
 def detect_oauth_fail(
     events: list[dict[str, Any]],
     log_tails: dict[int, str],
     *,
     window: int = 10,
     threshold: float = 0.2,
+    patterns: list[re.Pattern[str]] | None = None,
+    hint: str | None = None,
 ) -> Alert | None:
-    matches, total = _short_exit_with_pattern(events, log_tails, _AUTH_PATTERNS, window)
+    pats = patterns or [re.compile(p, re.IGNORECASE) for p in _DEFAULT_AUTH_PATTERNS]
+    recent = _last_n_round_exits(events, window)
+    matches = sum(
+        1
+        for e in recent
+        if (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
+        and e.get("exit_code", 0) != 0
+        and not e.get("timed_out", False)
+        and any(p.search(log_tails.get(e.get("round_num"), "")) for p in pats)
+    )
+    total = len(recent)
     if total < window or matches / total < threshold:
         return None
     return _alert(
@@ -269,7 +258,7 @@ def detect_oauth_fail(
             "matches": matches,
             "window": total,
             "threshold": threshold,
-            "hint": "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY",
+            "hint": hint if hint is not None else _DEFAULT_AUTH_HINT,
         },
         auto_action="stop_service",
     )
@@ -282,7 +271,16 @@ def detect_network_fail(
     window: int = 10,
     threshold: float = 0.2,
 ) -> Alert | None:
-    matches, total = _short_exit_with_pattern(events, log_tails, _NETWORK_PATTERNS, window)
+    recent = _last_n_round_exits(events, window)
+    matches = sum(
+        1
+        for e in recent
+        if (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
+        and e.get("exit_code", 0) != 0
+        and not e.get("timed_out", False)
+        and _NETWORK_PATTERNS.search(log_tails.get(e.get("round_num"), ""))
+    )
+    total = len(recent)
     if total < window or matches / total < threshold:
         return None
     return _alert(
@@ -404,10 +402,15 @@ def run_all_detectors(
     log_tails: dict[int, str],
     round_timeout_s: int = 1800,
     now: datetime | None = None,
+    auth_fail_patterns: list[str] | None = None,
+    auth_fail_hint: str | None = None,
 ) -> list[Alert]:
     """Run all 9 detectors; returns alerts (empty = healthy)."""
     if now is None:
         now = datetime.now(UTC)
+    compiled_auth_pats = (
+        [re.compile(p, re.IGNORECASE) for p in auth_fail_patterns] if auth_fail_patterns else None
+    )
     candidates = [
         detect_timeout_rate(events),
         detect_hung(events, now=now, round_timeout_s=round_timeout_s),
@@ -416,7 +419,7 @@ def run_all_detectors(
         detect_disk_critical(metrics),
         detect_mem_pressure(metrics),
         detect_smoke_fail_rate(events),
-        detect_oauth_fail(events, log_tails),
+        detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
         detect_network_fail(events, log_tails),
     ]
     return [a for a in candidates if a is not None]

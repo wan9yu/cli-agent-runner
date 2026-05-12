@@ -185,3 +185,57 @@ def test_given_short_exit_with_network_pattern_when_detect_then_returns_warning_
 def test_given_alert_when_inspected_then_severity_is_string_one_of_three() -> None:
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
     assert a.severity in {"info", "warning", "critical"}
+
+
+def test_given_custom_auth_patterns_when_detect_oauth_fail_then_uses_custom():
+    """Custom patterns override the default; detector matches against them."""
+    import re
+
+    from agent_runner.monitor import detect_oauth_fail
+
+    # 10 events: short-exit (dur < 60), nonzero exit, not timed_out
+    events = [
+        {
+            "event": "agent_exit",
+            "round_num": i,
+            "duration_s": 5.0,
+            "exit_code": 1,
+            "timed_out": False,
+        }
+        for i in range(10)
+    ]
+    log_tails = dict.fromkeys(range(10), "PROVIDER_AUTH_DENIED at line 42")
+    custom_patterns = [re.compile(r"\bPROVIDER_AUTH_DENIED\b", re.IGNORECASE)]
+    custom_hint = "Refresh PROVIDER_TOKEN env var"
+
+    alert = detect_oauth_fail(
+        events,
+        log_tails,
+        patterns=custom_patterns,
+        hint=custom_hint,
+    )
+    assert alert is not None
+    assert alert.detector == "oauth_fail"
+    assert alert.context["hint"] == custom_hint
+
+
+def test_given_default_patterns_when_detect_oauth_fail_then_existing_behavior():
+    """Calling detect_oauth_fail without patterns/hint kwargs uses the defaults
+    imported from config.py — preserves the prior claude OAuth detection."""
+    from agent_runner.monitor import detect_oauth_fail
+
+    events = [
+        {
+            "event": "agent_exit",
+            "round_num": i,
+            "duration_s": 5.0,
+            "exit_code": 1,
+            "timed_out": False,
+        }
+        for i in range(10)
+    ]
+    log_tails = dict.fromkeys(range(10), "Error: 401 Unauthorized")
+
+    alert = detect_oauth_fail(events, log_tails)  # no patterns kwarg
+    assert alert is not None
+    assert "claude" in alert.context["hint"].lower() or "ANTHROPIC" in alert.context["hint"]
