@@ -71,10 +71,16 @@ def _systemctl_user(*args: str) -> None:
 # init / install / uninstall
 
 
-def init(work_dir: Path | None = None, *, force: bool = False, commit: bool = True) -> InitResult:
+def init(
+    work_dir: Path | None = None,
+    *,
+    preset: str = "claude",
+    force: bool = False,
+    commit: bool = True,
+) -> InitResult:
     if work_dir is None:
         work_dir = Path.cwd()
-    return scaffold_project(work_dir, force=force, commit=commit)
+    return scaffold_project(work_dir, preset=preset, force=force, commit=commit)
 
 
 def install(

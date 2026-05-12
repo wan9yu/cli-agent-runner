@@ -21,7 +21,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
     "rel,limit",
     [
         ("cli/serve_cmd.py", 60),  # HARD cap — thin loop, signal-trapping only
-        ("api.py", 340),  # ratchet — raised +2 for plugin-detector short-circuit (simplify)
+        ("api.py", 345),  # ratchet — raised +5 for init() preset kwarg signature (0.1.7)
         ("monitor.py", 586),  # ratchet — raised +2 for docstring update during cleanup
         ("defenses.py", 180),  # cap with ~70 LOC headroom for new defenses
     ],

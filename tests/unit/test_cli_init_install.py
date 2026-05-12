@@ -64,3 +64,30 @@ def test_given_uninstall_when_invoked_then_calls_api_uninstall(
         rc = main(["uninstall"])
         assert rc == 0
         un.assert_called_once()
+
+
+def test_given_init_command_when_preset_flag_passed_then_propagates_to_api(
+    monkeypatch: pytest.MonkeyPatch, tmp_git_repo: Path
+) -> None:
+    """CLI --preset aider arg reaches api.init()."""
+    monkeypatch.chdir(tmp_git_repo)
+    rc = main(["init", "--preset", "aider", "--no-commit"])
+    assert rc == 0
+    toml_text = (tmp_git_repo / "agent-runner.toml").read_text()
+    assert 'command = ["aider"' in toml_text
+
+
+def test_given_init_command_when_no_preset_flag_then_defaults_to_claude(
+    monkeypatch: pytest.MonkeyPatch, tmp_git_repo: Path
+) -> None:
+    monkeypatch.chdir(tmp_git_repo)
+    rc = main(["init", "--no-commit"])
+    assert rc == 0
+    toml_text = (tmp_git_repo / "agent-runner.toml").read_text()
+    assert 'command = ["claude"' in toml_text
+
+
+def test_given_invalid_preset_when_init_then_argparse_rejects() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["init", "--preset", "nonexistent"])
+    assert exc.value.code != 0

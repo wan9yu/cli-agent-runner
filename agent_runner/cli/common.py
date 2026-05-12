@@ -15,7 +15,7 @@ from agent_runner.events import plugin_event_kinds
 from agent_runner.hooks import plugin_context_enrichers
 from agent_runner.monitor import plugin_detectors
 
-PEEK_SCHEMA_VERSION = "1.3"
+PEEK_SCHEMA_VERSION = "1.4"
 
 
 def cfg_from_args(args) -> Config:
