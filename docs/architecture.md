@@ -58,7 +58,7 @@ surfacing everywhere.
 | `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `—` |
 | `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
-| `critical_envs_injection` | DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL stop claude self-updates mid-loop | `—` |
+| `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `—` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn | `—` |
 | `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `—` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |

@@ -13,9 +13,13 @@ from agent_runner.config import (
 from agent_runner.defenses import Defense, catalog
 
 
-def _cfg(tmp_path: Path) -> Config:
+def _cfg(tmp_path: Path, *, env: dict[str, str] | None = None) -> Config:
     return Config(
-        agent=AgentConfig(command=["claude"], prompt_arg_template=["-p", "{prompt}"]),
+        agent=AgentConfig(
+            command=["my-agent"],
+            prompt_arg_template=["-p", "{prompt}"],
+            env=env or {},
+        ),
         runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -67,3 +71,23 @@ def test_given_catalog_invariant_paths_when_resolved_then_all_exist(tmp_path: Pa
 def test_given_defense_names_when_collected_then_unique(tmp_path: Path) -> None:
     names = [d.name for d in catalog(_cfg(tmp_path))]
     assert len(names) == len(set(names)), "duplicate defense names in catalog"
+
+
+def test_given_cfg_with_agent_env_when_catalog_then_critical_envs_lists_keys(
+    tmp_path: Path,
+) -> None:
+    cfg = _cfg(tmp_path, env={"DISABLE_AUTOUPDATER": "1", "FOO": "bar"})
+    cat = catalog(cfg)
+    row = next(d for d in cat if d.name == "critical_envs_injection")
+    assert sorted(row.value) == ["DISABLE_AUTOUPDATER", "FOO"]
+    assert row.current_state == "active"
+
+
+def test_given_cfg_with_empty_agent_env_when_catalog_then_critical_envs_off(
+    tmp_path: Path,
+) -> None:
+    cfg = _cfg(tmp_path, env={})
+    cat = catalog(cfg)
+    row = next(d for d in cat if d.name == "critical_envs_injection")
+    assert row.value == []
+    assert row.current_state == "off"

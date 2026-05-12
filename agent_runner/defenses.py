@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_runner.agent_runtime import CRITICAL_ENV_DEFAULTS
 from agent_runner.config import Config
 
 
@@ -73,12 +72,13 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="critical_envs_injection",
-            value=list(CRITICAL_ENV_DEFAULTS.keys()),
+            value=sorted(cfg.agent.env.keys()),
             codifies=(
-                "DISABLE_AUTOUPDATER + CLAUDE_CODE_EFFORT_LEVEL stop claude self-updates mid-loop"
+                "Env injection via [agent.env] block — preset-supplied per CLI "
+                "(e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates)"
             ),
             guarded_by=None,
-            current_state="active",
+            current_state="active" if cfg.agent.env else "off",
         ),
         Defense(
             name="startup_smoke_check",
