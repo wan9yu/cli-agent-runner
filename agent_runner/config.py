@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 
@@ -62,6 +62,7 @@ class Config:
     vcs: VcsConfig = field(default_factory=VcsConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     phases: list[str] | None = None
+    plugins: dict[str, Any] | None = None
 
 
 def _require(d: dict, *path: str) -> object:
@@ -124,7 +125,14 @@ def load_config(toml_path: Path) -> Config:
     )
     phases_d = raw.get("phases", {})
     phases = list(phases_d["list"]) if "list" in phases_d else None
+    plugins_d = raw.get("plugins")
 
     return Config(
-        agent=agent, runtime=runtime, prompt=prompt, vcs=vcs, monitor=monitor, phases=phases
+        agent=agent,
+        runtime=runtime,
+        prompt=prompt,
+        vcs=vcs,
+        monitor=monitor,
+        phases=phases,
+        plugins=plugins_d,
     )

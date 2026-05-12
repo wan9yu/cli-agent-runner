@@ -253,3 +253,41 @@ auth_fail_hint = "Custom hint for non-claude provider"
     cfg = load_config(toml)
     assert cfg.monitor.auth_fail_patterns == ["custom_oauth_regex", "another_pattern"]
     assert cfg.monitor.auth_fail_hint == "Custom hint for non-claude provider"
+
+
+def test_given_no_plugins_block_when_loaded_then_plugins_is_none(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.plugins is None
+
+
+def test_given_plugins_block_present_when_loaded_then_passes_through(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["claude"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[plugins]
+disabled = ["future_plugin_name"]
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.plugins == {"disabled": ["future_plugin_name"]}
