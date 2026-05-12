@@ -28,7 +28,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
-from agent_runner.config import _DEFAULT_AUTH_HINT, _DEFAULT_AUTH_PATTERNS
+from agent_runner.config import _DEFAULT_AUTH_PATTERNS
 from agent_runner.context_store import read_json
 from agent_runner.events import emit as emit_event
 from agent_runner.events import now_iso_ms, parse_iso_ms
@@ -278,7 +278,7 @@ def detect_oauth_fail(
             "matches": matches,
             "window": total,
             "threshold": threshold,
-            "hint": hint if hint is not None else _DEFAULT_AUTH_HINT,
+            "hint": hint if hint is not None else "",
         },
         auto_action="stop_service",
     )

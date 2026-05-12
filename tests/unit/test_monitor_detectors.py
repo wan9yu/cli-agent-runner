@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from agent_runner.api_types import Alert
-from agent_runner.config import _DEFAULT_AUTH_HINT
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
     detect_disk_critical,
@@ -220,9 +219,10 @@ def test_given_custom_auth_patterns_when_detect_oauth_fail_then_uses_custom():
     assert alert.context["hint"] == custom_hint
 
 
-def test_given_default_patterns_when_detect_oauth_fail_then_existing_behavior():
-    """Calling detect_oauth_fail without patterns/hint kwargs uses the defaults
-    imported from config.py — preserves the prior claude OAuth detection."""
+def test_given_default_patterns_when_detect_oauth_fail_then_uses_empty_hint_default():
+    """When detect_oauth_fail is called without `hint` kwarg, the fallback is the
+    empty string. Per-CLI hints are supplied via preset files (0.1.7+); core code
+    no longer hardcodes a Claude-specific hint."""
     from agent_runner.monitor import detect_oauth_fail
 
     events = [
@@ -239,4 +239,4 @@ def test_given_default_patterns_when_detect_oauth_fail_then_existing_behavior():
 
     alert = detect_oauth_fail(events, log_tails)  # no patterns kwarg
     assert alert is not None
-    assert alert.context["hint"] == _DEFAULT_AUTH_HINT
+    assert alert.context["hint"] == ""
