@@ -36,6 +36,17 @@ agent-runner init            # writes agent-runner.toml + prompts/main.md + .git
 Edit `prompts/main.md` to describe what the agent should do per round.
 Edit `agent-runner.toml` if you need to change `round_timeout_s` or `[phases]`.
 
+The default `[agent]` block invokes `claude`. To use another CLI, edit
+`agent.command` to your CLI's invocation and `agent.prompt_arg_template` to
+its prompt-argument syntax — for example:
+
+```toml
+[agent]
+command = ["gemini", "chat"]
+prompt_arg_template = ["--prompt", "{prompt}"]
+```
+<!-- skip-test -->
+
 Verify your scaffolding succeeded in a fresh repo:
 
 ```bash
