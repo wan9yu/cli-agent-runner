@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-12
+
+Zero-feature maintenance release — internal cleanup pass after the 0.1.x plugin
+extension surface completed in 0.1.5. No runtime behavior change for users
+without plugins; plugin authors written against 0.1.5 keep working unchanged.
+
+### Changed
+- Public `Alert.severity` / `Alert.auto_action` and `Detector.severity` /
+  `Detector.auto_action` are now typed with `Severity = Literal["info", "warning",
+  "critical"]` and `AutoAction = Literal["none", "stop_service"]` aliases
+  exported from `agent_runner.api_types`. Plain-string values continue to work
+- `__version__` is read from the hatch-vcs generated `_version.py` instead of a
+  hardcoded constant; released packages report the actual release version
+- Internal duplication reduced: shared `agent_runner._registry.ensure_unique`
+  for hooks + detectors registries; `cli/common.emit()` plugin-namespace imports
+  hoisted to module top; `events.parse_iso_ms` centralizes the ISO-8601 trailing-`Z`
+  parsing workaround; `MonitorConfig.auto_stop_on` default now references the
+  `_DEFAULT_AUTO_STOP_ON` constant
+- `monitor.dual_source_silence` is now TOCTOU-safe (uses `try/except
+  FileNotFoundError` instead of `exists()` + `stat()`)
+- `api._poll_once` short-circuits when no plugin detectors are registered,
+  skipping `assemble_project_state` (saves a file read per local poll and an
+  SSH round-trip per remote poll)
+- `agent_runner/__init__.py` plugin loaders share a single
+  `_load_plugins_from_group` helper
+- `monitor._alert` no longer asserts builtin detector names against
+  `KNOWN_ALERT_KINDS` (assertion was redundant and would crash under
+  `python -O`); test + docgen layers continue to validate the builtin name set
+
+### Removed
+- `agent_runner.critic` — empty Protocol stub for an unimplemented Critic
+  concept that was retired during the framework-first redesign
+- `[llm]` commented block from the scaffold TOML template and its corresponding
+  section in `docs/configuration.md` — unused placeholder
+- Legacy phase nomenclature from source docstrings, error messages, and CLI
+  help text; `tests/invariants/test_phase2_*.py` files renamed to drop the
+  `phase2_` prefix
+
+### Backward compatibility
+- Existing `agent-runner.toml` files continue to load (the removed `[llm]`
+  block was never parsed by the supervisor)
+- Plugin code written for 0.1.5 continues to work — Protocol contracts and
+  `peek --json` schema 1.3 unchanged
+
 ## [0.1.5] - 2026-05-12
 
 ### Added
