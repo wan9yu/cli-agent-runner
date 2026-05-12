@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-12
+
+### Added
+- `agent_runner.events.register_event_kind(name, *, source)` — public API for plugins to register custom event kinds
+- `agent_runner.events.plugin_event_kinds()` — sorted list of currently-registered plugin event kind names
+- `agent_runner` package now discovers and loads entry_points in group `agent_runner.event_kinds` at first import; plugin failures degrade to a `UserWarning` instead of crashing the supervisor
+- `peek --json` schema bumped to `"1.1"`; new top-level `plugins.event_kinds: list[str]` surfaces what's registered
+- `docs/plugins.md` — plugin authoring stub covering the entry_points convention and the event-kind example
+
+### Changed
+- `agent_runner.events.KNOWN_EVENT_KINDS` is now a read-only union view (built-in + plugin) instead of a `frozenset`; `in` and iteration semantics preserved
+- `tests/invariants/test_event_kind_registry.py` rewritten to validate the built-in/plugin split and the registration conflict rules
+- `tests/invariants/test_peek_schema_version.py` tightened to require `schema_version >= "1.1"` and the `plugins.event_kinds` list shape
+
+### Backward compatibility
+- Every existing `from agent_runner.events import KNOWN_EVENT_KINDS` import continues to work
+- Every existing `events.emit(...)` callsite continues to work with the same kind strings
+- Existing 0.1.x user `agent-runner.toml` files load without modification
+
 ## [0.1.2] - 2026-05-12
 
 ### Added
