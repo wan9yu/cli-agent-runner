@@ -479,12 +479,28 @@ def run_plugin_detectors(state: ProjectState) -> list[Alert]:
 import subprocess  # noqa: TID251, E402 — monitor needs ssh + local stop subprocess
 
 
+class MonitorRemoteError(Exception):
+    """ssh failed at the protocol level (host unreachable, key reject, etc.).
+
+    Raised by ``run_remote_command`` when ssh exits with rc=255 (its reserved
+    code for ssh-level failures, per the ssh(1) man page). Command-level
+    non-zero exits (e.g. rc=2 from ``ls`` on no-match) are NOT raised; callers
+    inspect the returncode and decide.
+    """
+
+    def __init__(self, host: str, stderr: str) -> None:
+        super().__init__(f"ssh to {host!r} failed: {stderr}")
+        self.host = host
+        self.stderr = stderr
+
+
 def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, str]:
     """Run a single shell command over ssh; returns (returncode, stdout).
 
-    Callers decide whether to treat non-zero as fatal. ``RemoteSource._list``
-    tolerates non-zero (missing files glob to empty), but ``on_alert`` remote
-    stop should not silently swallow ssh failures.
+    Raises ``MonitorRemoteError`` when ssh itself fails (rc=255 — host
+    unreachable, key reject, etc.). Command-level non-zero rcs are returned
+    as-is so callers (like ``RemoteSource._list``) can decide whether to
+    tolerate them.
     """
     r = subprocess.run(
         ["ssh", host, cmd],
@@ -493,6 +509,8 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
         timeout=timeout,
         check=False,
     )
+    if r.returncode == 255:
+        raise MonitorRemoteError(host, r.stderr.strip())
     return r.returncode, r.stdout
 
 
