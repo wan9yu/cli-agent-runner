@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 try:
     from agent_runner._version import __version__
 except ImportError:  # editable install before hatch-vcs has generated _version.py
@@ -58,6 +60,16 @@ _load_hook_plugins()
 _load_detector_plugins()
 
 
+def _prune_by_name(registry: list[Any], desired: set[str], found: set[str]) -> None:
+    """In-place: remove items from registry whose .name is in desired.
+
+    Updates ``found`` with the names actually removed.
+    """
+    matching = [x.name for x in registry if x.name in desired]
+    found.update(matching)
+    registry[:] = [x for x in registry if x.name not in desired]
+
+
 def apply_plugin_disable(names: list[str]) -> None:
     """Remove plugins matching ``names`` from all in-memory registries.
 
@@ -87,19 +99,13 @@ def apply_plugin_disable(names: list[str]) -> None:
     desired = set(names)
 
     # Pre-round hooks
-    pre_keep = [h for h in hooks._PRE_ROUND_HOOKS if h.name not in desired]
-    found.update(h.name for h in hooks._PRE_ROUND_HOOKS if h.name in desired)
-    hooks._PRE_ROUND_HOOKS[:] = pre_keep
+    _prune_by_name(hooks._PRE_ROUND_HOOKS, desired, found)
 
     # Context enrichers
-    enr_keep = [e for e in hooks._CONTEXT_ENRICHERS if e.name not in desired]
-    found.update(e.name for e in hooks._CONTEXT_ENRICHERS if e.name in desired)
-    hooks._CONTEXT_ENRICHERS[:] = enr_keep
+    _prune_by_name(hooks._CONTEXT_ENRICHERS, desired, found)
 
     # Post-round hooks
-    post_keep = [h for h in hooks._POST_ROUND_HOOKS if h.name not in desired]
-    found.update(h.name for h in hooks._POST_ROUND_HOOKS if h.name in desired)
-    hooks._POST_ROUND_HOOKS[:] = post_keep
+    _prune_by_name(hooks._POST_ROUND_HOOKS, desired, found)
 
     # Plugin event kinds
     for name in list(events._PLUGIN_KINDS):
@@ -108,9 +114,7 @@ def apply_plugin_disable(names: list[str]) -> None:
             found.add(name)
 
     # Detectors
-    det_keep = [d for d in monitor._PLUGIN_DETECTORS if d.name not in desired]
-    found.update(d.name for d in monitor._PLUGIN_DETECTORS if d.name in desired)
-    monitor._PLUGIN_DETECTORS[:] = det_keep
+    _prune_by_name(monitor._PLUGIN_DETECTORS, desired, found)
 
     # vcs_state._PLUGIN_OWNED_PATHS has no name attribution today (see docstring above).
     # Disabled plugin's owned paths are not filtered.

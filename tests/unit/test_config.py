@@ -820,7 +820,11 @@ def test_given_no_plugins_block_when_load_config_then_plugins_defaults_empty(
 def test_given_plugins_disable_list_when_load_config_then_parsed(
     tmp_path: Path,
 ) -> None:
-    """[plugins] disable = [...] is parsed into PluginsConfig.disable."""
+    """[plugins] disable = [...] is parsed into PluginsConfig.disable.
+
+    The names don't match any registered plugin in test env, so apply_plugin_disable
+    emits a UserWarning — assert it explicitly.
+    """
     from agent_runner.config import load_config
 
     (tmp_path / "prompt.md").write_text("p")
@@ -829,7 +833,8 @@ def test_given_plugins_disable_list_when_load_config_then_parsed(
         _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path)
         + '\n[plugins]\ndisable = ["argus_prompt_assembly", "argus_chain_state"]\n',
     )
-    cfg = load_config(cfg_path)
+    with pytest.warns(UserWarning, match="argus_prompt_assembly"):
+        cfg = load_config(cfg_path)
     assert cfg.plugins.disable == ["argus_prompt_assembly", "argus_chain_state"]
     assert cfg.plugins.raw == {}
 
