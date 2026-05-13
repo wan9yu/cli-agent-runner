@@ -8,7 +8,7 @@ discovered automatically at package import when installed alongside
 Plugins run in the supervisor process, not inside the agent. This is intentional:
 plugin code is observability/coordination glue, not workflow logic.
 
-## Entry-points groups (0.1.3)
+## Entry-points groups
 
 > **Entry-point semantics:** agent-runner imports the target module when it
 > loads a plugin. It does **not** call the target as a function — registration
@@ -19,9 +19,13 @@ plugin code is observability/coordination glue, not workflow logic.
 | Group | Purpose | Available in |
 |---|---|---|
 | `agent_runner.event_kinds` | Register custom event kind names | 0.1.3+ |
+| `agent_runner.pre_round_hooks` | Run logic before each agent round | 0.1.4+ |
+| `agent_runner.context_enrichers` | Inject namespaced fields into round-context | 0.1.4+ |
+| `agent_runner.post_round_hooks` | Run logic after each agent round | 0.1.4+ |
+| `agent_runner.detectors` | Ship custom monitor detectors | 0.1.5+ |
 
-Additional groups for hooks, context enrichers, post-round hooks, and custom
-detectors are reserved for 0.1.4 and 0.1.5.
+Plugin-owned VCS paths (the `register_plugin_owned_paths()` API added in
+0.1.8) are not an entry-point group — see [Declaring plugin-owned paths](#declaring-plugin-owned-paths-018) below.
 
 ## Registering a custom event kind (§3.1)
 
@@ -153,10 +157,14 @@ The round itself continues — a broken plugin must not crash the supervisor.
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.5",
   "plugins": {
     "event_kinds": [...],
-    "context_enrichers": ["current_branch"]
+    "context_enrichers": ["current_branch"],
+    "pre_round_hooks": [...],
+    "post_round_hooks": [...],
+    "detectors": [...],
+    "owned_paths": [...]
   },
   ...
 }
@@ -233,11 +241,14 @@ detector. Other plugin detectors and all builtins still run normally.
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.5",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": [...],
-    "detectors": ["my_detector"]
+    "pre_round_hooks": [...],
+    "post_round_hooks": [...],
+    "detectors": ["my_detector"],
+    "owned_paths": [...]
   },
   ...
 }
