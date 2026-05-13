@@ -126,3 +126,57 @@ def test_given_monitor_loop_raises_remote_error_when_cmd_then_stderr_and_exit_1(
     assert "cannot reach 'pi'" in captured.err
     assert "Connection refused" in captured.err
     assert captured.out == ""  # error path must not leak to stdout
+
+
+def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    """Non-json mode prints two stderr lines around api.stop()."""
+    from types import SimpleNamespace
+
+    from agent_runner import api
+    from agent_runner.cli import service_cmd
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    (work_dir / "agent-runner.toml").write_text(
+        f'[agent]\ncommand = ["true"]\n[runtime]\nwork_dir = "{work_dir}"\n[prompt]\ninline = "p"\n'
+    )
+
+    def fake_stop(_wd):
+        return {"stopped": True}
+
+    monkeypatch.setattr(api, "stop", fake_stop)
+
+    args = SimpleNamespace(json=False, config=str(work_dir / "agent-runner.toml"))
+    rc = service_cmd.cmd_stop(args)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "agent-runner: stopping service..." in captured.err
+    assert "agent-runner: stopped (" in captured.err
+    assert "s)" in captured.err
+
+
+def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, tmp_path) -> None:
+    """Json mode is silent on stderr — machine readers want clean stdout JSON only."""
+    from types import SimpleNamespace
+
+    from agent_runner import api
+    from agent_runner.cli import service_cmd
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    (work_dir / "agent-runner.toml").write_text(
+        f'[agent]\ncommand = ["true"]\n[runtime]\nwork_dir = "{work_dir}"\n[prompt]\ninline = "p"\n'
+    )
+
+    monkeypatch.setattr(api, "stop", lambda _wd: {"stopped": True})
+
+    args = SimpleNamespace(json=True, config=str(work_dir / "agent-runner.toml"))
+    rc = service_cmd.cmd_stop(args)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "stopping" not in captured.err
+    assert "stopped" not in captured.err
