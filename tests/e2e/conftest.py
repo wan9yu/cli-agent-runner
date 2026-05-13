@@ -84,9 +84,16 @@ def pi_fake_agent(pi_workdir: str) -> str:
     return script_path
 
 
-@pytest.fixture
-def pi_install_agent_runner(pi_workdir: str) -> str:
-    """Push the local agent-runner package to pi and pip install in venv."""
+@pytest.fixture(scope="session")
+def _pi_install_pkg_dir(pi_session) -> Iterator[str]:
+    """Session-scoped: install agent-runner once on pi, share across all tests.
+
+    Per-test would re-tar + re-scp + re-pip-install for every test (~75s each on
+    ARMv8 Pi); session scope cuts the suite to one install.
+
+    The installed venv is independent of any test's work_dir — tests invoke the
+    binary by absolute path while keeping their per-test sandbox isolated.
+    """
     repo_root = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
@@ -98,7 +105,7 @@ def pi_install_agent_runner(pi_workdir: str) -> str:
         ["tar", "czf", tar, "-C", repo_root, "agent_runner", "pyproject.toml", "README.md"],
         check=True,
     )
-    pi_pkg_dir = f"{pi_workdir}/.pkg"
+    pi_pkg_dir = f"/tmp/agent-runner-e2e-pkg-{uuid.uuid4().hex[:8]}"
     _ssh(f"mkdir -p {pi_pkg_dir}")
     _scp(tar, f"{pi_pkg_dir}/")
     tar_basename = tar.rsplit("/", 1)[-1]
@@ -112,7 +119,16 @@ def pi_install_agent_runner(pi_workdir: str) -> str:
         ".venv/bin/pip install -q -e .",
         timeout=600,
     )
-    return f"{pi_pkg_dir}/.venv/bin/agent-runner"
+    try:
+        yield pi_pkg_dir
+    finally:
+        _ssh(f"rm -rf {pi_pkg_dir}", check=False)
+
+
+@pytest.fixture
+def pi_install_agent_runner(_pi_install_pkg_dir: str) -> str:
+    """Path to the agent-runner binary installed once per session on pi."""
+    return f"{_pi_install_pkg_dir}/.venv/bin/agent-runner"
 
 
 @pytest.fixture
