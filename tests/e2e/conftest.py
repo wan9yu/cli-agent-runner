@@ -102,9 +102,14 @@ def pi_install_agent_runner(pi_workdir: str) -> str:
     _ssh(f"mkdir -p {pi_pkg_dir}")
     _scp(tar, f"{pi_pkg_dir}/")
     tar_basename = tar.rsplit("/", 1)[-1]
+    # hatch-vcs reads version from git metadata; the tarball intentionally
+    # excludes .git/ for size. Pretend a version via setuptools-scm's escape
+    # hatch so editable install succeeds without VCS metadata on pi.
     _ssh(
         f"cd {pi_pkg_dir} && tar xzf {tar_basename} && "
-        "python3 -m venv .venv && .venv/bin/pip install -q -e .",
+        "python3 -m venv .venv && "
+        "SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+e2e "
+        ".venv/bin/pip install -q -e .",
         timeout=600,
     )
     return f"{pi_pkg_dir}/.venv/bin/agent-runner"
