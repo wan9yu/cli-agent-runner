@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-05-13
+
+### Acknowledgements
+
+Thanks to the argus-gateway team for Phase 4 dogfooding feedback that drove
+every item in this release. 3 audit memos (~90KB) silently swept into an
+orphan stash is a real-world failure mode; this release closes that loop.
+
+### Added
+
+- `agent_runner.vcs_state.register_plugin_owned_paths()` — plugins opt-out
+  files/dirs from orphan-stash defense. Matching: trailing-slash prefix or
+  `pathlib.PurePath.match` glob (recognizes `**` for recursive segments via
+  `fnmatch` fallback on Python 3.11). Call at module import (entry_point
+  side-effect).
+- `agent_runner.vcs_state.plugin_owned_paths()` — snapshot accessor for peek.
+- `ProjectState.recent_hook_failures: list[dict]` — last 10 `hook_failed`
+  events filtered from `recent_events` for debugging hook integration.
+- peek schema bumped 1.4 → 1.5. `plugins` block now includes
+  `pre_round_hooks`, `post_round_hooks`, `owned_paths` lists.
+
+### Changed
+
+- `docs/plugins.md` register-pattern examples corrected: registration must
+  happen as module-top side effect; entry_point loaders only import, they
+  do not invoke. Old `_register()` wrapper pattern silently didn't fire.
+- `docs/plugins.md` gained "Declaring plugin-owned paths" and "Plugin tests
+  + consumer pytest collision" sections.
+
+### Fixed
+
+- Plugin outputs in plugin-declared paths (e.g. `proposals/`,
+  `logs/plugins/my_plugin/`) no longer silently swept into orphan stashes
+  by `process_orphan_wip`. Previously: 90KB Argus audit memos invisible
+  after Phase 4 round; required stash archaeology to recover.
+
+### Migration
+
+No breaking changes. Plugin authors:
+
+- If your plugin writes files to `work_dir` and they keep getting stashed
+  between rounds, opt them out:
+  ```python
+  from agent_runner.vcs_state import register_plugin_owned_paths
+  register_plugin_owned_paths(["your-output-dir/", "logs/your-plugin/**/*"])
+  ```
+- If you followed the old `_register()` pattern from docs and noticed
+  registrations not firing: move the call to module top:
+  ```python
+  # was: def _register(): register_pre_round_hook(MyHook())
+  # now: register_pre_round_hook(MyHook())  # module-top side-effect
+  ```
+
 ## [0.1.7] - 2026-05-13
 
 ### Migration for existing 0.1.6 users (DOWNSTREAM CONSUMERS READ THIS)
