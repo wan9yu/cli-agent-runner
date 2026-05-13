@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-05-13
+
+### Acknowledgements
+
+Thanks to the argus-gateway team for the dev/qa/product wall-time data
+(Phase 4 feedback §3.1) that drove this API shape. Their three-role
+distribution made the case for per-phase overrides concrete.
+
+### Added
+
+- `[runtime.round_timeout_per_phase]` TOML block — per-phase overrides for
+  `round_timeout_s`. Unconfigured phases fall back to global. Keys validated
+  against `[phases] list` at config-load (typo catcher); non-positive values
+  rejected; bool / float values rejected (would otherwise silently coerce
+  to int).
+- `agent_runner.runner._round_timeout_for(cfg, phase)` helper — single
+  lookup point for phase-aware timeout resolution.
+
+### Migration
+
+No breaking changes. Existing configs without the new block keep using a
+single global timeout — identical to 0.1.8 behavior.
+
+Plugin authors: no public API change. `RuntimeConfig` is not in the
+documented plugin-author public surface.
+
 ## [0.1.8] - 2026-05-13
 
 ### Acknowledgements
