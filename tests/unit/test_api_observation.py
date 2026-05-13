@@ -203,6 +203,56 @@ def test_given_events_with_hook_failures_when_state_assembled_then_filtered_to_f
     assert names == ["X", "Y"]
 
 
+def test_given_fresh_project_no_log_dir_when_monitor_loop_starts_then_creates_dir_and_emits(
+    tmp_path: Path,
+) -> None:
+    """monitor_loop creates log_dir if missing before emitting monitor_started."""
+    import json
+    from unittest.mock import patch
+
+    from agent_runner import api
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    log_dir = work_dir / "logs"
+    # DO NOT mkdir log_dir — this test verifies monitor_loop creates it
+    prompt_file = work_dir / "prompt.md"
+    prompt_file.write_text("p")
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work_dir}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    assert not log_dir.exists()
+
+    class _StopLoopError(Exception):
+        pass
+
+    with (
+        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
+        patch("agent_runner.api._poll_once", return_value=[]),
+    ):
+        gen = api.monitor_loop(work_dir, host=None, interval_s=30)
+        try:
+            next(gen, None)
+        except _StopLoopError:
+            pass
+        finally:
+            gen.close()
+
+    assert log_dir.exists(), "monitor_loop should have created log_dir"
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files, "monitor_started should have been emitted"
+    payload = json.loads(events_files[-1].read_text(encoding="utf-8").strip())
+    assert payload["event"] == "monitor_started"
+
+
 def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
     tmp_path: Path,
 ) -> None:

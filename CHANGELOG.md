@@ -23,10 +23,15 @@ Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback
 - `peek` schema version bumped `1.5` → `1.6` (additive: new event kind in `plugins.event_kinds`). Existing consumers unaffected.
 - `detect_hung` now accepts `round_timeout_per_phase: dict[str, int] | None` and consults the per-phase timeout for each open round (falls back to `round_timeout_s` if phase missing or no per-phase override exists).
 - `agent-runner stop` prints two stderr lines (`stopping service...` / `stopped (Xs)`) for ops feedback. Json mode (if applicable) remains silent.
+- `agent_runner.events.emit(log_dir, kind, /, **fields)` — `log_dir` and `kind` are now positional-only so callers can use `log_dir=` as a payload field name. Non-breaking for in-repo callers (all use positional form); third-party plugins that called `events.emit(log_dir=..., kind=...)` must switch to positional form.
 
 ### Fixed
 
 - `agent-runner monitor --host <alias>` no longer silently no-ops when ssh fails at protocol level. Errors print to stderr with the underlying ssh diagnostic and exit code 1.
+
+### Migration notes
+
+- **`MonitorRemoteError` propagation**: this exception now raises from `agent_runner.monitor.run_remote_command` whenever ssh exits with rc=255. The CLI `agent-runner monitor --host` catches it and exits 1 with a clear stderr message. But it also propagates from steady-state remote polls (`RemoteSource._list`) and from the auto-stop path (`on_alert` remote stop). Previously rc=255 was silently tolerated in those paths — empty list returned, no alert raised. Programmatic consumers of `monitor_loop()` that want the old transient-tolerant behavior must wrap the loop in `try: except MonitorRemoteError:`. The change is intentional (silent ssh failures were a bug, not a feature), but the behavior surface is wider than the headline Fix suggests.
 
 ## [0.1.9] - 2026-05-13
 

@@ -346,6 +346,7 @@ def monitor_loop(
     seen: set[str] = set()
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
+    cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
     events.emit(
         cfg.runtime.log_dir,
         "monitor_started",
