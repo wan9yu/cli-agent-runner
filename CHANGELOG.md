@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-05-XX
+
+### Acknowledgements
+
+Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback that drove every change in this release. Six audit memos across 50 minutes of validated runtime surfaced four specific gaps; this release closes them.
+
+### Added
+
+- New built-in event kind `monitor_started`, emitted once at `monitor_loop()` entry. Records `host`, `interval_s`, `log_dir`, `mode="anomaly-only"`. Lets programmatic consumers verify supervision is up — monitor is otherwise silent under healthy operation by design.
+- New exception `agent_runner.monitor.MonitorRemoteError`, raised when ssh to a `--host` target fails at protocol level (rc=255: connection refused, key reject, etc.). Previously such failures were silently swallowed.
+
+### Changed
+
+- `peek` schema version bumped `1.5` → `1.6` (additive: new event kind in `plugins.event_kinds`). Existing consumers unaffected.
+- `detect_hung` now accepts `round_timeout_per_phase: dict[str, int] | None` and consults the per-phase timeout for each open round (falls back to `round_timeout_s` if phase missing or no per-phase override exists).
+- `agent-runner stop` prints two stderr lines (`stopping service...` / `stopped (Xs)`) for ops feedback. Json mode (if applicable) remains silent.
+
+### Fixed
+
+- `agent-runner monitor --host <alias>` no longer silently no-ops when ssh fails at protocol level. Errors print to stderr with the underlying ssh diagnostic and exit code 1.
+
 ## [0.1.9] - 2026-05-13
 
 ### Acknowledgements
@@ -367,7 +388,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.9
 [0.1.8]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.8
 [0.1.7]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.7

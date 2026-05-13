@@ -89,6 +89,10 @@ API quota / writing to a near-full disk).
 - `timeout_rate`
 <!-- /gen:detector-list -->
 
+## Monitor: anomaly-only by design
+
+The monitor emits no events during healthy operation — it surfaces alerts only when a detector fires. To verify the monitor process is running, look for the `monitor_started` event in `events-*.jsonl`. Programmatic consumers (e.g. supervisory layers like Argus Gateway) should subscribe to that event kind as the canonical "supervision is up" signal. The event carries `mode: "anomaly-only"` to document the intentional silence.
+
 ## Known event kinds
 
 <!-- gen:event-kinds -->

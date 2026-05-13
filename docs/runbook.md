@@ -25,6 +25,12 @@ agent-runner stop                # let current round finish
 agent-runner start
 ```
 
+> **Stop ops feedback.** `agent-runner stop` prints two stderr lines —
+> `agent-runner: stopping service...` then `agent-runner: stopped (Xs)` — so
+> you know it completed. Typical duration is <5s. There is no progress bar by
+> design; if systemd takes longer than `TimeoutStopSec`, consult the systemd
+> journal for the underlying reason.
+
 ## Troubleshooting
 
 ### OAuth / auth failures (agent rejects requests)
