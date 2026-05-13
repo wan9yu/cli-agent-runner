@@ -77,6 +77,31 @@ Override in your `agent-runner.toml` if you ship a custom CLI.
 |---|---|---|---|
 | `list` | list[str] | (none → no phase rotation) | round N gets `phases[(N-1) % len(phases)]` |
 
+## Per-phase timeouts (0.1.9+)
+
+If your `[phases]` rotation has phases with different wall-clock budgets,
+override the global timeout per phase:
+
+```toml
+[runtime]
+round_timeout_s = 1800           # fallback for unconfigured phases
+
+[runtime.round_timeout_per_phase]
+dev = 3600                       # implementation work, longer budget
+qa = 1200                        # test review, tighter budget
+product = 1200                   # docs writing, tighter budget
+
+[phases]
+list = ["dev", "qa", "product"]
+```
+
+Validation: typos in phase names (keys not in `[phases] list`) and
+non-positive / non-integer values are caught at config-load time with
+`ValueError`.
+
+Unconfigured phases (and configs without `[phases]`) keep using the
+global `round_timeout_s`.
+
 ## `[monitor]` (optional, defaults shown)
 
 ```toml
