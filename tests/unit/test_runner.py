@@ -133,3 +133,85 @@ def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_a
     with pytest.raises(SystemExit) as exc:
         run_one_round(cfg)
     assert exc.value.code == 1
+
+
+def test_given_phase_in_per_phase_dict_when_lookup_then_returns_phase_value(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: _round_timeout_for returns the phase-specific value when present."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+    from agent_runner.runner import _round_timeout_for
+
+    cfg = Config(
+        agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_timeout_s=1800,
+            round_timeout_per_phase={"dev": 3600, "qa": 1200},
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+        phases=["dev", "qa"],
+    )
+    assert _round_timeout_for(cfg, "dev") == 3600
+    assert _round_timeout_for(cfg, "qa") == 1200
+
+
+def test_given_phase_not_in_per_phase_dict_when_lookup_then_returns_global(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: phase string not in dict → fall back to global runtime.round_timeout_s."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+    from agent_runner.runner import _round_timeout_for
+
+    cfg = Config(
+        agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_timeout_s=1800,
+            round_timeout_per_phase={"dev": 3600},
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+        phases=["dev", "qa"],
+    )
+    assert _round_timeout_for(cfg, "qa") == 1800  # not in dict → fallback
+
+
+def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> None:
+    """0.1.9: phase=None (no phases configured) → global timeout."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+    from agent_runner.runner import _round_timeout_for
+
+    cfg = Config(
+        agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_timeout_s=1800,
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+        phases=None,
+    )
+    assert _round_timeout_for(cfg, None) == 1800

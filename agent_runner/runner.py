@@ -49,6 +49,17 @@ def _phase_for(round_num: int, phases: list[str] | None) -> tuple[str | None, in
     return phases[idx], idx
 
 
+def _round_timeout_for(cfg: Config, phase: str | None) -> int:
+    """Per-phase override of round_timeout_s; falls back to global default.
+
+    Phase=None (no phases configured) → global. Phase not in override dict →
+    global. Phase in override dict → that phase's configured timeout.
+    """
+    if phase is None:
+        return cfg.runtime.round_timeout_s
+    return cfg.runtime.round_timeout_per_phase.get(phase, cfg.runtime.round_timeout_s)
+
+
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
     if prev is None:
         return None
