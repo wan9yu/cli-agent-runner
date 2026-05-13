@@ -131,7 +131,7 @@ class InitResult:
     work_dir: Path
     files_created: list[Path]
     committed: bool
-    preset: str = "claude"  # 0.1.7+; default for backward compat with synthesised InitResults
+    preset: str = "claude"  # default keeps synthesised InitResults working
 
 
 @dataclass(frozen=True)

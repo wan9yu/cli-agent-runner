@@ -9,7 +9,7 @@ Stash safety rules (R820 + §9 IMMUTABLE):
   not unified-diff +/-line parsing (R2110 lesson).
 - Also hosts the plugin-owned-paths registry consumed by
   ``detect_dirty_files()`` so plugins can opt files/dirs out of the
-  orphan-stash defense (0.1.8+).
+  orphan-stash defense.
 """
 
 from __future__ import annotations
@@ -129,8 +129,7 @@ def detect_dirty_files(repo: Path) -> list[str]:
         else:
             out.append(path)
             i += 1
-    # Filter out plugin-declared paths (0.1.8+). Early-out preserves zero
-    # behavior change when no plugin has registered anything.
+    # Early-out preserves zero behavior change when no plugin has registered.
     if _PLUGIN_OWNED_PATHS:
         out = [p for p in out if not _matches_owned_path(p)]
     return out

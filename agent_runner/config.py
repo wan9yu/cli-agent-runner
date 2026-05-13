@@ -87,27 +87,30 @@ def _expand_path(s: str, project_name: str) -> Path:
     return Path(s.replace("{project}", project_name)).expanduser()
 
 
-def _validate_round_timeout_per_phase(per_phase: dict[str, int], phases: list[str] | None) -> None:
-    """Two hard rules for runtime.round_timeout_per_phase:
+def _require_positive_int(value: Any, *, field: str) -> int:
+    """Validate a TOML value is a positive int. Rejects bool (subclass of int
+    in Python, would silently coerce e.g. ``true`` → 1) and any non-int."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
+    if value <= 0:
+        raise ValueError(f"{field}: must be positive, got {value}")
+    return value
 
-    1. All values must be positive integers.
-    2. All keys must appear in [phases] list (typo catcher).
-    """
-    for phase_name, timeout in per_phase.items():
-        if timeout <= 0:
-            raise ValueError(
-                f"runtime.round_timeout_per_phase[{phase_name!r}]: "
-                f"timeout must be positive, got {timeout}"
-            )
-    if per_phase:
-        if phases is None:
-            raise ValueError("runtime.round_timeout_per_phase requires [phases] list to be defined")
-        unknown = set(per_phase) - set(phases)
-        if unknown:
-            raise ValueError(
-                f"runtime.round_timeout_per_phase keys not in phases list: "
-                f"{sorted(unknown)}; available phases: {phases}"
-            )
+
+def _validate_round_timeout_per_phase_keys(
+    per_phase: dict[str, int], phases: list[str] | None
+) -> None:
+    """All keys must appear in [phases] list (typo catcher)."""
+    if not per_phase:
+        return
+    if phases is None:
+        raise ValueError("runtime.round_timeout_per_phase requires [phases] list to be defined")
+    unknown = set(per_phase) - set(phases)
+    if unknown:
+        raise ValueError(
+            f"runtime.round_timeout_per_phase keys not in phases list: "
+            f"{sorted(unknown)}; available phases: {phases}"
+        )
 
 
 def load_config(toml_path: Path) -> Config:
@@ -133,23 +136,21 @@ def load_config(toml_path: Path) -> Config:
 
     runtime_d = raw.get("runtime", {})
     per_phase_raw = runtime_d.get("round_timeout_per_phase", {})
-    per_phase: dict[str, int] = {}
-    for k, v in per_phase_raw.items():
-        # bool is a subclass of int in Python — reject it first to avoid
-        # `dev = true` silently becoming a 1-second timeout.
-        if isinstance(v, bool) or not isinstance(v, int):
-            raise ValueError(
-                f"runtime.round_timeout_per_phase[{str(k)!r}]: "
-                f"timeout must be an integer, got {type(v).__name__} ({v!r})"
-            )
-        per_phase[str(k)] = v
-    _validate_round_timeout_per_phase(per_phase, phases)
+    per_phase: dict[str, int] = {
+        str(k): _require_positive_int(v, field=f"runtime.round_timeout_per_phase[{str(k)!r}]")
+        for k, v in per_phase_raw.items()
+    }
+    _validate_round_timeout_per_phase_keys(per_phase, phases)
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
         log_dir=_expand_path(str(_require(raw, "runtime", "log_dir")), project_name),
-        round_timeout_s=int(runtime_d.get("round_timeout_s", 1800)),
-        restart_delay_s=int(runtime_d.get("restart_delay_s", 3)),
+        round_timeout_s=_require_positive_int(
+            runtime_d.get("round_timeout_s", 1800), field="runtime.round_timeout_s"
+        ),
+        restart_delay_s=_require_positive_int(
+            runtime_d.get("restart_delay_s", 3), field="runtime.restart_delay_s"
+        ),
         round_timeout_per_phase=per_phase,
     )
     prompt_d = raw.get("prompt", {})
@@ -167,7 +168,9 @@ def load_config(toml_path: Path) -> Config:
     vcs_d = raw.get("vcs", {})
     vcs = VcsConfig(
         orphan_action=str(vcs_d.get("orphan_action", "stash")),
-        stash_idempotency_s=int(vcs_d.get("stash_idempotency_s", 5)),
+        stash_idempotency_s=_require_positive_int(
+            vcs_d.get("stash_idempotency_s", 5), field="vcs.stash_idempotency_s"
+        ),
     )
     monitor_d = raw.get("monitor", {})
     monitor = MonitorConfig(

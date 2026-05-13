@@ -588,3 +588,70 @@ list = ["dev"]
     )
     with pytest.raises(ValueError, match="must be an integer"):
         load_config(toml)
+
+
+def test_given_round_timeout_s_bool_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """Apply same type-guard to runtime.round_timeout_s (was silently coercing)."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+round_timeout_s = true
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    with pytest.raises(ValueError, match="round_timeout_s.*must be an integer"):
+        load_config(toml)
+
+
+def test_given_restart_delay_s_zero_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """Apply positive-int check to runtime.restart_delay_s."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+restart_delay_s = 0
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    with pytest.raises(ValueError, match="restart_delay_s.*must be positive"):
+        load_config(toml)
+
+
+def test_given_stash_idempotency_s_float_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """Apply type-guard to vcs.stash_idempotency_s."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[vcs]
+stash_idempotency_s = 1.5
+""",
+    )
+    with pytest.raises(ValueError, match="stash_idempotency_s.*must be an integer"):
+        load_config(toml)
