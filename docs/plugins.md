@@ -10,6 +10,12 @@ plugin code is observability/coordination glue, not workflow logic.
 
 ## Entry-points groups (0.1.3)
 
+> **Entry-point semantics:** agent-runner imports the target module when it
+> loads a plugin. It does **not** call the target as a function — registration
+> must happen as a module-top side effect (the `register_*` call at module
+> level). A `def _register():` wrapper around the call will NOT fire; the
+> loader only imports.
+
 | Group | Purpose | Available in |
 |---|---|---|
 | `agent_runner.event_kinds` | Register custom event kind names | 0.1.3+ |
@@ -22,7 +28,7 @@ detectors are reserved for 0.1.4 and 0.1.5.
 ```toml
 # my_plugin/pyproject.toml
 [project.entry-points."agent_runner.event_kinds"]
-my_workflow_stage_advanced = "my_plugin.events:_register"
+my_workflow_stage_advanced = "my_plugin.events"
 ```
 
 ```python
@@ -31,9 +37,9 @@ from agent_runner.events import register_event_kind
 
 STAGE_ADVANCED = "my_workflow_stage_advanced"
 
-
-def _register() -> None:
-    register_event_kind(STAGE_ADVANCED, source="my-plugin@1.0")
+# Module-top side effect: entry_point load imports this module, which
+# triggers the registration.
+register_event_kind(STAGE_ADVANCED, source="my-plugin@1.0")
 ```
 
 After installation, the registered kind:
@@ -84,7 +90,7 @@ Its field set is stable across 0.1.x (additions only).
 ```toml
 # my_plugin/pyproject.toml
 [project.entry-points."agent_runner.context_enrichers"]
-current_branch = "my_plugin.enrichers:_register"
+current_branch = "my_plugin.enrichers"
 ```
 
 ```python
@@ -104,8 +110,9 @@ class CurrentBranchEnricher:
         return {"branch": out.stdout.strip() or "(detached)"}
 
 
-def _register() -> None:
-    register_context_enricher(CurrentBranchEnricher())
+# Module-top side effect: entry_point load imports this module, which
+# triggers the registration.
+register_context_enricher(CurrentBranchEnricher())
 ```
 
 After installation, each round's `round-context.json` gains a `current_branch` key:
@@ -164,7 +171,7 @@ detectors that run alongside the 9 builtins on every monitor poll.
 
 ```toml
 [project.entry-points."agent_runner.detectors"]
-my_detector = "my_plugin.detectors:_register"
+my_detector = "my_plugin.detectors"
 ```
 
 ```python
@@ -191,8 +198,9 @@ class MyDetector:
         )
 
 
-def _register() -> None:
-    register_detector(MyDetector())
+# Module-top side effect: entry_point load imports this module, which
+# triggers the registration.
+register_detector(MyDetector())
 ```
 
 `Detector` is a `@runtime_checkable` Protocol — `isinstance(obj, Detector)` returns
