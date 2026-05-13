@@ -317,3 +317,47 @@ class NoCommitsDetector:
 **Codifies the lesson:** "0 commits in N rounds" detectors mis-fire on
 retrospective/reflection phases that intentionally produce zero commits.
 Pass the set of phase names where the detector should NOT run.
+
+## Declaring plugin-owned paths (0.1.8+)
+
+If your plugin writes files inside the supervisor's `work_dir`
+(audit memos, generated reports, plugin-local state, etc.), declare them
+so the orphan-stash defense doesn't silently sweep them into a stash
+between rounds.
+
+```python
+# my_plugin/__init__.py
+from agent_runner.vcs_state import register_plugin_owned_paths
+
+# Module-top side effect — must register before the first round runs.
+register_plugin_owned_paths([
+    "proposals/",                  # trailing slash → prefix match
+    "logs/plugins/my_plugin/**/*", # recursive glob (fnmatch)
+    "reports/*.md",                # single-segment glob (PurePath.match)
+])
+```
+
+### Matching semantics
+
+| Pattern | Matches | Notes |
+|---|---|---|
+| `"proposals/"` | `proposals`, `proposals/foo.md`, `proposals/sub/bar.md` | Trailing `/` → prefix match. |
+| `"proposals"` (no slash) | `proposals` exactly | `PurePath.match` single-segment literal. |
+| `"reports/*.md"` | `reports/dev.md` | `*` does not cross slashes. |
+| `"reports/**/*.md"` | `reports/dev.md`, `reports/sub/qa.md` | `**` matches recursive segments (via `fnmatch`). |
+| `"logs/plugins/**/*"` | `logs/plugins/argus/state.json` | Same — `**` covers intermediate dirs. |
+
+### Caveat — this is NOT a "make work_dir messy" license
+
+Plugin-owned paths express *"these are the plugin's expected deliverable
+files; do not stash them"*. They are not permission to scatter scratch
+files. Operator owns cleanup of these paths.
+
+If your plugin writes ephemeral state that should be cleaned up between
+rounds, do the cleanup yourself in a `PostRoundHook` — don't rely on
+the orphan-stash defense to sweep it.
+
+### Visibility
+
+`agent-runner peek --select plugins.owned_paths` shows the currently
+registered list (peek schema v1.5+).
