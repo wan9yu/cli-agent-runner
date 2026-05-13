@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # PR: scan only new commits the PR introduces (base..head).
           # Push to main: scan the just-pushed commits (before..after).
@@ -74,10 +74,10 @@ jobs:
     # granularity AND because coverage requires extra pytest flags not in
     # the local `test` task. CONTRIBUTING.md states the parity intentionally.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -97,7 +97,7 @@ jobs:
         run: pytest tests/literate/ -q
       - name: upload coverage
         if: matrix.python == '3.12' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
