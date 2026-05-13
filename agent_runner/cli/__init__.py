@@ -15,6 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from agent_runner import __version__
 from agent_runner.cli import (
     init_cmd,
     install_cmd,
@@ -30,6 +31,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-runner",
         description="Restart-on-exit supervisor for autonomous CLI agents.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"agent-runner {__version__}",
     )
     parser.add_argument(
         "--config",

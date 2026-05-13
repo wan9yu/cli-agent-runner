@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from agent_runner.cli import main
 
 
@@ -83,3 +85,17 @@ def test_given_status_subcommand_after_one_round_when_invoked_then_completes(
     out = capsys.readouterr().out
     # Either stub message OR real ServiceStatus output
     assert "round" in out.lower() or "mode" in out.lower() or "not implemented" in out.lower()
+
+
+def test_given_version_flag_when_main_then_prints_version_and_exits_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--version prints 'agent-runner <version>' and exits 0 via SystemExit."""
+    from agent_runner import __version__
+    from agent_runner.cli import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert f"agent-runner {__version__}" in captured.out
