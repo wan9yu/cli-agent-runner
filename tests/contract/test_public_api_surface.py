@@ -80,6 +80,11 @@ EXPECTED_DETECTOR_HELPERS_API = {
     "phase_filter",
 }
 
+EXPECTED_VCS_STATE_API = {
+    "register_plugin_owned_paths",
+    "plugin_owned_paths",
+}
+
 # Doomed symbols (removed in 0.1.7) — verify ABSENCE so a future revert can't
 # silently restore them and re-couple core to Claude.
 FORBIDDEN_AGENT_RUNTIME = {
@@ -127,4 +132,16 @@ def test_given_agent_runtime_when_imported_then_claude_specific_symbols_absent()
     assert not present, (
         f"agent_runner.agent_runtime: forbidden Claude-specific symbols present: {present}. "
         f"These were intentionally removed in 0.1.7 — env injection lives in AgentConfig.env."
+    )
+
+
+def test_given_vcs_state_module_when_imported_then_plugin_owned_paths_api_present() -> None:
+    """0.1.8: register_plugin_owned_paths + plugin_owned_paths are the new
+    plugin-author public surface. Lock them in so a future refactor can't
+    silently rename or remove them."""
+    actual = _public_names("agent_runner.vcs_state")
+    missing = EXPECTED_VCS_STATE_API - actual
+    assert not missing, (
+        f"agent_runner.vcs_state: missing public names {missing}. "
+        f"Plugin authors registered against the 0.1.8 names — do not remove without major bump."
     )
