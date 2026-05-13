@@ -119,26 +119,39 @@ def detect_timeout_rate(
 
 
 def detect_hung(
-    events: list[dict[str, Any]], *, now: datetime, factor: float = 1.5, round_timeout_s: int = 1800
+    events: list[dict[str, Any]],
+    *,
+    now: datetime,
+    factor: float = 1.5,
+    round_timeout_s: int = 1800,
+    round_timeout_per_phase: dict[str, int] | None = None,
 ) -> Alert | None:
-    """A round_start without a matching round_end after round_timeout_s * factor."""
-    open_rounds: dict[int, str] = {}
+    """A round_start without a matching round_end after timeout * factor.
+
+    When ``round_timeout_per_phase`` is supplied and the round's ``phase`` is in
+    it, that override applies. Otherwise falls back to ``round_timeout_s``.
+    Rounds with no recorded phase always use the global timeout.
+    """
+    per_phase = round_timeout_per_phase or {}
+    open_rounds: dict[int, tuple[str, str | None]] = {}
     for e in events:
         kind = e.get("event")
         rn = e.get("round_num")
         if kind == "round_start" and rn is not None:
-            open_rounds[rn] = e["ts"]
+            open_rounds[rn] = (e["ts"], e.get("phase"))
         elif kind == "round_end" and rn in open_rounds:
             del open_rounds[rn]
-    for rn, started_ts in open_rounds.items():
+    for rn, (started_ts, phase) in open_rounds.items():
         started = parse_iso_ms(started_ts)
         elapsed = (now - started).total_seconds()
-        if elapsed > round_timeout_s * factor:
+        effective_timeout = per_phase.get(phase, round_timeout_s) if phase else round_timeout_s
+        threshold = effective_timeout * factor
+        if elapsed > threshold:
             return _alert(
                 "hung",
                 "warning",
                 f"Round {rn} started {elapsed:.0f}s ago with no round_end",
-                {"round_num": rn, "elapsed_s": elapsed, "threshold_s": round_timeout_s * factor},
+                {"round_num": rn, "elapsed_s": elapsed, "threshold_s": threshold},
             )
     return None
 
