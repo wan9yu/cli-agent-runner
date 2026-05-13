@@ -25,6 +25,7 @@ class RuntimeConfig:
     round_timeout_s: int = 1800
     restart_delay_s: int = 3
     round_timeout_per_phase: dict[str, int] = field(default_factory=dict)
+    disable_pre_round_hooks: bool = False
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,13 @@ def _require_positive_int(value: Any, *, field: str) -> int:
     return value
 
 
+def _require_bool(value: Any, *, field: str) -> bool:
+    """Validate a TOML value is a bool. Distinct from int (in TOML, bool ≠ int)."""
+    if not isinstance(value, bool):
+        raise ValueError(f"{field}: must be a bool, got {type(value).__name__} ({value!r})")
+    return value
+
+
 def _require_non_negative_int(value: Any, *, field: str) -> int:
     """Validate a TOML value is a non-negative int (allows 0). Rejects bool
     and any non-int. Sibling of _require_positive_int where 0 has meaning
@@ -190,6 +198,10 @@ def load_config(toml_path: Path) -> Config:
             runtime_d.get("restart_delay_s", 3), field="runtime.restart_delay_s"
         ),
         round_timeout_per_phase=per_phase,
+        disable_pre_round_hooks=_require_bool(
+            runtime_d.get("disable_pre_round_hooks", False),
+            field="runtime.disable_pre_round_hooks",
+        ),
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")

@@ -853,3 +853,47 @@ def test_given_plugins_unknown_keys_when_load_config_then_preserved_in_raw(
     cfg = load_config(cfg_path)
     assert cfg.plugins.disable == []
     assert cfg.plugins.raw == {"argus_foo": "bar"}
+
+
+def test_given_no_disable_hooks_when_load_config_then_defaults_false(
+    tmp_path: Path,
+) -> None:
+    """RuntimeConfig.disable_pre_round_hooks defaults to False."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(tmp_path, _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path))
+    cfg = load_config(cfg_path)
+    assert cfg.runtime.disable_pre_round_hooks is False
+
+
+def test_given_disable_hooks_true_when_load_config_then_honored(
+    tmp_path: Path,
+) -> None:
+    """[runtime] disable_pre_round_hooks = true is parsed."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    body = _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path).replace(
+        "[runtime]",
+        "[runtime]\ndisable_pre_round_hooks = true",
+    )
+    cfg_path = _write_toml(tmp_path, body)
+    cfg = load_config(cfg_path)
+    assert cfg.runtime.disable_pre_round_hooks is True
+
+
+def test_given_disable_hooks_non_bool_when_load_config_then_raises(
+    tmp_path: Path,
+) -> None:
+    """Non-bool value rejected at parse time."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    body = _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path).replace(
+        "[runtime]",
+        "[runtime]\ndisable_pre_round_hooks = 'yes'",
+    )
+    cfg_path = _write_toml(tmp_path, body)
+    with pytest.raises(ValueError, match="must be a bool"):
+        load_config(cfg_path)
