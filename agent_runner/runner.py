@@ -91,7 +91,7 @@ def _scan_round_log_for_network_blip(
     log_dir: Path,
     log_path: Path,
     round_num: int,
-    phase: str,
+    phase: str | None,
     round_duration_s: float,
     exit_code: int,
     timed_out: bool,

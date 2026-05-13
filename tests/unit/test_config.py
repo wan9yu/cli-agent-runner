@@ -13,7 +13,9 @@ def _write_toml(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_given_minimal_toml_when_loaded_then_returns_config_with_defaults(tmp_path: Path) -> None:
+def test_given_minimal_toml_when_loaded_then_returns_config_with_defaults(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -39,7 +41,9 @@ file = "./prompts/main.md"
     assert cfg.runtime.round_timeout_per_phase == {}
 
 
-def test_given_phases_in_toml_when_loaded_then_phases_list_populated(tmp_path: Path) -> None:
+def test_given_phases_in_toml_when_loaded_then_phases_list_populated(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -87,7 +91,9 @@ file = "./p.md"
     assert "/myproj/logs" in str(cfg.runtime.log_dir)
 
 
-def test_given_nonexistent_toml_when_loaded_then_raises_filenotfound(tmp_path: Path) -> None:
+def test_given_nonexistent_toml_when_loaded_then_raises_filenotfound(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(FileNotFoundError):
         load_config(tmp_path / "nope.toml")
 
@@ -157,7 +163,9 @@ file = "prompts/main.md"
     assert cfg.agent.name is None
 
 
-def test_given_injection_mode_explicit_when_loaded_then_mode_set(tmp_path: Path) -> None:
+def test_given_injection_mode_explicit_when_loaded_then_mode_set(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -176,7 +184,9 @@ context_injection_mode = "file"
     assert cfg.prompt.context_injection_mode == "file"
 
 
-def test_given_injection_mode_absent_when_loaded_then_default_is_prepend(tmp_path: Path) -> None:
+def test_given_injection_mode_absent_when_loaded_then_default_is_prepend(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -213,7 +223,9 @@ context_injection_mode = "magic"
         load_config(toml)
 
 
-def test_given_no_monitor_block_when_loaded_then_default_patterns(tmp_path: Path) -> None:
+def test_given_no_monitor_block_when_loaded_then_default_patterns(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -255,7 +267,9 @@ auth_fail_hint = "Custom hint for non-claude provider"
     assert cfg.monitor.auth_fail_hint == "Custom hint for non-claude provider"
 
 
-def test_given_no_plugins_block_when_loaded_then_plugins_is_none(tmp_path: Path) -> None:
+def test_given_no_plugins_block_when_loaded_then_plugins_is_none(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -273,7 +287,9 @@ file = "prompts/main.md"
     assert cfg.plugins is None
 
 
-def test_given_plugins_block_present_when_loaded_then_passes_through(tmp_path: Path) -> None:
+def test_given_plugins_block_present_when_loaded_then_passes_through(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -293,7 +309,9 @@ disabled = ["future_plugin_name"]
     assert cfg.plugins == {"disabled": ["future_plugin_name"]}
 
 
-def test_given_no_auto_stop_on_when_loaded_then_default_includes_builtins(tmp_path: Path) -> None:
+def test_given_no_auto_stop_on_when_loaded_then_default_includes_builtins(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -328,7 +346,11 @@ auto_stop_on = ["oauth_fail", "disk_critical", "my_plugin_critical"]
 """,
     )
     cfg = load_config(toml)
-    assert cfg.monitor.auto_stop_on == ["oauth_fail", "disk_critical", "my_plugin_critical"]
+    assert cfg.monitor.auto_stop_on == [
+        "oauth_fail",
+        "disk_critical",
+        "my_plugin_critical",
+    ]
 
 
 def test_given_agent_env_block_when_loaded_then_env_populated(tmp_path: Path) -> None:
@@ -355,7 +377,9 @@ file = "prompts/main.md"
     assert cfg.agent.env == {"DISABLE_AUTOUPDATER": "1", "SOME_FLAG": "yes"}
 
 
-def test_given_no_agent_env_block_when_loaded_then_env_is_empty_dict(tmp_path: Path) -> None:
+def test_given_no_agent_env_block_when_loaded_then_env_is_empty_dict(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -373,7 +397,9 @@ file = "prompts/main.md"
     assert cfg.agent.env == {}
 
 
-def test_given_agent_env_non_string_values_when_loaded_then_coerced_to_str(tmp_path: Path) -> None:
+def test_given_agent_env_non_string_values_when_loaded_then_coerced_to_str(
+    tmp_path: Path,
+) -> None:
     toml = _write_toml(
         tmp_path,
         """
@@ -414,7 +440,9 @@ file = "prompts/main.md"
     assert cfg.monitor.auth_fail_hint == ""
 
 
-def test_given_per_phase_timeouts_when_loaded_then_dict_populated(tmp_path: Path) -> None:
+def test_given_per_phase_timeouts_when_loaded_then_dict_populated(
+    tmp_path: Path,
+) -> None:
     """0.1.9: [runtime.round_timeout_per_phase] parsed to dict[str, int]."""
     toml = _write_toml(
         tmp_path,
@@ -741,3 +769,23 @@ remote_failure_tolerance_s = -5
     )
     with pytest.raises(ValueError, match="must be >= 0"):
         load_config(toml)
+
+
+def test_given_excessive_tolerance_when_load_config_then_raises(tmp_path: Path) -> None:
+    """remote_failure_tolerance_s must be <= 3600 (one-hour sanity cap)."""
+    body = (
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[monitor]\n"
+        "remote_failure_tolerance_s = 86400\n"
+    )
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(tmp_path, body)
+    with pytest.raises(ValueError, match="must be <= 3600"):
+        load_config(cfg_path)

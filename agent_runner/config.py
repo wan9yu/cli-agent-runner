@@ -113,6 +113,14 @@ def _require_non_negative_int(value: Any, *, field: str) -> int:
     return value
 
 
+def _validate_remote_failure_tolerance(value: Any) -> int:
+    """Validate monitor.remote_failure_tolerance_s: int in [0, 3600]."""
+    v = _require_non_negative_int(value, field="monitor.remote_failure_tolerance_s")
+    if v > 3600:
+        raise ValueError(f"monitor.remote_failure_tolerance_s: must be <= 3600, got {v}")
+    return v
+
+
 def _validate_round_timeout_per_phase_keys(
     per_phase: dict[str, int], phases: list[str] | None
 ) -> None:
@@ -193,9 +201,8 @@ def load_config(toml_path: Path) -> Config:
         auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
-        remote_failure_tolerance_s=_require_non_negative_int(
+        remote_failure_tolerance_s=_validate_remote_failure_tolerance(
             monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),
-            field="monitor.remote_failure_tolerance_s",
         ),
     )
     plugins_d = raw.get("plugins")
