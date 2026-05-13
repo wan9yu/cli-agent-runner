@@ -7,6 +7,13 @@ on:
 permissions:
   contents: read
 
+# Force JS actions (checkout/setup-python/upload-artifact/download-artifact)
+# onto the Node.js 24 runtime ahead of the June 2026 default flip — silences
+# the Node 20 deprecation warning without waiting for action vendors to ship
+# Node 24 bundles.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Trusted Publishing: the `environment` name below MUST match the
 # `Environment name` field in the PyPI pending publisher config.
 # A mismatch fails publish with an opaque OIDC error.
