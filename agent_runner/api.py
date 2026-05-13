@@ -336,7 +336,7 @@ def monitor_loop(
     """Yield alerts as they're detected. Caller decides what to do.
 
     The loop dedups alerts by (detector, json.dumps(context)) within session.
-    Emits ``monitor.started`` once at entry — programmatic consumers can subscribe
+    Emits ``monitor_started`` once at entry — programmatic consumers can subscribe
     to that kind as the canonical "supervision is up" signal (monitor is otherwise
     silent during healthy operation by design).
     """
@@ -347,7 +347,7 @@ def monitor_loop(
     cfg = load_config(work_dir / "agent-runner.toml")
     events.emit(
         cfg.runtime.log_dir,
-        "monitor.started",
+        "monitor_started",
         host=host,
         interval_s=interval_s,
         log_dir=str(cfg.runtime.log_dir),

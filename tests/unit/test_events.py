@@ -144,8 +144,8 @@ def test_given_hook_failed_when_checked_then_in_builtin_kinds() -> None:
 
 
 def test_given_monitor_started_kind_when_imported_then_in_known_event_kinds() -> None:
-    """monitor.started is the built-in startup-confirmation event."""
+    """monitor_started is the built-in startup-confirmation event."""
     from agent_runner.events import _BUILTIN_KINDS, KNOWN_EVENT_KINDS
 
-    assert "monitor.started" in _BUILTIN_KINDS
-    assert "monitor.started" in KNOWN_EVENT_KINDS
+    assert "monitor_started" in _BUILTIN_KINDS
+    assert "monitor_started" in KNOWN_EVENT_KINDS

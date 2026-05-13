@@ -11,7 +11,9 @@ Public API:
   Preserved so ``from agent_runner.events import KNOWN_EVENT_KINDS`` still works.
 - ``register_event_kind(name, *, source)`` — plugin entry point.
 - ``plugin_event_kinds()`` — sorted list of currently-registered plugin names.
-- ``emit(log_dir, kind, **fields)`` — append a structured event line.
+- ``emit(log_dir, kind, /, **fields)`` — append a structured event line.
+  ``log_dir`` and ``kind`` are positional-only so callers can pass
+  ``log_dir=...`` as a payload field name without parameter shadowing.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "round_end",
         "monitor_alert_emitted",
         "monitor_auto_stop_triggered",
-        "monitor.started",
+        "monitor_started",
         HOOK_FAILED,
     }
 )
@@ -125,6 +127,8 @@ def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
     Caller must ensure ``log_dir`` exists (runner.run_one_round does this once
     per round; tests use the ``tmp_log_dir`` fixture which creates it).
     """
+    # log_dir & kind are positional-only so callers can pass log_dir= as a
+    # payload field name without it colliding with the parameter binding.
     if not _is_known(kind):
         raise ValueError(f"unknown event kind: {kind!r}")
     now = datetime.now(UTC)
