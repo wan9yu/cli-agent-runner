@@ -105,7 +105,24 @@ def _acquire_lock_or_raise(lock_path: Path) -> int:
     return fd
 
 
-def _phase_for(round_num: int, phases: list[str] | None) -> tuple[str | None, int]:
+def _phase_for(
+    round_num: int,
+    phases: list[str] | None,
+    override: str | None = None,
+) -> tuple[str | None, int]:
+    """Pick the phase for this round.
+
+    Default: round-number-modulo rotation across phases. Explicit override
+    bypasses the counter (used by `agent-runner round --phase NAME` for audit /
+    debug / multi-script orchestration). Override does NOT mutate the counter —
+    subsequent default rounds resume normal rotation.
+    """
+    if override is not None:
+        if not phases:
+            raise ValueError("--phase requires [phases] to be configured in agent-runner.toml")
+        if override not in phases:
+            raise ValueError(f"phase {override!r} not in configured [phases]: {phases}")
+        return override, phases.index(override)
     if not phases:
         return None, 0
     idx = (round_num - 1) % len(phases)
@@ -252,7 +269,7 @@ def _run_post_round_hooks(
             )
 
 
-def run_one_round(cfg: Config) -> RoundResult:
+def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundResult:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -271,13 +288,13 @@ def run_one_round(cfg: Config) -> RoundResult:
     lock_path = log_dir / "agent-runner.lock"
     lock_fd = _acquire_lock_or_raise(lock_path)
     try:
-        return _run_one_round_inner(cfg)
+        return _run_one_round_inner(cfg, phase_override=phase_override)
     finally:
         os.close(lock_fd)
         _holder_sidecar(lock_path).unlink(missing_ok=True)
 
 
-def _run_one_round_inner(cfg: Config) -> RoundResult:
+def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> RoundResult:
     log_dir = cfg.runtime.log_dir
 
     prev_status = context_store.read_status(log_dir)
@@ -285,7 +302,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         events.emit(log_dir, "status_recovered", reason="status.json could not be parsed")
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
-    phase, phase_idx = _phase_for(round_num, cfg.phases)
+    phase, phase_idx = _phase_for(round_num, cfg.phases, override=phase_override)
     timeout_s = _round_timeout_for(cfg, phase)
     started_at = now_iso_ms()
 

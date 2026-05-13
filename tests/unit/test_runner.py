@@ -420,3 +420,43 @@ def test_given_holder_sidecar_missing_when_lock_held_then_error_notes_missing(
         assert "unknown" in msg.lower() or "missing" in msg.lower()
     finally:
         os.close(fd1)
+
+
+def test_given_explicit_phase_when_phase_for_called_then_uses_override() -> None:
+    """_phase_for honors explicit override over rotation counter."""
+    from agent_runner.runner import _phase_for
+
+    phases = ["dev", "qa", "product"]
+
+    # Without override: rotation by round_num
+    assert _phase_for(1, phases) == ("dev", 0)
+    assert _phase_for(2, phases) == ("qa", 1)
+    assert _phase_for(3, phases) == ("product", 2)
+
+    # With override: explicit
+    assert _phase_for(2, phases, override="product") == ("product", 2)
+    assert _phase_for(7, phases, override="dev") == ("dev", 0)
+
+
+def test_given_invalid_phase_override_when_phase_for_called_then_raises() -> None:
+    """Override must match a name in phases list."""
+    from agent_runner.runner import _phase_for
+
+    with pytest.raises(ValueError, match="not in.*phases"):
+        _phase_for(1, ["dev", "qa"], override="bogus")
+
+
+def test_given_phase_override_no_phases_configured_when_phase_for_called_then_raises() -> None:
+    """--phase requires [phases] to be configured."""
+    from agent_runner.runner import _phase_for
+
+    with pytest.raises(ValueError, match=r"\[phases\]"):
+        _phase_for(1, None, override="dev")
+
+
+def test_given_no_override_when_phase_for_called_then_rotation_unchanged() -> None:
+    """Default rotation behavior preserved when override is None."""
+    from agent_runner.runner import _phase_for
+
+    phases = ["dev", "qa", "product"]
+    assert _phase_for(4, phases) == ("dev", 0)  # rotation continues at (4-1) % 3 = 0

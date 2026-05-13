@@ -97,3 +97,50 @@ def test_given_version_flag_when_main_then_prints_version_and_exits_0(
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert f"agent-runner {__version__}" in captured.out
+
+
+def test_given_round_phase_flag_when_main_then_phase_passed_to_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`round --phase NAME` plumbs the override into run_one_round."""
+    from agent_runner.api_types import RoundResult
+    from agent_runner.cli import main
+
+    captured = {}
+
+    def fake_run_one_round(cfg, *, phase_override=None):
+        captured["phase_override"] = phase_override
+        return RoundResult(
+            round_num=1,
+            phase=phase_override,
+            started_at="2026-01-01T00:00:00.000Z",
+            ended_at="2026-01-01T00:00:01.000Z",
+            exit_code=0,
+            duration_s=0.0,
+            timed_out=False,
+            log_path=tmp_path / "R1.log",
+            dirty_files=[],
+            stashed=False,
+        )
+
+    monkeypatch.setattr("agent_runner.cli.round_cmd.run_one_round", fake_run_one_round)
+
+    # Write minimal config with phases
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev", "qa", "product"]\n'
+    )
+
+    rc = main(["--config", str(tmp_path / "agent-runner.toml"), "round", "--phase", "product"])
+    assert rc == 0
+    assert captured["phase_override"] == "product"
