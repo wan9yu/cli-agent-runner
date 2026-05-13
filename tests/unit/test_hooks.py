@@ -7,24 +7,13 @@ from pathlib import Path
 import pytest
 
 from agent_runner import hooks
+from tests._test_helpers import isolating
 
-
-@pytest.fixture(autouse=True)
-def _reset_hook_registries():
-    """Snapshot + restore plugin hook registries so tests are isolated."""
-    saved_pre = list(hooks._PRE_ROUND_HOOKS)
-    saved_en = list(hooks._CONTEXT_ENRICHERS)
-    saved_post = list(hooks._POST_ROUND_HOOKS)
-    hooks._PRE_ROUND_HOOKS.clear()
-    hooks._CONTEXT_ENRICHERS.clear()
-    hooks._POST_ROUND_HOOKS.clear()
-    yield
-    hooks._PRE_ROUND_HOOKS.clear()
-    hooks._PRE_ROUND_HOOKS.extend(saved_pre)
-    hooks._CONTEXT_ENRICHERS.clear()
-    hooks._CONTEXT_ENRICHERS.extend(saved_en)
-    hooks._POST_ROUND_HOOKS.clear()
-    hooks._POST_ROUND_HOOKS.extend(saved_post)
+_reset = isolating(
+    hooks._PRE_ROUND_HOOKS,
+    hooks._CONTEXT_ENRICHERS,
+    hooks._POST_ROUND_HOOKS,
+)
 
 
 def test_given_hook_context_when_constructed_then_carries_round_fields() -> None:

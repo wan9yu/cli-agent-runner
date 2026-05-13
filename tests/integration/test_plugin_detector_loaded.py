@@ -4,19 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agent_runner import monitor
 from agent_runner.api_types import Alert
+from tests._test_helpers import isolating
 
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_detectors():
-    saved = list(monitor._PLUGIN_DETECTORS)
-    monitor._PLUGIN_DETECTORS.clear()
-    yield
-    monitor._PLUGIN_DETECTORS.clear()
-    monitor._PLUGIN_DETECTORS.extend(saved)
+_reset = isolating(monitor._PLUGIN_DETECTORS)
 
 
 class _AlwaysFiresDetector:

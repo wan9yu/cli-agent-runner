@@ -6,6 +6,9 @@ import pytest
 
 from agent_runner import monitor
 from agent_runner.api_types import Detector
+from tests._test_helpers import isolating
+
+_reset = isolating(monitor._PLUGIN_DETECTORS)
 
 
 class _FakeDetector:
@@ -15,16 +18,6 @@ class _FakeDetector:
 
     def detect(self, state):
         return None
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_detectors():
-    """Snapshot + restore plugin detector registry around each test."""
-    saved = list(monitor._PLUGIN_DETECTORS)
-    monitor._PLUGIN_DETECTORS.clear()
-    yield
-    monitor._PLUGIN_DETECTORS.clear()
-    monitor._PLUGIN_DETECTORS.extend(saved)
 
 
 def test_given_fake_detector_when_isinstance_checked_then_satisfies_protocol() -> None:

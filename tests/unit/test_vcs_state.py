@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from agent_runner.vcs_state import (
+    _PLUGIN_OWNED_PATHS,
     StashRef,
     detect_dirty_files,
     drop_stash,
@@ -15,18 +16,9 @@ from agent_runner.vcs_state import (
     set_diff_vs_head,
     stash_orphan,
 )
+from tests._test_helpers import isolating
 
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_owned_paths():
-    """Snapshot + restore registry around each test."""
-    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
-
-    saved = list(_PLUGIN_OWNED_PATHS)
-    _PLUGIN_OWNED_PATHS.clear()
-    yield
-    _PLUGIN_OWNED_PATHS.clear()
-    _PLUGIN_OWNED_PATHS.extend(saved)
+_reset = isolating(_PLUGIN_OWNED_PATHS)
 
 
 def test_given_clean_tree_when_detect_dirty_then_returns_empty_list(tmp_git_repo: Path) -> None:

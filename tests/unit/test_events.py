@@ -9,6 +9,9 @@ import pytest
 
 from agent_runner import events
 from agent_runner.events import KNOWN_EVENT_KINDS, emit
+from tests._test_helpers import isolating
+
+_reset = isolating(events._PLUGIN_KINDS)
 
 
 def _read_jsonl(p: Path) -> list[dict]:
@@ -78,16 +81,6 @@ def test_given_event_kinds_set_when_inspected_then_contains_all_lifecycle_events
         "monitor_auto_stop_triggered",
     }
     assert expected.issubset(KNOWN_EVENT_KINDS)
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_kinds():
-    """Snapshot + restore the plugin registry so tests are isolated."""
-    saved = events._PLUGIN_KINDS.copy()
-    events._PLUGIN_KINDS.clear()
-    yield
-    events._PLUGIN_KINDS.clear()
-    events._PLUGIN_KINDS.update(saved)
 
 
 def test_given_new_plugin_kind_when_registered_then_present_in_known_kinds() -> None:

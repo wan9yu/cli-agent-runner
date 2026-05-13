@@ -5,7 +5,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
+from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
+from tests._test_helpers import isolating
+
+_reset = isolating(_PLUGIN_OWNED_PATHS)
 
 
 def _commit(repo: Path, msg: str) -> None:
@@ -22,22 +25,6 @@ def _commit(repo: Path, msg: str) -> None:
         cwd=repo,
         check=True,
     )
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_owned_paths():
-    """Snapshot + restore the plugin-owned-paths registry around each test.
-
-    Same pattern as tests/unit/test_vcs_state.py — keep the fixture name
-    consistent across unit and integration suites.
-    """
-    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
-
-    saved = list(_PLUGIN_OWNED_PATHS)
-    _PLUGIN_OWNED_PATHS.clear()
-    yield
-    _PLUGIN_OWNED_PATHS.clear()
-    _PLUGIN_OWNED_PATHS.extend(saved)
 
 
 def _intent_to_add(repo: Path) -> None:

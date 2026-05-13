@@ -4,19 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agent_runner import hooks
 from agent_runner.runner import _stitch_enricher_slices
+from tests._test_helpers import isolating
 
-
-@pytest.fixture(autouse=True)
-def _reset_enrichers():
-    saved = list(hooks._CONTEXT_ENRICHERS)
-    hooks._CONTEXT_ENRICHERS.clear()
-    yield
-    hooks._CONTEXT_ENRICHERS.clear()
-    hooks._CONTEXT_ENRICHERS.extend(saved)
+_reset = isolating(hooks._CONTEXT_ENRICHERS)
 
 
 class _Branch:
