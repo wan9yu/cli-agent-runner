@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -54,11 +55,6 @@ def test_given_seeded_mem_pressure_when_poll_once_then_emits_warning(
 
 def test_given_per_phase_in_config_when_poll_once_then_detect_hung_uses_it(tmp_path) -> None:
     """_poll_once forwards cfg.runtime.round_timeout_per_phase to detect_hung."""
-    import json
-    from datetime import UTC, datetime, timedelta
-
-    from agent_runner import api
-
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
     log_dir = work_dir / "logs"
