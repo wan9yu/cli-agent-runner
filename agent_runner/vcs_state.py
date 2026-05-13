@@ -131,6 +131,10 @@ def detect_dirty_files(repo: Path) -> list[str]:
         else:
             out.append(path)
             i += 1
+    # Filter out plugin-declared paths (0.1.8+). Early-out preserves zero
+    # behavior change when no plugin has registered anything.
+    if _PLUGIN_OWNED_PATHS:
+        out = [p for p in out if not _matches_owned_path(p)]
     return out
 
 
