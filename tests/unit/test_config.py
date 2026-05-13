@@ -537,3 +537,54 @@ file = "prompts/main.md"
     )
     with pytest.raises(ValueError, match="phases"):
         load_config(toml)
+
+
+def test_given_per_phase_bool_value_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: bool values rejected (bool is a subclass of int in Python but
+    'dev = true' as a timeout is almost certainly a typo)."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[runtime.round_timeout_per_phase]
+dev = true
+[prompt]
+file = "prompts/main.md"
+[phases]
+list = ["dev"]
+""",
+    )
+    with pytest.raises(ValueError, match="must be an integer"):
+        load_config(toml)
+
+
+def test_given_per_phase_float_value_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: float values rejected to prevent silent truncation."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[runtime.round_timeout_per_phase]
+dev = 1.5
+[prompt]
+file = "prompts/main.md"
+[phases]
+list = ["dev"]
+""",
+    )
+    with pytest.raises(ValueError, match="must be an integer"):
+        load_config(toml)

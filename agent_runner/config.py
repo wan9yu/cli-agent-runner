@@ -133,7 +133,16 @@ def load_config(toml_path: Path) -> Config:
 
     runtime_d = raw.get("runtime", {})
     per_phase_raw = runtime_d.get("round_timeout_per_phase", {})
-    per_phase = {str(k): int(v) for k, v in per_phase_raw.items()}
+    per_phase: dict[str, int] = {}
+    for k, v in per_phase_raw.items():
+        # bool is a subclass of int in Python — reject it first to avoid
+        # `dev = true` silently becoming a 1-second timeout.
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError(
+                f"runtime.round_timeout_per_phase[{str(k)!r}]: "
+                f"timeout must be an integer, got {type(v).__name__} ({v!r})"
+            )
+        per_phase[str(k)] = v
     _validate_round_timeout_per_phase(per_phase, phases)
 
     runtime = RuntimeConfig(
