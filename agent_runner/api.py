@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from agent_runner import lifecycle
+from agent_runner import events, lifecycle
 from agent_runner.api_types import (
     InitResult,
     InstallResult,
@@ -336,12 +336,23 @@ def monitor_loop(
     """Yield alerts as they're detected. Caller decides what to do.
 
     The loop dedups alerts by (detector, json.dumps(context)) within session.
+    Emits ``monitor.started`` once at entry — programmatic consumers can subscribe
+    to that kind as the canonical "supervision is up" signal (monitor is otherwise
+    silent during healthy operation by design).
     """
     import json as _json
 
     seen: set[str] = set()
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
+    events.emit(
+        cfg.runtime.log_dir,
+        "monitor.started",
+        host=host,
+        interval_s=interval_s,
+        log_dir=str(cfg.runtime.log_dir),
+        mode="anomaly-only",
+    )
     while True:
         for alert in _poll_once(work_dir, host=host):
             key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"

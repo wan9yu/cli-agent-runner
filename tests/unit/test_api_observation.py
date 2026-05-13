@@ -201,3 +201,61 @@ def test_given_events_with_hook_failures_when_state_assembled_then_filtered_to_f
     assert all(e["event"] == "hook_failed" for e in state.recent_hook_failures)
     names = sorted(e["hook_name"] for e in state.recent_hook_failures)
     assert names == ["X", "Y"]
+
+
+def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
+    tmp_path: Path,
+) -> None:
+    """monitor_loop() emits a monitor.started event before its first poll."""
+    import json
+    from unittest.mock import patch
+
+    from agent_runner import api
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    log_dir = work_dir / "logs"
+    log_dir.mkdir()
+    prompt_file = work_dir / "prompt.md"
+    prompt_file.write_text("p")
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work_dir}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    # Drive monitor_loop() one iteration.
+    # Patch _poll_once to return [] and time.sleep to raise so next() returns quickly.
+    # monitor.started is emitted *before* the while True loop, during initialization.
+    class _StopLoopError(Exception):
+        pass
+
+    with (
+        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
+        patch("agent_runner.api._poll_once", return_value=[]),
+    ):
+        gen = api.monitor_loop(work_dir, host=None, interval_s=30)
+        try:
+            next(gen, None)
+        except _StopLoopError:
+            pass
+        finally:
+            gen.close()
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files, "expected at least one events file written"
+    lines = events_files[-1].read_text(encoding="utf-8").splitlines()
+    started = [
+        json.loads(line) for line in lines if json.loads(line).get("event") == "monitor.started"
+    ]
+    assert len(started) == 1, f"expected exactly one monitor.started event, got {len(started)}"
+    payload = started[0]
+    assert payload["host"] is None
+    assert payload["interval_s"] == 30
+    assert payload["mode"] == "anomaly-only"
+    assert payload["log_dir"] == str(log_dir)

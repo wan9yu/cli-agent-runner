@@ -73,3 +73,10 @@ def test_given_emit_calls_for_monitor_events_when_scanned_then_in_known_event_ki
 
     assert "monitor_alert_emitted" in KNOWN_EVENT_KINDS
     assert "monitor_auto_stop_triggered" in KNOWN_EVENT_KINDS
+
+
+def test_given_monitor_started_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: monitor.started must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "monitor.started" in KNOWN_EVENT_KINDS

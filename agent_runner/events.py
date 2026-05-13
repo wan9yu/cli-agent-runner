@@ -43,6 +43,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "round_end",
         "monitor_alert_emitted",
         "monitor_auto_stop_triggered",
+        "monitor.started",
         HOOK_FAILED,
     }
 )
@@ -118,7 +119,7 @@ def parse_iso_ms(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
-def emit(log_dir: Path, kind: str, **fields: Any) -> None:
+def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
     """Append one event line to events-YYYY-MM.jsonl (UTC).
 
     Caller must ensure ``log_dir`` exists (runner.run_one_round does this once
