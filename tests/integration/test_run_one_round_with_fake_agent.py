@@ -150,3 +150,50 @@ def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
 
     assert record.exists(), "fake agent didn't run -- check runner spawn path"
     assert "MY_FLAG=passed-through" in record.read_text()
+
+
+def test_given_phase_with_per_phase_timeout_when_round_runs_then_uses_phase_value(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
+) -> None:
+    """0.1.9: cfg.runtime.round_timeout_per_phase override reaches the spawned subprocess.
+
+    Fake agent hangs (sleep 9999). Configured per-phase timeout for 'dev' is 2s;
+    global is 30s. If the helper picks the phase override (correct), the round
+    is killed at ~2s (+REAP_GRACE_S=5). If wiring dropped or global was used
+    (regression), the test would run ~30s+.
+    """
+    monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "hang")
+
+    log_dir = tmp_git_repo / "logs"
+    prompt = tmp_git_repo / "p.md"
+    prompt.write_text("Test prompt body. " * 50)
+    (tmp_git_repo / ".gitignore").write_text("logs/\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    cfg = Config(
+        agent=AgentConfig(command=[str(fake_agent_script)], prompt_arg_template=[]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_git_repo,
+            log_dir=log_dir,
+            round_timeout_s=30,  # global = 30s (would dominate if wiring broken)
+            round_timeout_per_phase={"dev": 2},  # dev = 2s (expected to win)
+        ),
+        prompt=PromptConfig(file=prompt, inject_context=False),
+        vcs=VcsConfig(),
+        phases=["dev"],
+    )
+
+    start = time.time()
+    result = run_one_round(cfg)
+    elapsed = time.time() - start
+
+    assert result.timed_out is True
+    # Killed at ~2s (dev phase) + REAP_GRACE_S=5 + buffer, NOT at global 30s.
+    assert elapsed < 15, f"expected kill at dev-phase 2s, took {elapsed:.1f}s"
