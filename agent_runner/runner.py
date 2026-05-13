@@ -95,7 +95,7 @@ def _stitch_enricher_slices(
             payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
             events.emit(
                 log_dir,
-                "hook_failed",
+                events.HOOK_FAILED,
                 hook_name=enricher.name,
                 hook_kind="context_enricher",
                 **payload,
@@ -114,7 +114,7 @@ def _run_pre_round_hooks(hook_ctx: hooks.HookContext, log_dir: Path) -> None:
             payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
             events.emit(
                 log_dir,
-                "hook_failed",
+                events.HOOK_FAILED,
                 hook_name=hook.name,
                 hook_kind="pre_round",
                 **payload,
@@ -136,7 +136,7 @@ def _run_post_round_hooks(
             payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
             events.emit(
                 log_dir,
-                "hook_failed",
+                events.HOOK_FAILED,
                 hook_name=hook.name,
                 hook_kind="post_round",
                 **payload,

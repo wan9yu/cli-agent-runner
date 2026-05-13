@@ -25,8 +25,12 @@ def _commit(repo: Path, msg: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry():
-    """Each test starts with a clean plugin-owned-paths registry."""
+def _reset_plugin_owned_paths():
+    """Snapshot + restore the plugin-owned-paths registry around each test.
+
+    Same pattern as tests/unit/test_vcs_state.py — keep the fixture name
+    consistent across unit and integration suites.
+    """
     from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
 
     saved = list(_PLUGIN_OWNED_PATHS)

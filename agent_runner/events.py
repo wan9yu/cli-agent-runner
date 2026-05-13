@@ -22,6 +22,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+# Cross-module event-kind constants. Most kinds are emitted in only one place
+# (runner.py), but kinds that are also CONSUMED elsewhere (filtered, surfaced
+# in peek, asserted in tests) earn a constant to keep the spelling honest.
+HOOK_FAILED = "hook_failed"
+
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
         "round_start",
@@ -38,7 +43,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "round_end",
         "monitor_alert_emitted",
         "monitor_auto_stop_triggered",
-        "hook_failed",
+        HOOK_FAILED,
     }
 )
 

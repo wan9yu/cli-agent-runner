@@ -64,9 +64,7 @@ def _matches_owned_path(path: str) -> bool:
             if path == stripped or path.startswith(pattern):
                 return True
         elif "**" in pattern:
-            # Recursive glob: fnmatch lets * span '/' so ** matches deep paths.
-            # Python 3.11 PurePath.match does not honour ** recursive semantics
-            # (3.13+ has full_match); fnmatch.fnmatch fills the gap.
+            # fnmatch handles ** recursively; PurePath.match (3.11) does not.
             if fnmatch.fnmatch(path, pattern):
                 return True
         elif PurePath(path).match(pattern):

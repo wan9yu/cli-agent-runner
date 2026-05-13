@@ -342,9 +342,9 @@ register_plugin_owned_paths([
 | Pattern | Matches | Notes |
 |---|---|---|
 | `"proposals/"` | `proposals`, `proposals/foo.md`, `proposals/sub/bar.md` | Trailing `/` → prefix match. |
-| `"proposals"` (no slash) | `proposals` exactly | `PurePath.match` single-segment literal. |
+| `"proposals"` (no slash) | `proposals` exactly | Single-segment literal. |
 | `"reports/*.md"` | `reports/dev.md` | `*` does not cross slashes. |
-| `"reports/**/*.md"` | `reports/dev.md`, `reports/sub/qa.md` | `**` matches recursive segments (via `fnmatch`). |
+| `"reports/**/*.md"` | `reports/dev.md`, `reports/sub/qa.md` | `**` matches across directory separators. |
 | `"logs/plugins/**/*"` | `logs/plugins/argus/state.json` | Same — `**` covers intermediate dirs. |
 
 ### Caveat — this is NOT a "make work_dir messy" license

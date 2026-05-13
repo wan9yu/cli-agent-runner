@@ -240,6 +240,9 @@ def _log_dir_for_project(project: str | Path) -> Path:
 # for callers that only use lifecycle verbs.
 
 from agent_runner import defenses, monitor  # noqa: E402
+from agent_runner.events import HOOK_FAILED  # noqa: E402
+
+_RECENT_HOOK_FAILURES_LIMIT = 10
 
 
 def peek(
@@ -266,7 +269,16 @@ def peek(
         if current is None:
             raise KeyError(f"round {round_num} not found under {log_dir}/rounds/")
     recent = parsed_events[-events:] if events else []
-    recent_hook_failures = [e for e in parsed_events if e.get("event") == "hook_failed"][-10:]
+    # Walk the tail in reverse so we stop as soon as the limit is filled.
+    # parsed_events grows unboundedly over a project's lifetime; a full-scan
+    # comprehension here would dominate watch-loop peek cost.
+    recent_hook_failures: list[dict[str, Any]] = []
+    for e in reversed(parsed_events):
+        if e.get("event") == HOOK_FAILED:
+            recent_hook_failures.append(e)
+            if len(recent_hook_failures) == _RECENT_HOOK_FAILURES_LIMIT:
+                break
+    recent_hook_failures.reverse()
 
     state = ProjectState(
         project=base_state.project,
