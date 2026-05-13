@@ -18,6 +18,7 @@ from agent_runner.runner import (
     LockHeldError,
     _acquire_lock_or_raise,
     _round_timeout_for,
+    _scan_round_log_for_network_blip,
     run_one_round,
 )
 
@@ -191,3 +192,96 @@ def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> Non
     """phase=None (no phases configured) → global timeout."""
     cfg = _unit_cfg(tmp_path)
     assert _round_timeout_for(cfg, None) == 1800
+
+
+def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_blip(
+    tmp_path: Path,
+) -> None:
+    """A round whose log mentions a network pattern emits agent_network_blip."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir()
+    log_path = rounds_dir / "R1-2026-05-13.log"
+    log_path.write_text(
+        "doing some work\nERROR: connection refused at api.anthropic.com\nretrying...\n"
+    )
+
+    _scan_round_log_for_network_blip(
+        log_dir=log_dir,
+        log_path=log_path,
+        round_num=1,
+        phase="main",
+        round_duration_s=12.5,
+        exit_code=1,
+        timed_out=False,
+    )
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    blips = [p for p in payloads if p["event"] == "agent_network_blip"]
+    assert len(blips) == 1
+    assert blips[0]["round_num"] == 1
+    assert blips[0]["phase"] == "main"
+    assert "connection refused" in blips[0]["matched"].lower()
+    assert blips[0]["round_duration_s"] == 12.5
+    assert blips[0]["exit_code"] == 1
+    assert blips[0]["timed_out"] is False
+
+
+def test_given_round_log_clean_when_round_ends_then_no_blip_event(
+    tmp_path: Path,
+) -> None:
+    """A round with no network patterns emits no agent_network_blip."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir()
+    log_path = rounds_dir / "R2-2026-05-13.log"
+    log_path.write_text("everything went fine\nno errors here\n")
+
+    _scan_round_log_for_network_blip(
+        log_dir=log_dir,
+        log_path=log_path,
+        round_num=2,
+        phase="main",
+        round_duration_s=5.0,
+        exit_code=0,
+        timed_out=False,
+    )
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    # File may not even exist if nothing was written
+    if events_files:
+        payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+        blips = [p for p in payloads if p["event"] == "agent_network_blip"]
+        assert blips == []
+
+
+def test_given_multiple_network_patterns_in_log_when_round_ends_then_emits_one_blip(
+    tmp_path: Path,
+) -> None:
+    """Multiple distinct network patterns in one log → still one event (first match)."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir()
+    log_path = rounds_dir / "R3-2026-05-13.log"
+    log_path.write_text("dns lookup failed\nlater: connection reset\nand: 502 bad gateway\n")
+
+    _scan_round_log_for_network_blip(
+        log_dir=log_dir,
+        log_path=log_path,
+        round_num=3,
+        phase="main",
+        round_duration_s=30.0,
+        exit_code=1,
+        timed_out=False,
+    )
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    blips = [p for p in payloads if p["event"] == "agent_network_blip"]
+    assert len(blips) == 1
+    assert "dns" in blips[0]["matched"].lower()

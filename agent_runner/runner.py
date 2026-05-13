@@ -25,6 +25,7 @@ from agent_runner import (
 from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
 from agent_runner.events import now_iso_ms
+from agent_runner.monitor import _NETWORK_PATTERNS
 
 
 class LockHeldError(RuntimeError):
@@ -83,6 +84,39 @@ def _round_context_for_prompt(
     if orphan_block is not None:
         ctx["orphan_stash"] = orphan_block
     return ctx
+
+
+def _scan_round_log_for_network_blip(
+    *,
+    log_dir: Path,
+    log_path: Path,
+    round_num: int,
+    phase: str,
+    round_duration_s: float,
+    exit_code: int,
+    timed_out: bool,
+) -> None:
+    """Scan the round log for network-error patterns; emit one agent_network_blip
+    if any match. One blip per round (first match only); see _NETWORK_PATTERNS in
+    monitor.py for the regex.
+    """
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return
+    m = _NETWORK_PATTERNS.search(text)
+    if m is None:
+        return
+    events.emit(
+        log_dir,
+        "agent_network_blip",
+        round_num=round_num,
+        phase=phase,
+        matched=m.group(0),
+        round_duration_s=round_duration_s,
+        exit_code=exit_code,
+        timed_out=timed_out,
+    )
 
 
 def _stitch_enricher_slices(
@@ -250,6 +284,16 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         round_num=round_num,
         exit_code=result.exit_code,
         duration_s=result.duration_s,
+        timed_out=result.timed_out,
+    )
+
+    _scan_round_log_for_network_blip(
+        log_dir=log_dir,
+        log_path=log_path,
+        round_num=round_num,
+        phase=phase,
+        round_duration_s=result.duration_s,
+        exit_code=result.exit_code,
         timed_out=result.timed_out,
     )
 
