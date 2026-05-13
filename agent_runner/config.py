@@ -55,13 +55,17 @@ _DEFAULT_AUTH_HINT: str = ""
 # Plugin detectors must be added explicitly by the operator to opt them in.
 _DEFAULT_AUTO_STOP_ON: tuple[str, ...] = ("oauth_fail", "disk_critical")
 
+# Default window for tolerating transient remote failures before propagating.
+# 0 = opt-out (immediate propagation).
+_DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
+
 
 @dataclass(frozen=True)
 class MonitorConfig:
     auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
     auto_stop_on: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTO_STOP_ON))
-    remote_failure_tolerance_s: int = 90
+    remote_failure_tolerance_s: int = _DEFAULT_REMOTE_FAILURE_TOLERANCE_S
 
 
 @dataclass(frozen=True)
@@ -190,7 +194,7 @@ def load_config(toml_path: Path) -> Config:
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
         remote_failure_tolerance_s=_require_non_negative_int(
-            monitor_d.get("remote_failure_tolerance_s", 90),
+            monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),
             field="monitor.remote_failure_tolerance_s",
         ),
     )
