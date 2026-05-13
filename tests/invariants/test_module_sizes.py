@@ -27,6 +27,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
         ("defenses.py", 180),  # cap with ~70 LOC headroom for new defenses
         ("agent_runtime.py", 120),  # ratchet — set after 0.1.7 dropped CRITICAL_ENV_DEFAULTS
         ("scaffold.py", 115),  # ratchet — set after 0.1.7 dropped inline _TOML_TEMPLATE
+        ("vcs_state.py", 295),  # ratchet — set after 0.1.8 plugin-owned-paths registry + filter
     ],
 )
 def test_given_core_module_when_counted_then_under_limit(rel: str, limit: int) -> None:
