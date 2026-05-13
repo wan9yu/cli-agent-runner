@@ -125,3 +125,4 @@ def test_given_monitor_loop_raises_remote_error_when_cmd_then_stderr_and_exit_1(
     assert rc == 1
     assert "cannot reach 'pi'" in captured.err
     assert "Connection refused" in captured.err
+    assert captured.out == ""  # error path must not leak to stdout

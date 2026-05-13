@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import sys
 
-from agent_runner import api
-from agent_runner.cli.common import _to_jsonable, work_dir_from_args
+from agent_runner import api, monitor
+from agent_runner.cli.common import _to_jsonable, fail, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -31,8 +31,6 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    from agent_runner import monitor  # local import: keep import surface narrow
-
     interval = args.interval if args.interval is not None else (60 if args.host else 30)
     json_mode = getattr(args, "json", False)
     try:
@@ -48,6 +46,5 @@ def cmd(args) -> int:
     except KeyboardInterrupt:
         return 0
     except monitor.MonitorRemoteError as e:
-        print(f"monitor: cannot reach {e.host!r} via ssh: {e.stderr}", file=sys.stderr)
-        return 1
+        return fail(f"cannot reach {e.host!r} via ssh: {e.stderr}")
     return 0
