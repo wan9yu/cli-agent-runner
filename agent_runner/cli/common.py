@@ -16,7 +16,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "1.7"
+PEEK_SCHEMA_VERSION = "1.8"
 
 
 def cfg_from_args(args) -> Config:
@@ -44,6 +44,8 @@ def work_dir_from_args(args) -> Path:
 def emit(value: Any, *, json_mode: bool) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
+            from agent_runner import disabled_plugin_names
+
             wrapped = {
                 "schema_version": PEEK_SCHEMA_VERSION,
                 "plugins": {
@@ -53,6 +55,7 @@ def emit(value: Any, *, json_mode: bool) -> None:
                     "post_round_hooks": [h.name for h in post_round_hooks()],
                     "detectors": plugin_detectors(),
                     "owned_paths": plugin_owned_paths(),
+                    "disabled": disabled_plugin_names(),
                 },
                 **_to_jsonable(value),
             }

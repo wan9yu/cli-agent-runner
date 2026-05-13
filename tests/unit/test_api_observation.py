@@ -209,7 +209,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     )
     emit(state, json_mode=True)
     out = json.loads(capsys.readouterr().out)
-    assert out["schema_version"] == "1.7"
+    assert out["schema_version"] == "1.8"
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
     assert "owned_paths" in out["plugins"]
@@ -513,3 +513,35 @@ def test_given_recent_blips_in_events_when_peek_then_populated_in_state(
     # The 5 returned should be the last 5 in chronological order (rounds 2..6)
     rounds = [b["round_num"] for b in state.recent_blips]
     assert rounds == [2, 3, 4, 5, 6]
+
+
+def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """peek --json includes plugins.disabled sub-key (verbatim from disabled_plugin_names())."""
+    import json
+
+    from agent_runner.api_types import (
+        ProjectState,
+        ServiceMode,
+        ServiceStatus,
+        SystemMetrics,
+    )
+    from agent_runner.cli.common import emit
+
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+    emit(state, json_mode=True)
+    out = json.loads(capsys.readouterr().out)
+    assert "plugins" in out
+    assert "disabled" in out["plugins"]
+    # Default empty list when no apply_plugin_disable was called
+    assert isinstance(out["plugins"]["disabled"], list)
