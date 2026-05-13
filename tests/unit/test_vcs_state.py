@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from agent_runner.vcs_state import (
     StashRef,
     detect_dirty_files,
@@ -13,6 +15,18 @@ from agent_runner.vcs_state import (
     set_diff_vs_head,
     stash_orphan,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_plugin_owned_paths():
+    """Snapshot + restore registry around each test."""
+    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
+
+    saved = list(_PLUGIN_OWNED_PATHS)
+    _PLUGIN_OWNED_PATHS.clear()
+    yield
+    _PLUGIN_OWNED_PATHS.clear()
+    _PLUGIN_OWNED_PATHS.extend(saved)
 
 
 def test_given_clean_tree_when_detect_dirty_then_returns_empty_list(tmp_git_repo: Path) -> None:
@@ -123,29 +137,23 @@ def test_given_stash_when_popped_by_sha_then_changes_restored(tmp_git_repo: Path
 
 
 def test_given_no_registration_when_plugin_owned_paths_then_empty_list() -> None:
-    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS, plugin_owned_paths
+    from agent_runner.vcs_state import plugin_owned_paths
 
-    _PLUGIN_OWNED_PATHS.clear()
     assert plugin_owned_paths() == []
 
 
 def test_given_paths_registered_when_plugin_owned_paths_then_snapshot_returned() -> None:
     from agent_runner.vcs_state import (
-        _PLUGIN_OWNED_PATHS,
         plugin_owned_paths,
         register_plugin_owned_paths,
     )
 
-    _PLUGIN_OWNED_PATHS.clear()
     register_plugin_owned_paths(["proposals/", "reports/*.md"])
     assert plugin_owned_paths() == ["proposals/", "reports/*.md"]
 
 
 def test_given_non_string_entry_when_register_then_raises_value_error() -> None:
-    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS, register_plugin_owned_paths
-
-    _PLUGIN_OWNED_PATHS.clear()
-    import pytest
+    from agent_runner.vcs_state import register_plugin_owned_paths
 
     with pytest.raises(ValueError, match="non-string entry"):
         register_plugin_owned_paths(["ok.md", 42])  # type: ignore[list-item]
@@ -153,12 +161,10 @@ def test_given_non_string_entry_when_register_then_raises_value_error() -> None:
 
 def test_given_trailing_slash_pattern_when_match_then_prefix_match() -> None:
     from agent_runner.vcs_state import (
-        _PLUGIN_OWNED_PATHS,
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
-    _PLUGIN_OWNED_PATHS.clear()
     register_plugin_owned_paths(["proposals/"])
     assert _matches_owned_path("proposals/foo.md")
     assert _matches_owned_path("proposals/sub/bar.md")
@@ -169,12 +175,10 @@ def test_given_trailing_slash_pattern_when_match_then_prefix_match() -> None:
 
 def test_given_glob_pattern_without_slash_when_match_then_purepath_semantics() -> None:
     from agent_runner.vcs_state import (
-        _PLUGIN_OWNED_PATHS,
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
-    _PLUGIN_OWNED_PATHS.clear()
     register_plugin_owned_paths(["reports/*.md"])
     assert _matches_owned_path("reports/dev.md")
     # PurePath.match: single * does NOT cross slashes
@@ -183,12 +187,10 @@ def test_given_glob_pattern_without_slash_when_match_then_purepath_semantics() -
 
 def test_given_recursive_glob_when_match_then_double_star_works() -> None:
     from agent_runner.vcs_state import (
-        _PLUGIN_OWNED_PATHS,
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
-    _PLUGIN_OWNED_PATHS.clear()
     register_plugin_owned_paths(["logs/plugins/**/*"])
     assert _matches_owned_path("logs/plugins/argus/state.json")
     assert _matches_owned_path("logs/plugins/argus/deep/very/deep.txt")
@@ -197,12 +199,10 @@ def test_given_recursive_glob_when_match_then_double_star_works() -> None:
 
 def test_given_multiple_patterns_when_match_then_any_matches() -> None:
     from agent_runner.vcs_state import (
-        _PLUGIN_OWNED_PATHS,
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
-    _PLUGIN_OWNED_PATHS.clear()
     register_plugin_owned_paths(["proposals/", "reports/*.md"])
     assert _matches_owned_path("proposals/x.md")
     assert _matches_owned_path("reports/y.md")

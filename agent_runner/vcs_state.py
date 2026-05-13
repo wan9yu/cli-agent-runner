@@ -7,14 +7,18 @@ Stash safety rules (R820 + §9 IMMUTABLE):
   design means external concurrent ``git stash push`` is not a defended scenario.
 - "Auto-tool change vs human change" detection uses set-based diff vs HEAD,
   not unified-diff +/-line parsing (R2110 lesson).
+- Also hosts the plugin-owned-paths registry consumed by
+  ``detect_dirty_files()`` so plugins can opt files/dirs out of the
+  orphan-stash defense (0.1.8+).
 """
 
 from __future__ import annotations
 
+import fnmatch
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
 # detect_dirty_files() filters its return through this list, so plugin-declared
@@ -29,9 +33,12 @@ def register_plugin_owned_paths(paths: list[str]) -> None:
 
       - Trailing ``/`` → prefix match (e.g. ``"proposals/"`` matches
         ``"proposals/dev-round1.md"`` and the bare directory name).
-      - Anything else → ``pathlib.PurePath.match`` glob (e.g.
-        ``"reports/*.md"``, ``"logs/plugins/**/*"``). ``**`` recognizes
-        recursive directory segments; single ``*`` does not cross slashes.
+      - Anything else without ``**`` → ``pathlib.PurePath.match`` glob
+        (e.g. ``"reports/*.md"``). Single ``*`` does not cross slashes.
+      - Patterns containing ``**`` → ``fnmatch.fnmatch`` (e.g.
+        ``"logs/plugins/**/*"``). ``**`` matches recursive directory
+        segments. (``PurePath.full_match`` would handle this natively
+        but requires Python 3.13+; this project's minimum is 3.11.)
 
     Plugins call this at module import time (entry_point side-effect) so the
     paths are known before the first round runs.
@@ -51,9 +58,6 @@ def plugin_owned_paths() -> list[str]:
 
 def _matches_owned_path(path: str) -> bool:
     """True if `path` matches any registered plugin-owned pattern."""
-    import fnmatch
-    from pathlib import PurePath
-
     for pattern in _PLUGIN_OWNED_PATHS:
         if pattern.endswith("/"):
             stripped = pattern.rstrip("/")
