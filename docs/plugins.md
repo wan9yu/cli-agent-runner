@@ -361,3 +361,48 @@ the orphan-stash defense to sweep it.
 
 `agent-runner peek --select plugins.owned_paths` shows the currently
 registered list (peek schema v1.5+).
+
+## Plugin tests + consumer pytest collision
+
+Consumer projects often have their own `tests/` directory. If your plugin
+also has tests (e.g. `tools/my_agent_plugin/tests/`), pytest's testpaths
+walk can find both and fail with `ModuleNotFoundError` when the same
+package name lives in two locations.
+
+Two recommended patterns:
+
+### Pattern A — plugin tests inside the plugin package
+
+Plugin author owns this:
+
+```
+my_agent_plugin/
+├── __init__.py
+├── core.py
+└── tests/
+    ├── __init__.py
+    └── test_core.py
+```
+
+In `my_agent_plugin/pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+testpaths = ["my_agent_plugin/tests"]
+```
+
+This scopes pytest collection to your plugin's tests when running locally.
+
+### Pattern B — consumer ignores your plugin in their pytest config
+
+Consumer owns this:
+
+```toml
+# In the consumer project's pytest.ini or pyproject.toml:
+[tool.pytest.ini_options]
+addopts = ["--ignore=tools/my_agent_plugin"]
+```
+
+Both work. Pattern A is preferable for plugin authors (no consumer
+configuration needed); Pattern B is for cases where the consumer integrates
+a plugin they don't own.
