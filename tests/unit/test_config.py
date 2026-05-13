@@ -279,7 +279,7 @@ auth_fail_hint = "Custom hint for non-claude provider"
     assert cfg.monitor.auth_fail_hint == "Custom hint for non-claude provider"
 
 
-def test_given_no_plugins_block_when_loaded_then_plugins_is_none(
+def test_given_no_plugins_block_when_loaded_then_plugins_empty_defaults(
     tmp_path: Path,
 ) -> None:
     toml = _write_toml(
