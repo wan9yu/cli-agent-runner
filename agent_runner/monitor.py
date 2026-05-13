@@ -438,6 +438,7 @@ def run_all_detectors(
     now: datetime | None = None,
     auth_fail_patterns: list[str] | None = None,
     auth_fail_hint: str | None = None,
+    round_timeout_per_phase: dict[str, int] | None = None,
 ) -> list[Alert]:
     """Run all 9 detectors; returns alerts (empty = healthy)."""
     if now is None:
@@ -447,7 +448,12 @@ def run_all_detectors(
     )
     candidates = [
         detect_timeout_rate(events),
-        detect_hung(events, now=now, round_timeout_s=round_timeout_s),
+        detect_hung(
+            events,
+            now=now,
+            round_timeout_s=round_timeout_s,
+            round_timeout_per_phase=round_timeout_per_phase,
+        ),
         detect_orphan_chain(events),
         detect_disk_warning(metrics),
         detect_disk_critical(metrics),
