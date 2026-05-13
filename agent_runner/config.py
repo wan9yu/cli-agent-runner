@@ -61,6 +61,20 @@ _DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
 
 
 @dataclass(frozen=True)
+class PluginsConfig:
+    """Plugin-related TOML knobs.
+
+    Migrating from free-form ``dict[str, Any] | None`` (0.1.11 and earlier) to a
+    typed dataclass. Known keys are first-class fields; unknown keys land in
+    ``.raw`` for forward-compatibility with plugin-author-defined `[plugins.*]`
+    sub-keys (e.g. plugin packages may read their own config from `cfg.plugins.raw`).
+    """
+
+    disable: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class MonitorConfig:
     auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
@@ -76,7 +90,7 @@ class Config:
     vcs: VcsConfig = field(default_factory=VcsConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     phases: list[str] | None = None
-    plugins: dict[str, Any] | None = None
+    plugins: PluginsConfig = field(default_factory=PluginsConfig)
 
 
 def _require(d: dict, *path: str) -> object:
@@ -205,7 +219,9 @@ def load_config(toml_path: Path) -> Config:
             monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),
         ),
     )
-    plugins_d = raw.get("plugins")
+    plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
+    disable = list(plugins_raw.pop("disable", []))
+    plugins = PluginsConfig(disable=disable, raw=plugins_raw)
 
     return Config(
         agent=agent,
@@ -214,5 +230,5 @@ def load_config(toml_path: Path) -> Config:
         vcs=vcs,
         monitor=monitor,
         phases=phases,
-        plugins=plugins_d,
+        plugins=plugins,
     )

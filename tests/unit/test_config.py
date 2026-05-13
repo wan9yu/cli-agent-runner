@@ -13,6 +13,18 @@ def _write_toml(tmp_path: Path, body: str) -> Path:
     return p
 
 
+_MINIMAL_TOML_NO_PLUGINS = """\
+[agent]
+command = ["true"]
+prompt_arg_template = ["{{prompt}}"]
+[runtime]
+work_dir = "{tmp_path}"
+log_dir = "{tmp_path}/logs"
+[prompt]
+file = "{tmp_path}/prompt.md"
+"""
+
+
 def test_given_minimal_toml_when_loaded_then_returns_config_with_defaults(
     tmp_path: Path,
 ) -> None:
@@ -284,7 +296,7 @@ file = "prompts/main.md"
 """,
     )
     cfg = load_config(toml)
-    assert cfg.plugins is None
+    assert cfg.plugins.disable == [] and cfg.plugins.raw == {}
 
 
 def test_given_plugins_block_present_when_loaded_then_passes_through(
@@ -306,7 +318,7 @@ disabled = ["future_plugin_name"]
 """,
     )
     cfg = load_config(toml)
-    assert cfg.plugins == {"disabled": ["future_plugin_name"]}
+    assert cfg.plugins.raw == {"disabled": ["future_plugin_name"]}
 
 
 def test_given_no_auto_stop_on_when_loaded_then_default_includes_builtins(
@@ -789,3 +801,50 @@ def test_given_excessive_tolerance_when_load_config_then_raises(tmp_path: Path) 
     cfg_path = _write_toml(tmp_path, body)
     with pytest.raises(ValueError, match="must be <= 3600"):
         load_config(cfg_path)
+
+
+def test_given_no_plugins_block_when_load_config_then_plugins_defaults_empty(
+    tmp_path: Path,
+) -> None:
+    """Default PluginsConfig: disable=[] and raw={}."""
+    from agent_runner.config import PluginsConfig, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(tmp_path, _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path))
+    cfg = load_config(cfg_path)
+    assert isinstance(cfg.plugins, PluginsConfig)
+    assert cfg.plugins.disable == []
+    assert cfg.plugins.raw == {}
+
+
+def test_given_plugins_disable_list_when_load_config_then_parsed(
+    tmp_path: Path,
+) -> None:
+    """[plugins] disable = [...] is parsed into PluginsConfig.disable."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(
+        tmp_path,
+        _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path)
+        + '\n[plugins]\ndisable = ["argus_prompt_assembly", "argus_chain_state"]\n',
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.plugins.disable == ["argus_prompt_assembly", "argus_chain_state"]
+    assert cfg.plugins.raw == {}
+
+
+def test_given_plugins_unknown_keys_when_load_config_then_preserved_in_raw(
+    tmp_path: Path,
+) -> None:
+    """Plugin-author-defined keys land in PluginsConfig.raw (forward-compat)."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(
+        tmp_path,
+        _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path) + '\n[plugins]\nargus_foo = "bar"\n',
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.plugins.disable == []
+    assert cfg.plugins.raw == {"argus_foo": "bar"}
