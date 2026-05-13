@@ -61,6 +61,7 @@ class MonitorConfig:
     auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
     auto_stop_on: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTO_STOP_ON))
+    remote_failure_tolerance_s: int = 90
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,17 @@ def _require_positive_int(value: Any, *, field: str) -> int:
         raise ValueError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
     if value <= 0:
         raise ValueError(f"{field}: must be positive, got {value}")
+    return value
+
+
+def _require_non_negative_int(value: Any, *, field: str) -> int:
+    """Validate a TOML value is a non-negative int (allows 0). Rejects bool
+    and any non-int. Sibling of _require_positive_int where 0 has meaning
+    (e.g. opt-out / disable)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
+    if value < 0:
+        raise ValueError(f"{field}: must be >= 0, got {value}")
     return value
 
 
@@ -177,6 +189,10 @@ def load_config(toml_path: Path) -> Config:
         auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
+        remote_failure_tolerance_s=_require_non_negative_int(
+            monitor_d.get("remote_failure_tolerance_s", 90),
+            field="monitor.remote_failure_tolerance_s",
+        ),
     )
     plugins_d = raw.get("plugins")
 

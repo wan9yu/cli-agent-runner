@@ -47,6 +47,7 @@ writes a templated copy you can edit.
 | `auth_fail_patterns` | `list[str]` | ['\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b'] |
 | `auth_fail_hint` | `str` | '' |
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
+| `remote_failure_tolerance_s` | `int` | 90 |
 <!-- /gen:config-schema -->
 
 ## `[agent.env]` (optional)

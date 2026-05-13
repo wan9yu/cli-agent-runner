@@ -655,3 +655,93 @@ stash_idempotency_s = 1.5
     )
     with pytest.raises(ValueError, match="stash_idempotency_s.*must be an integer"):
         load_config(toml)
+
+
+def test_given_no_monitor_block_when_load_config_then_remote_failure_tolerance_defaults_90(
+    tmp_path: Path,
+) -> None:
+    """Default value when [monitor] block absent."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.monitor.remote_failure_tolerance_s == 90
+
+
+def test_given_custom_tolerance_when_load_config_then_parsed(tmp_path: Path) -> None:
+    """[monitor] remote_failure_tolerance_s = N is honored."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[monitor]\n"
+        "remote_failure_tolerance_s = 120\n"
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.monitor.remote_failure_tolerance_s == 120
+
+
+def test_given_zero_tolerance_when_load_config_then_accepted_as_opt_out(
+    tmp_path: Path,
+) -> None:
+    """0 is valid (opt-out of retry, 0.1.10 immediate-propagate behavior)."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[monitor]\n"
+        "remote_failure_tolerance_s = 0\n"
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.monitor.remote_failure_tolerance_s == 0
+
+
+def test_given_negative_tolerance_when_load_config_then_raises(tmp_path: Path) -> None:
+    """Negative values are rejected by _require_non_negative_int."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[monitor]\n"
+        "remote_failure_tolerance_s = -5\n"
+    )
+
+    with pytest.raises(ValueError, match="must be >= 0"):
+        load_config(tmp_path / "agent-runner.toml")
