@@ -144,6 +144,7 @@ def detect_hung(
     for rn, (started_ts, phase) in open_rounds.items():
         started = parse_iso_ms(started_ts)
         elapsed = (now - started).total_seconds()
+        # phase None or empty string → fall back to global; otherwise consult per_phase
         effective_timeout = per_phase.get(phase, round_timeout_s) if phase else round_timeout_s
         threshold = effective_timeout * factor
         if elapsed > threshold:

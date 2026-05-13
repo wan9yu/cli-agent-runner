@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from agent_runner.api_types import Alert
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
@@ -244,10 +246,6 @@ def test_given_default_patterns_when_detect_oauth_fail_then_uses_empty_hint_defa
 
 def test_given_per_phase_override_when_detect_hung_then_uses_phase_value() -> None:
     """detect_hung honors round_timeout_per_phase override for matching phase."""
-    from datetime import UTC, datetime
-
-    from agent_runner.monitor import detect_hung
-
     # Round started 500s ago in phase "warmup"; global timeout 1800, per-phase 300.
     # With factor=1.5, threshold for "warmup" = 300*1.5 = 450 → 500 > 450 → fire.
     # Without per-phase: threshold = 1800*1.5 = 2700 → 500 < 2700 → no fire.
@@ -269,14 +267,12 @@ def test_given_per_phase_override_when_detect_hung_then_uses_phase_value() -> No
     assert with_override is not None
     assert with_override.detector == "hung"
     assert with_override.context["round_num"] == 7
+    # threshold_s reflects the per-phase override (300 * 1.5), not the global (1800 * 1.5)
+    assert with_override.context["threshold_s"] == pytest.approx(450.0)
 
 
 def test_given_phase_missing_when_detect_hung_then_falls_back_to_global() -> None:
     """round_start without phase field uses global round_timeout_s."""
-    from datetime import UTC, datetime
-
-    from agent_runner.monitor import detect_hung
-
     now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
     started_ts = "2026-05-13T11:51:40.000Z"  # 500s before now
     events = [
@@ -295,10 +291,6 @@ def test_given_phase_missing_when_detect_hung_then_falls_back_to_global() -> Non
 
 def test_given_phase_not_in_override_when_detect_hung_then_uses_global() -> None:
     """A phase present in round_start but not in per_phase dict falls back to global."""
-    from datetime import UTC, datetime
-
-    from agent_runner.monitor import detect_hung
-
     now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
     started_ts = "2026-05-13T11:51:40.000Z"  # 500s before now
     events = [
