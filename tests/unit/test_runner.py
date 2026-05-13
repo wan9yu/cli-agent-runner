@@ -460,3 +460,43 @@ def test_given_default_round_when_phase_for_called_then_rotation_unchanged() -> 
 
     phases = ["dev", "qa", "product"]
     assert _phase_for(4, phases) == ("dev", 0)  # rotation continues at (4-1) % 3 = 0
+
+
+def test_given_disable_pre_round_hooks_true_when_run_then_hooks_skipped(
+    tmp_path: Path,
+) -> None:
+    """disable_pre_round_hooks = True skips all PreRoundHook invocations."""
+    from agent_runner import hooks
+    from agent_runner.runner import _run_pre_round_hooks
+
+    hook_calls = []
+
+    class _TestHook:
+        name = "test_skip_target"
+
+        def before_round(self, ctx):
+            hook_calls.append(ctx.round_num)
+
+    hooks.register_pre_round_hook(_TestHook())
+    try:
+        ctx = hooks.HookContext(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            project="t",
+            round_num=1,
+            phase=None,
+            agent_name=None,
+        )
+        (tmp_path / "logs").mkdir()
+
+        # disabled=True: hooks should NOT run
+        _run_pre_round_hooks(ctx, tmp_path / "logs", disabled=True)
+        assert hook_calls == [], "hooks should not run when disabled"
+
+        # disabled=False: hooks SHOULD run
+        _run_pre_round_hooks(ctx, tmp_path / "logs", disabled=False)
+        assert hook_calls == [1], "hooks should run when not disabled"
+    finally:
+        hooks._PRE_ROUND_HOOKS[:] = [
+            h for h in hooks._PRE_ROUND_HOOKS if h.name != "test_skip_target"
+        ]
