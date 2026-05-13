@@ -13,6 +13,10 @@ _HOOK_GROUPS = (
     "agent_runner.post_round_hooks",
 )
 
+# Tracks the names passed to the most recent ``apply_plugin_disable`` call.
+# Surfaced via peek --json `plugins.disabled` for operator visibility.
+_DISABLED_PLUGIN_NAMES: list[str] = []
+
 
 def _load_plugins_from_group(group: str) -> None:
     """Discover and load entry_points in ``group``, isolating per-plugin failures.
@@ -52,3 +56,78 @@ def _load_detector_plugins() -> None:
 _load_event_kind_plugins()
 _load_hook_plugins()
 _load_detector_plugins()
+
+
+def apply_plugin_disable(names: list[str]) -> None:
+    """Remove plugins matching ``names`` from all in-memory registries.
+
+    Called after config-load to honor ``[plugins] disable``. Idempotent for
+    already-removed names. Emits a UserWarning for names that match no
+    registered plugin (typo catcher; tolerates cross-env config drift).
+
+    Plugin packages still load at import time — this removes from the registries
+    that the runner and peek consult. Side effects from ep.load() (module-level
+    imports, etc.) have already happened by the time this runs.
+
+    Known limitation: vcs_state._PLUGIN_OWNED_PATHS lacks per-plugin name
+    attribution today, so owned-paths are NOT filtered here. Disabled plugin's
+    paths remain registered (mostly inert).
+    """
+    import warnings
+
+    from agent_runner import events, hooks, monitor
+
+    if not names:
+        return
+
+    global _DISABLED_PLUGIN_NAMES
+    _DISABLED_PLUGIN_NAMES = list(names)
+
+    found: set[str] = set()
+    desired = set(names)
+
+    # Pre-round hooks
+    pre_keep = [h for h in hooks._PRE_ROUND_HOOKS if h.name not in desired]
+    found.update(h.name for h in hooks._PRE_ROUND_HOOKS if h.name in desired)
+    hooks._PRE_ROUND_HOOKS[:] = pre_keep
+
+    # Context enrichers
+    enr_keep = [e for e in hooks._CONTEXT_ENRICHERS if e.name not in desired]
+    found.update(e.name for e in hooks._CONTEXT_ENRICHERS if e.name in desired)
+    hooks._CONTEXT_ENRICHERS[:] = enr_keep
+
+    # Post-round hooks
+    post_keep = [h for h in hooks._POST_ROUND_HOOKS if h.name not in desired]
+    found.update(h.name for h in hooks._POST_ROUND_HOOKS if h.name in desired)
+    hooks._POST_ROUND_HOOKS[:] = post_keep
+
+    # Plugin event kinds
+    for name in list(events._PLUGIN_KINDS):
+        if name in desired:
+            del events._PLUGIN_KINDS[name]
+            found.add(name)
+
+    # Detectors
+    det_keep = [d for d in monitor._PLUGIN_DETECTORS if d.name not in desired]
+    found.update(d.name for d in monitor._PLUGIN_DETECTORS if d.name in desired)
+    monitor._PLUGIN_DETECTORS[:] = det_keep
+
+    # vcs_state._PLUGIN_OWNED_PATHS has no name attribution today (see docstring above).
+    # Disabled plugin's owned paths are not filtered.
+
+    unknown = desired - found
+    if unknown:
+        warnings.warn(
+            f"[plugins] disable references unknown entry_points: {sorted(unknown)}. "
+            f"(Names matched no registered plugin; check spelling or installed packages.)",
+            stacklevel=2,
+        )
+
+
+def disabled_plugin_names() -> list[str]:
+    """Names passed to the most recent ``apply_plugin_disable`` call.
+
+    Used by peek --json to surface ``plugins.disabled`` for operator visibility.
+    Returns the LIST (not set) preserving configured order.
+    """
+    return list(_DISABLED_PLUGIN_NAMES)

@@ -223,7 +223,7 @@ def load_config(toml_path: Path) -> Config:
     disable = list(plugins_raw.pop("disable", []))
     plugins = PluginsConfig(disable=disable, raw=plugins_raw)
 
-    return Config(
+    cfg = Config(
         agent=agent,
         runtime=runtime,
         prompt=prompt,
@@ -232,3 +232,12 @@ def load_config(toml_path: Path) -> Config:
         phases=phases,
         plugins=plugins,
     )
+
+    # Honor [plugins] disable — must happen after registries are populated by
+    # import-time plugin load. One-way operation; test isolation via isolating().
+    if disable:
+        from agent_runner import apply_plugin_disable
+
+        apply_plugin_disable(disable)
+
+    return cfg
