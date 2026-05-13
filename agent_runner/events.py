@@ -28,13 +28,16 @@ from typing import Any
 # (runner.py), but kinds that are also CONSUMED elsewhere (filtered, surfaced
 # in peek, asserted in tests) earn a constant to keep the spelling honest.
 HOOK_FAILED = "hook_failed"
+AGENT_NETWORK_BLIP = "agent_network_blip"
+MONITOR_REMOTE_BLIP = "monitor_remote_blip"
+MONITOR_REMOTE_GIVEUP = "monitor_remote_giveup"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
         "round_start",
         "agent_spawn",
         "agent_exit",
-        "agent_network_blip",
+        AGENT_NETWORK_BLIP,
         "dirty_detected",
         "orphan_stashed",
         "orphan_idempotent_skip",
@@ -47,8 +50,8 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "monitor_alert_emitted",
         "monitor_auto_stop_failed",
         "monitor_auto_stop_triggered",
-        "monitor_remote_blip",
-        "monitor_remote_giveup",
+        MONITOR_REMOTE_BLIP,
+        MONITOR_REMOTE_GIVEUP,
         "monitor_started",
         HOOK_FAILED,
     }

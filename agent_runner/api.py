@@ -251,10 +251,34 @@ def _log_dir_for_project(project: str | Path) -> Path:
 # for callers that only use lifecycle verbs.
 
 from agent_runner import defenses, monitor  # noqa: E402
-from agent_runner.events import HOOK_FAILED  # noqa: E402
+from agent_runner.events import (  # noqa: E402
+    AGENT_NETWORK_BLIP,
+    HOOK_FAILED,
+    MONITOR_REMOTE_BLIP,
+    MONITOR_REMOTE_GIVEUP,
+)
 
 _RECENT_HOOK_FAILURES_LIMIT = 10
 _RECENT_BLIPS_LIMIT = 5
+
+
+def _recent_events_of_kind(
+    parsed_events: list[dict[str, Any]], kind: str, limit: int
+) -> list[dict[str, Any]]:
+    """Return the last ``limit`` events matching ``kind``, in chronological order.
+
+    Walks the event list in reverse so we stop as soon as the limit is filled —
+    parsed_events grows unboundedly over a project's lifetime; a full-scan
+    comprehension here would dominate watch-loop peek cost.
+    """
+    out: list[dict[str, Any]] = []
+    for e in reversed(parsed_events):
+        if e.get("event") == kind:
+            out.append(e)
+            if len(out) == limit:
+                break
+    out.reverse()
+    return out
 
 
 def peek(
@@ -281,24 +305,10 @@ def peek(
         if current is None:
             raise KeyError(f"round {round_num} not found under {log_dir}/rounds/")
     recent = parsed_events[-events:] if events else []
-    # Walk the tail in reverse so we stop as soon as the limit is filled.
-    # parsed_events grows unboundedly over a project's lifetime; a full-scan
-    # comprehension here would dominate watch-loop peek cost.
-    recent_hook_failures: list[dict[str, Any]] = []
-    for e in reversed(parsed_events):
-        if e.get("event") == HOOK_FAILED:
-            recent_hook_failures.append(e)
-            if len(recent_hook_failures) == _RECENT_HOOK_FAILURES_LIMIT:
-                break
-    recent_hook_failures.reverse()
-
-    recent_blips: list[dict[str, Any]] = []
-    for e in reversed(parsed_events):
-        if e.get("event") == "agent_network_blip":
-            recent_blips.append(e)
-            if len(recent_blips) == _RECENT_BLIPS_LIMIT:
-                break
-    recent_blips.reverse()
+    recent_hook_failures = _recent_events_of_kind(
+        parsed_events, HOOK_FAILED, _RECENT_HOOK_FAILURES_LIMIT
+    )
+    recent_blips = _recent_events_of_kind(parsed_events, AGENT_NETWORK_BLIP, _RECENT_BLIPS_LIMIT)
 
     state = ProjectState(
         project=base_state.project,
@@ -410,7 +420,7 @@ def monitor_loop(
             if elapsed >= tolerance_s:
                 events.emit(
                     cfg.runtime.log_dir,
-                    "monitor_remote_giveup",
+                    MONITOR_REMOTE_GIVEUP,
                     host=host,
                     total_attempts=attempt,
                     total_elapsed_s=elapsed,
@@ -422,7 +432,7 @@ def monitor_loop(
             next_sleep_s = min(_REMOTE_FAILURE_BACKOFF[backoff_idx], tolerance_s - elapsed)
             events.emit(
                 cfg.runtime.log_dir,
-                "monitor_remote_blip",
+                MONITOR_REMOTE_BLIP,
                 host=host,
                 error=e.stderr,
                 attempt=attempt,

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner.agent_runtime import RunResult
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -207,14 +208,13 @@ def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_
         "doing some work\nERROR: connection refused at api.anthropic.com\nretrying...\n"
     )
 
+    result = RunResult(exit_code=1, duration_s=12.5, timed_out=False, pid=0)
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
+        result=result,
         round_num=1,
         phase="main",
-        round_duration_s=12.5,
-        exit_code=1,
-        timed_out=False,
     )
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -241,14 +241,13 @@ def test_given_round_log_clean_when_round_ends_then_no_blip_event(
     log_path = rounds_dir / "R2-2026-05-13.log"
     log_path.write_text("everything went fine\nno errors here\n")
 
+    result = RunResult(exit_code=0, duration_s=5.0, timed_out=False, pid=0)
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
+        result=result,
         round_num=2,
         phase="main",
-        round_duration_s=5.0,
-        exit_code=0,
-        timed_out=False,
     )
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -270,14 +269,13 @@ def test_given_multiple_network_patterns_in_log_when_round_ends_then_emits_one_b
     log_path = rounds_dir / "R3-2026-05-13.log"
     log_path.write_text("dns lookup failed\nlater: connection reset\nand: 502 bad gateway\n")
 
+    result = RunResult(exit_code=1, duration_s=30.0, timed_out=False, pid=0)
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
+        result=result,
         round_num=3,
         phase="main",
-        round_duration_s=30.0,
-        exit_code=1,
-        timed_out=False,
     )
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -285,3 +283,30 @@ def test_given_multiple_network_patterns_in_log_when_round_ends_then_emits_one_b
     blips = [p for p in payloads if p["event"] == "agent_network_blip"]
     assert len(blips) == 1
     assert "dns" in blips[0]["matched"].lower()
+
+
+def test_given_clean_round_when_scan_called_then_no_blip_emitted(
+    tmp_path: Path,
+) -> None:
+    """Clean rounds (exit 0, no timeout) skip log scan entirely."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir()
+    log_path = rounds_dir / "R4-2026-05-13.log"
+    log_path.write_text("ERROR: connection refused\n")  # would match if scanned
+
+    result = RunResult(exit_code=0, duration_s=5.0, timed_out=False, pid=0)
+    _scan_round_log_for_network_blip(
+        log_dir=log_dir,
+        log_path=log_path,
+        result=result,
+        round_num=4,
+        phase="main",
+    )
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    if events_files:
+        payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+        blips = [p for p in payloads if p["event"] == "agent_network_blip"]
+        assert blips == []

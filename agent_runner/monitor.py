@@ -70,7 +70,7 @@ def plugin_detectors() -> list[str]:
 
 SHORT_EXIT_THRESHOLD_S = 60
 
-_NETWORK_PATTERNS = re.compile(
+NETWORK_PATTERNS = re.compile(
     r"\b(connection refused|econnrefused|dns|"
     r"name or service not known|connect(ion)? timed out|"
     r"nodename nor servname|network unreachable|"
@@ -312,7 +312,7 @@ def detect_network_fail(
         if (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
         and e.get("exit_code", 0) != 0
         and not e.get("timed_out", False)
-        and _NETWORK_PATTERNS.search(log_tails.get(e.get("round_num"), ""))
+        and NETWORK_PATTERNS.search(log_tails.get(e.get("round_num"), ""))
     )
     total = len(recent)
     if total < window or matches / total < threshold:

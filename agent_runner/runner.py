@@ -24,8 +24,8 @@ from agent_runner import (
 )
 from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
-from agent_runner.events import now_iso_ms
-from agent_runner.monitor import _NETWORK_PATTERNS
+from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms
+from agent_runner.monitor import NETWORK_PATTERNS
 
 
 class LockHeldError(RuntimeError):
@@ -90,32 +90,34 @@ def _scan_round_log_for_network_blip(
     *,
     log_dir: Path,
     log_path: Path,
+    result: agent_runtime.RunResult,
     round_num: int,
     phase: str | None,
-    round_duration_s: float,
-    exit_code: int,
-    timed_out: bool,
 ) -> None:
     """Scan the round log for network-error patterns; emit one agent_network_blip
-    if any match. One blip per round (first match only); see _NETWORK_PATTERNS in
+    if any match. One blip per round (first match only); see NETWORK_PATTERNS in
     monitor.py for the regex.
     """
+    # Network blips almost exclusively manifest with non-zero exit or timeout.
+    # Skip the I/O on the success path.
+    if result.exit_code == 0 and not result.timed_out:
+        return
     try:
         text = log_path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return
-    m = _NETWORK_PATTERNS.search(text)
+    m = NETWORK_PATTERNS.search(text)
     if m is None:
         return
     events.emit(
         log_dir,
-        "agent_network_blip",
+        AGENT_NETWORK_BLIP,
         round_num=round_num,
         phase=phase,
         matched=m.group(0),
-        round_duration_s=round_duration_s,
-        exit_code=exit_code,
-        timed_out=timed_out,
+        round_duration_s=result.duration_s,
+        exit_code=result.exit_code,
+        timed_out=result.timed_out,
     )
 
 
@@ -290,11 +292,9 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
+        result=result,
         round_num=round_num,
         phase=phase,
-        round_duration_s=result.duration_s,
-        exit_code=result.exit_code,
-        timed_out=result.timed_out,
     )
 
     dirty = vcs_state.detect_dirty_files(cfg.runtime.work_dir)
