@@ -22,7 +22,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
     "rel,limit",
     [
         ("cli/serve_cmd.py", 60),  # HARD cap — thin loop, signal-trapping only
-        ("api.py", 345),  # ratchet — raised +5 for init() preset kwarg signature (0.1.7)
+        ("api.py", 347),  # ratchet — raised +2 for ProjectState.recent_hook_failures (0.1.8)
         ("monitor.py", 586),  # ratchet — raised +2 for docstring update during cleanup
         ("defenses.py", 180),  # cap with ~70 LOC headroom for new defenses
         ("agent_runtime.py", 120),  # ratchet — set after 0.1.7 dropped CRITICAL_ENV_DEFAULTS

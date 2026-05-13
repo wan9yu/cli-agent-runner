@@ -81,3 +81,36 @@ def test_given_select_path_with_missing_segment_when_resolved_then_raises_keyerr
 def test_given_alert_auto_action_when_default_then_is_none_string() -> None:
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
     assert a.auto_action == "none"
+
+
+def test_given_state_with_recent_hook_failures_when_select_path_then_returns_list() -> None:
+    """0.1.8: peek --select recent_hook_failures resolves through select_path."""
+    failures = [{"event": "hook_failed", "hook_name": "X"}]
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+        recent_events=[],
+        recent_hook_failures=failures,
+    )
+    assert select_path(state, "recent_hook_failures") == failures
+
+
+def test_given_state_default_when_constructed_then_recent_hook_failures_empty() -> None:
+    """0.1.8: recent_hook_failures has a default_factory so existing callers don't break."""
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+    assert state.recent_hook_failures == []

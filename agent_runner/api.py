@@ -266,6 +266,7 @@ def peek(
         if current is None:
             raise KeyError(f"round {round_num} not found under {log_dir}/rounds/")
     recent = parsed_events[-events:] if events else []
+    recent_hook_failures = [e for e in parsed_events if e.get("event") == "hook_failed"][-10:]
 
     state = ProjectState(
         project=base_state.project,
@@ -286,6 +287,7 @@ def peek(
         system=base_state.system,
         service=status(project if project is not None else work_dir),
         recent_events=recent,
+        recent_hook_failures=recent_hook_failures,
     )
     return state if select is None else select_path(state, select)
 

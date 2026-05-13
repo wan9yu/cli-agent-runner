@@ -178,3 +178,26 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     assert isinstance(out["plugins"]["pre_round_hooks"], list)
     assert isinstance(out["plugins"]["post_round_hooks"], list)
     assert isinstance(out["plugins"]["owned_paths"], list)
+
+
+def test_given_events_with_hook_failures_when_state_assembled_then_filtered_to_field(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """0.1.8: api.peek populates ProjectState.recent_hook_failures from parsed events."""
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "events-2026-05.jsonl").write_text(
+        '{"ts":"2026-05-13T00:00:00.000Z","event":"round_start","round_num":1}\n'
+        '{"ts":"2026-05-13T00:01:00.000Z","event":"hook_failed","hook_name":"X","hook_kind":"pre"}\n'
+        '{"ts":"2026-05-13T00:02:00.000Z","event":"agent_exit","exit_code":0,"round_num":1,"duration_s":1.0,"timed_out":false}\n'
+        '{"ts":"2026-05-13T00:03:00.000Z","event":"hook_failed","hook_name":"Y","hook_kind":"post"}\n'
+    )
+    state = api.peek(tmp_git_repo)
+    assert len(state.recent_hook_failures) == 2
+    assert all(e["event"] == "hook_failed" for e in state.recent_hook_failures)
+    names = sorted(e["hook_name"] for e in state.recent_hook_failures)
+    assert names == ["X", "Y"]

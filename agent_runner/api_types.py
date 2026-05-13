@@ -72,6 +72,7 @@ class ProjectState:
     system: SystemMetrics
     service: ServiceStatus
     recent_events: list[dict[str, Any]] = field(default_factory=list)
+    recent_hook_failures: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
