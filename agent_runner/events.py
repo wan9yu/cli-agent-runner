@@ -126,9 +126,10 @@ def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
 
     Caller must ensure ``log_dir`` exists (runner.run_one_round does this once
     per round; tests use the ``tmp_log_dir`` fixture which creates it).
+
+    ``log_dir`` and ``kind`` are positional-only so callers can pass
+    ``log_dir=`` as a payload field name without parameter shadowing.
     """
-    # log_dir & kind are positional-only so callers can pass log_dir= as a
-    # payload field name without it colliding with the parameter binding.
     if not _is_known(kind):
         raise ValueError(f"unknown event kind: {kind!r}")
     now = datetime.now(UTC)

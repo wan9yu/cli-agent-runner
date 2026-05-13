@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 import time
 
 from agent_runner import api
-from agent_runner.cli.common import emit, work_dir_from_args
+from agent_runner.cli.common import emit, info, work_dir_from_args
 
 
 def add_parser(sub, parent) -> None:
@@ -32,12 +31,12 @@ def cmd_start(args) -> int:
 def cmd_stop(args) -> int:
     json_mode = getattr(args, "json", False)
     if not json_mode:
-        print("agent-runner: stopping service...", file=sys.stderr)
+        info("stopping service...")
     t0 = time.monotonic()
     result = api.stop(work_dir_from_args(args))
     elapsed = time.monotonic() - t0
     if not json_mode:
-        print(f"agent-runner: stopped ({elapsed:.1f}s)", file=sys.stderr)
+        info(f"stopped ({elapsed:.1f}s)")
     emit(result, json_mode=json_mode)
     return 0
 

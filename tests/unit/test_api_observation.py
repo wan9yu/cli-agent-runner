@@ -2,12 +2,50 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from agent_runner import api
 from agent_runner.api_types import Alert, ProjectState
 from agent_runner.config import load_config
+
+
+class _StopLoopError(Exception):
+    """Sentinel raised inside patched time.sleep to break monitor_loop's while True."""
+
+
+def _write_minimal_monitor_toml(work_dir: Path, log_dir: Path) -> None:
+    """Write a minimal agent-runner.toml that load_config accepts."""
+    prompt_file = work_dir / "prompt.md"
+    prompt_file.write_text("p")
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work_dir}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+
+def _drive_monitor_loop_once(
+    work_dir: Path, *, host: str | None = None, interval_s: int = 30
+) -> None:
+    """Drive monitor_loop through one iteration without hanging on time.sleep."""
+    with (
+        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
+        patch("agent_runner.api._poll_once", return_value=[]),
+    ):
+        gen = api.monitor_loop(work_dir, host=host, interval_s=interval_s)
+        try:
+            next(gen, None)
+        except _StopLoopError:
+            pass
+        finally:
+            gen.close()
 
 
 def _seed_logs(work_dir: Path) -> None:
@@ -207,44 +245,13 @@ def test_given_fresh_project_no_log_dir_when_monitor_loop_starts_then_creates_di
     tmp_path: Path,
 ) -> None:
     """monitor_loop creates log_dir if missing before emitting monitor_started."""
-    import json
-    from unittest.mock import patch
-
-    from agent_runner import api
-
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
     log_dir = work_dir / "logs"
-    # DO NOT mkdir log_dir — this test verifies monitor_loop creates it
-    prompt_file = work_dir / "prompt.md"
-    prompt_file.write_text("p")
-    (work_dir / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["-p", "{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{work_dir}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
-
+    _write_minimal_monitor_toml(work_dir, log_dir)
     assert not log_dir.exists()
 
-    class _StopLoopError(Exception):
-        pass
-
-    with (
-        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
-        patch("agent_runner.api._poll_once", return_value=[]),
-    ):
-        gen = api.monitor_loop(work_dir, host=None, interval_s=30)
-        try:
-            next(gen, None)
-        except _StopLoopError:
-            pass
-        finally:
-            gen.close()
+    _drive_monitor_loop_once(work_dir)
 
     assert log_dir.exists(), "monitor_loop should have created log_dir"
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -257,45 +264,13 @@ def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
     tmp_path: Path,
 ) -> None:
     """monitor_loop() emits a monitor_started event before its first poll."""
-    import json
-    from unittest.mock import patch
-
-    from agent_runner import api
-
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
     log_dir = work_dir / "logs"
     log_dir.mkdir()
-    prompt_file = work_dir / "prompt.md"
-    prompt_file.write_text("p")
-    (work_dir / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["-p", "{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{work_dir}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
+    _write_minimal_monitor_toml(work_dir, log_dir)
 
-    # Drive monitor_loop() one iteration.
-    # Patch _poll_once to return [] and time.sleep to raise so next() returns quickly.
-    # monitor_started is emitted *before* the while True loop, during initialization.
-    class _StopLoopError(Exception):
-        pass
-
-    with (
-        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
-        patch("agent_runner.api._poll_once", return_value=[]),
-    ):
-        gen = api.monitor_loop(work_dir, host=None, interval_s=30)
-        try:
-            next(gen, None)
-        except _StopLoopError:
-            pass
-        finally:
-            gen.close()
+    _drive_monitor_loop_once(work_dir)
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
     assert events_files, "expected at least one events file written"

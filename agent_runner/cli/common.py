@@ -98,3 +98,7 @@ def _pretty_inline(value: Any) -> str:
 def fail(msg: str, *, code: int = 1) -> int:
     print(f"agent-runner: {msg}", file=sys.stderr)
     return code
+
+
+def info(msg: str) -> None:
+    print(f"agent-runner: {msg}", file=sys.stderr)
