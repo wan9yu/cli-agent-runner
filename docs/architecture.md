@@ -97,12 +97,15 @@ The monitor emits no events during healthy operation — it surfaces alerts only
 
 <!-- gen:event-kinds -->
 - `agent_exit`
+- `agent_network_blip`
 - `agent_spawn`
 - `dirty_detected`
 - `hook_failed`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`
+- `monitor_remote_blip`
+- `monitor_remote_giveup`
 - `monitor_started`
 - `orphan_idempotent_skip`
 - `orphan_stash_failed`

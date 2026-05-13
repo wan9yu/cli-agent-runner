@@ -80,3 +80,24 @@ def test_given_monitor_started_kind_when_registered_then_in_known_event_kinds() 
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "monitor_started" in KNOWN_EVENT_KINDS
+
+
+def test_given_monitor_remote_blip_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: monitor_remote_blip must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "monitor_remote_blip" in KNOWN_EVENT_KINDS
+
+
+def test_given_monitor_remote_giveup_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: monitor_remote_giveup must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "monitor_remote_giveup" in KNOWN_EVENT_KINDS
+
+
+def test_given_agent_network_blip_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: agent_network_blip must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "agent_network_blip" in KNOWN_EVENT_KINDS

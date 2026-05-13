@@ -34,6 +34,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "round_start",
         "agent_spawn",
         "agent_exit",
+        "agent_network_blip",
         "dirty_detected",
         "orphan_stashed",
         "orphan_idempotent_skip",
@@ -46,6 +47,8 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "monitor_alert_emitted",
         "monitor_auto_stop_failed",
         "monitor_auto_stop_triggered",
+        "monitor_remote_blip",
+        "monitor_remote_giveup",
         "monitor_started",
         HOOK_FAILED,
     }
