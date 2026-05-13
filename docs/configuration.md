@@ -23,6 +23,7 @@ writes a templated copy you can edit.
 | `log_dir` | `Path` | — |
 | `round_timeout_s` | `int` | 1800 |
 | `restart_delay_s` | `int` | 3 |
+| `round_timeout_per_phase` | `dict[str, int]` | {} |
 
 ### `[prompt]`
 

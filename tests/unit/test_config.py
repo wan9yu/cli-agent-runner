@@ -36,6 +36,7 @@ file = "./prompts/main.md"
     assert cfg.prompt.inject_context is True  # default
     assert cfg.phases is None
     assert cfg.vcs.orphan_action == "stash"
+    assert cfg.runtime.round_timeout_per_phase == {}
 
 
 def test_given_phases_in_toml_when_loaded_then_phases_list_populated(tmp_path: Path) -> None:
@@ -411,3 +412,128 @@ file = "prompts/main.md"
     )
     cfg = load_config(toml)
     assert cfg.monitor.auth_fail_hint == ""
+
+
+def test_given_per_phase_timeouts_when_loaded_then_dict_populated(tmp_path: Path) -> None:
+    """0.1.9: [runtime.round_timeout_per_phase] parsed to dict[str, int]."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+
+[runtime.round_timeout_per_phase]
+dev = 3600
+qa = 1200
+product = 1200
+
+[prompt]
+file = "prompts/main.md"
+
+[phases]
+list = ["dev", "qa", "product"]
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.round_timeout_per_phase == {
+        "dev": 3600,
+        "qa": 1200,
+        "product": 1200,
+    }
+
+
+def test_given_no_per_phase_block_when_loaded_then_empty_dict(tmp_path: Path) -> None:
+    """0.1.9: absent block -> empty dict default; zero behavior change."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.round_timeout_per_phase == {}
+
+
+def test_given_per_phase_typo_key_when_loaded_then_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: key not in phases.list -> ValueError naming the offender."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[runtime.round_timeout_per_phase]
+foo = 600
+[prompt]
+file = "prompts/main.md"
+[phases]
+list = ["dev", "qa"]
+""",
+    )
+    with pytest.raises(ValueError, match="foo"):
+        load_config(toml)
+
+
+def test_given_per_phase_non_positive_value_when_loaded_then_raises(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: zero or negative timeout -> ValueError."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[runtime.round_timeout_per_phase]
+dev = 0
+[prompt]
+file = "prompts/main.md"
+[phases]
+list = ["dev"]
+""",
+    )
+    with pytest.raises(ValueError, match="positive"):
+        load_config(toml)
+
+
+def test_given_per_phase_without_phases_list_when_loaded_then_raises(
+    tmp_path: Path,
+) -> None:
+    """0.1.9: non-empty per_phase + missing [phases] list -> ValueError."""
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[runtime.round_timeout_per_phase]
+dev = 1800
+[prompt]
+file = "prompts/main.md"
+""",
+    )
+    with pytest.raises(ValueError, match="phases"):
+        load_config(toml)

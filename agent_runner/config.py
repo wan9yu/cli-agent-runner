@@ -24,6 +24,7 @@ class RuntimeConfig:
     log_dir: Path
     round_timeout_s: int = 1800
     restart_delay_s: int = 3
+    round_timeout_per_phase: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,29 @@ def _expand_path(s: str, project_name: str) -> Path:
     return Path(s.replace("{project}", project_name)).expanduser()
 
 
+def _validate_round_timeout_per_phase(per_phase: dict[str, int], phases: list[str] | None) -> None:
+    """Two hard rules for runtime.round_timeout_per_phase:
+
+    1. All values must be positive integers.
+    2. All keys must appear in [phases] list (typo catcher).
+    """
+    for phase_name, timeout in per_phase.items():
+        if timeout <= 0:
+            raise ValueError(
+                f"runtime.round_timeout_per_phase[{phase_name!r}]: "
+                f"timeout must be positive, got {timeout}"
+            )
+    if per_phase:
+        if phases is None:
+            raise ValueError("runtime.round_timeout_per_phase requires [phases] list to be defined")
+        unknown = set(per_phase) - set(phases)
+        if unknown:
+            raise ValueError(
+                f"runtime.round_timeout_per_phase keys not in phases list: "
+                f"{sorted(unknown)}; available phases: {phases}"
+            )
+
+
 def load_config(toml_path: Path) -> Config:
     if not toml_path.exists():
         raise FileNotFoundError(f"config not found: {toml_path}")
@@ -103,12 +127,21 @@ def load_config(toml_path: Path) -> Config:
     work_dir = _expand_path(raw_work_dir, "").resolve()
     project_name = work_dir.name or "default"
 
+    # Phases first — needed for per-phase round_timeout validation below.
+    phases_d = raw.get("phases", {})
+    phases = list(phases_d["list"]) if "list" in phases_d else None
+
     runtime_d = raw.get("runtime", {})
+    per_phase_raw = runtime_d.get("round_timeout_per_phase", {})
+    per_phase = {str(k): int(v) for k, v in per_phase_raw.items()}
+    _validate_round_timeout_per_phase(per_phase, phases)
+
     runtime = RuntimeConfig(
         work_dir=work_dir,
         log_dir=_expand_path(str(_require(raw, "runtime", "log_dir")), project_name),
         round_timeout_s=int(runtime_d.get("round_timeout_s", 1800)),
         restart_delay_s=int(runtime_d.get("restart_delay_s", 3)),
+        round_timeout_per_phase=per_phase,
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")
@@ -133,8 +166,6 @@ def load_config(toml_path: Path) -> Config:
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
     )
-    phases_d = raw.get("phases", {})
-    phases = list(phases_d["list"]) if "list" in phases_d else None
     plugins_d = raw.get("plugins")
 
     return Config(
