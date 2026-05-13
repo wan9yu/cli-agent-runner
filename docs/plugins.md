@@ -8,6 +8,18 @@ discovered automatically at package import when installed alongside
 Plugins run in the supervisor process, not inside the agent. This is intentional:
 plugin code is observability/coordination glue, not workflow logic.
 
+## Trust boundary
+
+Plugins load via setuptools entry_points at supervisor import time and run in the
+supervisor's Python process with full access to its environment, filesystem, and
+network. There is no sandbox. Treat `pip install <agent-runner-plugin>` with the
+same trust you give any pip install — a malicious plugin can do anything the
+supervisor user can do.
+
+`auto_action="stop_service"` from plugin detectors is gated separately via
+`cfg.monitor.auto_stop_on` (allow-list); plugins cannot self-elevate to
+auto-stop.
+
 ## Entry-points groups
 
 > **Entry-point semantics:** agent-runner imports the target module when it

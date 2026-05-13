@@ -522,6 +522,10 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
     as-is so callers (like ``RemoteSource._list``) can decide whether to
     tolerate them.
     """
+    # ssh treats arguments starting with '-' as option flags (e.g. -oProxyCommand=...),
+    # which can execute arbitrary local commands. Reject explicitly.
+    if host.startswith("-"):
+        raise ValueError(f"invalid ssh host (starts with '-'): {host!r}")
     r = subprocess.run(
         ["ssh", host, cmd],
         capture_output=True,
@@ -614,8 +618,20 @@ def on_alert(
     if host is None:
         _call_local_stop(project)
     else:
-        run_remote_command(
-            host,
-            f"agent-runner stop --config ~/.agent-runner/{project}/agent-runner.toml",
-            timeout=30,
-        )
+        try:
+            run_remote_command(
+                host,
+                f"agent-runner stop --config ~/.agent-runner/{project}/agent-runner.toml",
+                timeout=30,
+            )
+        except MonitorRemoteError as e:
+            if log_dir.is_dir():
+                emit_event(
+                    log_dir,
+                    "monitor_auto_stop_failed",
+                    detector=alert.detector,
+                    host=host,
+                    error=e.stderr,
+                )
+            # Continue rather than crash the monitor loop — the next poll
+            # will retry naturally if the condition persists.

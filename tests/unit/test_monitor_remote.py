@@ -116,3 +116,52 @@ def test_given_ssh_rc_2_when_run_remote_command_then_returned_tolerated(
     rc, out = run_remote_command("pi", "ls /nope")
     assert rc == 2
     assert out == ""
+
+
+def test_given_host_starts_with_dash_when_run_remote_command_then_raises_value_error() -> None:
+    """Reject ssh hosts beginning with '-' to prevent ProxyCommand injection."""
+    from agent_runner.monitor import run_remote_command
+
+    with pytest.raises(ValueError, match="starts with '-'"):
+        run_remote_command("-oProxyCommand=touch /tmp/x", "ls")
+
+
+def test_given_remote_auto_stop_raises_when_on_alert_then_emits_failed_event(
+    monkeypatch, tmp_path
+) -> None:
+    """on_alert tolerates MonitorRemoteError from remote stop and emits event."""
+    import json
+
+    from agent_runner.api_types import Alert
+    from agent_runner.monitor import MonitorRemoteError, on_alert
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    def fake_run(*_args, **_kwargs):
+        raise MonitorRemoteError("pi", "ssh: connect: Connection refused")
+
+    # Patch run_remote_command via monitor module's reference
+    from agent_runner import monitor
+
+    monkeypatch.setattr(monitor, "run_remote_command", fake_run)
+
+    alert = Alert(
+        severity="critical",
+        detector="oauth_fail",
+        message="boom",
+        context={},
+        ts="2026-05-13T12:00:00.000Z",
+        auto_action="stop_service",
+    )
+
+    # Should NOT raise — failure is logged as event instead
+    on_alert(alert, project="proj", host="pi", log_dir=log_dir)
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files
+    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    failed = [e for e in all_events if e.get("event") == "monitor_auto_stop_failed"]
+    assert failed, f"expected monitor_auto_stop_failed; got {[e.get('event') for e in all_events]}"
+    assert failed[0]["host"] == "pi"
+    assert "Connection refused" in failed[0]["error"]

@@ -283,3 +283,18 @@ def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
     assert payload["interval_s"] == 30
     assert payload["mode"] == "anomaly-only"
     assert payload["log_dir"] == str(log_dir)
+
+
+def test_given_work_dir_with_shell_metachars_when_project_name_then_raises(tmp_path: Path) -> None:
+    """Project name (work_dir basename) must reject shell metacharacters."""
+    bad_dir = tmp_path / "foo;rm -rf /"
+    bad_dir.mkdir()
+    with pytest.raises(ValueError, match="invalid project name"):
+        api._project_name(bad_dir)
+
+
+def test_given_clean_work_dir_when_project_name_then_returns_basename(tmp_path: Path) -> None:
+    """Project name passes through for valid basenames."""
+    good_dir = tmp_path / "my-project_v1.2"
+    good_dir.mkdir()
+    assert api._project_name(good_dir) == "my-project_v1.2"

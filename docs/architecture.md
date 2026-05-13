@@ -101,6 +101,7 @@ The monitor emits no events during healthy operation — it surfaces alerts only
 - `dirty_detected`
 - `hook_failed`
 - `monitor_alert_emitted`
+- `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`
 - `monitor_started`
 - `orphan_idempotent_skip`

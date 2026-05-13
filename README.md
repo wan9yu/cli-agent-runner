@@ -86,6 +86,10 @@ agent-runner monitor --host pi        # remote, 60s poll
 agent-runner monitor --json | jq -c   # pipe to downstream consumers
 ```
 
+> **Note:** Remote monitor (`monitor --host <alias>`) relies on your local
+> `~/.ssh/config` for `StrictHostKeyChecking` and other ssh policy. Use
+> `accept-new` or `yes` to avoid MITM exposure.
+
 ## Documentation
 
 - [`docs/quickstart.md`](docs/quickstart.md) — 5-step install + first round

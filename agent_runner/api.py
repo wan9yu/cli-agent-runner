@@ -8,6 +8,7 @@ entirely.
 
 from __future__ import annotations
 
+import re
 import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
 import sys
@@ -40,9 +41,19 @@ from agent_runner.service_unit import (
     serve_unit_filename,
 )
 
+_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
 
 def _project_name(work_dir: Path) -> str:
-    return work_dir.resolve().name or "default"
+    name = work_dir.resolve().name or "default"
+    if not _PROJECT_NAME_RE.match(name):
+        raise ValueError(
+            f"invalid project name {name!r}: must match [A-Za-z0-9._-]+. "
+            "The project name is the basename of work_dir and is interpolated into "
+            "ssh remote commands and systemd unit filenames; shell metacharacters "
+            "and path separators are rejected."
+        )
+    return name
 
 
 def _log_dir(work_dir: Path) -> Path:

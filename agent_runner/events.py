@@ -44,6 +44,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "smoke_check_failed",
         "round_end",
         "monitor_alert_emitted",
+        "monitor_auto_stop_failed",
         "monitor_auto_stop_triggered",
         "monitor_started",
         HOOK_FAILED,

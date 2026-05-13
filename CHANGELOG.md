@@ -17,6 +17,7 @@ Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback
 
 - New built-in event kind `monitor_started`, emitted once at `monitor_loop()` entry. Records `host`, `interval_s`, `log_dir`, `mode="anomaly-only"`. Lets programmatic consumers verify supervision is up — monitor is otherwise silent under healthy operation by design.
 - New exception `agent_runner.monitor.MonitorRemoteError`, raised when ssh to a `--host` target fails at protocol level (rc=255: connection refused, key reject, etc.). Previously such failures were silently swallowed.
+- New built-in event kind `monitor_auto_stop_failed` — emitted when an auto-stop alert fires for a `--host` target but the remote ssh fails. Includes `detector`, `host`, and `error` fields.
 
 ### Changed
 
@@ -32,6 +33,7 @@ Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback
 ### Migration notes
 
 - **`MonitorRemoteError` propagation**: this exception now raises from `agent_runner.monitor.run_remote_command` whenever ssh exits with rc=255. The CLI `agent-runner monitor --host` catches it and exits 1 with a clear stderr message. But it also propagates from steady-state remote polls (`RemoteSource._list`) and from the auto-stop path (`on_alert` remote stop). Previously rc=255 was silently tolerated in those paths — empty list returned, no alert raised. Programmatic consumers of `monitor_loop()` that want the old transient-tolerant behavior must wrap the loop in `try: except MonitorRemoteError:`. The change is intentional (silent ssh failures were a bug, not a feature), but the behavior surface is wider than the headline Fix suggests.
+- **Hardening**: ssh hosts starting with `-` are now rejected (ProxyCommand injection defense). Project names (work_dir basename) must match `[A-Za-z0-9._-]+`. Remote `auto_stop_service` failures emit a new `monitor_auto_stop_failed` event instead of crashing the monitor loop.
 
 ## [0.1.9] - 2026-05-13
 
