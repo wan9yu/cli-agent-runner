@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import __version__
 from agent_runner.cli import main
 
 
@@ -91,9 +92,6 @@ def test_given_version_flag_when_main_then_prints_version_and_exits_0(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """--version prints 'agent-runner <version>' and exits 0 via SystemExit."""
-    from agent_runner import __version__
-    from agent_runner.cli import main
-
     with pytest.raises(SystemExit) as exc_info:
         main(["--version"])
     assert exc_info.value.code == 0
