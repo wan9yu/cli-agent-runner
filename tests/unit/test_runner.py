@@ -310,3 +310,113 @@ def test_given_clean_round_when_scan_called_then_no_blip_emitted(
         payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
         blips = [p for p in payloads if p["event"] == "agent_network_blip"]
         assert blips == []
+
+
+def test_given_holder_sidecar_present_when_lock_held_then_error_includes_pid_age_cmdline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LockHeldError message includes holder PID/age/cmdline when sidecar is fresh."""
+    import json
+    import os
+
+    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    lock_path = log_dir / "agent-runner.lock"
+
+    # Acquire lock once
+    fd1 = _acquire_lock_or_raise(lock_path)
+
+    # Sidecar should now exist
+    sidecar = lock_path.parent / (lock_path.name + ".holder")
+    assert sidecar.exists()
+    data = json.loads(sidecar.read_text())
+    assert data["pid"] == os.getpid()
+    assert "started_at" in data
+    assert "cmdline" in data
+
+    # Try to acquire again → LockHeldError with holder info
+    try:
+        with pytest.raises(LockHeldError) as exc_info:
+            _acquire_lock_or_raise(lock_path)
+        msg = str(exc_info.value)
+        assert f"PID {os.getpid()}" in msg
+        assert "age" in msg
+        assert "cmd:" in msg
+    finally:
+        os.close(fd1)
+        sidecar.unlink(missing_ok=True)
+
+
+def test_given_holder_sidecar_stale_when_lock_held_then_error_notes_stale(tmp_path: Path) -> None:
+    """If sidecar references a non-existent PID, error notes 'stale sidecar'."""
+    import json
+    import os
+
+    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    lock_path = log_dir / "agent-runner.lock"
+    sidecar = lock_path.parent / (lock_path.name + ".holder")
+
+    # Find a stale PID guaranteed not to exist
+    fake_pid = 999999
+    while True:
+        try:
+            os.kill(fake_pid, 0)
+            fake_pid -= 1
+        except (ProcessLookupError, PermissionError):
+            break
+        if fake_pid < 100:
+            pytest.skip("could not find a stale PID for test")
+            return
+
+    # Acquire lock in this process — sidecar for THIS process is fresh
+    fd1 = _acquire_lock_or_raise(lock_path)
+
+    # Overwrite sidecar with stale data, then try second acquire
+    sidecar.write_text(
+        json.dumps(
+            {
+                "pid": fake_pid,
+                "started_at": "2026-05-14T10:00:00.000Z",
+                "cmdline": "agent-runner round",
+            }
+        )
+    )
+
+    try:
+        with pytest.raises(LockHeldError) as exc_info:
+            _acquire_lock_or_raise(lock_path)
+        msg = str(exc_info.value)
+        assert "stale" in msg.lower()
+    finally:
+        os.close(fd1)
+        sidecar.unlink(missing_ok=True)
+
+
+def test_given_holder_sidecar_missing_when_lock_held_then_error_notes_missing(
+    tmp_path: Path,
+) -> None:
+    """If sidecar is missing (race / older version), error says 'holder unknown'."""
+    import os
+
+    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    lock_path = log_dir / "agent-runner.lock"
+    sidecar = lock_path.parent / (lock_path.name + ".holder")
+
+    fd1 = _acquire_lock_or_raise(lock_path)
+    sidecar.unlink(missing_ok=True)  # simulate missing sidecar
+
+    try:
+        with pytest.raises(LockHeldError) as exc_info:
+            _acquire_lock_or_raise(lock_path)
+        msg = str(exc_info.value)
+        assert "unknown" in msg.lower() or "missing" in msg.lower()
+    finally:
+        os.close(fd1)

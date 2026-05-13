@@ -24,12 +24,75 @@ from agent_runner import (
 )
 from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
-from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms
+from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms, parse_iso_ms
 from agent_runner.monitor import NETWORK_PATTERNS
 
 
 class LockHeldError(RuntimeError):
     pass
+
+
+def _holder_sidecar(lock_path: Path) -> Path:
+    return lock_path.parent / (lock_path.name + ".holder")
+
+
+def _read_cmdline(pid: int) -> str:
+    """Read /proc/<pid>/cmdline; return first 80 chars, nulls replaced with spaces."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except (FileNotFoundError, PermissionError):
+        return ""
+    return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()[:80]
+
+
+def _write_holder_sidecar(lock_path: Path) -> None:
+    """Write JSON sidecar describing the current lock holder."""
+    import json
+
+    payload = {
+        "pid": os.getpid(),
+        "started_at": now_iso_ms(),
+        "cmdline": _read_cmdline(os.getpid()),
+    }
+    _holder_sidecar(lock_path).write_text(json.dumps(payload))
+
+
+def _format_holder_msg(lock_path: Path) -> str:
+    """Read the sidecar and format a human-readable holder description."""
+    import json
+
+    sidecar = _holder_sidecar(lock_path)
+    try:
+        data = json.loads(sidecar.read_text())
+    except FileNotFoundError:
+        return "(holder unknown, sidecar missing)"
+    except (json.JSONDecodeError, OSError):
+        return "(holder info unreadable)"
+
+    pid = data.get("pid")
+    started_at = data.get("started_at", "")
+    cmdline = data.get("cmdline", "")[:80]
+
+    if not isinstance(pid, int):
+        return "(holder info unreadable)"
+
+    try:
+        os.kill(pid, 0)  # check liveness
+    except ProcessLookupError:
+        return f"(stale sidecar, holder PID {pid} no longer alive)"
+    except PermissionError:
+        # PID exists but owned by someone else — still useful info
+        pass
+
+    age_s = ""
+    try:
+        started = parse_iso_ms(started_at)
+        age = (datetime.now(UTC) - started).total_seconds()
+        age_s = f"{age:.0f}s"
+    except (ValueError, TypeError):
+        age_s = "?"
+
+    return f"held by PID {pid}, age {age_s}, cmd: {cmdline}"
 
 
 def _acquire_lock_or_raise(lock_path: Path) -> int:
@@ -39,7 +102,9 @@ def _acquire_lock_or_raise(lock_path: Path) -> int:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as e:
         os.close(fd)
-        raise LockHeldError(f"another agent-runner is holding {lock_path}") from e
+        holder_msg = _format_holder_msg(lock_path)
+        raise LockHeldError(f"another agent-runner is holding {lock_path} ({holder_msg})") from e
+    _write_holder_sidecar(lock_path)
     return fd
 
 
@@ -206,11 +271,13 @@ def run_one_round(cfg: Config) -> RoundResult:
         sys.exit(1)
 
     # Concurrency lock (per-project)
-    lock_fd = _acquire_lock_or_raise(log_dir / "agent-runner.lock")
+    lock_path = log_dir / "agent-runner.lock"
+    lock_fd = _acquire_lock_or_raise(lock_path)
     try:
         return _run_one_round_inner(cfg)
     finally:
         os.close(lock_fd)
+        _holder_sidecar(lock_path).unlink(missing_ok=True)
 
 
 def _run_one_round_inner(cfg: Config) -> RoundResult:
