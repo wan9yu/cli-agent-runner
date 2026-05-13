@@ -6,6 +6,7 @@ branches based on prior round state (§7 IMMUTABLE).
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -47,39 +48,35 @@ def _read_cmdline(pid: int) -> str:
 
 def _write_holder_sidecar(lock_path: Path) -> None:
     """Write JSON sidecar describing the current lock holder."""
-    import json
-
     payload = {
         "pid": os.getpid(),
         "started_at": now_iso_ms(),
         "cmdline": _read_cmdline(os.getpid()),
     }
-    _holder_sidecar(lock_path).write_text(json.dumps(payload))
+    _holder_sidecar(lock_path).write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _format_holder_msg(lock_path: Path) -> str:
     """Read the sidecar and format a human-readable holder description."""
-    import json
-
     sidecar = _holder_sidecar(lock_path)
     try:
-        data = json.loads(sidecar.read_text())
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return "(holder unknown, sidecar missing)"
+        return "holder unknown, sidecar missing"
     except (json.JSONDecodeError, OSError):
-        return "(holder info unreadable)"
+        return "holder info unreadable"
 
     pid = data.get("pid")
     started_at = data.get("started_at", "")
-    cmdline = data.get("cmdline", "")[:80]
+    cmdline = data.get("cmdline", "")
 
     if not isinstance(pid, int):
-        return "(holder info unreadable)"
+        return "holder info unreadable"
 
     try:
         os.kill(pid, 0)  # check liveness
     except ProcessLookupError:
-        return f"(stale sidecar, holder PID {pid} no longer alive)"
+        return f"stale sidecar, holder PID {pid} no longer alive"
     except PermissionError:
         # PID exists but owned by someone else — still useful info
         pass
