@@ -90,3 +90,38 @@ def test_given_monitor_with_host_when_invoked_then_passes_host_arg(
         kwargs = ml.call_args.kwargs
         assert kwargs["host"] == "pi"
         assert kwargs["interval_s"] == 1
+
+
+def test_given_monitor_loop_raises_remote_error_when_cmd_then_stderr_and_exit_1(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    """CLI surfaces MonitorRemoteError as stderr line + exit 1."""
+    from types import SimpleNamespace
+
+    from agent_runner import monitor
+    from agent_runner.cli import monitor_cmd
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    (work_dir / "agent-runner.toml").write_text(
+        f'[agent]\ncommand = ["true"]\n[runtime]\nwork_dir = "{work_dir}"\n[prompt]\ninline = "p"\n'
+    )
+
+    ssh_err = "ssh: connect to host pi port 22: Connection refused"
+
+    def fake_monitor_loop(*_args, **_kwargs):
+        raise monitor.MonitorRemoteError("pi", ssh_err)
+        yield  # pragma: no cover — makes this a generator function
+
+    from agent_runner import api
+
+    monkeypatch.setattr(api, "monitor_loop", fake_monitor_loop)
+
+    cfg = str(work_dir / "agent-runner.toml")
+    args = SimpleNamespace(host="pi", interval=None, json=False, config=cfg)
+    rc = monitor_cmd.cmd(args)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "cannot reach 'pi'" in captured.err
+    assert "Connection refused" in captured.err
