@@ -120,3 +120,90 @@ def test_given_stash_when_popped_by_sha_then_changes_restored(tmp_git_repo: Path
     assert not (tmp_git_repo / "to-restore.txt").exists()
     pop_stash(tmp_git_repo, ref.sha)
     assert (tmp_git_repo / "to-restore.txt").read_text() == "data\n"
+
+
+def test_given_no_registration_when_plugin_owned_paths_then_empty_list() -> None:
+    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS, plugin_owned_paths
+
+    _PLUGIN_OWNED_PATHS.clear()
+    assert plugin_owned_paths() == []
+
+
+def test_given_paths_registered_when_plugin_owned_paths_then_snapshot_returned() -> None:
+    from agent_runner.vcs_state import (
+        _PLUGIN_OWNED_PATHS,
+        plugin_owned_paths,
+        register_plugin_owned_paths,
+    )
+
+    _PLUGIN_OWNED_PATHS.clear()
+    register_plugin_owned_paths(["proposals/", "reports/*.md"])
+    assert plugin_owned_paths() == ["proposals/", "reports/*.md"]
+
+
+def test_given_non_string_entry_when_register_then_raises_value_error() -> None:
+    from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS, register_plugin_owned_paths
+
+    _PLUGIN_OWNED_PATHS.clear()
+    import pytest
+
+    with pytest.raises(ValueError, match="non-string entry"):
+        register_plugin_owned_paths(["ok.md", 42])  # type: ignore[list-item]
+
+
+def test_given_trailing_slash_pattern_when_match_then_prefix_match() -> None:
+    from agent_runner.vcs_state import (
+        _PLUGIN_OWNED_PATHS,
+        _matches_owned_path,
+        register_plugin_owned_paths,
+    )
+
+    _PLUGIN_OWNED_PATHS.clear()
+    register_plugin_owned_paths(["proposals/"])
+    assert _matches_owned_path("proposals/foo.md")
+    assert _matches_owned_path("proposals/sub/bar.md")
+    assert _matches_owned_path("proposals")
+    assert not _matches_owned_path("proposalsX/foo.md")
+    assert not _matches_owned_path("other/foo.md")
+
+
+def test_given_glob_pattern_without_slash_when_match_then_purepath_semantics() -> None:
+    from agent_runner.vcs_state import (
+        _PLUGIN_OWNED_PATHS,
+        _matches_owned_path,
+        register_plugin_owned_paths,
+    )
+
+    _PLUGIN_OWNED_PATHS.clear()
+    register_plugin_owned_paths(["reports/*.md"])
+    assert _matches_owned_path("reports/dev.md")
+    # PurePath.match: single * does NOT cross slashes
+    assert not _matches_owned_path("reports/sub/qa.md")
+
+
+def test_given_recursive_glob_when_match_then_double_star_works() -> None:
+    from agent_runner.vcs_state import (
+        _PLUGIN_OWNED_PATHS,
+        _matches_owned_path,
+        register_plugin_owned_paths,
+    )
+
+    _PLUGIN_OWNED_PATHS.clear()
+    register_plugin_owned_paths(["logs/plugins/**/*"])
+    assert _matches_owned_path("logs/plugins/argus/state.json")
+    assert _matches_owned_path("logs/plugins/argus/deep/very/deep.txt")
+    assert not _matches_owned_path("logs/other/state.json")
+
+
+def test_given_multiple_patterns_when_match_then_any_matches() -> None:
+    from agent_runner.vcs_state import (
+        _PLUGIN_OWNED_PATHS,
+        _matches_owned_path,
+        register_plugin_owned_paths,
+    )
+
+    _PLUGIN_OWNED_PATHS.clear()
+    register_plugin_owned_paths(["proposals/", "reports/*.md"])
+    assert _matches_owned_path("proposals/x.md")
+    assert _matches_owned_path("reports/y.md")
+    assert not _matches_owned_path("other/z.md")

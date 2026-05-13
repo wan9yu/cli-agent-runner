@@ -16,6 +16,59 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+# Plugin-owned paths registry — set via register_plugin_owned_paths().
+# detect_dirty_files() filters its return through this list, so plugin-declared
+# paths are not flagged as orphan WIP and not stashed by the supervisor.
+_PLUGIN_OWNED_PATHS: list[str] = []
+
+
+def register_plugin_owned_paths(paths: list[str]) -> None:
+    """Register paths the plugin considers its own deliverables.
+
+    Paths are relative to the work_dir. Matching:
+
+      - Trailing ``/`` → prefix match (e.g. ``"proposals/"`` matches
+        ``"proposals/dev-round1.md"`` and the bare directory name).
+      - Anything else → ``pathlib.PurePath.match`` glob (e.g.
+        ``"reports/*.md"``, ``"logs/plugins/**/*"``). ``**`` recognizes
+        recursive directory segments; single ``*`` does not cross slashes.
+
+    Plugins call this at module import time (entry_point side-effect) so the
+    paths are known before the first round runs.
+
+    Raises ValueError on non-string entries.
+    """
+    for p in paths:
+        if not isinstance(p, str):
+            raise ValueError(f"register_plugin_owned_paths: non-string entry {p!r}")
+    _PLUGIN_OWNED_PATHS.extend(paths)
+
+
+def plugin_owned_paths() -> list[str]:
+    """Snapshot of registered plugin-owned paths (for peek visibility)."""
+    return list(_PLUGIN_OWNED_PATHS)
+
+
+def _matches_owned_path(path: str) -> bool:
+    """True if `path` matches any registered plugin-owned pattern."""
+    import fnmatch
+    from pathlib import PurePath
+
+    for pattern in _PLUGIN_OWNED_PATHS:
+        if pattern.endswith("/"):
+            stripped = pattern.rstrip("/")
+            if path == stripped or path.startswith(pattern):
+                return True
+        elif "**" in pattern:
+            # Recursive glob: fnmatch lets * span '/' so ** matches deep paths.
+            # Python 3.11 PurePath.match does not honour ** recursive semantics
+            # (3.13+ has full_match); fnmatch.fnmatch fills the gap.
+            if fnmatch.fnmatch(path, pattern):
+                return True
+        elif PurePath(path).match(pattern):
+            return True
+    return False
+
 
 @dataclass(frozen=True)
 class StashRef:
