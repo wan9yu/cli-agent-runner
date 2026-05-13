@@ -342,6 +342,11 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
     return builtin + plugin
 
 
+# Backoff schedule for remote-failure retries: each element is the sleep duration
+# in seconds for that attempt index (capped at 30s per step).
+_REMOTE_FAILURE_BACKOFF = (1, 2, 4, 8, 16, 30)
+
+
 def monitor_loop(
     project: str | Path | None = None, *, host: str | None = None, interval_s: int = 30
 ) -> Iterator[monitor.Alert]:
@@ -351,6 +356,13 @@ def monitor_loop(
     Emits ``monitor_started`` once at entry — programmatic consumers can subscribe
     to that kind as the canonical "supervision is up" signal (monitor is otherwise
     silent during healthy operation by design).
+
+    Tolerates transient ``MonitorRemoteError`` failures (from ``--host`` ssh)
+    for up to ``cfg.monitor.remote_failure_tolerance_s`` seconds with exponential
+    backoff (1s → 2s → 4s → ... → 30s cap). Each retry emits ``monitor_remote_blip``;
+    crossing the cap emits one ``monitor_remote_giveup`` and propagates the error
+    (CLI exits 1; systemd restarts the process). Setting tolerance to 0 preserves
+    the 0.1.10 immediate-propagate behavior with no blip events emitted.
     """
     import json as _json
 
@@ -366,8 +378,53 @@ def monitor_loop(
         log_dir=str(cfg.runtime.log_dir),
         mode="anomaly-only",
     )
+
+    tolerance_s = cfg.monitor.remote_failure_tolerance_s
+    blip_start: float | None = None
+    attempt = 0
+
     while True:
-        for alert in _poll_once(work_dir, host=host):
+        try:
+            alerts = _poll_once(work_dir, host=host)
+            # Success: reset retry state.
+            blip_start = None
+            attempt = 0
+        except monitor.MonitorRemoteError as e:
+            if tolerance_s == 0:
+                raise  # 0.1.10 behavior preserved
+            now = time.monotonic()
+            if blip_start is None:
+                blip_start = now
+            attempt += 1
+            elapsed = now - blip_start
+            if elapsed >= tolerance_s:
+                events.emit(
+                    cfg.runtime.log_dir,
+                    "monitor_remote_giveup",
+                    host=host,
+                    total_attempts=attempt,
+                    total_elapsed_s=elapsed,
+                    cap_s=tolerance_s,
+                    final_error=e.stderr,
+                )
+                raise
+            backoff_idx = min(attempt - 1, len(_REMOTE_FAILURE_BACKOFF) - 1)
+            next_sleep_s = min(_REMOTE_FAILURE_BACKOFF[backoff_idx], tolerance_s - elapsed)
+            events.emit(
+                cfg.runtime.log_dir,
+                "monitor_remote_blip",
+                host=host,
+                error=e.stderr,
+                attempt=attempt,
+                elapsed_s=elapsed,
+                cap_s=tolerance_s,
+                interval_s=interval_s,
+                next_sleep_s=next_sleep_s,
+            )
+            time.sleep(next_sleep_s)
+            continue
+
+        for alert in alerts:
             key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"
             if key in seen:
                 continue
