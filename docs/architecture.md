@@ -93,6 +93,17 @@ API quota / writing to a near-full disk).
 
 The monitor emits no events during healthy operation — it surfaces alerts only when a detector fires. To verify the monitor process is running, look for the `monitor_started` event in `events-*.jsonl`. Programmatic consumers (e.g. supervisory layers like Argus Gateway) should subscribe to that event kind as the canonical "supervision is up" signal. The event carries `mode: "anomaly-only"` to document the intentional silence.
 
+## Monitor: transient ssh tolerance
+
+`monitor --host <alias>` tolerates short ssh-protocol failures (rc=255) during
+steady-state polling. The tolerance window defaults to 90 seconds and is
+configurable via `[monitor] remote_failure_tolerance_s` (set to 0 to disable).
+Backoff is 1s → 2s → 4s → ... → 30s. During the window each failed poll emits a
+`monitor_remote_blip` event; if the window expires without recovery a
+`monitor_remote_giveup` event is emitted before the error propagates (CLI
+exits 1; systemd restarts the process). The two-event scheme makes postmortem
+grep cleaner than a single event with a `final=true` flag.
+
 ## Known event kinds
 
 <!-- gen:event-kinds -->

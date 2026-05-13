@@ -79,6 +79,19 @@ outages self-heal.
 
 **Fix:** Wait. If sustained > 30 minutes, investigate local network or upstream.
 
+### Network-blip postmortem trail
+
+When the monitor or an agent round hits network errors, two structured events
+serve as the index into deeper diagnostic logs:
+
+| Event | What it tells you | Where to look next |
+|---|---|---|
+| `monitor_remote_blip` | A single `monitor --host` poll failed with ssh rc=255 | Subsequent events in the same window; if a `monitor_remote_giveup` follows, supervision exited |
+| `monitor_remote_giveup` | Cumulative ssh failure exceeded `remote_failure_tolerance_s` | `journalctl --user -u agent-runner-monitor@<project>` for the restart |
+| `agent_network_blip` | An agent round's log matched a network pattern | `{log_dir}/rounds/R{round_num}-*.log` for the full agent output |
+
+The events file is the index. The round log file is the body.
+
 ### Orphan stash recovery
 
 **Symptom:** `peek` shows `orphan_stash` field with a stash ref. The previous

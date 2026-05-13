@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-05-13
+
+### Acknowledgements
+
+Thanks again to the Argus Gateway team — this release closes the
+network-resilience gap that 0.1.10's `MonitorRemoteError` propagation
+exposed, plus adds per-occurrence agent network blip observability requested
+during 0.1.10 handover review.
+
+### Added
+
+- New CLI flag `agent-runner --version` prints `agent-runner <version>` (sourced from hatch-vcs metadata).
+- New built-in event kind `monitor_remote_blip` — emitted per `_poll_once` failure in `monitor --host` while still within `remote_failure_tolerance_s`. Payload: `host`, `error`, `attempt`, `elapsed_s`, `cap_s`, `interval_s`, `next_sleep_s`.
+- New built-in event kind `monitor_remote_giveup` — emitted once when retries exceed the tolerance window, just before the error propagates. Payload: `host`, `total_attempts`, `total_elapsed_s`, `cap_s`, `final_error`. Distinguishes "blip storm recovered" from "blip storm won" in postmortem.
+- New built-in event kind `agent_network_blip` — emitted at end of each round whose log matches network-error patterns. Payload: `round_num`, `phase`, `matched` (regex match substring), `round_duration_s`, `exit_code`, `timed_out`. Independent of the rate-based `detect_network_fail` alert.
+- New config field `[monitor] remote_failure_tolerance_s` (default 90s, range [0, 3600]). 0 preserves 0.1.10's immediate-propagate behavior.
+- `ProjectState.recent_blips: list[dict[str, Any]]` field (last 5 `agent_network_blip` events).
+
+### Changed
+
+- `peek` schema version bumped `1.6` → `1.7` (additive: new event kinds + `recent_blips` field).
+- `monitor --host`'s steady-state polling now tolerates transient ssh failures up to 90 seconds with exponential backoff (1s → 2s → 4s → 8s → 16s → 30s cap). After the tolerance window, the error propagates as before (CLI exits 1; systemd restarts).
+
+### Postmortem trail
+
+For network-related failures, the events index points at the diagnostic body:
+- `monitor_remote_giveup` event → look for `monitor_started` events around it to see restart cadence
+- `agent_network_blip` event → read `{log_dir}/rounds/R{round_num}-*.log` for the full agent output
+
 ## [0.1.10] - 2026-05-13
 
 ### Acknowledgements
@@ -395,7 +424,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.9
 [0.1.8]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.8
