@@ -454,7 +454,7 @@ def test_given_phase_override_no_phases_configured_when_phase_for_called_then_ra
         _phase_for(1, None, override="dev")
 
 
-def test_given_default_round_without_override_when_phase_for_called_then_rotation_unchanged() -> None:
+def test_given_default_round_when_phase_for_called_then_rotation_unchanged() -> None:
     """Default rotation behavior preserved when override is None."""
     from agent_runner.runner import _phase_for
 
