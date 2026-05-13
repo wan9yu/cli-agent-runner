@@ -142,3 +142,39 @@ def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
     assert len(crit) == 1
     assert isinstance(crit[0], Alert)
     assert crit[0].auto_action == "stop_service"
+
+
+def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_keys(
+    tmp_git_repo: Path,
+    capsys,
+) -> None:
+    """0.1.8: plugins block in peek JSON includes pre/post hooks + owned_paths."""
+    import json
+
+    from agent_runner.api_types import (
+        ProjectState,
+        ServiceMode,
+        ServiceStatus,
+        SystemMetrics,
+    )
+    from agent_runner.cli.common import emit
+
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+    emit(state, json_mode=True)
+    out = json.loads(capsys.readouterr().out)
+    assert out["schema_version"] == "1.5"
+    assert "pre_round_hooks" in out["plugins"]
+    assert "post_round_hooks" in out["plugins"]
+    assert "owned_paths" in out["plugins"]
+    assert isinstance(out["plugins"]["pre_round_hooks"], list)
+    assert isinstance(out["plugins"]["post_round_hooks"], list)
+    assert isinstance(out["plugins"]["owned_paths"], list)

@@ -12,10 +12,11 @@ from typing import Any
 from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, load_config
 from agent_runner.events import plugin_event_kinds
-from agent_runner.hooks import plugin_context_enrichers
+from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_round_hooks
 from agent_runner.monitor import plugin_detectors
+from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "1.4"
+PEEK_SCHEMA_VERSION = "1.5"
 
 
 def cfg_from_args(args) -> Config:
@@ -48,7 +49,10 @@ def emit(value: Any, *, json_mode: bool) -> None:
                 "plugins": {
                     "event_kinds": plugin_event_kinds(),
                     "context_enrichers": plugin_context_enrichers(),
+                    "pre_round_hooks": [h.name for h in pre_round_hooks()],
+                    "post_round_hooks": [h.name for h in post_round_hooks()],
                     "detectors": plugin_detectors(),
+                    "owned_paths": plugin_owned_paths(),
                 },
                 **_to_jsonable(value),
             }
