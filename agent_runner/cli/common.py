@@ -16,7 +16,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "1.6"
+PEEK_SCHEMA_VERSION = "1.7"
 
 
 def cfg_from_args(args) -> Config:

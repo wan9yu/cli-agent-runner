@@ -169,7 +169,7 @@ The round itself continues — a broken plugin must not crash the supervisor.
 
 ```json
 {
-  "schema_version": "1.6",
+  "schema_version": "1.7",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": ["current_branch"],
@@ -253,7 +253,7 @@ detector. Other plugin detectors and all builtins still run normally.
 
 ```json
 {
-  "schema_version": "1.6",
+  "schema_version": "1.7",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": [...],

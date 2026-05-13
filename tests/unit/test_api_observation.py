@@ -209,7 +209,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     )
     emit(state, json_mode=True)
     out = json.loads(capsys.readouterr().out)
-    assert out["schema_version"] == "1.6"
+    assert out["schema_version"] == "1.7"
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
     assert "owned_paths" in out["plugins"]
@@ -474,3 +474,42 @@ def test_given_blip_then_success_when_monitor_loop_then_state_resets(
     assert len(blips) == 2
     assert blips[0]["attempt"] == 1
     assert blips[1]["attempt"] == 1, "successful poll should have reset the counter"
+
+
+def test_given_recent_blips_in_events_when_peek_then_populated_in_state(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """peek populates ProjectState.recent_blips from events.jsonl entries."""
+    from agent_runner import api
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    # Append 7 blip events to the seeded events file
+    blip_lines = []
+    for i in range(7):
+        blip_lines.append(
+            json.dumps(
+                {
+                    "ts": f"2026-05-12T11:00:0{i}.000Z",
+                    "event": "agent_network_blip",
+                    "round_num": i,
+                    "phase": "main",
+                    "matched": "connection refused",
+                    "round_duration_s": 1.0,
+                    "exit_code": 1,
+                    "timed_out": False,
+                }
+            )
+        )
+    with (log_dir / "events-2026-05.jsonl").open("a", encoding="utf-8") as f:
+        f.write("\n".join(blip_lines) + "\n")
+
+    state = api.peek(tmp_git_repo)
+    assert len(state.recent_blips) == 5, "default limit is 5, most-recent first"
+    # The 5 returned should be the last 5 in chronological order (rounds 2..6)
+    rounds = [b["round_num"] for b in state.recent_blips]
+    assert rounds == [2, 3, 4, 5, 6]

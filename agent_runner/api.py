@@ -254,6 +254,7 @@ from agent_runner import defenses, monitor  # noqa: E402
 from agent_runner.events import HOOK_FAILED  # noqa: E402
 
 _RECENT_HOOK_FAILURES_LIMIT = 10
+_RECENT_BLIPS_LIMIT = 5
 
 
 def peek(
@@ -291,6 +292,14 @@ def peek(
                 break
     recent_hook_failures.reverse()
 
+    recent_blips: list[dict[str, Any]] = []
+    for e in reversed(parsed_events):
+        if e.get("event") == "agent_network_blip":
+            recent_blips.append(e)
+            if len(recent_blips) == _RECENT_BLIPS_LIMIT:
+                break
+    recent_blips.reverse()
+
     state = ProjectState(
         project=base_state.project,
         status=base_state.status,
@@ -311,6 +320,7 @@ def peek(
         service=status(project if project is not None else work_dir),
         recent_events=recent,
         recent_hook_failures=recent_hook_failures,
+        recent_blips=recent_blips,
     )
     return state if select is None else select_path(state, select)
 
