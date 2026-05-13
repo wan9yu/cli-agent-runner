@@ -34,9 +34,8 @@ def _config_path(cfg: Config) -> Path:
 
 def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
     """Generate the serve systemd unit body."""
-    # 0.1.9: TimeoutStopSec must cover the LARGEST possible round budget so
-    # `systemctl stop` doesn't SIGKILL a legitimate per-phase long round.
-    # Use list form so empty per_phase dict still works (max(int) fails).
+    # TimeoutStopSec covers the largest possible round so `systemctl stop`
+    # doesn't SIGKILL a long per-phase round mid-flight.
     max_round_timeout = max(
         [cfg.runtime.round_timeout_s, *cfg.runtime.round_timeout_per_phase.values()]
     )

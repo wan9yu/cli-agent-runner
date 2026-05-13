@@ -14,7 +14,12 @@ from agent_runner.config import (
     RuntimeConfig,
     VcsConfig,
 )
-from agent_runner.runner import LockHeldError, _acquire_lock_or_raise, run_one_round
+from agent_runner.runner import (
+    LockHeldError,
+    _acquire_lock_or_raise,
+    _round_timeout_for,
+    run_one_round,
+)
 
 
 def _make_config(
@@ -135,29 +140,35 @@ def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_a
     assert exc.value.code == 1
 
 
-def test_given_phase_in_per_phase_dict_when_lookup_then_returns_phase_value(
+def _unit_cfg(
     tmp_path: Path,
-) -> None:
-    """0.1.9: _round_timeout_for returns the phase-specific value when present."""
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
-    from agent_runner.runner import _round_timeout_for
-
-    cfg = Config(
+    *,
+    round_timeout_s: int = 1800,
+    round_timeout_per_phase: dict[str, int] | None = None,
+    phases: list[str] | None = None,
+) -> Config:
+    """Minimal Config for unit-level helper tests (no sandbox/script setup)."""
+    return Config(
         agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
-            round_timeout_per_phase={"dev": 3600, "qa": 1200},
+            round_timeout_s=round_timeout_s,
+            round_timeout_per_phase=round_timeout_per_phase or {},
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
+        phases=phases,
+    )
+
+
+def test_given_phase_in_per_phase_dict_when_lookup_then_returns_phase_value(
+    tmp_path: Path,
+) -> None:
+    """_round_timeout_for returns the phase-specific value when present."""
+    cfg = _unit_cfg(
+        tmp_path,
+        round_timeout_per_phase={"dev": 3600, "qa": 1200},
         phases=["dev", "qa"],
     )
     assert _round_timeout_for(cfg, "dev") == 3600
@@ -167,51 +178,16 @@ def test_given_phase_in_per_phase_dict_when_lookup_then_returns_phase_value(
 def test_given_phase_not_in_per_phase_dict_when_lookup_then_returns_global(
     tmp_path: Path,
 ) -> None:
-    """0.1.9: phase string not in dict → fall back to global runtime.round_timeout_s."""
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
-    from agent_runner.runner import _round_timeout_for
-
-    cfg = Config(
-        agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
-        runtime=RuntimeConfig(
-            work_dir=tmp_path,
-            log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
-            round_timeout_per_phase={"dev": 3600},
-        ),
-        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
-        vcs=VcsConfig(),
+    """Phase not in dict → fall back to global runtime.round_timeout_s."""
+    cfg = _unit_cfg(
+        tmp_path,
+        round_timeout_per_phase={"dev": 3600},
         phases=["dev", "qa"],
     )
-    assert _round_timeout_for(cfg, "qa") == 1800  # not in dict → fallback
+    assert _round_timeout_for(cfg, "qa") == 1800
 
 
 def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> None:
-    """0.1.9: phase=None (no phases configured) → global timeout."""
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
-    from agent_runner.runner import _round_timeout_for
-
-    cfg = Config(
-        agent=AgentConfig(command=["fake-agent"], prompt_arg_template=["-p", "{prompt}"]),
-        runtime=RuntimeConfig(
-            work_dir=tmp_path,
-            log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
-        ),
-        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
-        vcs=VcsConfig(),
-        phases=None,
-    )
+    """phase=None (no phases configured) → global timeout."""
+    cfg = _unit_cfg(tmp_path)
     assert _round_timeout_for(cfg, None) == 1800

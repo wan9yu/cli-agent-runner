@@ -17,13 +17,24 @@ from agent_runner.service_unit import (
 )
 
 
-def _cfg(tmp_path: Path) -> Config:
+def _cfg(
+    tmp_path: Path,
+    *,
+    round_timeout_s: int = 600,
+    round_timeout_per_phase: dict[str, int] | None = None,
+    phases: list[str] | None = None,
+) -> Config:
     return Config(
         agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
-        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs", round_timeout_s=600),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_timeout_s=round_timeout_s,
+            round_timeout_per_phase=round_timeout_per_phase or {},
+        ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
+        phases=phases,
     )
 
 
@@ -70,41 +81,20 @@ def test_given_monitor_unit_when_rendered_then_runs_monitor_command(tmp_path: Pa
 
 
 def test_given_per_phase_timeouts_when_render_then_timeout_uses_max(tmp_path: Path) -> None:
-    """0.1.9: TimeoutStopSec uses the max of (global, per-phase values) so
-    systemctl stop doesn't kill a long phase round prematurely."""
-    cfg = Config(
-        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
-        runtime=RuntimeConfig(
-            work_dir=tmp_path,
-            log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
-            round_timeout_per_phase={"dev": 3600, "qa": 1200},
-        ),
-        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
-        vcs=VcsConfig(),
+    """TimeoutStopSec uses max(global, per-phase) so systemctl stop doesn't
+    kill a legitimate long phase round."""
+    cfg = _cfg(
+        tmp_path,
+        round_timeout_s=1800,
+        round_timeout_per_phase={"dev": 3600, "qa": 1200},
         phases=["dev", "qa"],
     )
     unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
-    # max(1800, 3600, 1200) + 60 = 3660
-    assert "TimeoutStopSec=3660" in unit
+    assert "TimeoutStopSec=3660" in unit  # max(1800, 3600, 1200) + 60
 
 
 def test_given_no_per_phase_when_render_then_timeout_uses_global(tmp_path: Path) -> None:
-    """0.1.9: empty per_phase dict -> TimeoutStopSec = round_timeout_s + grace.
-
-    (Today's behavior, preserved.)
-    """
-    cfg = Config(
-        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
-        runtime=RuntimeConfig(
-            work_dir=tmp_path,
-            log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
-        ),
-        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
-        vcs=VcsConfig(),
-        phases=None,
-    )
+    """Empty per_phase preserves today's TimeoutStopSec = round_timeout_s + grace."""
+    cfg = _cfg(tmp_path, round_timeout_s=1800)
     unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
-    # max(1800) + 60 = 1860
-    assert "TimeoutStopSec=1860" in unit
+    assert "TimeoutStopSec=1860" in unit  # 1800 + 60

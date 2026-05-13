@@ -186,7 +186,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases)
-    timeout_s = _round_timeout_for(cfg, phase)  # NEW (0.1.9): per-phase override
+    timeout_s = _round_timeout_for(cfg, phase)
     started_at = now_iso_ms()
 
     orphan = context_store.read_orphan_state(log_dir)
