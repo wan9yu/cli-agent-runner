@@ -186,6 +186,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases)
+    timeout_s = _round_timeout_for(cfg, phase)  # NEW (0.1.9): per-phase override
     started_at = now_iso_ms()
 
     orphan = context_store.read_orphan_state(log_dir)
@@ -234,12 +235,12 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
         mode=cfg.prompt.context_injection_mode,
     )
 
-    events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=cfg.runtime.round_timeout_s)
+    events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=timeout_s)
     result = agent_runtime.run(
         command=cfg.agent.command,
         prompt_arg_template=cfg.agent.prompt_arg_template,
         prompt=prompt,
-        timeout_s=cfg.runtime.round_timeout_s,
+        timeout_s=timeout_s,
         log_path=log_path,
         env_extra=dict(cfg.agent.env),
     )
@@ -292,7 +293,7 @@ def _run_one_round_inner(cfg: Config) -> RoundResult:
             log_dir,
             "round_timeout_kill",
             round_num=round_num,
-            reason=f"exceeded round_timeout_s={cfg.runtime.round_timeout_s}",
+            reason=f"exceeded round_timeout_s={timeout_s}",
         )
 
     completed_at = now_iso_ms()
