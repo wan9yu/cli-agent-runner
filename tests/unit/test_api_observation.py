@@ -391,7 +391,7 @@ def test_given_persistent_failure_when_monitor_loop_then_emits_giveup_and_raises
     assert len(giveups) == 1
     assert giveups[0]["host"] == "pi"
     assert giveups[0]["cap_s"] == 2
-    assert giveups[0]["total_attempts"] >= 1
+    assert giveups[0]["total_attempts"] == 3
 
 
 def test_given_tolerance_zero_when_blip_then_raises_immediately_no_events(
@@ -461,12 +461,9 @@ def test_given_blip_then_success_when_monitor_loop_then_state_resets(
 
     gen = api.monitor_loop(work_dir, host="pi", interval_s=30)
     try:
-        for _ in range(5):
-            try:
-                next(gen, None)
-            except StopIteration:
-                break
-    except _StopLoopError:
+        while True:
+            next(gen)  # no default — let exceptions propagate naturally
+    except (StopIteration, _StopLoopError):
         pass
     finally:
         gen.close()
