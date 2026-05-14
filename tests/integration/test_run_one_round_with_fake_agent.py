@@ -13,6 +13,7 @@ from pathlib import Path
 from agent_runner.config import (
     AgentConfig,
     Config,
+    PhasesConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -47,7 +48,7 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
         runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=5),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
+        phases=PhasesConfig(),
     )
 
 
@@ -144,7 +145,7 @@ def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
         runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=30),
         prompt=PromptConfig(file=prompt, inject_context=False),
         vcs=VcsConfig(),
-        phases=None,
+        phases=PhasesConfig(),
     )
     run_one_round(cfg)
 
@@ -187,7 +188,7 @@ def test_given_phase_with_per_phase_timeout_when_round_runs_then_uses_phase_valu
         ),
         prompt=PromptConfig(file=prompt, inject_context=False),
         vcs=VcsConfig(),
-        phases=["dev"],
+        phases=PhasesConfig(list=["dev"]),
     )
 
     start = time.time()

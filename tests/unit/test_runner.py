@@ -11,6 +11,7 @@ from agent_runner.agent_runtime import RunResult
 from agent_runner.config import (
     AgentConfig,
     Config,
+    PhasesConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -28,6 +29,7 @@ def _make_config(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     phases: list[str] | None = None,
+    phases_cfg: PhasesConfig | None = None,
 ) -> Config:
     # log_dir, prompt and the agent script live OUTSIDE the work_dir so that
     # any stash of the agent's dirty tree (git stash -u removes untracked
@@ -49,7 +51,7 @@ def _make_config(
         runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=10),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
-        phases=phases,
+        phases=phases_cfg if phases_cfg is not None else PhasesConfig(list=phases),
     )
 
 
@@ -160,7 +162,7 @@ def _unit_cfg(
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
-        phases=phases,
+        phases=PhasesConfig(list=phases),
     )
 
 

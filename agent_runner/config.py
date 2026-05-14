@@ -31,6 +31,32 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class PhaseOverride:
+    """Per-phase override for selected RuntimeConfig + PromptConfig fields.
+
+    Each field is Optional; None means "no override, use base value". The
+    whitelist of fields here matches the allowed [phases.<name>] sub-table
+    fields documented in docs/configuration.md.
+    """
+
+    round_timeout_s: int | None = None
+    disable_pre_round_hooks: bool | None = None
+    prompt_files: list[Path] | None = None
+
+
+@dataclass(frozen=True)
+class PhasesConfig:
+    """Phases section: optional rotation list + per-phase override sub-tables.
+
+    Replaces the old raw ``list[str] | None`` shape on ``Config.phases``. Code
+    reading ``cfg.phases`` directly as a list must migrate to ``cfg.phases.list``.
+    """
+
+    list: list[str] | None = None
+    overrides: dict[str, PhaseOverride] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class PromptConfig:
     file: Path
     inject_context: bool = True
@@ -92,7 +118,7 @@ class Config:
     prompt: PromptConfig
     vcs: VcsConfig = field(default_factory=VcsConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
-    phases: list[str] | None = None
+    phases: PhasesConfig = field(default_factory=PhasesConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
 
 
@@ -161,6 +187,70 @@ def _validate_round_timeout_per_phase_keys(
         )
 
 
+_PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
+    {
+        "round_timeout_s",
+        "disable_pre_round_hooks",
+        "prompt",
+    }
+)
+
+
+def _parse_phase_overrides(
+    phases_d: dict[str, Any], phases_list: list[str] | None, project_name: str
+) -> dict[str, PhaseOverride]:
+    """Parse [phases.<name>] sub-tables from raw TOML dict.
+
+    Each sub-table is keyed by phase name (must appear in phases.list). Allowed
+    fields are validated; unknown fields raise. Returns {phase_name: PhaseOverride}.
+    """
+    overrides: dict[str, PhaseOverride] = {}
+    for key, value in phases_d.items():
+        if key == "list":
+            continue
+        if not isinstance(value, dict):
+            continue
+        phase_name = key
+        if phases_list is None or phase_name not in phases_list:
+            raise ValueError(
+                f"[phases.{phase_name}] declared but {phase_name!r} not in phases.list "
+                f"({phases_list})"
+            )
+        unknown = set(value.keys()) - _PHASE_OVERRIDE_ALLOWED_FIELDS
+        if unknown:
+            raise ValueError(
+                f"unknown per-phase field(s) under [phases.{phase_name}]: {sorted(unknown)}; "
+                f"allowed: round_timeout_s, disable_pre_round_hooks, prompt.files"
+            )
+        round_timeout_s = (
+            _require_positive_int(
+                value["round_timeout_s"], field=f"phases.{phase_name}.round_timeout_s"
+            )
+            if "round_timeout_s" in value
+            else None
+        )
+        disable_hooks = (
+            _require_bool(
+                value["disable_pre_round_hooks"],
+                field=f"phases.{phase_name}.disable_pre_round_hooks",
+            )
+            if "disable_pre_round_hooks" in value
+            else None
+        )
+        prompt_files = None
+        if "prompt" in value:
+            prompt_sub = value["prompt"]
+            if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
+                raise ValueError(f"[phases.{phase_name}].prompt must have a 'files' list")
+            prompt_files = [_expand_path(str(p), project_name) for p in prompt_sub["files"]]
+        overrides[phase_name] = PhaseOverride(
+            round_timeout_s=round_timeout_s,
+            disable_pre_round_hooks=disable_hooks,
+            prompt_files=prompt_files,
+        )
+    return overrides
+
+
 def load_config(toml_path: Path) -> Config:
     if not toml_path.exists():
         raise FileNotFoundError(f"config not found: {toml_path}")
@@ -180,7 +270,9 @@ def load_config(toml_path: Path) -> Config:
 
     # Phases first — needed for per-phase round_timeout validation below.
     phases_d = raw.get("phases", {})
-    phases = list(phases_d["list"]) if "list" in phases_d else None
+    phases_list = list(phases_d["list"]) if "list" in phases_d else None
+    phases_overrides = _parse_phase_overrides(phases_d, phases_list, project_name)
+    phases_cfg = PhasesConfig(list=phases_list, overrides=phases_overrides)
 
     runtime_d = raw.get("runtime", {})
     per_phase_raw = runtime_d.get("round_timeout_per_phase", {})
@@ -188,7 +280,7 @@ def load_config(toml_path: Path) -> Config:
         str(k): _require_positive_int(v, field=f"runtime.round_timeout_per_phase[{str(k)!r}]")
         for k, v in per_phase_raw.items()
     }
-    _validate_round_timeout_per_phase_keys(per_phase, phases)
+    _validate_round_timeout_per_phase_keys(per_phase, phases_list)
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
@@ -251,7 +343,7 @@ def load_config(toml_path: Path) -> Config:
         prompt=prompt,
         vcs=vcs,
         monitor=monitor,
-        phases=phases,
+        phases=phases_cfg,
         plugins=plugins,
     )
 

@@ -48,7 +48,8 @@ file = "./prompts/main.md"
     assert cfg.runtime.round_timeout_s == 1800  # default
     assert cfg.runtime.restart_delay_s == 3
     assert cfg.prompt.inject_context is True  # default
-    assert cfg.phases is None
+    assert cfg.phases.list is None
+    assert cfg.phases.overrides == {}
     assert cfg.vcs.orphan_action == "stash"
     assert cfg.runtime.round_timeout_per_phase == {}
 
@@ -72,7 +73,7 @@ list = ["diverge", "converge"]
 """,
     )
     cfg = load_config(toml)
-    assert cfg.phases == ["diverge", "converge"]
+    assert cfg.phases.list == ["diverge", "converge"]
 
 
 def test_given_missing_required_field_when_loaded_then_raises_with_field_name(
@@ -966,3 +967,168 @@ def test_given_explicit_narrative_file_when_loaded_then_resolved_path(
 
     cfg = load_config(tmp_path / "agent-runner.toml")
     assert cfg.runtime.narrative_file == tmp_path / "notes.md"
+
+
+def test_given_phases_list_only_when_loaded_then_phases_config_with_empty_overrides(
+    tmp_path: Path,
+) -> None:
+    """[phases].list set + no sub-tables → PhasesConfig with .list set and .overrides = {}."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev", "qa"]\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.phases.list == ["dev", "qa"]
+    assert cfg.phases.overrides == {}
+
+
+def test_given_phase_sub_table_round_timeout_when_loaded_then_override_recorded(
+    tmp_path: Path,
+) -> None:
+    """[phases.dev] round_timeout_s=3600 → PhasesConfig.overrides['dev'].round_timeout_s == 3600."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev", "qa"]\n'
+        "[phases.dev]\n"
+        "round_timeout_s = 3600\n"
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.phases.overrides["dev"].round_timeout_s == 3600
+    assert cfg.phases.overrides["dev"].disable_pre_round_hooks is None
+    assert cfg.phases.overrides["dev"].prompt_files is None
+
+
+def test_given_phase_sub_table_all_three_fields_when_loaded_then_all_parsed(
+    tmp_path: Path,
+) -> None:
+    """All 3 whitelist fields under [phases.<name>] parse correctly."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev"]\n'
+        "[phases.dev]\n"
+        "round_timeout_s = 3600\n"
+        "disable_pre_round_hooks = true\n"
+        'prompt.files = ["a.md", "b.md"]\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    o = cfg.phases.overrides["dev"]
+    assert o.round_timeout_s == 3600
+    assert o.disable_pre_round_hooks is True
+    assert o.prompt_files == [Path("a.md"), Path("b.md")]
+
+
+def test_given_phase_name_not_in_list_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """[phases.foo] where 'foo' not in phases.list → ConfigError."""
+    import pytest
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev"]\n'
+        "[phases.foo]\n"
+        "round_timeout_s = 3600\n"
+    )
+
+    with pytest.raises(ValueError, match=r"\[phases\.foo\].*not in phases\.list"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_unknown_field_in_phase_sub_table_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """[phases.dev] with unknown field → ConfigError listing allowed fields."""
+    import pytest
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev"]\n'
+        "[phases.dev]\n"
+        "made_up_field = 42\n"
+    )
+
+    with pytest.raises(ValueError, match=r"unknown per-phase field.*made_up_field.*allowed"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_no_phases_section_when_loaded_then_phases_config_none_list(
+    tmp_path: Path,
+) -> None:
+    """Project without [phases] section → cfg.phases is PhasesConfig(list=None, overrides={})."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.phases.list is None
+    assert cfg.phases.overrides == {}

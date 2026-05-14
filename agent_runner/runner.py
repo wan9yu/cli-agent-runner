@@ -338,7 +338,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         events.emit(log_dir, "status_recovered", reason="status.json could not be parsed")
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
-    phase, phase_idx = _phase_for(round_num, cfg.phases, override=phase_override)
+    phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
     timeout_s = _round_timeout_for(cfg, phase)
     started_at = now_iso_ms()
 
