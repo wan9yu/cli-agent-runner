@@ -1,4 +1,8 @@
-"""serve subcommand — long-running supervisor loop. THIN: <=60 LOC.
+"""serve subcommand — long-running supervisor loop.
+
+THIN dispatcher: orchestrates the supervisor loop, delegates all helpers to
+``agent_runner.round_log`` (round-log file ops) and ``agent_runner.api``
+(sentinel + round counter).
 
 Trap signals, write/cleanup PID files, run `round` subprocess in a loop.
 All real work delegated to `agent-runner round` (fresh import per round).
@@ -11,62 +15,17 @@ import signal
 import subprocess  # noqa: TID251
 import sys
 import time
-from pathlib import Path
 
-from agent_runner.api import check_self_terminated_sentinel, read_round_num
+from agent_runner.api import check_self_terminated_sentinel
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile, send_signal_to_pid
-
-ROUND_CURRENT_LINK = "round-current.log"
-
-
-def _atomic_relink(link: Path, target: Path) -> None:
-    """Atomically replace ``link`` to point at ``target``.
-
-    Uses ``os.symlink`` + ``os.replace`` pattern: create the symlink at a
-    temp path, then atomically rename it to the final link name.
-    """
-    tmp = link.with_suffix(link.suffix + ".tmp")
-    tmp.unlink(missing_ok=True)
-    os.symlink(target.name, tmp)
-    os.replace(tmp, link)
-
-
-def _prune_old_round_logs(log_dir: Path, retention: int) -> None:
-    """Keep most-recent ``retention`` round-*.log files by mtime; unlink the rest."""
-    logs = sorted(
-        log_dir.glob("round-*.log"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    # Exclude the symlink itself (it's not a regular round log file)
-    logs = [p for p in logs if p.name != ROUND_CURRENT_LINK]
-    for old in logs[retention:]:
-        old.unlink(missing_ok=True)
-
-
-def _next_round_num(log_dir: Path) -> int:
-    """Return the next round number, avoiding reuse of any existing log file numbers.
-
-    Takes ``max(read_round_num, max_log_file_num) + 1``. Under normal operation
-    these agree. The file-system fallback handles the case where ``status.json``
-    has been deleted but old ``round-*.log`` files remain — the counter skips
-    forward instead of silently overwriting a numbered log.
-    """
-    status_num = read_round_num(log_dir)
-    file_nums = []
-    for p in log_dir.glob("round-*.log"):
-        if p.name == ROUND_CURRENT_LINK:
-            continue
-        stem_parts = p.stem.split("-", 1)
-        if len(stem_parts) == 2:
-            try:
-                file_nums.append(int(stem_parts[1]))
-            except ValueError:
-                pass
-    max_file_num = max(file_nums, default=0)
-    return max(status_num, max_file_num) + 1
+from agent_runner.round_log import (
+    ROUND_CURRENT_LINK,
+    atomic_relink,
+    next_round_num,
+    prune_old_round_logs,
+)
 
 
 def add_parser(sub, parent) -> None:
@@ -83,11 +42,7 @@ def cmd(args) -> int:
     if not run_serve_startup_hooks(cfg, log_dir):
         return 1
 
-    (log_dir / ".agent-done").unlink(missing_ok=True)
-    _prune_old_round_logs(log_dir, cfg.runtime.round_log_retention)
-
     pid_file = PIDFile(log_dir / "serve.pid")
-    pid_file.write(os.getpid())
     stop = {"requested": False}
     round_pid_file = PIDFile(log_dir / "round.pid")
 
@@ -100,17 +55,25 @@ def cmd(args) -> int:
         if rp is not None:
             send_signal_to_pid(-rp, signal.SIGINT)
 
+    # Arm signals before any pre-loop cleanup — a SIGTERM arriving during
+    # sentinel removal or log pruning will set stop["requested"] and the
+    # loop will not start rather than killing with the default handler.
     signal.signal(signal.SIGTERM, graceful)
     signal.signal(signal.SIGINT, graceful)
     signal.signal(signal.SIGUSR1, cancel)
 
+    # Pre-loop cleanup: remove stale sentinel, prune old round logs.
+    (log_dir / ".agent-done").unlink(missing_ok=True)
+    prune_old_round_logs(log_dir, cfg.runtime.round_log_retention)
+
     round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
 
     try:
+        pid_file.write(os.getpid())
         while not stop["requested"]:
             if check_self_terminated_sentinel(log_dir):
                 break
-            round_num = _next_round_num(log_dir)
+            round_num = next_round_num(log_dir)
             round_log_path = log_dir / f"round-{round_num}.log"
             with round_log_path.open("w") as f:
                 r = subprocess.run(
@@ -126,7 +89,7 @@ def cmd(args) -> int:
                     stdout=f,
                     stderr=subprocess.STDOUT,
                 )
-            _atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
+            atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             if args.once or stop["requested"]:
                 break
             delay = (

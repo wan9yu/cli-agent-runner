@@ -6,7 +6,7 @@
 ┌──────────────────────────────────────────┐
 │ Layer 3: The Witness                     │  agent-runner monitor
 ├──────────────────────────────────────────┤
-│ Layer 2: The Loop                        │  agent-runner serve (≤60 LOC)
+│ Layer 2: The Loop                        │  agent-runner serve (thin dispatcher)
 ├──────────────────────────────────────────┤
 │ Layer 1: The Round                       │  agent-runner round
 └──────────────────────────────────────────┘
