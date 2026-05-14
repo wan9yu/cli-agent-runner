@@ -5,6 +5,26 @@ from pathlib import Path
 import pytest
 
 
+def _make_toml(tmp_path: Path) -> Path:
+    """Write a minimal agent-runner.toml and return its path."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+    return toml
+
+
 def test_given_upgrade_subcommand_with_target_when_main_then_dispatches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -21,19 +41,9 @@ def test_given_upgrade_subcommand_with_target_when_main_then_dispatches(
 
     monkeypatch.setattr(upgrade_cmd, "cmd", fake_cmd)
 
-    (tmp_path / "prompt.md").write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{tmp_path}/logs"\n'
-        "[prompt]\n"
-        f'file = "{tmp_path}/prompt.md"\n'
-    )
+    toml_path = _make_toml(tmp_path)
 
-    rc = main(["--config", str(tmp_path / "agent-runner.toml"), "upgrade", "--target", "0.1.99"])
+    rc = main(["--config", str(toml_path), "upgrade", "--target", "0.1.99"])
     assert rc == 0
     assert captured["target"] == "0.1.99"
 
@@ -53,19 +63,9 @@ def test_given_upgrade_no_target_when_main_then_target_defaults_none(
 
     monkeypatch.setattr(upgrade_cmd, "cmd", fake_cmd)
 
-    (tmp_path / "prompt.md").write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{tmp_path}/logs"\n'
-        "[prompt]\n"
-        f'file = "{tmp_path}/prompt.md"\n'
-    )
+    toml_path = _make_toml(tmp_path)
 
-    rc = main(["--config", str(tmp_path / "agent-runner.toml"), "upgrade"])
+    rc = main(["--config", str(toml_path), "upgrade"])
     assert rc == 0
     assert captured["target"] is None
 
@@ -81,20 +81,8 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -115,8 +103,8 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 0
 
     pip_calls = [c for c in call_log if c[0] == "pip"]
@@ -143,20 +131,7 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
+    toml_path = _make_toml(tmp_path)
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -175,8 +150,8 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target=None, cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target=None, cfg_path=toml_path)
     assert rc == 0
     pip_calls = [c for c in call_log if c[0] == "pip"]
     assert len(pip_calls) == 1
@@ -195,20 +170,8 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -222,8 +185,8 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="bogus", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="bogus", cfg_path=toml_path)
     assert rc == 1
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -243,20 +206,8 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -286,8 +237,8 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 1  # rollback succeeded but upgrade failed
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -311,20 +262,8 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -347,8 +286,8 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 1
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -368,20 +307,7 @@ def test_given_rollback_pip_uses_force_reinstall_with_from_version(
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
+    toml_path = _make_toml(tmp_path)
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -404,8 +330,8 @@ def test_given_rollback_pip_uses_force_reinstall_with_from_version(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
 
     assert len(pip_calls) == 2
     rollback_pip = pip_calls[1]
@@ -424,20 +350,8 @@ def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_ex
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -460,8 +374,8 @@ def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_ex
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 2
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -484,20 +398,8 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
     from agent_runner.cli import upgrade_cmd
     from agent_runner.config import load_config
 
+    toml_path = _make_toml(tmp_path)
     log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
 
     monkeypatch.setattr(api, "stop", lambda _wd: None)
     monkeypatch.setattr(api, "start", lambda _wd: None)
@@ -514,8 +416,8 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    cfg = load_config(tmp_path / "agent-runner.toml")
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 2
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -523,31 +425,6 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
     failed = [p for p in payloads if p["event"] == "service_upgrade_rollback_failed"]
     assert len(failed) == 1
     assert "sanity smoke failed" in failed[0]["failure_reason"]
-
-
-# ---------------------------------------------------------------------------
-# New tests for Fix #1 (api.stop/api.start exceptions), Fix #4 (empty target)
-# ---------------------------------------------------------------------------
-
-
-def _make_toml(tmp_path: Path) -> Path:
-    """Write a minimal agent-runner.toml and return its path."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir(exist_ok=True)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
-    return toml
 
 
 def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
