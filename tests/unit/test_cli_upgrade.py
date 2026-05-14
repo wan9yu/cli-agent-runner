@@ -230,3 +230,184 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
     if events_files:
         payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
+
+
+def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Smoke peek fails → pip --force-reinstall <from> → sanity smoke → start → emit rolled_back."""
+    import json
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+
+    call_count = [0]
+
+    def fake_run(cmd, **kwargs):
+        call_count[0] += 1
+        if cmd[0] == "pip":
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            # 1st --version (smoke for new): version reads as 0.1.99
+            # 2nd --version (sanity smoke for restored): reads as from_version
+            if call_count[0] == 2:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="agent-runner 0.1.99\n", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        if "peek" in cmd:
+            # peek FAILS — triggers rollback
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="KeyError: 'phases'"
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    assert rc == 1  # rollback succeeded but upgrade failed
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    rolled_back = [p for p in payloads if p["event"] == "service_upgrade_rolled_back"]
+    assert len(rolled_back) == 1
+    assert rolled_back[0]["attempted_version"] == "0.1.99"
+    assert rolled_back[0]["restored_version"] == __version__
+    assert "KeyError" in rolled_back[0]["failure_reason"]
+    assert "duration_s" in rolled_back[0]
+
+
+def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Smoke --version fails (not just peek) → still triggers rollback."""
+    import json
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+
+    call_count = [0]
+
+    def fake_run(cmd, **kwargs):
+        call_count[0] += 1
+        if cmd[0] == "pip":
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            if call_count[0] == 2:  # first --version after pip → fails
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="", stderr="ImportError: cannot import 'foo'"
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+    assert rc == 1
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    rolled_back = [p for p in payloads if p["event"] == "service_upgrade_rolled_back"]
+    assert len(rolled_back) == 1
+    assert "ImportError" in rolled_back[0]["failure_reason"]
+
+
+def test_given_rollback_pip_uses_force_reinstall_with_from_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rollback pip command uses --force-reinstall and pins from_version."""
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+
+    pip_calls = []
+    call_count = [0]
+
+    def fake_run(cmd, **kwargs):
+        call_count[0] += 1
+        if cmd[0] == "pip":
+            pip_calls.append(cmd)
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            if call_count[0] == 2:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="boom")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=tmp_path / "agent-runner.toml")
+
+    assert len(pip_calls) == 2
+    rollback_pip = pip_calls[1]
+    assert "--force-reinstall" in rollback_pip
+    assert f"cli-agent-runner=={__version__}" in rollback_pip

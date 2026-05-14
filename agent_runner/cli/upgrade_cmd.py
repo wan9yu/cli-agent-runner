@@ -178,5 +178,73 @@ def _rollback(
     started_at: float,
     cfg_path: Path,
 ) -> int:
-    """Rollback flow — implementation lands in Task 4."""
-    raise NotImplementedError("rollback flow lands in Task 4")
+    """Smoke failed at attempted_version; reinstall from_version and recover.
+
+    Emits ``service_upgrade_rolled_back`` on success (exit 1).
+    Emits ``service_upgrade_rollback_failed`` if the rollback itself fails (exit 2).
+    """
+    info(f"smoke failed at {attempted_version}; rolling back to {from_version}...")
+
+    # Reinstall the from_version (force, since pip thinks the new version is installed)
+    rollback_pip = _pip_install(f"cli-agent-runner=={from_version}", force_reinstall=True)
+    if rollback_pip.returncode != 0:
+        return _rollback_failed(
+            log_dir,
+            attempted_version,
+            from_version,
+            f"pip --force-reinstall failed (rc={rollback_pip.returncode}): "
+            f"{rollback_pip.stderr.strip()[:200]}",
+        )
+
+    # Sanity smoke: --version on the rolled-back binary should match from_version
+    rc_v, version_or_err = _smoke_version()
+    if rc_v != 0:
+        return _rollback_failed(
+            log_dir,
+            attempted_version,
+            from_version,
+            f"sanity smoke failed (rc={rc_v}): {version_or_err}",
+        )
+    if version_or_err != from_version:
+        return _rollback_failed(
+            log_dir,
+            attempted_version,
+            from_version,
+            f"sanity smoke version mismatch: expected {from_version}, got {version_or_err}",
+        )
+
+    # Start service with rolled-back version
+    try:
+        api.start(cfg.runtime.work_dir)
+    except Exception as e:  # noqa: BLE001 — best-effort recovery, must not raise further
+        return _rollback_failed(
+            log_dir,
+            attempted_version,
+            from_version,
+            f"api.start raised after rollback: {type(e).__name__}: {str(e)[:150]}",
+        )
+
+    elapsed = time.monotonic() - started_at
+    events.emit(
+        log_dir,
+        events.SERVICE_UPGRADE_ROLLED_BACK,
+        attempted_version=attempted_version,
+        restored_version=from_version,
+        failure_reason=failure_reason,
+        duration_s=elapsed,
+    )
+    info(
+        f"upgrade {from_version} → {attempted_version} failed smoke; "
+        f"restored {from_version} (service running)"
+    )
+    return 1
+
+
+def _rollback_failed(
+    log_dir: Path,
+    attempted_version: str,
+    restore_target_version: str,
+    failure_reason: str,
+) -> int:
+    """Worst case — implementation lands in Task 5."""
+    raise NotImplementedError("rollback-failed flow lands in Task 5")
