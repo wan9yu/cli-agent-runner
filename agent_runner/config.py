@@ -26,6 +26,8 @@ class RuntimeConfig:
     restart_delay_s: int = 3
     round_timeout_per_phase: dict[str, int] = field(default_factory=dict)
     disable_pre_round_hooks: bool = False
+    round_log_retention: int = 100
+    narrative_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +203,14 @@ def load_config(toml_path: Path) -> Config:
         disable_pre_round_hooks=_require_bool(
             runtime_d.get("disable_pre_round_hooks", False),
             field="runtime.disable_pre_round_hooks",
+        ),
+        round_log_retention=_require_positive_int(
+            runtime_d.get("round_log_retention", 100), field="runtime.round_log_retention"
+        ),
+        narrative_file=(
+            _expand_path(str(runtime_d["narrative_file"]), project_name)
+            if "narrative_file" in runtime_d
+            else None
         ),
     )
     prompt_d = raw.get("prompt", {})

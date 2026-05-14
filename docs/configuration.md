@@ -25,6 +25,8 @@ writes a templated copy you can edit.
 | `restart_delay_s` | `int` | 3 |
 | `round_timeout_per_phase` | `dict[str, int]` | {} |
 | `disable_pre_round_hooks` | `bool` | False |
+| `round_log_retention` | `int` | 100 |
+| `narrative_file` | `Path | None` | None |
 
 ### `[prompt]`
 

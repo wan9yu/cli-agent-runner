@@ -897,3 +897,72 @@ def test_given_disable_hooks_non_bool_when_load_config_then_raises(
     cfg_path = _write_toml(tmp_path, body)
     with pytest.raises(ValueError, match="must be a bool"):
         load_config(cfg_path)
+
+
+def test_given_default_runtime_when_loaded_then_round_log_retention_is_100(
+    tmp_path: Path,
+) -> None:
+    """RuntimeConfig.round_log_retention defaults to 100 when unset in TOML."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.round_log_retention == 100
+    assert cfg.runtime.narrative_file is None
+
+
+def test_given_explicit_round_log_retention_when_loaded_then_used(
+    tmp_path: Path,
+) -> None:
+    """round_log_retention=50 overrides default."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "round_log_retention = 50\n"
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.round_log_retention == 50
+
+
+def test_given_explicit_narrative_file_when_loaded_then_resolved_path(
+    tmp_path: Path,
+) -> None:
+    """narrative_file points to a custom location, resolved as Path."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        f'narrative_file = "{tmp_path}/notes.md"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.narrative_file == tmp_path / "notes.md"
