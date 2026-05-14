@@ -12,7 +12,15 @@ On-host only. Assumes `pip` in PATH. Operator manually triggers via shell
 
 from __future__ import annotations
 
-from agent_runner import api  # noqa: F401 — used by Task 3 implementation
+import re
+import subprocess  # noqa: TID251 — orchestration uses pip + smoke subprocess
+import sys
+import time
+from pathlib import Path
+
+from agent_runner import __version__, api, events
+from agent_runner.cli.common import fail, info
+from agent_runner.config import Config, load_config
 
 
 def add_parser(sub, parent) -> None:
@@ -36,5 +44,139 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    """Stub — implementation lands in Task 3."""
+    cfg_path = Path(args.config) if hasattr(args, "config") else Path("agent-runner.toml")
+    cfg = load_config(cfg_path)
+    return _run_upgrade(cfg, target=args.target, cfg_path=cfg_path)
+
+
+def _pip_install(spec: str, *, force_reinstall: bool = False) -> subprocess.CompletedProcess:
+    """Invoke pip install with the given spec. Returns CompletedProcess (rc check by caller)."""
+    cmd = ["pip", "install", "--upgrade", spec]
+    if force_reinstall:
+        cmd.insert(2, "--force-reinstall")
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def _smoke_version() -> tuple[int, str]:
+    """Spawn fresh Python to read NEW agent_runner.__version__. Returns (rc, version_string).
+
+    Subprocess imports the on-disk agent_runner module, which is the freshly-installed
+    code (vs the upgrade command's own process which has the OLD module loaded).
+    """
+    r = subprocess.run(
+        [sys.executable, "-m", "agent_runner.cli", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0:
+        return r.returncode, r.stderr.strip()[:200]
+    m = re.match(r"agent-runner\s+(\S+)", r.stdout.strip())
+    if not m:
+        return 1, f"unparseable --version output: {r.stdout!r}"
+    return 0, m.group(1)
+
+
+def _smoke_peek(cfg_path: Path) -> tuple[int, str]:
+    """Spawn fresh Python to run `peek --json --config <path>`. Returns (rc, error_excerpt)."""
+    r = subprocess.run(
+        [sys.executable, "-m", "agent_runner.cli", "--config", str(cfg_path), "peek", "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0:
+        return r.returncode, r.stderr.strip()[:200]
+    return 0, ""
+
+
+def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
+    """Orchestrate the full upgrade flow.
+
+    Returns exit code (0 success, 1 user-recoverable, 2 critical).
+    """
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    from_version = __version__
+    t0 = time.monotonic()
+
+    # Step 2: stop
+    info("stopping service...")
+    t_stop = time.monotonic()
+    api.stop(cfg.runtime.work_dir)
+    info(f"stopped ({time.monotonic() - t_stop:.1f}s)")
+
+    # Step 3: pip install
+    spec = "cli-agent-runner" if target is None else f"cli-agent-runner=={target}"
+    info(f"installing {spec}...")
+    t_pip = time.monotonic()
+    pip_result = _pip_install(spec)
+    if pip_result.returncode != 0:
+        return fail(
+            f"pip install failed (rc={pip_result.returncode}): "
+            f"{pip_result.stderr.strip()[:200]}; "
+            f"service is stopped, run 'agent-runner start' to resume previous version"
+        )
+    info(f"installed ({time.monotonic() - t_pip:.1f}s)")
+
+    # Step 4: smoke (--version + peek)
+    info("smoke check (--version + peek)...")
+    rc_v, version_or_err = _smoke_version()
+    if rc_v != 0:
+        return _rollback(
+            cfg,
+            log_dir,
+            from_version,
+            attempted_version=target or "<unknown>",
+            failure_reason=version_or_err,
+            started_at=t0,
+            cfg_path=cfg_path,
+        )
+    to_version = version_or_err
+
+    rc_p, peek_err = _smoke_peek(cfg_path)
+    if rc_p != 0:
+        return _rollback(
+            cfg,
+            log_dir,
+            from_version,
+            attempted_version=to_version,
+            failure_reason=peek_err,
+            started_at=t0,
+            cfg_path=cfg_path,
+        )
+
+    info(f"smoke OK (now at {to_version})")
+
+    # Step 6: start
+    info("starting service...")
+    t_start = time.monotonic()
+    api.start(cfg.runtime.work_dir)
+    info(f"started ({time.monotonic() - t_start:.1f}s)")
+
+    # Step 7: emit success event
+    elapsed = time.monotonic() - t0
+    events.emit(
+        log_dir,
+        events.SERVICE_UPGRADED,
+        from_version=from_version,
+        to_version=to_version,
+        duration_s=elapsed,
+    )
+    info(f"upgraded {from_version} → {to_version} ({elapsed:.1f}s total)")
     return 0
+
+
+def _rollback(
+    cfg: Config,
+    log_dir: Path,
+    from_version: str,
+    *,
+    attempted_version: str,
+    failure_reason: str,
+    started_at: float,
+    cfg_path: Path,
+) -> int:
+    """Rollback flow — implementation lands in Task 4."""
+    raise NotImplementedError("rollback flow lands in Task 4")

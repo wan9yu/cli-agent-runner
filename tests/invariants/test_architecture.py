@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
@@ -64,11 +65,14 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
         if f.name in ("round_cmd.py", "serve_cmd.py"):
             continue
         text = f.read_text()
-        if (
-            "from agent_runner import api" not in text
-            and "from agent_runner.api" not in text
-            and "import agent_runner.api" not in text
-        ):
+        # Accept "from agent_runner import api" (standalone or merged with other names)
+        # and "from agent_runner.api" / "import agent_runner.api" import forms.
+        has_api_import = (
+            re.search(r"from agent_runner import [^#\n]*\bapi\b", text) is not None
+            or "from agent_runner.api" in text
+            or "import agent_runner.api" in text
+        )
+        if not has_api_import:
             offenders.append(f.name)
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
 
