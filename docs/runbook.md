@@ -92,6 +92,18 @@ serve as the index into deeper diagnostic logs:
 
 The events file is the index. The round log file is the body.
 
+### Plugin-mutation postmortem trail
+
+When a PreRoundHook mutates the agent's prompt, the audit trail is:
+
+| Event | What it tells you | Where to look next |
+|---|---|---|
+| `prompt_overwritten` | A registered PreRoundHook changed the prompt file | `hook` field names the culprit; full prompt content is at `cfg.prompt.file` (re-read after the round to see what shipped to the agent) |
+
+To pause this layer entirely (audit / debug): set `[runtime] disable_pre_round_hooks = true`.
+To disable a specific hook by name: `[plugins] disable = ["entry_point_name"]`.
+See `docs/architecture.md` § "Plugin injection: two paths" for the full mental model.
+
 ### Orphan stash recovery
 
 **Symptom:** `peek` shows `orphan_stash` field with a stash ref. The previous

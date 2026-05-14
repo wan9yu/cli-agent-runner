@@ -104,6 +104,40 @@ Backoff is 1s → 2s → 4s → ... → 30s. During the window each failed poll 
 exits 1; systemd restarts the process). The two-event scheme makes postmortem
 grep cleaner than a single event with a `final=true` flag.
 
+## Plugin injection: two paths
+
+agent-runner has TWO independent mechanisms for plugins to influence the agent's prompt.
+Operators sometimes conflate them. The flags are independent.
+
+### Path 1: round-context.json prepend (controlled by `[prompt] inject_context`)
+
+Before each round, the supervisor writes `round-context.json` to `{log_dir}/round-context.json`
+with phase, round_num, plugin-provided context fields (from ContextEnricher), and
+recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended
+to the agent's prompt file.
+
+To disable this path: `[prompt] inject_context = false`.
+
+### Path 2: PreRoundHook mutation (controlled by `[runtime] disable_pre_round_hooks`)
+
+Before each round, the supervisor invokes every registered PreRoundHook (from plugin
+entry_points in `agent_runner.pre_round_hooks` group). These hooks receive a HookContext
+and can read OR mutate `cfg.prompt.file` (or its contents directly).
+
+To disable this path: `[runtime] disable_pre_round_hooks = true`.
+
+When a PreRoundHook mutates the prompt content (sha256 changes), a `prompt_overwritten`
+event is emitted with `hook=<name>`, `old_hash`, `new_hash` — operator can grep this to
+audit plugin behavior.
+
+### The two flags are independent
+
+Setting `inject_context = false` does NOT disable PreRoundHooks. Setting
+`disable_pre_round_hooks = true` does NOT disable the round-context.json prepend.
+
+If you want neither injection: set both. If you want to disable a specific plugin
+hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"]`.
+
 ## Known event kinds
 
 <!-- gen:event-kinds -->

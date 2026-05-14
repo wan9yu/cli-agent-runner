@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-05-14
+
+### Acknowledgements
+
+Thanks to the Argus Gateway team for the deep v0.1.10 audit-session feedback
+(6 items, 3-round real-run testing on ARMv8 Pi). This release reframes those
+items into a coherent "Plugin & Operator Transparency" theme across three
+layers: transparency (see what plugins do), operator override (escape hatches
+for audit/debug), and diagnostic quality (errors point at the next debug step).
+
+### Added
+
+- New CLI flag `agent-runner round --phase NAME` — explicit phase override (audit, debug, multi-script orchestration). Does NOT mutate the internal rotation counter; subsequent default rounds resume rotation.
+- New TOML field `[plugins] disable = ["entry_point_name", ...]` — selectively disable plugin entry_points without uninstalling the package. Surfaced in `peek --json` under `plugins.disabled`.
+- New TOML field `[runtime] disable_pre_round_hooks = true` — temporary all-PreRoundHooks-off mode (audit/debug). Complements `[plugins] disable`'s per-name granularity.
+- New built-in event kind `prompt_overwritten` — emitted after each PreRoundHook that mutates `cfg.prompt.file` content. Payload: `hook` (name), `prompt_path`, `old_hash`, `new_hash` (sha256-prefixed). Hash-per-hook approach gives precise attribution; multiple mutating hooks per round → multiple events (chained).
+- New CLI flag `agent-runner monitor --mode {anomaly,narrate}` — `narrate` streams `events.jsonl` with one-line-per-event format (debug/audit visibility). Default `anomaly` preserves existing behavior. Local-only; `--host` + `narrate` rejected.
+- LockHeldError now carries holder info — PID, age (seconds), cmdline (first 80 chars) via sidecar file pattern. Diagnostic-only; tolerates missing/stale sidecar gracefully.
+
+### Changed
+
+- `peek --json` schema bumped `1.7` → `1.8` (additive: new `plugins.disabled` sub-key).
+- `Config.plugins` type refactored from free-form `dict[str, Any] | None` to typed `PluginsConfig` dataclass. `cfg.plugins.disable: list[str]` is first-class; unknown TOML keys land in `cfg.plugins.raw: dict[str, Any]` for forward-compat with plugin-author-defined `[plugins.*]` sub-keys.
+
+### Migration notes
+
+- `Config.plugins` type change is breaking for any caller reading the field as a dict (`cfg.plugins.get("foo")`). Plugin authors using `[plugins.argus_*]`-style keys: read them from `cfg.plugins.raw.get("argus_*")` instead.
+- `LockHeldError` message format changed (now includes holder info: `"another agent-runner is holding /path (held by PID N, age Ns, cmd: ...)"` or stale/missing variants). Operators grepping the exact format string need to update.
+- For Argus's P5 confusion: see new `docs/architecture.md` section "Plugin injection: two paths" — `inject_context` and `disable_pre_round_hooks` are INDEPENDENT flags. Setting one does not affect the other.
+- **Known limitation**: `[plugins] disable` removes named plugins from the hook / context-enricher / detector / event-kind registries, but does NOT remove a disabled plugin's owned VCS paths (the `register_plugin_owned_paths` registry has no name attribution today). Mostly inert. If this becomes a real issue, file a GitHub issue.
+
 ## [0.1.11] - 2026-05-13
 
 ### Acknowledgements
@@ -424,7 +455,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/wan9yu/cli-agent-runner/releases/tag/v0.1.9

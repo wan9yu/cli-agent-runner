@@ -79,6 +79,11 @@ Override in your `agent-runner.toml` if you ship a custom CLI.
 |---|---|---|---|
 | `list` | list[str] | (none → no phase rotation) | round N gets `phases[(N-1) % len(phases)]` |
 
+> **Manual override**: pass `--phase NAME` to `agent-runner round` to bypass
+> the rotation counter (audit, debug, multi-script orchestration). The internal
+> counter is unaffected — subsequent default rounds resume rotation. The name
+> must match one of the entries in `[phases].list`.
+
 ## Per-phase timeouts (0.1.9+)
 
 If your `[phases]` rotation has phases with different wall-clock budgets,
