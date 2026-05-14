@@ -156,6 +156,35 @@ def test_given_unknown_name_when_apply_plugin_disable_then_warns(
     assert "definitely_not_installed_xyz_unique_123" in warnings_text
 
 
+def test_given_serve_startup_hook_in_disable_list_when_apply_plugin_disable_then_pruned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[plugins] disable must filter _SERVE_STARTUP_HOOKS, just like other hook registries."""
+    from agent_runner import apply_plugin_disable, hooks
+
+    monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
+
+    class GoodHook:
+        name = "good_hook"
+
+        def __call__(self, cfg) -> None:
+            pass
+
+    class BadHook:
+        name = "bad_hook"
+
+        def __call__(self, cfg) -> None:
+            raise RuntimeError("would fail")
+
+    hooks.register_serve_startup_hook(GoodHook())
+    hooks.register_serve_startup_hook(BadHook())
+    assert [h.name for h in hooks.serve_startup_hooks()] == ["good_hook", "bad_hook"]
+
+    apply_plugin_disable(["bad_hook"])
+
+    assert [h.name for h in hooks.serve_startup_hooks()] == ["good_hook"]
+
+
 def test_given_disabled_plugin_names_when_called_then_returns_recent_list() -> None:
     """disabled_plugin_names() returns the names from the most recent apply_plugin_disable call."""
     from agent_runner import apply_plugin_disable, disabled_plugin_names, hooks

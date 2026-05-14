@@ -108,6 +108,9 @@ def apply_plugin_disable(names: list[str]) -> None:
     # Post-round hooks
     _prune_by_name(hooks._POST_ROUND_HOOKS, desired, found)
 
+    # Serve-startup hooks
+    _prune_by_name(hooks._SERVE_STARTUP_HOOKS, desired, found)
+
     # Plugin event kinds
     for name in list(events._PLUGIN_KINDS):
         if name in desired:
