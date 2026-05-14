@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-05-14
+
+### Acknowledgements
+
+Thanks to the Argus Gateway team — this release answers their imminent
+production-deployment requirement for upgrade-without-disruption. After
+confirming round duration (10-40 min) fits within graceful-stop tolerance,
+this release scopes to round-boundary upgrade UX (Level 1). Mid-round
+adoption (Level 2) was considered and explicitly deferred — the exit-code
+recovery problem makes it materially harder, and graceful stop covers the
+real production need.
+
+### Added
+
+- New CLI subcommand `agent-runner upgrade [--target VERSION]` — single-command upgrade flow: graceful stop → `pip install --upgrade cli-agent-runner[==<target>]` → smoke check the new binary (`--version` + `peek --json`) → start. `--target` defaults to PyPI latest; pass an explicit version to roll back: `agent-runner upgrade --target 0.1.12`.
+- New built-in event kind `service_upgraded` — emitted on successful upgrade. Payload: `from_version`, `to_version`, `duration_s`.
+- New built-in event kind `service_upgrade_rolled_back` — emitted when smoke check fails on the new version and the supervisor auto-rollbacks via `pip install --force-reinstall cli-agent-runner==<from_version>`. Payload: `attempted_version`, `restored_version`, `failure_reason` (first 200 chars), `duration_s`. Exit code 1.
+- New built-in event kind `service_upgrade_rollback_failed` — emitted in the worst case where rollback itself fails (rare). Service is left stopped; manual intervention required. Payload: `attempted_version`, `restore_target_version`, `failure_reason`. Exit code 2.
+
+### Migration notes
+
+- New CLI subcommand. No behavior change for existing CLI verbs.
+- `pip` is assumed to be on `PATH` for `agent-runner upgrade`. If absent or broken, the install step fails with a clear error and the service remains stopped — operator can run `agent-runner start` to resume the previous version.
+- Smoke step uses `subprocess.run([sys.executable, "-m", "agent_runner.cli", ...])` — it spawns a fresh Python process so it imports the freshly-installed code, not the old code already loaded in the upgrade command's own process. This is correctness-critical.
+
 ## [0.1.12] - 2026-05-14
 
 ### Acknowledgements
@@ -455,7 +480,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.9...v0.1.10

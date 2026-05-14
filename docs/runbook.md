@@ -31,6 +31,56 @@ agent-runner start
 > design; if systemd takes longer than `TimeoutStopSec`, consult the systemd
 > journal for the underlying reason.
 
+## Upgrading agent-runner
+
+### Recommended: single command
+
+```
+agent-runner upgrade [--target X.Y.Z] --config /path/to/agent-runner.toml
+```
+
+`--target` defaults to the latest version on PyPI. To pin a specific
+version (or roll back), pass `--target X.Y.Z`.
+
+### What it does
+
+1. Capture the currently-installed version via `agent_runner.__version__`
+2. Graceful stop (waits for the current round to finish)
+3. `pip install --upgrade cli-agent-runner[==<target>]`
+4. Smoke check the new binary in a fresh subprocess: `agent-runner --version`
+   + `agent-runner peek --json --config <path>`
+5. If smoke passes: start service. Emit `service_upgraded` event.
+6. If smoke fails: roll back to the previous version via
+   `pip install --force-reinstall cli-agent-runner==<previous>`, sanity-smoke,
+   start service, emit `service_upgrade_rolled_back` event. Exit code 1.
+7. If rollback itself fails (rare): emit `service_upgrade_rollback_failed`
+   event. Service stopped. Exit code 2. Manual intervention required.
+
+### Manual rollback
+
+`agent-runner upgrade --target <previous-version>` is the supported way to
+roll back — the same command works in both directions.
+
+### Failure modes
+
+| Symptom | Recovery |
+|---|---|
+| Stop is stuck | `agent-runner kill` → manual `pip install --upgrade ...` → `agent-runner start` |
+| pip install fails (network / no PyPI) | Service is left stopped. Run `agent-runner start` to resume the previous version. Retry upgrade later. |
+| Smoke fails, rollback succeeds | Service running on previous version. Investigate via `journalctl --user -u agent-runner@<project>` and the `service_upgrade_rolled_back` event's `failure_reason` field. File a bug report. |
+| Smoke fails, rollback ALSO fails (rare) | Service stopped. `service_upgrade_rollback_failed` event written (best-effort). Manually: `pip install --force-reinstall cli-agent-runner==<known-good>` then `systemctl restart agent-runner@<project>`. |
+
+### Postmortem trail
+
+Grep events.jsonl for upgrade history:
+```
+grep -E "service_upgrad" {log_dir}/events-*.jsonl | jq .
+```
+Three event kinds are interesting:
+- `service_upgraded` — clean upgrade
+- `service_upgrade_rolled_back` — attempted upgrade reverted (safety net fired)
+- `service_upgrade_rollback_failed` — critical: needs manual intervention
+
 ## Troubleshooting
 
 ### OAuth / auth failures (agent rejects requests)
