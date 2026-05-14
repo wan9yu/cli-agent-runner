@@ -44,11 +44,12 @@ def test_given_target_when_atomic_relink_then_symlink_replaced(tmp_path: Path) -
 
 def test_given_many_round_files_when_prune_then_only_recent_kept(tmp_path: Path) -> None:
     """prune_old_round_logs keeps most-recent N by mtime."""
-    import time as _time
+    import os
 
     for i in range(1, 6):
-        (tmp_path / f"round-{i}.log").write_text(f"r{i}")
-        _time.sleep(0.01)
+        path = tmp_path / f"round-{i}.log"
+        path.write_text(f"r{i}")
+        os.utime(path, (1000000.0 + i, 1000000.0 + i))
 
     prune_old_round_logs(tmp_path, retention=2)
 
@@ -62,11 +63,12 @@ def test_given_many_round_files_when_prune_then_only_recent_kept(tmp_path: Path)
 
 def test_given_symlink_when_prune_then_symlink_excluded(tmp_path: Path) -> None:
     """The round-current.log symlink is not counted toward retention nor pruned."""
-    import time as _time
+    import os
 
     for i in range(1, 4):
-        (tmp_path / f"round-{i}.log").write_text(f"r{i}")
-        _time.sleep(0.01)
+        path = tmp_path / f"round-{i}.log"
+        path.write_text(f"r{i}")
+        os.utime(path, (1000000.0 + i, 1000000.0 + i))
     # Create symlink to round-3 (newest)
     atomic_relink(tmp_path / ROUND_CURRENT_LINK, tmp_path / "round-3.log")
 

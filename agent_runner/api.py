@@ -526,6 +526,22 @@ def read_round_num(log_dir: Path) -> int:
     return s.round_num if s is not None else 0
 
 
+def read_sentinel_content(log_dir: Path) -> str | None:
+    """Return sentinel content (capped 200) or None if absent.
+
+    Used by both ``check_self_terminated_sentinel`` (which emits an event) and
+    HTTP progress rendering (which displays the reason). Identical read logic
+    with ``errors='replace'`` for non-UTF-8 robustness.
+    """
+    sentinel = log_dir / ".agent-done"
+    if not sentinel.exists():
+        return None
+    try:
+        return sentinel.read_text(encoding="utf-8", errors="replace")[:200]
+    except OSError:
+        return ""
+
+
 def check_self_terminated_sentinel(log_dir: Path) -> bool:
     """Check for ``log_dir/.agent-done`` and emit ``agent_self_terminated`` if present.
 
@@ -535,14 +551,10 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
     """
     from agent_runner import events
 
-    sentinel = log_dir / ".agent-done"
-    if not sentinel.exists():
+    reason = read_sentinel_content(log_dir)
+    if reason is None:
         return False
-    try:
-        reason = sentinel.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        reason = ""
-    events.emit(log_dir, events.SELF_TERMINATED, reason=reason[:200])
+    events.emit(log_dir, events.SELF_TERMINATED, reason=reason)
     return True
 
 

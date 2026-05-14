@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._test_helpers import make_toml
+from tests._test_helpers import FakeArgs, make_toml
 
 
 def test_given_round_runs_when_serve_then_round_log_file_created(
@@ -29,11 +29,7 @@ def test_given_round_runs_when_serve_then_round_log_file_created(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
 
     round_log = log_dir / "round-1.log"
     assert round_log.exists()
@@ -53,11 +49,7 @@ def test_given_round_runs_when_serve_then_current_symlink_points_to_active(
 
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
 
     symlink = log_dir / "round-current.log"
     assert symlink.is_symlink()
@@ -80,11 +72,7 @@ def test_given_existing_round_num_when_serve_then_log_filename_matches(
 
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
 
     assert (log_dir / "round-6.log").exists()
     assert not (log_dir / "round-1.log").exists()
@@ -94,20 +82,19 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Old round-<N>.log files beyond round_log_retention pruned at serve start."""
+    import os
     import subprocess
-    import time as _time
 
     from agent_runner.cli import serve_cmd
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
 
-    # Create 5 old round logs with increasing mtimes
+    # Create 5 old round logs with explicit mtimes — deterministic, no sleep needed
     for i in range(1, 6):
         path = log_dir / f"round-{i}.log"
         path.write_text(f"old round {i}")
-        # Stagger mtimes so the sort is deterministic
-        _time.sleep(0.01)
+        os.utime(path, (1000000.0 + i, 1000000.0 + i))
 
     prompt_file = tmp_path / "prompt.md"
     prompt_file.write_text("p")
@@ -126,11 +113,7 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
 
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
 
     # After serve startup pruning: retention=2 means 2 most-recent old files kept (rounds 4, 5)
     # rounds 1, 2, 3 should be pruned

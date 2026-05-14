@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 import json
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ def serve_http_progress(log_dir: Path, narrative_file: Path | None, *, port: int
     return 0
 
 
-def build_server(log_dir: Path, narrative_file: Path | None, *, port: int) -> HTTPServer:
+def build_server(log_dir: Path, narrative_file: Path | None, *, port: int) -> ThreadingHTTPServer:
     """Build and return an HTTPServer bound to 127.0.0.1:port.
 
     Factored out for testability — tests bind to port=0 and read .server_address.
@@ -77,7 +77,7 @@ def build_server(log_dir: Path, narrative_file: Path | None, *, port: int) -> HT
             self.end_headers()
             self.wfile.write(body)
 
-    return HTTPServer(("127.0.0.1", port), _Handler)
+    return ThreadingHTTPServer(("127.0.0.1", port), _Handler)
 
 
 def _build_state(log_dir: Path, narrative_file: Path) -> dict[str, Any]:
@@ -110,18 +110,20 @@ def _round_state(log_dir: Path) -> dict[str, Any]:
 
 def _read_tail(path: Path, *, max_lines: int) -> str:
     """Return last ``max_lines`` lines of ``path``, or empty string if missing."""
+    from collections import deque
+
     try:
         with path.open("r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
+            lines = deque(f, maxlen=max_lines)
     except (FileNotFoundError, OSError):
         return ""
-    return "".join(lines[-max_lines:])
+    return "".join(lines)
 
 
 def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
     """Section 3: last ``max_count`` events from events-*.jsonl files."""
     events: list[dict[str, Any]] = []
-    for path in sorted(log_dir.glob("events-*.jsonl")):
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-3:]:
         try:
             with path.open("r", encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -139,14 +141,10 @@ def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
 
 def _self_terminated_state(log_dir: Path) -> dict[str, Any]:
     """Section 5: ``.agent-done`` flag presence + reason."""
-    sentinel = log_dir / ".agent-done"
-    if not sentinel.exists():
-        return {"present": False, "reason": None}
-    try:
-        reason = sentinel.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        reason = ""
-    return {"present": True, "reason": reason[:200]}
+    from agent_runner.api import read_sentinel_content
+
+    reason = read_sentinel_content(log_dir)
+    return {"present": reason is not None, "reason": reason}
 
 
 def _render_html(state: dict[str, Any]) -> str:
@@ -185,7 +183,11 @@ last_duration_s: {html.escape(str(rs.get("last_duration_s")))}
 
 
 def _render_event_line(evt: dict[str, Any]) -> str:
-    """Format an event dict as one human-readable line for HTML <pre>."""
+    """Format an event dict as one human-readable line for HTML <pre>.
+
+    Intentionally separate from ``api._format_narrate_line``: pad width differs
+    (25 vs 20) and this version does not rename ``round_num`` → ``round``.
+    """
     ts = evt.get("ts", "")
     time_part = ts[11:23] if len(ts) > 23 else ts
     event_name = evt.get("event", "?")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._test_helpers import make_toml
+from tests._test_helpers import FakeArgs, make_toml
 
 
 def test_given_stale_sentinel_when_serve_starts_then_cleaned(
@@ -24,11 +24,7 @@ def test_given_stale_sentinel_when_serve_starts_then_cleaned(
 
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
     assert not sentinel.exists()
 
 
@@ -56,11 +52,7 @@ def test_given_sentinel_present_pre_round_when_serve_then_break_loop_exit_0(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
     assert call_count[0] == 1  # second round NOT invoked
 
@@ -94,11 +86,7 @@ def test_given_empty_sentinel_when_serve_then_still_stops_with_empty_reason(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -132,11 +120,7 @@ def test_given_long_reason_when_serve_then_event_payload_capped_200(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
     payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
@@ -169,11 +153,7 @@ def test_given_non_utf8_sentinel_when_serve_then_handled_with_replace(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -202,9 +182,5 @@ def test_given_serve_running_round_when_subprocess_invoked_then_env_has_log_dir(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    serve_cmd.cmd(FakeArgs())
+    serve_cmd.cmd(FakeArgs(cfg_path))
     assert captured_env.get("AGENT_RUNNER_LOG_DIR") == str(log_dir)

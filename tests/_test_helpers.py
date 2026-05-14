@@ -14,6 +14,25 @@ from typing import Any
 import pytest
 
 
+class FakeArgs:
+    """Test stub mimicking argparse.Namespace for serve/monitor CLI tests."""
+
+    def __init__(
+        self,
+        config: Path,
+        *,
+        once: bool = True,
+        port: int = 8765,
+        mode: str = "anomaly",
+        host: str | None = None,
+    ):
+        self.config = config
+        self.once = once
+        self.port = port
+        self.mode = mode
+        self.host = host
+
+
 def make_toml(tmp_path: Path) -> Path:
     """Write a minimal agent-runner.toml and return its path.
 
