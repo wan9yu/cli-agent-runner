@@ -513,6 +513,19 @@ def _tail_events_jsonl(
             _time.sleep(poll_interval_s)
 
 
+def read_round_num(log_dir: Path) -> int:
+    """Return the most recent round_num from status.json (or 0 if missing/corrupt).
+
+    Used by ``agent-runner serve`` to coordinate per-round log filenames with
+    the round_num that the round subprocess itself writes to events.jsonl —
+    ensures ``round-<N>.log`` file matches the ``round_num`` field in events.
+    """
+    from agent_runner.context_store import read_status
+
+    s = read_status(log_dir)
+    return s.round_num if s is not None else 0
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 

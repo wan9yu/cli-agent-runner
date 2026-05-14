@@ -24,6 +24,7 @@ ALLOWED_SERVE_IMPORTS = {
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
+    ("agent_runner.api", {"read_round_num"}),
     ("agent_runner.cli.common", {"cfg_from_args"}),
     ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
 ]
