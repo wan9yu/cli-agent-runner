@@ -21,16 +21,20 @@ Public API:
     / register_serve_startup_hook
   * pre_round_hooks() / context_enrichers() / post_round_hooks()
     / serve_startup_hooks()
+  * run_serve_startup_hooks()   — orchestrates serve-startup hook execution with
+                                  structured stderr + best-effort event emission
   * plugin_context_enrichers()  — sorted list of registered enricher names
                                   (used by ``peek --json`` plugins namespace)
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from agent_runner import events
 from agent_runner._registry import ensure_unique
 
 _HEAD_BYTES = 1024
@@ -155,6 +159,36 @@ def serve_startup_hooks() -> list[ServeStartupHook]:
 def plugin_context_enrichers() -> list[str]:
     """Sorted list of registered enricher names — used by peek --json."""
     return sorted(e.name for e in _CONTEXT_ENRICHERS)
+
+
+def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
+    """Run all serve_startup_hooks. Returns True on success, False on abort.
+
+    On first hook failure: print structured stderr, best-effort emit
+    ``serve_startup_hook_failed`` event, return False (caller exits 1).
+    """
+    for hook in serve_startup_hooks():
+        try:
+            hook(cfg)
+        except Exception as e:  # noqa: BLE001 — hook is plugin contract; any failure aborts serve
+            exc_type = type(e).__name__
+            exc_msg = str(e)[:200]
+            print(
+                f"agent-runner: serve_startup_hook {hook.name} failed: {exc_type}: {exc_msg}",
+                file=sys.stderr,
+            )
+            try:
+                events.emit(
+                    log_dir,
+                    events.SERVE_STARTUP_HOOK_FAILED,
+                    hook=hook.name,
+                    exc_type=exc_type,
+                    exc_msg=exc_msg,
+                )
+            except Exception:  # noqa: BLE001 — best-effort emit; log_dir may be unwritable
+                pass
+            return False
+    return True
 
 
 def _summarize_error(exc: BaseException, tb: str) -> dict[str, str]:

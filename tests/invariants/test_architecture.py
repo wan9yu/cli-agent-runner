@@ -23,7 +23,7 @@ ALLOWED_SERVE_IMPORTS = {
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
-    ("agent_runner", {"events", "hooks"}),
+    ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     ("agent_runner.cli.common", {"cfg_from_args"}),
     ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
 ]
