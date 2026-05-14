@@ -47,7 +47,13 @@ def _prune_old_round_logs(log_dir: Path, retention: int) -> None:
 
 
 def _next_round_num(log_dir: Path) -> int:
-    """Return the next round number, avoiding reuse of any existing log file numbers."""
+    """Return the next round number, avoiding reuse of any existing log file numbers.
+
+    Takes ``max(read_round_num, max_log_file_num) + 1``. Under normal operation
+    these agree. The file-system fallback handles the case where ``status.json``
+    has been deleted but old ``round-*.log`` files remain — the counter skips
+    forward instead of silently overwriting a numbered log.
+    """
     status_num = read_round_num(log_dir)
     file_nums = []
     for p in log_dir.glob("round-*.log"):
