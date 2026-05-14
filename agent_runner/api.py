@@ -512,6 +512,43 @@ def _tail_events_jsonl(
             _time.sleep(poll_interval_s)
 
 
+def assemble_prompt(cfg, phase, *, context=None):
+    """Assemble the prompt for a given round.
+
+    Resolves per-phase prompt.files override (via PhaseOverride.prompt_files); falls
+    back to cfg.prompt.files OR cfg.prompt.file (back-compat single-file). Applies
+    concat_separator, optionally strips first-file YAML frontmatter, injects context
+    block per cfg.prompt.inject_context + context_injection_mode.
+
+    Returns the assembled prompt text passed to the agent subprocess.
+    """
+    from agent_runner import prompt_loader
+
+    # Determine files list (per-phase override → global files → single-file fallback)
+    files: list[Path]
+    override = cfg.phases.overrides.get(phase) if phase is not None else None
+    if override is not None and override.prompt_files is not None:
+        files = override.prompt_files
+    elif cfg.prompt.files:
+        files = cfg.prompt.files
+    elif cfg.prompt.file is not None:
+        files = [cfg.prompt.file]
+    else:
+        raise ValueError("no prompt files configured (set prompt.files or prompt.file)")
+
+    # Resolve relative paths against work_dir
+    resolved = [f if f.is_absolute() else (cfg.runtime.work_dir / f) for f in files]
+
+    return prompt_loader.assemble_prompt(
+        resolved,
+        context=context,
+        inject_context=cfg.prompt.inject_context,
+        mode=cfg.prompt.context_injection_mode,
+        concat_separator=cfg.prompt.concat_separator,
+        strip_first_frontmatter=cfg.prompt.strip_yaml_frontmatter,
+    )
+
+
 def resolve_runtime_for_phase(cfg, phase_name):
     """Return effective RuntimeConfig for the given phase.
 

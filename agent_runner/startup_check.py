@@ -10,7 +10,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agent_runner.config import Config
-from agent_runner.prompt_loader import assemble_prompt
 
 ESCAPE_HATCH_ENV = "AGENT_RUNNER_SKIP_STARTUP_CHECK"
 
@@ -93,15 +92,10 @@ def _check_prompt_file(cfg: Config) -> CheckResult:
 
 
 def _check_prompt_smoke(cfg: Config) -> CheckResult:
-    prompt_source = cfg.prompt.file if cfg.prompt.file is not None else cfg.prompt.files[0]
-    if not prompt_source.exists():
-        return CheckResult(
-            "prompt_smoke_passes",
-            False,
-            "prompt file missing — see prompt_file_exists",
-        )
+    from agent_runner.api import assemble_prompt as _api_assemble_prompt
+
     try:
-        prompt = assemble_prompt(prompt_source, context=None, inject_context=False)
+        prompt = _api_assemble_prompt(cfg, phase=None, context=None)
     except Exception as e:
         return CheckResult("prompt_smoke_passes", False, f"assembly failed: {e}")
     if not prompt:

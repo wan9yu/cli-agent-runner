@@ -21,7 +21,6 @@ from agent_runner import (
     events,
     hooks,
     metrics,
-    prompt_loader,
     startup_check,
     vcs_state,
 )
@@ -217,6 +216,13 @@ def _stitch_enricher_slices(
     return out
 
 
+def _hook_prompt_file(cfg) -> Path | None:
+    """Return the 'primary' prompt file for HookContext — first file or back-compat single."""
+    if cfg.prompt.files:
+        return cfg.prompt.files[0]
+    return cfg.prompt.file
+
+
 def _run_pre_round_hooks(
     hook_ctx: hooks.HookContext,
     log_dir: Path,
@@ -358,7 +364,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         hook_ctx,
         log_dir,
         disabled=resolved_rt.disable_pre_round_hooks,
-        prompt_file=cfg.prompt.file,
+        prompt_file=_hook_prompt_file(cfg),
     )
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
 
@@ -378,12 +384,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     rounds_dir.mkdir(exist_ok=True)
     log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
 
-    prompt = prompt_loader.assemble_prompt(
-        cfg.prompt.file,
-        context=enriched_ctx,
-        inject_context=cfg.prompt.inject_context,
-        mode=cfg.prompt.context_injection_mode,
-    )
+    from agent_runner.api import assemble_prompt as _api_assemble_prompt
+
+    prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 
     events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=timeout_s)
     result = agent_runtime.run(
