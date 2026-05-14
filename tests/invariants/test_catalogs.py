@@ -110,23 +110,21 @@ def test_given_prompt_overwritten_kind_when_registered_then_in_known_event_kinds
     assert "prompt_overwritten" in KNOWN_EVENT_KINDS
 
 
-def test_given_service_upgraded_kind_when_registered_then_in_known_event_kinds() -> None:
+def test_given_upgraded_kind_when_registered_then_in_known_event_kinds() -> None:
     """Belt-and-suspenders: service_upgraded must be in KNOWN_EVENT_KINDS."""
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "service_upgraded" in KNOWN_EVENT_KINDS
 
 
-def test_given_service_upgrade_rolled_back_kind_when_registered_then_in_known_event_kinds() -> None:
+def test_given_rolled_back_kind_when_registered_then_in_known_event_kinds() -> None:
     """Belt-and-suspenders: service_upgrade_rolled_back must be in KNOWN_EVENT_KINDS."""
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "service_upgrade_rolled_back" in KNOWN_EVENT_KINDS
 
 
-def test_given_service_upgrade_rollback_failed_kind_when_registered_then_in_known_event_kinds() -> (
-    None
-):  # noqa: E501
+def test_given_rollback_failed_kind_when_registered_then_in_known_event_kinds() -> None:
     """Belt-and-suspenders: service_upgrade_rollback_failed must be in KNOWN_EVENT_KINDS."""
     from agent_runner.events import KNOWN_EVENT_KINDS
 
