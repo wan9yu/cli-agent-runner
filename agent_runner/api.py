@@ -353,7 +353,6 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
         round_timeout_s=cfg.runtime.round_timeout_s,
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,
-        round_timeout_per_phase=cfg.runtime.round_timeout_per_phase,
     )
     if not monitor._PLUGIN_DETECTORS:
         return builtin  # skip ProjectState assembly when no plugins to feed

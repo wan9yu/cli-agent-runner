@@ -148,7 +148,6 @@ def _unit_cfg(
     tmp_path: Path,
     *,
     round_timeout_s: int = 1800,
-    round_timeout_per_phase: dict[str, int] | None = None,
     phases: list[str] | None = None,
 ) -> Config:
     """Minimal Config for unit-level helper tests (no sandbox/script setup)."""
@@ -158,7 +157,6 @@ def _unit_cfg(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
             round_timeout_s=round_timeout_s,
-            round_timeout_per_phase=round_timeout_per_phase or {},
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -166,35 +164,16 @@ def _unit_cfg(
     )
 
 
-def test_given_phase_in_per_phase_dict_when_lookup_then_returns_phase_value(
-    tmp_path: Path,
-) -> None:
-    """_round_timeout_for returns the phase-specific value when present."""
-    cfg = _unit_cfg(
-        tmp_path,
-        round_timeout_per_phase={"dev": 3600, "qa": 1200},
-        phases=["dev", "qa"],
-    )
-    assert _round_timeout_for(cfg, "dev") == 3600
-    assert _round_timeout_for(cfg, "qa") == 1200
-
-
-def test_given_phase_not_in_per_phase_dict_when_lookup_then_returns_global(
-    tmp_path: Path,
-) -> None:
-    """Phase not in dict → fall back to global runtime.round_timeout_s."""
-    cfg = _unit_cfg(
-        tmp_path,
-        round_timeout_per_phase={"dev": 3600},
-        phases=["dev", "qa"],
-    )
-    assert _round_timeout_for(cfg, "qa") == 1800
-
-
 def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> None:
     """phase=None (no phases configured) → global timeout."""
     cfg = _unit_cfg(tmp_path)
     assert _round_timeout_for(cfg, None) == 1800
+
+
+def test_given_phase_name_when_lookup_then_returns_global(tmp_path: Path) -> None:
+    """Any phase → global timeout (per-phase resolution moves to Task 3)."""
+    cfg = _unit_cfg(tmp_path, round_timeout_s=3600, phases=["dev"])
+    assert _round_timeout_for(cfg, "dev") == 3600
 
 
 def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_blip(

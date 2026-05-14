@@ -131,14 +131,9 @@ def _phase_for(
 
 
 def _round_timeout_for(cfg: Config, phase: str | None) -> int:
-    """Per-phase override of round_timeout_s; falls back to global default.
-
-    Phase=None (no phases configured) → global. Phase not in override dict →
-    global. Phase in override dict → that phase's configured timeout.
-    """
-    if phase is None:
-        return cfg.runtime.round_timeout_s
-    return cfg.runtime.round_timeout_per_phase.get(phase, cfg.runtime.round_timeout_s)
+    """Return per-round timeout. Per-phase resolution moves to api.resolve_runtime_for_phase
+    in Task 3; this function will be replaced then."""
+    return cfg.runtime.round_timeout_s
 
 
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:

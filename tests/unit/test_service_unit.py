@@ -21,7 +21,6 @@ def _cfg(
     tmp_path: Path,
     *,
     round_timeout_s: int = 600,
-    round_timeout_per_phase: dict[str, int] | None = None,
     phases: list[str] | None = None,
 ) -> Config:
     return Config(
@@ -30,7 +29,6 @@ def _cfg(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
             round_timeout_s=round_timeout_s,
-            round_timeout_per_phase=round_timeout_per_phase or {},
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -80,21 +78,8 @@ def test_given_monitor_unit_when_rendered_then_runs_monitor_command(tmp_path: Pa
     assert str(cfg.runtime.work_dir) in body
 
 
-def test_given_per_phase_timeouts_when_render_then_timeout_uses_max(tmp_path: Path) -> None:
-    """TimeoutStopSec uses max(global, per-phase) so systemctl stop doesn't
-    kill a legitimate long phase round."""
-    cfg = _cfg(
-        tmp_path,
-        round_timeout_s=1800,
-        round_timeout_per_phase={"dev": 3600, "qa": 1200},
-        phases=["dev", "qa"],
-    )
-    unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
-    assert "TimeoutStopSec=3660" in unit  # max(1800, 3600, 1200) + 60
-
-
-def test_given_no_per_phase_when_render_then_timeout_uses_global(tmp_path: Path) -> None:
-    """Empty per_phase preserves today's TimeoutStopSec = round_timeout_s + grace."""
+def test_given_round_timeout_when_render_then_timeout_includes_grace(tmp_path: Path) -> None:
+    """TimeoutStopSec = round_timeout_s + 60 grace."""
     cfg = _cfg(tmp_path, round_timeout_s=1800)
     unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
     assert "TimeoutStopSec=1860" in unit  # 1800 + 60

@@ -24,7 +24,6 @@ class RuntimeConfig:
     log_dir: Path
     round_timeout_s: int = 1800
     restart_delay_s: int = 3
-    round_timeout_per_phase: dict[str, int] = field(default_factory=dict)
     disable_pre_round_hooks: bool = False
     round_log_retention: int = 100
     narrative_file: Path | None = None
@@ -171,22 +170,6 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
     return v
 
 
-def _validate_round_timeout_per_phase_keys(
-    per_phase: dict[str, int], phases: list[str] | None
-) -> None:
-    """All keys must appear in [phases] list (typo catcher)."""
-    if not per_phase:
-        return
-    if phases is None:
-        raise ValueError("runtime.round_timeout_per_phase requires [phases] list to be defined")
-    unknown = set(per_phase) - set(phases)
-    if unknown:
-        raise ValueError(
-            f"runtime.round_timeout_per_phase keys not in phases list: "
-            f"{sorted(unknown)}; available phases: {phases}"
-        )
-
-
 _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
     {
         "round_timeout_s",
@@ -275,12 +258,11 @@ def load_config(toml_path: Path) -> Config:
     phases_cfg = PhasesConfig(list=phases_list, overrides=phases_overrides)
 
     runtime_d = raw.get("runtime", {})
-    per_phase_raw = runtime_d.get("round_timeout_per_phase", {})
-    per_phase: dict[str, int] = {
-        str(k): _require_positive_int(v, field=f"runtime.round_timeout_per_phase[{str(k)!r}]")
-        for k, v in per_phase_raw.items()
-    }
-    _validate_round_timeout_per_phase_keys(per_phase, phases_list)
+    if "round_timeout_per_phase" in runtime_d:
+        raise ValueError(
+            "runtime.round_timeout_per_phase removed in 0.1.16; "
+            "use [phases.<name>] round_timeout_s = X — see docs/migrations/0.1.16.md"
+        )
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
@@ -291,7 +273,6 @@ def load_config(toml_path: Path) -> Config:
         restart_delay_s=_require_positive_int(
             runtime_d.get("restart_delay_s", 3), field="runtime.restart_delay_s"
         ),
-        round_timeout_per_phase=per_phase,
         disable_pre_round_hooks=_require_bool(
             runtime_d.get("disable_pre_round_hooks", False),
             field="runtime.disable_pre_round_hooks",

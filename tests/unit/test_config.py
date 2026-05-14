@@ -51,7 +51,6 @@ file = "./prompts/main.md"
     assert cfg.phases.list is None
     assert cfg.phases.overrides == {}
     assert cfg.vcs.orphan_action == "stash"
-    assert cfg.runtime.round_timeout_per_phase == {}
 
 
 def test_given_phases_in_toml_when_loaded_then_phases_list_populated(
@@ -453,182 +452,44 @@ file = "prompts/main.md"
     assert cfg.monitor.auth_fail_hint == ""
 
 
-def test_given_per_phase_timeouts_when_loaded_then_dict_populated(
+def test_given_round_timeout_per_phase_dict_when_loaded_then_config_error_with_migration_hint(
     tmp_path: Path,
 ) -> None:
-    """0.1.9: [runtime.round_timeout_per_phase] parsed to dict[str, int]."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
+    """Old runtime.round_timeout_per_phase = {...} syntax → ConfigError with migration path."""
+    import pytest
 
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
+    from agent_runner.config import load_config
 
-[runtime.round_timeout_per_phase]
-dev = 3600
-qa = 1200
-product = 1200
-
-[prompt]
-file = "prompts/main.md"
-
-[phases]
-list = ["dev", "qa", "product"]
-""",
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "round_timeout_per_phase = { dev = 3600, qa = 900 }\n"
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[phases]\n"
+        'list = ["dev", "qa"]\n'
     )
-    cfg = load_config(toml)
-    assert cfg.runtime.round_timeout_per_phase == {
-        "dev": 3600,
-        "qa": 1200,
-        "product": 1200,
-    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime\.round_timeout_per_phase.*removed in 0\.1\.16.*\[phases\.<name>\]",
+    ):
+        load_config(tmp_path / "agent-runner.toml")
 
 
-def test_given_no_per_phase_block_when_loaded_then_empty_dict(tmp_path: Path) -> None:
-    """0.1.9: absent block -> empty dict default; zero behavior change."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[prompt]
-file = "prompts/main.md"
-""",
-    )
-    cfg = load_config(toml)
-    assert cfg.runtime.round_timeout_per_phase == {}
+def test_given_runtime_config_then_no_round_timeout_per_phase_field() -> None:
+    """RuntimeConfig dataclass no longer has round_timeout_per_phase field."""
+    import dataclasses
 
+    from agent_runner.config import RuntimeConfig
 
-def test_given_per_phase_typo_key_when_loaded_then_raises_value_error(
-    tmp_path: Path,
-) -> None:
-    """0.1.9: key not in phases.list -> ValueError naming the offender."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[runtime.round_timeout_per_phase]
-foo = 600
-[prompt]
-file = "prompts/main.md"
-[phases]
-list = ["dev", "qa"]
-""",
-    )
-    with pytest.raises(ValueError, match="foo"):
-        load_config(toml)
-
-
-def test_given_per_phase_non_positive_value_when_loaded_then_raises(
-    tmp_path: Path,
-) -> None:
-    """0.1.9: zero or negative timeout -> ValueError."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[runtime.round_timeout_per_phase]
-dev = 0
-[prompt]
-file = "prompts/main.md"
-[phases]
-list = ["dev"]
-""",
-    )
-    with pytest.raises(ValueError, match="positive"):
-        load_config(toml)
-
-
-def test_given_per_phase_without_phases_list_when_loaded_then_raises(
-    tmp_path: Path,
-) -> None:
-    """0.1.9: non-empty per_phase + missing [phases] list -> ValueError."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[runtime.round_timeout_per_phase]
-dev = 1800
-[prompt]
-file = "prompts/main.md"
-""",
-    )
-    with pytest.raises(ValueError, match="phases"):
-        load_config(toml)
-
-
-def test_given_per_phase_bool_value_when_loaded_then_raises_value_error(
-    tmp_path: Path,
-) -> None:
-    """0.1.9: bool values rejected (bool is a subclass of int in Python but
-    'dev = true' as a timeout is almost certainly a typo)."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[runtime.round_timeout_per_phase]
-dev = true
-[prompt]
-file = "prompts/main.md"
-[phases]
-list = ["dev"]
-""",
-    )
-    with pytest.raises(ValueError, match="must be an integer"):
-        load_config(toml)
-
-
-def test_given_per_phase_float_value_when_loaded_then_raises_value_error(
-    tmp_path: Path,
-) -> None:
-    """0.1.9: float values rejected to prevent silent truncation."""
-    toml = _write_toml(
-        tmp_path,
-        """
-[agent]
-command = ["my-agent"]
-prompt_arg_template = ["{prompt}"]
-[runtime]
-work_dir = "."
-log_dir = "/tmp/logs"
-[runtime.round_timeout_per_phase]
-dev = 1.5
-[prompt]
-file = "prompts/main.md"
-[phases]
-list = ["dev"]
-""",
-    )
-    with pytest.raises(ValueError, match="must be an integer"):
-        load_config(toml)
+    field_names = {f.name for f in dataclasses.fields(RuntimeConfig)}
+    assert "round_timeout_per_phase" not in field_names
 
 
 def test_given_round_timeout_s_bool_when_loaded_then_raises_value_error(
