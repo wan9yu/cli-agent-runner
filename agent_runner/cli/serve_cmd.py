@@ -12,6 +12,7 @@ import subprocess  # noqa: TID251
 import sys
 import time
 
+from agent_runner.api import check_self_terminated_sentinel
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile, send_signal_to_pid
@@ -31,6 +32,9 @@ def cmd(args) -> int:
     if not run_serve_startup_hooks(cfg, log_dir):
         return 1
 
+    # Clean stale sentinel from any previous run so we don't immediately stop.
+    (log_dir / ".agent-done").unlink(missing_ok=True)
+
     pid_file = PIDFile(log_dir / "serve.pid")
     pid_file.write(os.getpid())
     stop = {"requested": False}
@@ -49,10 +53,15 @@ def cmd(args) -> int:
     signal.signal(signal.SIGINT, graceful)
     signal.signal(signal.SIGUSR1, cancel)
 
+    round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
+
     try:
         while not stop["requested"]:
+            if check_self_terminated_sentinel(log_dir):
+                break
             r = subprocess.run(
                 [sys.executable, "-m", "agent_runner.cli", "--config", str(args.config), "round"],
+                env=round_env,
             )
             if args.once or stop["requested"]:
                 break

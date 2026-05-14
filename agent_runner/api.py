@@ -526,6 +526,26 @@ def read_round_num(log_dir: Path) -> int:
     return s.round_num if s is not None else 0
 
 
+def check_self_terminated_sentinel(log_dir: Path) -> bool:
+    """Check for ``log_dir/.agent-done`` and emit ``agent_self_terminated`` if present.
+
+    Returns True if sentinel was found and event emitted (caller should stop),
+    False otherwise. Reason text is read with errors='replace' for non-UTF-8
+    robustness and truncated to 200 chars in the event payload.
+    """
+    from agent_runner import events
+
+    sentinel = log_dir / ".agent-done"
+    if not sentinel.exists():
+        return False
+    try:
+        reason = sentinel.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        reason = ""
+    events.emit(log_dir, events.SELF_TERMINATED, reason=reason[:200])
+    return True
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 
