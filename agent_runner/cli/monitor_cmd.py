@@ -31,21 +31,25 @@ def add_parser(sub, parent) -> None:
     )
     p.add_argument(
         "--mode",
-        choices=["anomaly", "narrate"],
+        choices=["anomaly", "narrate", "events"],
         default="anomaly",
-        help="anomaly (default): alert-only; narrate: live one-line-per-event stream (local only)",
+        help=(
+            "anomaly (default): alert-only; narrate: human-readable event stream;"
+            " events: JSONL event stream"
+        ),
     )
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
     mode = getattr(args, "mode", "anomaly")
-    if mode == "narrate" and args.host is not None:
-        return fail("--mode narrate is local-only; remove --host or use --mode anomaly")
+    if mode in ("narrate", "events") and args.host is not None:
+        return fail(f"--mode {mode} is local-only; remove --host or use --mode anomaly")
 
     if mode == "narrate":
         return _cmd_narrate(args)
-
+    if mode == "events":
+        return _cmd_events(args)
     return _cmd_anomaly(args)
 
 
@@ -66,6 +70,23 @@ def _cmd_anomaly(args) -> int:
         return 0
     except monitor.MonitorRemoteError as e:
         return fail(f"cannot reach {e.host!r} via ssh: {e.stderr}")
+    return 0
+
+
+def _cmd_events(args) -> int:
+    """JSONL event stream — machine-readable variant of narrate."""
+    import json as _json
+
+    from agent_runner import api
+    from agent_runner.cli.common import cfg_from_args
+
+    cfg = cfg_from_args(args)
+    log_dir = cfg.runtime.log_dir
+    try:
+        for evt in api.stream_events_jsonl(log_dir):
+            print(_json.dumps(evt), flush=True)
+    except KeyboardInterrupt:
+        pass
     return 0
 
 

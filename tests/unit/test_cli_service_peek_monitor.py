@@ -253,3 +253,67 @@ def test_given_monitor_no_mode_when_invoked_then_anomaly_default(
     rc = monitor_cmd.cmd(args)
     assert rc == 0
     assert captured.get("called"), "anomaly mode should call monitor_loop"
+
+
+def test_given_mode_events_when_main_then_dispatches_events_stream(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """`monitor --mode events` calls api.stream_events_jsonl and prints JSONL."""
+    from agent_runner import api
+    from agent_runner.cli import main
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    events_seen = []
+    captured_log_dir = {}
+
+    def fake_stream(log_dir_arg, **_kwargs):
+        captured_log_dir["path"] = log_dir_arg
+        for evt in [{"event": "round_start", "round_num": 1}]:
+            events_seen.append(evt)
+            yield evt
+
+    monkeypatch.setattr(api, "stream_events_jsonl", fake_stream)
+
+    rc = main(["--config", str(cfg_path), "monitor", "--mode", "events"])
+    assert rc == 0
+    assert captured_log_dir["path"] == log_dir
+    assert len(events_seen) == 1
+
+
+def test_given_mode_events_with_host_when_main_then_error(monkeypatch, tmp_path: Path) -> None:
+    """`monitor --mode events --host pi` rejected (local-only, like narrate)."""
+    from agent_runner.cli import main
+
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+
+    rc = main(["--config", str(cfg_path), "monitor", "--mode", "events", "--host", "pi"])
+    assert rc != 0
