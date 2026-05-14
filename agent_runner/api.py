@@ -458,3 +458,63 @@ def monitor_loop(
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )
         time.sleep(interval_s)
+
+
+def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
+    """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
+
+    Format: ``[HH:MM:SS.fff] {event:<20} key=value ...`` (excluding ts and event).
+
+    Polling-based (no inotify/kqueue — cross-platform). Designed for human-readable
+    live monitoring during debug / audit / short runs.
+    """
+    import json as _json
+    import time as _time
+
+    seen_positions: dict[Path, int] = {}
+
+    while True:
+        files = sorted(log_dir.glob("events-*.jsonl"))
+        any_new = False
+        for path in files:
+            pos = seen_positions.get(path, 0)
+            try:
+                size = path.stat().st_size
+            except FileNotFoundError:
+                continue
+            if size <= pos:
+                continue
+            with path.open("r", encoding="utf-8") as f:
+                f.seek(pos)
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        evt = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    yield _format_narrate_line(evt)
+                    any_new = True
+                seen_positions[path] = f.tell()
+        if not any_new:
+            _time.sleep(poll_interval_s)
+
+
+def _format_narrate_line(evt: dict[str, Any]) -> str:
+    """Format an event dict as a one-line human-readable string.
+
+    Format: ``[HH:MM:SS.fff] {event:<20} {key=value pairs}``. ``ts`` and ``event``
+    are extracted into the prefix; remaining top-level keys become ``key=value``.
+    """
+    ts = evt.get("ts", "")
+    time_part = ts[11:23] if len(ts) > 23 else ts
+    event = evt.get("event", "?")
+    fields = {k: v for k, v in evt.items() if k not in ("ts", "event")}
+    kv_parts = []
+    for k, v in fields.items():
+        if k == "round_num":
+            kv_parts.append(f"round={v}")
+        else:
+            kv_parts.append(f"{k}={v}")
+    kv = " ".join(kv_parts)
+    return f"[{time_part}] {event:<20} {kv}"

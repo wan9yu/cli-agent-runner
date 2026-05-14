@@ -180,3 +180,76 @@ def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, t
     assert rc == 0
     assert "stopping" not in captured.err
     assert "stopped" not in captured.err
+
+
+def test_given_monitor_mode_narrate_when_with_host_then_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--mode narrate --host is rejected (out of scope for 0.1.12)."""
+    from agent_runner.cli import main
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    rc = main(
+        [
+            "--config",
+            str(tmp_path / "agent-runner.toml"),
+            "monitor",
+            "--mode",
+            "narrate",
+            "--host",
+            "pi",
+        ]
+    )
+    assert rc == 1
+
+
+def test_given_monitor_no_mode_when_invoked_then_anomaly_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Default --mode is anomaly (preserves existing behavior)."""
+    from agent_runner.cli import monitor_cmd
+
+    captured = {}
+
+    def fake_monitor_loop(*args, **kwargs):
+        captured["called"] = True
+        return iter([])
+
+    monkeypatch.setattr("agent_runner.api.monitor_loop", fake_monitor_loop)
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    from types import SimpleNamespace
+
+    args = SimpleNamespace(
+        host=None,
+        interval=None,
+        mode="anomaly",
+        json=False,
+        config=str(tmp_path / "agent-runner.toml"),
+    )
+
+    rc = monitor_cmd.cmd(args)
+    assert rc == 0
+    assert captured.get("called"), "anomaly mode should call monitor_loop"

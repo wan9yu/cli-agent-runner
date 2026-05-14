@@ -515,6 +515,34 @@ def test_given_recent_blips_in_events_when_peek_then_populated_in_state(
     assert rounds == [2, 3, 4, 5, 6]
 
 
+def test_given_seeded_events_when_narrate_then_yields_formatted_lines(
+    tmp_path: Path,
+) -> None:
+    """narrate_events yields one formatted line per event read from the file."""
+    from agent_runner.api import narrate_events
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    events_file = log_dir / "events-2026-05.jsonl"
+    events_file.write_text(
+        '{"ts":"2026-05-14T12:00:00.123Z","event":"round_start","round_num":1,"phase":"dev"}\n'
+        '{"ts":"2026-05-14T12:00:01.456Z","event":"agent_spawn","round_num":1,"pid":12345}\n'
+    )
+
+    # Drive the generator and collect 2 lines (poll_interval_s tiny to avoid wait)
+    gen = narrate_events(log_dir, poll_interval_s=0.01)
+    lines = [next(gen) for _ in range(2)]
+    gen.close()
+
+    assert "[12:00:00.123]" in lines[0]
+    assert "round_start" in lines[0]
+    assert "round=1" in lines[0]
+    assert "phase=dev" in lines[0]
+    assert "[12:00:01.456]" in lines[1]
+    assert "agent_spawn" in lines[1]
+    assert "pid=12345" in lines[1]
+
+
 def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

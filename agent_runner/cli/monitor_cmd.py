@@ -11,14 +11,16 @@ from agent_runner.cli.common import _to_jsonable, fail, work_dir_from_args
 
 def add_parser(sub, parent) -> None:
     p = sub.add_parser(
-        "monitor", parents=[parent], help="Anomaly detection daemon (local or remote via --host)"
+        "monitor",
+        parents=[parent],
+        help="Anomaly detection daemon (anomaly mode, default) or live event stream (narrate mode)",
     )
     p.add_argument(
         "--host",
         type=str,
         default=None,
         metavar="SSH-ALIAS",
-        help="Watch a remote agent-runner via ssh",
+        help="Watch a remote agent-runner via ssh (anomaly mode only)",
     )
     p.add_argument(
         "--interval",
@@ -27,10 +29,27 @@ def add_parser(sub, parent) -> None:
         metavar="SECONDS",
         help="Poll interval (default 30s, 60s for remote)",
     )
+    p.add_argument(
+        "--mode",
+        choices=["anomaly", "narrate"],
+        default="anomaly",
+        help="anomaly (default): alert-only; narrate: live one-line-per-event stream (local only)",
+    )
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
+    mode = getattr(args, "mode", "anomaly")
+    if mode == "narrate" and args.host is not None:
+        return fail("--mode narrate is local-only; remove --host or use --mode anomaly")
+
+    if mode == "narrate":
+        return _cmd_narrate(args)
+
+    return _cmd_anomaly(args)
+
+
+def _cmd_anomaly(args) -> int:
     interval = args.interval if args.interval is not None else (60 if args.host else 30)
     json_mode = getattr(args, "json", False)
     try:
@@ -47,4 +66,21 @@ def cmd(args) -> int:
         return 0
     except monitor.MonitorRemoteError as e:
         return fail(f"cannot reach {e.host!r} via ssh: {e.stderr}")
+    return 0
+
+
+def _cmd_narrate(args) -> int:
+    from agent_runner.config import load_config
+
+    work_dir = work_dir_from_args(args)
+    cfg = load_config(work_dir / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        for line in api.narrate_events(log_dir):
+            print(line)
+            sys.stdout.flush()
+    except KeyboardInterrupt:
+        return 0
     return 0

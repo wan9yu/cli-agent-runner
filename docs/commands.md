@@ -20,7 +20,7 @@ are shared between `peek`, `watch`, and `monitor`.
 | `status` | Show current service state |
 | `peek` | peek project state with optional drill-down |
 | `watch` | watch project state with optional drill-down |
-| `monitor` | Anomaly detection daemon (local or remote via --host) |
+| `monitor` | Anomaly detection daemon (anomaly mode, default) or live event stream (narrate mode) |
 | `serve` | Long-running supervisor loop |
 | `round` | Run one round and exit |
 <!-- /gen:verb-table -->
