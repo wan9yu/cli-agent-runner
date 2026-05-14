@@ -13,7 +13,7 @@ def add_parser(sub, parent) -> None:
     p = sub.add_parser(
         "monitor",
         parents=[parent],
-        help="Anomaly detection, live human-readable stream (narrate), or JSONL stream (events)",
+        help="Anomaly detection, narrate/events stream, or HTTP progress page",
     )
     p.add_argument(
         "--host",
@@ -31,25 +31,34 @@ def add_parser(sub, parent) -> None:
     )
     p.add_argument(
         "--mode",
-        choices=["anomaly", "narrate", "events"],
+        choices=["anomaly", "narrate", "events", "http"],
         default="anomaly",
         help=(
             "anomaly (default): alert-only; narrate: human-readable event stream;"
-            " events: JSONL event stream"
+            " events: JSONL event stream; http: browser progress page"
         ),
+    )
+    p.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        metavar="PORT",
+        help="HTTP port for --mode http (default 8765, local-only)",
     )
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
     mode = getattr(args, "mode", "anomaly")
-    if mode in ("narrate", "events") and args.host is not None:
+    if mode in ("narrate", "events", "http") and args.host is not None:
         return fail(f"--mode {mode} is local-only; remove --host or use --mode anomaly")
 
     if mode == "narrate":
         return _cmd_narrate(args)
     if mode == "events":
         return _cmd_events(args)
+    if mode == "http":
+        return _cmd_http(args)
     return _cmd_anomaly(args)
 
 
@@ -85,6 +94,15 @@ def _cmd_events(args) -> int:
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def _cmd_http(args) -> int:
+    """HTTP progress endpoint — browser-friendly live progress view."""
+    from agent_runner.cli.common import cfg_from_args
+    from agent_runner.http_progress import serve_http_progress
+
+    cfg = cfg_from_args(args)
+    return serve_http_progress(cfg.runtime.log_dir, cfg.runtime.narrative_file, port=args.port)
 
 
 def _cmd_narrate(args) -> int:
