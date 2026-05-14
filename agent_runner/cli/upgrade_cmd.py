@@ -94,7 +94,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
 
     Returns exit code (0 success, 1 user-recoverable, 2 critical).
     """
-    # Fix #4: reject empty/whitespace-only --target before touching service
     if target is not None and not target.strip():
         return fail("--target must be a non-empty version string (e.g. 0.1.13)")
 
@@ -104,7 +103,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
     from_version = __version__
     t0 = time.monotonic()
 
-    # Step 2: stop
     info("stopping service...")
     t_stop = time.monotonic()
     try:
@@ -116,7 +114,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
         )
     info(f"stopped ({time.monotonic() - t_stop:.1f}s)")
 
-    # Step 3: pip install
     spec = "cli-agent-runner" if target is None else f"cli-agent-runner=={target}"
     info(f"installing {spec}...")
     t_pip = time.monotonic()
@@ -129,7 +126,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
         )
     info(f"installed ({time.monotonic() - t_pip:.1f}s)")
 
-    # Step 4: smoke (--version + peek)
     info("smoke check (--version + peek)...")
     rc_v, version_or_err = _smoke_version()
     if rc_v != 0:
@@ -137,7 +133,7 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
             cfg,
             log_dir,
             from_version,
-            attempted_version=target or "<unknown>",
+            attempted_version=target or "latest",
             failure_reason=version_or_err,
             started_at=t0,
             cfg_path=cfg_path,
@@ -158,7 +154,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
 
     info(f"smoke OK (now at {to_version})")
 
-    # Step 6: start
     info("starting service...")
     t_start = time.monotonic()
     try:
@@ -172,7 +167,6 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
         )
     info(f"started ({time.monotonic() - t_start:.1f}s)")
 
-    # Step 7: emit success event
     elapsed = time.monotonic() - t0
     events.emit(
         log_dir,
@@ -202,7 +196,7 @@ def _rollback(
     """
     info(f"smoke failed at {attempted_version}; rolling back to {from_version}...")
 
-    # Reinstall the from_version (force, since pip thinks the new version is installed)
+    # force-reinstall: pip thinks the new version is already installed
     rollback_pip = _pip_install(f"cli-agent-runner=={from_version}", force_reinstall=True)
     if rollback_pip.returncode != 0:
         return _rollback_failed(
@@ -213,7 +207,6 @@ def _rollback(
             f"{rollback_pip.stderr.strip()[:200]}",
         )
 
-    # Sanity smoke: --version on the rolled-back binary should match from_version
     rc_v, version_or_err = _smoke_version()
     if rc_v != 0:
         return _rollback_failed(
@@ -230,7 +223,6 @@ def _rollback(
             f"sanity smoke version mismatch: expected {from_version}, got {version_or_err}",
         )
 
-    # Start service with rolled-back version
     try:
         api.start(cfg.runtime.work_dir)
     except Exception as e:  # noqa: BLE001 — best-effort recovery, must not raise further
