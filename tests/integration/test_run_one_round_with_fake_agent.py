@@ -13,6 +13,7 @@ from pathlib import Path
 from agent_runner.config import (
     AgentConfig,
     Config,
+    PhaseOverride,
     PhasesConfig,
     PromptConfig,
     RuntimeConfig,
@@ -112,6 +113,47 @@ def test_given_fake_agent_crashes_when_round_runs_then_exit_code_propagated(
     cfg = _cfg(tmp_git_repo, fake_agent_script)
     result = run_one_round(cfg)
     assert result.exit_code == 137
+
+
+def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_timeout_applied(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
+) -> None:
+    """[phases.dev] round_timeout_s = 3600 controls subprocess kill timing, not the global 5s."""
+    monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
+    cfg = _cfg(tmp_git_repo, fake_agent_script)
+    # Rebuild cfg with per-phase override: global=5, dev override=3600
+    import dataclasses
+
+    cfg = dataclasses.replace(
+        cfg,
+        phases=PhasesConfig(
+            list=["dev"],
+            overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+        ),
+    )
+
+    captured_timeout: list[int] = []
+    import agent_runner.agent_runtime as agent_runtime_mod
+
+    original_run = agent_runtime_mod.run
+
+    def capturing_run(**kwargs):
+        captured_timeout.append(kwargs["timeout_s"])
+        return original_run(**kwargs)
+
+    monkeypatch.setattr(agent_runtime_mod, "run", capturing_run)
+
+    result = run_one_round(cfg, phase_override="dev")
+
+    assert result.exit_code == 0
+    assert not result.timed_out
+    assert captured_timeout, "agent_runtime.run was never called"
+    # Resolved timeout should be the per-phase override (3600), not the global (5)
+    assert captured_timeout[0] == 3600, (
+        f"Expected resolved timeout 3600 (phase override), got {captured_timeout[0]}"
+    )
 
 
 def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(

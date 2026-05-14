@@ -5,8 +5,7 @@ Two units per project:
   agent-runner-monitor@<project>.service  - runs `agent-runner monitor`
 
 Install command writes these to ~/.config/systemd/user/. The graceful-stop
-contract relies on KillSignal=SIGTERM + TimeoutStopSec=round_timeout_s+60.
-Per-phase timeout awareness will be added in 0.1.16 via resolve_runtime_for_phase.
+contract relies on KillSignal=SIGTERM + TimeoutStopSec=max(round_timeout_s, *per_phase)+60.
 """
 
 from __future__ import annotations
@@ -33,10 +32,14 @@ def _config_path(cfg: Config) -> Path:
 
 def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
     """Generate the serve systemd unit body."""
-    # TimeoutStopSec covers the global round budget so `systemctl stop`
-    # doesn't SIGKILL a mid-flight round. Per-phase max will be derived
-    # from phases.overrides in Task 3 (resolve_runtime_for_phase).
-    timeout_total = cfg.runtime.round_timeout_s + _GRACE_S
+    # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
+    # doesn't SIGKILL a mid-flight round in any phase.
+    max_timeout = cfg.runtime.round_timeout_s
+    if cfg.phases is not None:
+        for override in cfg.phases.overrides.values():
+            if override.round_timeout_s is not None:
+                max_timeout = max(max_timeout, override.round_timeout_s)
+    timeout_total = max_timeout + _GRACE_S
     return (
         f"[Unit]\n"
         f"Description=Agent Runner Supervisor ({cfg.runtime.work_dir.name})\n"

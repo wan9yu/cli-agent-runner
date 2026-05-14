@@ -5,6 +5,8 @@ from pathlib import Path
 from agent_runner.config import (
     AgentConfig,
     Config,
+    PhaseOverride,
+    PhasesConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -83,3 +85,27 @@ def test_given_round_timeout_when_render_then_timeout_includes_grace(tmp_path: P
     cfg = _cfg(tmp_path, round_timeout_s=1800)
     unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
     assert "TimeoutStopSec=1860" in unit  # 1800 + 60
+
+
+def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
+    tmp_path: Path,
+) -> None:
+    """Per-phase round_timeout_s influences systemd TimeoutStopSec via max()."""
+    cfg = Config(
+        agent=AgentConfig(command=["x"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_timeout_s=1800,
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md"),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(
+            list=["dev", "qa"],
+            overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+        ),
+    )
+
+    unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
+    # max(1800, 3600) + 60 = 3660
+    assert "TimeoutStopSec=3660" in unit

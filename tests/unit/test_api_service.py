@@ -9,7 +9,7 @@ import pytest
 
 from agent_runner import api
 from agent_runner.api_types import InitResult, ServiceMode, ServiceStatus
-from agent_runner.config import load_config
+from agent_runner.config import PhaseOverride, PhasesConfig, load_config
 
 
 def test_given_git_repo_when_api_init_then_returns_init_result(tmp_git_repo: Path) -> None:
@@ -148,3 +148,45 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
     api.uninstall(tmp_git_repo)
     unit_name = f"agent-runner@{tmp_git_repo.name}.service"
     assert not (fake_systemd / unit_name).exists()
+
+
+def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_to_monitor(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_poll_once must forward cfg.phases.overrides to run_all_detectors as phases_overrides."""
+    api.init(tmp_git_repo, force=False, commit=False)
+
+    # Patch load_config to inject a phases override
+    real_load = load_config
+
+    def patched_load(path):
+        cfg = real_load(path)
+        import dataclasses
+
+        return dataclasses.replace(
+            cfg,
+            phases=PhasesConfig(
+                list=["dev"],
+                overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+            ),
+        )
+
+    monkeypatch.setattr("agent_runner.api.load_config", patched_load)
+
+    captured: list[dict] = []
+
+    def capturing_rad(**kwargs):
+        captured.append(kwargs)
+        return []
+
+    monkeypatch.setattr("agent_runner.monitor.run_all_detectors", capturing_rad)
+
+    api._poll_once(tmp_git_repo, host=None)
+
+    assert captured, "run_all_detectors was never called"
+    call_kwargs = captured[0]
+    assert "phases_overrides" in call_kwargs, (
+        "phases_overrides kwarg missing from run_all_detectors call"
+    )
+    assert call_kwargs["phases_overrides"] == {"dev": PhaseOverride(round_timeout_s=3600)}
