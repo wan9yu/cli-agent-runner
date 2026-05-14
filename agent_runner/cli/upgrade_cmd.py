@@ -246,5 +246,25 @@ def _rollback_failed(
     restore_target_version: str,
     failure_reason: str,
 ) -> int:
-    """Worst case — implementation lands in Task 5."""
-    raise NotImplementedError("rollback-failed flow lands in Task 5")
+    """Worst case: rollback itself failed. Service is stopped, no working code.
+
+    Best-effort emit ``service_upgrade_rollback_failed`` event so operators can
+    grep for it. Returns exit 2 (worst code) so caller can distinguish from
+    user-recoverable exit 1.
+    """
+    try:
+        events.emit(
+            log_dir,
+            events.SERVICE_UPGRADE_ROLLBACK_FAILED,
+            attempted_version=attempted_version,
+            restore_target_version=restore_target_version,
+            failure_reason=failure_reason[:200],
+        )
+    except Exception:  # noqa: BLE001 — best-effort: log_dir itself may be unwritable
+        pass
+    info(
+        f"CRITICAL: upgrade rollback failed; service is STOPPED. "
+        f"Manual intervention required (try: pip install --force-reinstall "
+        f"cli-agent-runner=={restore_target_version})."
+    )
+    return 2
