@@ -123,7 +123,7 @@ def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for path in sorted(log_dir.glob("events-*.jsonl")):
         try:
-            with path.open("r", encoding="utf-8") as f:
+            with path.open("r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
