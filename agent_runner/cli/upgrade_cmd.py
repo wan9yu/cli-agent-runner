@@ -19,8 +19,8 @@ import time
 from pathlib import Path
 
 from agent_runner import __version__, api, events
-from agent_runner.cli.common import fail, info
-from agent_runner.config import Config, load_config
+from agent_runner.cli.common import cfg_from_args, fail, info
+from agent_runner.config import Config
 
 
 def add_parser(sub, parent) -> None:
@@ -44,9 +44,8 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    cfg_path = Path(args.config) if hasattr(args, "config") else Path("agent-runner.toml")
-    cfg = load_config(cfg_path)
-    return _run_upgrade(cfg, target=args.target, cfg_path=cfg_path)
+    cfg = cfg_from_args(args)
+    return _run_upgrade(cfg, target=args.target, cfg_path=args.config)
 
 
 def _pip_install(spec: str, *, force_reinstall: bool = False) -> subprocess.CompletedProcess:
@@ -95,6 +94,10 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
 
     Returns exit code (0 success, 1 user-recoverable, 2 critical).
     """
+    # Fix #4: reject empty/whitespace-only --target before touching service
+    if target is not None and not target.strip():
+        return fail("--target must be a non-empty version string (e.g. 0.1.13)")
+
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,7 +107,13 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
     # Step 2: stop
     info("stopping service...")
     t_stop = time.monotonic()
-    api.stop(cfg.runtime.work_dir)
+    try:
+        api.stop(cfg.runtime.work_dir)
+    except Exception as e:  # noqa: BLE001 — service state unknown; must not proceed
+        return fail(
+            f"api.stop raised {type(e).__name__}: {str(e)[:150]}; "
+            f"service state unknown — investigate before retrying upgrade"
+        )
     info(f"stopped ({time.monotonic() - t_stop:.1f}s)")
 
     # Step 3: pip install
@@ -152,7 +161,15 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
     # Step 6: start
     info("starting service...")
     t_start = time.monotonic()
-    api.start(cfg.runtime.work_dir)
+    try:
+        api.start(cfg.runtime.work_dir)
+    except Exception as e:  # noqa: BLE001 — new version installed but service stopped; no safe auto-rollback
+        return _rollback_failed(
+            log_dir,
+            to_version,
+            to_version,
+            f"api.start raised after upgrade: {type(e).__name__}: {str(e)[:150]}",
+        )
     info(f"started ({time.monotonic() - t_start:.1f}s)")
 
     # Step 7: emit success event

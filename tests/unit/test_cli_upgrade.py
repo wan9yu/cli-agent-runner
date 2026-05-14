@@ -523,3 +523,146 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
     failed = [p for p in payloads if p["event"] == "service_upgrade_rollback_failed"]
     assert len(failed) == 1
     assert "sanity smoke failed" in failed[0]["failure_reason"]
+
+
+# ---------------------------------------------------------------------------
+# New tests for Fix #1 (api.stop/api.start exceptions), Fix #4 (empty target)
+# ---------------------------------------------------------------------------
+
+
+def _make_toml(tmp_path: Path) -> Path:
+    """Write a minimal agent-runner.toml and return its path."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+    return toml
+
+
+def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """api.stop raises → rc=1, pip NEVER called, no service_upgrad* events emitted."""
+    import json
+    import subprocess
+
+    from agent_runner import api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml = _make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+
+    def _raise_stop(_wd):
+        raise RuntimeError("systemctl failed")
+
+    monkeypatch.setattr(api, "stop", _raise_stop)
+
+    pip_called = []
+
+    def fake_run(cmd, **kwargs):
+        pip_called.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(toml)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml)
+    assert rc == 1
+
+    # pip must NOT have been called
+    assert not any(c[0] == "pip" for c in pip_called), "pip was called despite api.stop raising"
+
+    # no service_upgrad* events
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    if events_files:
+        payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+        assert not any(p["event"].startswith("service_upgrad") for p in payloads)
+
+
+def test_given_api_start_raises_after_smoke_when_run_upgrade_then_rollback_failed_event_exit_2(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """api.start raises after smoke → rollback_failed event with restore_target_version=to_version.
+
+    Exit code must be 2.
+    """
+    import json
+    import subprocess
+
+    from agent_runner import api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml = _make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+
+    def _raise_start(_wd):
+        raise RuntimeError("permission denied")
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", _raise_start)
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "pip":
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="agent-runner 0.1.99\n", stderr=""
+            )
+        if "peek" in cmd:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(toml)
+    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml)
+    assert rc == 2
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files, "expected at least one events file"
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    failed = [p for p in payloads if p["event"] == "service_upgrade_rollback_failed"]
+    assert len(failed) == 1
+    assert failed[0]["restore_target_version"] == "0.1.99"
+    assert "api.start raised after upgrade" in failed[0]["failure_reason"]
+
+
+def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--target '' (empty string) → rc=1, api.stop NEVER called, no events."""
+    import json
+
+    from agent_runner import api
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml = _make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+
+    stop_called = []
+    monkeypatch.setattr(api, "stop", lambda _wd: stop_called.append(True))
+
+    cfg = load_config(toml)
+    rc = upgrade_cmd._run_upgrade(cfg, target="", cfg_path=toml)
+    assert rc == 1
+
+    assert not stop_called, "api.stop was called despite empty target"
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    if events_files:
+        payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+        assert not any(p["event"].startswith("service_upgrad") for p in payloads)
