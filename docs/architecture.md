@@ -121,6 +121,7 @@ grep cleaner than a single event with a `final=true` flag.
 - `orphan_idempotent_skip`
 - `orphan_stash_failed`
 - `orphan_stashed`
+- `prompt_overwritten`
 - `round_end`
 - `round_start`
 - `round_timeout_kill`

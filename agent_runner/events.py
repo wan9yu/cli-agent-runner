@@ -31,6 +31,7 @@ HOOK_FAILED = "hook_failed"
 AGENT_NETWORK_BLIP = "agent_network_blip"
 MONITOR_REMOTE_BLIP = "monitor_remote_blip"
 MONITOR_REMOTE_GIVEUP = "monitor_remote_giveup"
+PROMPT_OVERWRITTEN = "prompt_overwritten"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -42,6 +43,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         "orphan_stashed",
         "orphan_idempotent_skip",
         "orphan_stash_failed",
+        PROMPT_OVERWRITTEN,
         "round_timeout_kill",
         "sigterm_received",
         "status_recovered",

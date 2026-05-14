@@ -101,3 +101,10 @@ def test_given_agent_network_blip_kind_when_registered_then_in_known_event_kinds
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "agent_network_blip" in KNOWN_EVENT_KINDS
+
+
+def test_given_prompt_overwritten_kind_when_registered_then_in_known_event_kinds() -> None:
+    """prompt_overwritten built-in event kind."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "prompt_overwritten" in KNOWN_EVENT_KINDS

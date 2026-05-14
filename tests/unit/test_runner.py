@@ -462,6 +462,151 @@ def test_given_default_round_when_phase_for_called_then_rotation_unchanged() -> 
     assert _phase_for(4, phases) == ("dev", 0)  # rotation continues at (4-1) % 3 = 0
 
 
+def test_given_hook_mutates_prompt_when_run_then_emits_prompt_overwritten(
+    tmp_path: Path,
+) -> None:
+    """A PreRoundHook that mutates the prompt file triggers one event per mutation."""
+    import json
+
+    from agent_runner import hooks
+    from agent_runner.runner import _run_pre_round_hooks
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("original prompt")
+
+    class _MutatingHook:
+        name = "mutating_test_hook"
+
+        def before_round(self, ctx):
+            prompt_file.write_text("new content from hook")
+
+    hooks.register_pre_round_hook(_MutatingHook())
+    try:
+        ctx = hooks.HookContext(
+            work_dir=tmp_path,
+            log_dir=log_dir,
+            project="t",
+            round_num=5,
+            phase="dev",
+            agent_name=None,
+        )
+        _run_pre_round_hooks(ctx, log_dir, disabled=False, prompt_file=prompt_file)
+    finally:
+        hooks._PRE_ROUND_HOOKS[:] = [
+            h for h in hooks._PRE_ROUND_HOOKS if h.name != "mutating_test_hook"
+        ]
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    assert events_files
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    overwrites = [p for p in payloads if p["event"] == "prompt_overwritten"]
+    assert len(overwrites) == 1
+    assert overwrites[0]["hook"] == "mutating_test_hook"
+    assert overwrites[0]["round_num"] == 5
+    assert overwrites[0]["phase"] == "dev"
+    assert overwrites[0]["old_hash"].startswith("sha256:")
+    assert overwrites[0]["new_hash"].startswith("sha256:")
+    assert overwrites[0]["old_hash"] != overwrites[0]["new_hash"]
+
+
+def test_given_hook_no_op_when_run_then_no_prompt_overwritten(
+    tmp_path: Path,
+) -> None:
+    """A hook that doesn't mutate the prompt emits nothing."""
+    import json
+
+    from agent_runner import hooks
+    from agent_runner.runner import _run_pre_round_hooks
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("unchanged")
+
+    class _NoOpHook:
+        name = "noop_test_hook"
+
+        def before_round(self, ctx):
+            pass
+
+    hooks.register_pre_round_hook(_NoOpHook())
+    try:
+        ctx = hooks.HookContext(
+            work_dir=tmp_path,
+            log_dir=log_dir,
+            project="t",
+            round_num=1,
+            phase=None,
+            agent_name=None,
+        )
+        _run_pre_round_hooks(ctx, log_dir, disabled=False, prompt_file=prompt_file)
+    finally:
+        hooks._PRE_ROUND_HOOKS[:] = [
+            h for h in hooks._PRE_ROUND_HOOKS if h.name != "noop_test_hook"
+        ]
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    if events_files:
+        payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+        overwrites = [p for p in payloads if p["event"] == "prompt_overwritten"]
+        assert overwrites == []
+
+
+def test_given_two_mutating_hooks_when_run_then_two_events_with_attribution(
+    tmp_path: Path,
+) -> None:
+    """Multiple mutating hooks each produce a prompt_overwritten event."""
+    import json
+
+    from agent_runner import hooks
+    from agent_runner.runner import _run_pre_round_hooks
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("original")
+
+    class _HookA:
+        name = "hook_a"
+
+        def before_round(self, ctx):
+            prompt_file.write_text("after A")
+
+    class _HookB:
+        name = "hook_b"
+
+        def before_round(self, ctx):
+            prompt_file.write_text("after A and B")
+
+    hooks.register_pre_round_hook(_HookA())
+    hooks.register_pre_round_hook(_HookB())
+    try:
+        ctx = hooks.HookContext(
+            work_dir=tmp_path,
+            log_dir=log_dir,
+            project="t",
+            round_num=2,
+            phase=None,
+            agent_name=None,
+        )
+        _run_pre_round_hooks(ctx, log_dir, disabled=False, prompt_file=prompt_file)
+    finally:
+        hooks._PRE_ROUND_HOOKS[:] = [
+            h for h in hooks._PRE_ROUND_HOOKS if h.name not in ("hook_a", "hook_b")
+        ]
+
+    events_files = sorted(log_dir.glob("events-*.jsonl"))
+    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
+    overwrites = [p for p in payloads if p["event"] == "prompt_overwritten"]
+    assert len(overwrites) == 2
+    assert overwrites[0]["hook"] == "hook_a"
+    assert overwrites[1]["hook"] == "hook_b"
+    # Hash chaining: A's new_hash == B's old_hash
+    assert overwrites[0]["new_hash"] == overwrites[1]["old_hash"]
+
+
 def test_given_disable_pre_round_hooks_true_when_run_then_hooks_skipped(
     tmp_path: Path,
 ) -> None:

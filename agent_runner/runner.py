@@ -234,16 +234,30 @@ def _run_pre_round_hooks(
     log_dir: Path,
     *,
     disabled: bool = False,
+    prompt_file: Path | None = None,
 ) -> None:
     """Invoke registered PreRoundHook plugins. Failures are isolated.
 
     When ``disabled=True`` (from ``cfg.runtime.disable_pre_round_hooks``),
     skip all hooks. PostRoundHooks are unaffected.
+
+    When ``prompt_file`` is provided, the content is hashed before and after
+    EACH hook; mutations emit ``prompt_overwritten`` events with hook attribution.
+    Multiple mutating hooks per round → multiple events (audit trail).
     """
     if disabled:
         return
 
+    import hashlib
     import traceback as tb_mod
+
+    def _file_sha256(p: Path) -> str:
+        try:
+            return hashlib.sha256(p.read_bytes()).hexdigest()
+        except FileNotFoundError:
+            return ""
+
+    prev_hash = _file_sha256(prompt_file) if prompt_file is not None else ""
 
     for hook in hooks.pre_round_hooks():
         try:
@@ -257,6 +271,22 @@ def _run_pre_round_hooks(
                 hook_kind="pre_round",
                 **payload,
             )
+            continue  # don't compare prompt hash for crashed hooks
+
+        if prompt_file is not None:
+            new_hash = _file_sha256(prompt_file)
+            if new_hash != prev_hash:
+                events.emit(
+                    log_dir,
+                    events.PROMPT_OVERWRITTEN,
+                    round_num=hook_ctx.round_num,
+                    phase=hook_ctx.phase,
+                    hook=hook.name,
+                    prompt_path=str(prompt_file),
+                    old_hash=f"sha256:{prev_hash}",
+                    new_hash=f"sha256:{new_hash}",
+                )
+                prev_hash = new_hash
 
 
 def _run_post_round_hooks(
@@ -338,7 +368,12 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         phase=phase,
         agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
     )
-    _run_pre_round_hooks(hook_ctx, log_dir, disabled=cfg.runtime.disable_pre_round_hooks)
+    _run_pre_round_hooks(
+        hook_ctx,
+        log_dir,
+        disabled=cfg.runtime.disable_pre_round_hooks,
+        prompt_file=cfg.prompt.file,
+    )
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
 
     # Merge the previous/orphan blocks BEFORE writing (preserving prior behavior)
