@@ -57,9 +57,12 @@ class PhasesConfig:
 
 @dataclass(frozen=True)
 class PromptConfig:
-    file: Path
+    file: Path | None = None  # back-compat single-file; mutually exclusive with files
+    files: list[Path] = field(default_factory=list)
     inject_context: bool = True
     context_injection_mode: Literal["prepend", "file", "none"] = "prepend"
+    concat_separator: str = "\n\n"
+    strip_yaml_frontmatter: bool = True
 
 
 @dataclass(frozen=True)
@@ -293,10 +296,26 @@ def load_config(toml_path: Path) -> Config:
             f"prompt.context_injection_mode must be one of {sorted(_VALID_INJECTION_MODES)}, "
             f"got {mode!r}"
         )
+    has_file = "file" in prompt_d
+    has_files = "files" in prompt_d
+    if has_file and has_files:
+        raise ValueError("set either prompt.file or prompt.files, not both")
+    if not has_file and not has_files:
+        raise ValueError("missing required field: prompt.file or prompt.files")
+    prompt_file = _expand_path(str(prompt_d["file"]), project_name) if has_file else None
+    prompt_files = (
+        [_expand_path(str(p), project_name) for p in prompt_d["files"]] if has_files else []
+    )
     prompt = PromptConfig(
-        file=_expand_path(str(_require(prompt_d, "file")), project_name),
+        file=prompt_file,
+        files=prompt_files,
         inject_context=bool(prompt_d.get("inject_context", True)),
         context_injection_mode=mode,  # type: ignore[arg-type]  # narrowed by validation above
+        concat_separator=str(prompt_d.get("concat_separator", "\n\n")),
+        strip_yaml_frontmatter=_require_bool(
+            prompt_d.get("strip_yaml_frontmatter", True),
+            field="prompt.strip_yaml_frontmatter",
+        ),
     )
     vcs_d = raw.get("vcs", {})
     vcs = VcsConfig(

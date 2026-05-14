@@ -70,25 +70,38 @@ def _check_work_dir_is_git(cfg: Config) -> CheckResult:
 
 
 def _check_prompt_file(cfg: Config) -> CheckResult:
-    if not cfg.prompt.file.exists():
+    targets: list = []
+    if cfg.prompt.file is not None:
+        targets.append(cfg.prompt.file)
+    targets.extend(cfg.prompt.files)
+    if not targets:
         return CheckResult(
             "prompt_file_exists",
             False,
-            reason=f"{cfg.prompt.file} does not exist",
-            how_to_fix="create the prompt .md file or fix prompt.file in config",
+            reason="no prompt files configured",
+            how_to_fix="set prompt.file or prompt.files in agent-runner.toml",
+        )
+    first = targets[0]
+    if not first.exists():
+        return CheckResult(
+            "prompt_file_exists",
+            False,
+            reason=f"{first} does not exist",
+            how_to_fix="create the prompt .md file or fix prompt.file / prompt.files[0] in config",
         )
     return CheckResult("prompt_file_exists", True)
 
 
 def _check_prompt_smoke(cfg: Config) -> CheckResult:
-    if not cfg.prompt.file.exists():
+    prompt_source = cfg.prompt.file if cfg.prompt.file is not None else cfg.prompt.files[0]
+    if not prompt_source.exists():
         return CheckResult(
             "prompt_smoke_passes",
             False,
             "prompt file missing — see prompt_file_exists",
         )
     try:
-        prompt = assemble_prompt(cfg.prompt.file, context=None, inject_context=False)
+        prompt = assemble_prompt(prompt_source, context=None, inject_context=False)
     except Exception as e:
         return CheckResult("prompt_smoke_passes", False, f"assembly failed: {e}")
     if not prompt:

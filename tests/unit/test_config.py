@@ -993,3 +993,121 @@ def test_given_no_phases_section_when_loaded_then_phases_config_none_list(
     cfg = load_config(tmp_path / "agent-runner.toml")
     assert cfg.phases.list is None
     assert cfg.phases.overrides == {}
+
+
+def test_given_prompt_files_list_when_loaded_then_files_attribute_set(
+    tmp_path: Path,
+) -> None:
+    """[prompt] files = ["a.md", "b.md"] → cfg.prompt.files = [Path('a.md'), Path('b.md')]."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'files = ["a.md", "b.md"]\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.prompt.files == [Path("a.md"), Path("b.md")]
+    assert cfg.prompt.file is None
+    assert cfg.prompt.concat_separator == "\n\n"
+    assert cfg.prompt.strip_yaml_frontmatter is True
+
+
+def test_given_prompt_file_single_when_loaded_then_back_compat_path(
+    tmp_path: Path,
+) -> None:
+    """[prompt] file = "x.md" still works (back-compat)."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "x.md").write_text("x")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/x.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.prompt.file == tmp_path / "x.md"
+    assert cfg.prompt.files == []
+
+
+def test_given_both_prompt_file_and_files_set_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """Setting BOTH prompt.file and prompt.files → ConfigError."""
+    import pytest
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "x.md").write_text("x")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/x.md"\n'
+        'files = ["other.md"]\n'
+    )
+
+    with pytest.raises(ValueError, match=r"prompt\.file.*prompt\.files.*not both"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_custom_concat_separator_when_loaded_then_used(tmp_path: Path) -> None:
+    """concat_separator override is honored."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'files = ["a.md"]\n'
+        'concat_separator = "\\n\\n---\\n\\n"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.prompt.concat_separator == "\n\n---\n\n"
+
+
+def test_given_strip_yaml_frontmatter_false_when_loaded_then_opt_out_honored(
+    tmp_path: Path,
+) -> None:
+    """strip_yaml_frontmatter = false opt-out is honored."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'files = ["a.md"]\n'
+        "strip_yaml_frontmatter = false\n"
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.prompt.strip_yaml_frontmatter is False

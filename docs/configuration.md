@@ -31,9 +31,14 @@ writes a templated copy you can edit.
 
 | Field | Type | Default |
 |---|---|---|
-| `file` | `Path` | — |
+| `file` | `Path | None` | None |
+| `files` | `list[Path]` | [] |
 | `inject_context` | `bool` | True |
 | `context_injection_mode` | `Literal['prepend', 'file', 'none']` | 'prepend' |
+| `concat_separator` | `str` | '
+
+' |
+| `strip_yaml_frontmatter` | `bool` | True |
 
 ### `[vcs]`
 
