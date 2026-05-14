@@ -20,7 +20,7 @@ are shared between `peek`, `watch`, and `monitor`.
 | `status` | Show current service state |
 | `peek` | peek project state with optional drill-down |
 | `watch` | watch project state with optional drill-down |
-| `monitor` | Anomaly detection daemon (anomaly mode, default) or live event stream (narrate mode) |
+| `monitor` | Anomaly detection, live human-readable stream (narrate), or JSONL stream (events) |
 | `serve` | Long-running supervisor loop |
 | `round` | Run one round and exit |
 | `upgrade` | Round-boundary upgrade: stop → pip install → smoke → start (auto-rollback on smoke fail) |

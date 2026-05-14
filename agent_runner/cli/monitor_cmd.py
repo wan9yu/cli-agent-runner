@@ -13,7 +13,7 @@ def add_parser(sub, parent) -> None:
     p = sub.add_parser(
         "monitor",
         parents=[parent],
-        help="Anomaly detection daemon (anomaly mode, default) or live event stream (narrate mode)",
+        help="Anomaly detection, live human-readable stream (narrate), or JSONL stream (events)",
     )
     p.add_argument(
         "--host",

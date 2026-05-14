@@ -8,9 +8,35 @@ the test suite. After: one factory.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+
+def make_toml(tmp_path: Path) -> Path:
+    """Write a minimal agent-runner.toml and return its path.
+
+    Creates ``tmp_path/logs/`` and ``tmp_path/prompt.md`` as side-effects.
+    Used by test scaffolding to spin up a valid Config without each test
+    repeating the boilerplate.
+    """
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
+    )
+    return toml
 
 
 def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:

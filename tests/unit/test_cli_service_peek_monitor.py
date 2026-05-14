@@ -7,26 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner.cli import main
-
-
-def _make_toml(tmp_path: Path) -> Path:
-    """Write a minimal agent-runner.toml and return its path."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir(exist_ok=True)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
-    return toml
+from tests._test_helpers import make_toml
 
 
 def _init(repo: Path) -> None:
@@ -282,7 +263,7 @@ def test_given_mode_events_when_main_then_dispatches_events_stream(
     from agent_runner import api
     from agent_runner.cli import main
 
-    cfg_path = _make_toml(tmp_path)
+    cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
     events_seen = []
@@ -306,7 +287,7 @@ def test_given_mode_events_with_host_when_main_then_error(monkeypatch, tmp_path:
     """`monitor --mode events --host pi` rejected (local-only, like narrate)."""
     from agent_runner.cli import main
 
-    cfg_path = _make_toml(tmp_path)
+    cfg_path = make_toml(tmp_path)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "events", "--host", "pi"])
     assert rc != 0

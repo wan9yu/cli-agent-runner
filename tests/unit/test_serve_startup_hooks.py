@@ -2,29 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-
-def _make_toml(tmp_path: Path) -> Path:
-    """Write a minimal agent-runner.toml and return its path."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir(exist_ok=True)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-    )
-    return toml
+from tests._test_helpers import make_toml
 
 
 def test_given_no_registered_hooks_when_serve_startup_hooks_then_empty_list() -> None:
@@ -116,7 +96,7 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
 
     hooks.register_serve_startup_hook(GoodHook())
 
-    cfg_path = _make_toml(tmp_path)
+    cfg_path = make_toml(tmp_path)
 
     def fake_run(*_args, **_kwargs):
         class R:
@@ -155,7 +135,7 @@ def test_given_hook_raises_when_serve_then_abort_exit_1_emit_event(
 
     hooks.register_serve_startup_hook(BadHook())
 
-    cfg_path = _make_toml(tmp_path)
+    cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
     called = {"subprocess_run": 0}
@@ -216,7 +196,7 @@ def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
     hooks.register_serve_startup_hook(BadA())
     hooks.register_serve_startup_hook(GoodB())
 
-    cfg_path = _make_toml(tmp_path)
+    cfg_path = make_toml(tmp_path)
 
     def fake_run(*_args, **_kwargs):
         class R:
