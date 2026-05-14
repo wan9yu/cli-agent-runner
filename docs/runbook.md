@@ -61,6 +61,13 @@ version (or roll back), pass `--target X.Y.Z`.
 `agent-runner upgrade --target <previous-version>` is the supported way to
 roll back — the same command works in both directions.
 
+### Index trust
+
+`agent-runner upgrade` invokes `pip install` which honors your operator's
+configured pip index (`pip config list`, `PIP_INDEX_URL`, `~/.pip/pip.conf`).
+If your environment uses a corporate mirror or custom index, the upgrade will
+fetch from there. To verify your index before upgrading: `pip config list`.
+
 ### Failure modes
 
 | Symptom | Recovery |

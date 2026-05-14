@@ -25,6 +25,11 @@ def _make_toml(tmp_path: Path) -> Path:
     return toml
 
 
+def _is_pip_call(cmd) -> bool:
+    """Return True when *cmd* is a ``sys.executable -m pip …`` invocation."""
+    return len(cmd) >= 3 and cmd[1] == "-m" and cmd[2] == "pip"
+
+
 def test_given_upgrade_subcommand_with_target_when_main_then_dispatches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -91,7 +96,7 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
 
     def fake_run(cmd, **kwargs):
         call_log.append(cmd)
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             return subprocess.CompletedProcess(
@@ -107,7 +112,7 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
     assert rc == 0
 
-    pip_calls = [c for c in call_log if c[0] == "pip"]
+    pip_calls = [c for c in call_log if _is_pip_call(c)]
     assert len(pip_calls) == 1
     assert "cli-agent-runner==0.1.99" in pip_calls[0]
 
@@ -140,7 +145,7 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
 
     def fake_run(cmd, **kwargs):
         call_log.append(cmd)
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             return subprocess.CompletedProcess(
@@ -153,7 +158,7 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target=None, cfg_path=toml_path)
     assert rc == 0
-    pip_calls = [c for c in call_log if c[0] == "pip"]
+    pip_calls = [c for c in call_log if _is_pip_call(c)]
     assert len(pip_calls) == 1
     assert "cli-agent-runner" in pip_calls[0]
     assert "==" not in " ".join(pip_calls[0])
@@ -177,7 +182,7 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
     monkeypatch.setattr(api, "start", lambda _wd: None)
 
     def fake_run(cmd, **kwargs):
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(
                 args=cmd, returncode=1, stdout="", stderr="ERROR: Could not find package"
             )
@@ -216,7 +221,7 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
 
     def fake_run(cmd, **kwargs):
         call_count[0] += 1
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             # 1st --version (smoke for new): version reads as 0.1.99
@@ -272,7 +277,7 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
 
     def fake_run(cmd, **kwargs):
         call_count[0] += 1
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             if call_count[0] == 2:  # first --version after pip → fails
@@ -317,7 +322,7 @@ def test_given_rollback_pip_uses_force_reinstall_with_from_version(
 
     def fake_run(cmd, **kwargs):
         call_count[0] += 1
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             pip_calls.append(cmd)
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
@@ -359,7 +364,7 @@ def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_ex
     pip_calls = [0]
 
     def fake_run(cmd, **kwargs):
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             pip_calls[0] += 1
             if pip_calls[0] == 1:  # initial install succeeds
                 return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
@@ -405,7 +410,7 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
     monkeypatch.setattr(api, "start", lambda _wd: None)
 
     def fake_run(cmd, **kwargs):
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             # ALL --version calls fail (including the sanity smoke after rollback)
@@ -459,7 +464,7 @@ def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
     assert rc == 1
 
     # pip must NOT have been called
-    assert not any(c[0] == "pip" for c in pip_called), "pip was called despite api.stop raising"
+    assert not any(_is_pip_call(c) for c in pip_called), "pip was called despite api.stop raising"
 
     # no service_upgrad* events
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -492,7 +497,7 @@ def test_given_api_start_raises_after_smoke_when_run_upgrade_then_rollback_faile
     monkeypatch.setattr(api, "start", _raise_start)
 
     def fake_run(cmd, **kwargs):
-        if cmd[0] == "pip":
+        if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             return subprocess.CompletedProcess(

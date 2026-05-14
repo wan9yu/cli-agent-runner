@@ -6,8 +6,8 @@ failure (reinstall from_version, sanity smoke, start, emit
 `service_upgrade_rolled_back`). Worst case (rollback fails too):
 `service_upgrade_rollback_failed` event + exit 2.
 
-On-host only. Assumes `pip` in PATH. Operator manually triggers via shell
-(systemd-managed installs use `agent-runner upgrade` from the installation venv).
+On-host only. Operator manually triggers via shell (systemd-managed installs
+use `agent-runner upgrade` from the installation venv).
 """
 
 from __future__ import annotations
@@ -49,10 +49,14 @@ def cmd(args) -> int:
 
 
 def _pip_install(spec: str, *, force_reinstall: bool = False) -> subprocess.CompletedProcess:
-    """Invoke pip install with the given spec. Returns CompletedProcess (rc check by caller)."""
-    cmd = ["pip", "install", "--upgrade", spec]
+    """Invoke pip install with the given spec. Returns CompletedProcess (rc check by caller).
+
+    Uses ``sys.executable -m pip`` to match the smoke functions and guarantee
+    we install into the same interpreter we will smoke-test against.
+    """
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", spec]
     if force_reinstall:
-        cmd.insert(2, "--force-reinstall")
+        cmd.insert(4, "--force-reinstall")
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
