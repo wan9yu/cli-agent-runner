@@ -159,6 +159,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `round_end`
 - `round_start`
 - `round_timeout_kill`
+- `serve_startup_hook_failed`
 - `service_upgrade_rollback_failed`
 - `service_upgrade_rolled_back`
 - `service_upgraded`

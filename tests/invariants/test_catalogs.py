@@ -129,3 +129,10 @@ def test_given_rollback_failed_kind_when_registered_then_in_known_event_kinds() 
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "service_upgrade_rollback_failed" in KNOWN_EVENT_KINDS
+
+
+def test_given_serve_startup_hook_failed_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: serve_startup_hook_failed must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "serve_startup_hook_failed" in KNOWN_EVENT_KINDS

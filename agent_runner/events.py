@@ -35,6 +35,7 @@ PROMPT_OVERWRITTEN = "prompt_overwritten"
 SERVICE_UPGRADED = "service_upgraded"
 SERVICE_UPGRADE_ROLLED_BACK = "service_upgrade_rolled_back"
 SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
+SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -58,6 +59,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         MONITOR_REMOTE_BLIP,
         MONITOR_REMOTE_GIVEUP,
         "monitor_started",
+        SERVE_STARTUP_HOOK_FAILED,
         SERVICE_UPGRADED,
         SERVICE_UPGRADE_ROLLED_BACK,
         SERVICE_UPGRADE_ROLLBACK_FAILED,
