@@ -78,8 +78,8 @@ def test_given_failing_hook_plugin_when_loader_runs_then_warns_but_does_not_cras
         )
 
 
-def test_given_loader_called_then_uses_three_hook_groups() -> None:
-    """The hook loader queries exactly the three documented entry_points groups."""
+def test_given_loader_called_then_uses_four_hook_groups() -> None:
+    """The hook loader queries exactly the four documented entry_points groups."""
     from agent_runner import _load_hook_plugins
 
     call_groups: list[str] = []
@@ -96,6 +96,7 @@ def test_given_loader_called_then_uses_three_hook_groups() -> None:
             "agent_runner.pre_round_hooks",
             "agent_runner.context_enrichers",
             "agent_runner.post_round_hooks",
+            "agent_runner.serve_startup_hooks",
         ]
     )
 

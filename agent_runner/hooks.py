@@ -1,12 +1,14 @@
 """Plugin hook surface for agent-runner.
 
-Three Protocol-typed extension points loaded via setuptools entry_points at
+Four Protocol-typed extension points loaded via setuptools entry_points at
 package import:
-  * PreRoundHook   — runs after lock acquired, before context is written
+  * PreRoundHook    — runs after lock acquired, before context is written
   * ContextEnricher — returns a per-plugin slice merged into round-context.json
                       under base_context[enricher.name] (namespacing prevents
                       collisions structurally)
-  * PostRoundHook  — runs after agent exits, before round_end event
+  * PostRoundHook   — runs after agent exits, before round_end event
+  * ServeStartupHook — fires once per ``agent-runner serve`` boot, before the
+                       round loop; receives the loaded Config
 
 Each hook's failure is contained: runner wraps every call in try/except and
 emits a built-in ``hook_failed`` event with truncated traceback. A broken
@@ -14,9 +16,11 @@ plugin must never crash the supervisor.
 
 Public API:
   * HookContext                — narrowed runtime context passed to all hooks
-  * PreRoundHook / ContextEnricher / PostRoundHook  — Protocols
+  * PreRoundHook / ContextEnricher / PostRoundHook / ServeStartupHook — Protocols
   * register_pre_round_hook / register_context_enricher / register_post_round_hook
+    / register_serve_startup_hook
   * pre_round_hooks() / context_enrichers() / post_round_hooks()
+    / serve_startup_hooks()
   * plugin_context_enrichers()  — sorted list of registered enricher names
                                   (used by ``peek --json`` plugins namespace)
 """
@@ -89,9 +93,27 @@ class PostRoundHook(Protocol):
     # avoid a circular import (api_types itself does not import hooks).
 
 
+@runtime_checkable
+class ServeStartupHook(Protocol):
+    """Fires once per ``agent-runner serve`` boot, before the round loop.
+
+    Receives the loaded ``Config``; returns nothing. Used by plugins to seed
+    state that subsequent rounds depend on (e.g. a default prompt file).
+
+    Failure semantics: if a hook raises, ``agent-runner serve`` aborts with
+    exit code 1 and emits ``serve_startup_hook_failed`` (best-effort). Hooks
+    are plugin contracts — failing fast beats mysterious per-round errors.
+    """
+
+    name: str
+
+    def __call__(self, cfg: Any) -> None: ...
+
+
 _PRE_ROUND_HOOKS: list[PreRoundHook] = []
 _CONTEXT_ENRICHERS: list[ContextEnricher] = []
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
+_SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -109,6 +131,11 @@ def register_post_round_hook(hook: PostRoundHook) -> None:
     _POST_ROUND_HOOKS.append(hook)
 
 
+def register_serve_startup_hook(hook: ServeStartupHook) -> None:
+    ensure_unique(hook.name, _SERVE_STARTUP_HOOKS, "serve_startup_hook")
+    _SERVE_STARTUP_HOOKS.append(hook)
+
+
 def pre_round_hooks() -> list[PreRoundHook]:
     return list(_PRE_ROUND_HOOKS)
 
@@ -119,6 +146,10 @@ def context_enrichers() -> list[ContextEnricher]:
 
 def post_round_hooks() -> list[PostRoundHook]:
     return list(_POST_ROUND_HOOKS)
+
+
+def serve_startup_hooks() -> list[ServeStartupHook]:
+    return list(_SERVE_STARTUP_HOOKS)
 
 
 def plugin_context_enrichers() -> list[str]:

@@ -13,6 +13,7 @@ _HOOK_GROUPS = (
     "agent_runner.pre_round_hooks",
     "agent_runner.context_enrichers",
     "agent_runner.post_round_hooks",
+    "agent_runner.serve_startup_hooks",
 )
 
 # Tracks the names passed to the most recent ``apply_plugin_disable`` call.
