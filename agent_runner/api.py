@@ -8,6 +8,7 @@ entirely.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
@@ -513,6 +514,17 @@ def _tail_events_jsonl(
             _time.sleep(poll_interval_s)
 
 
+def primary_prompt_file(cfg) -> Path | None:
+    """Return the primary prompt file: first of cfg.prompt.files, else cfg.prompt.file.
+
+    Used by HookContext to give hooks a single Path to inspect (e.g.
+    prompt-mutation hash tracking).
+    """
+    if cfg.prompt.files:
+        return cfg.prompt.files[0]
+    return cfg.prompt.file
+
+
 def assemble_prompt(cfg, phase, *, context=None):
     """Assemble the prompt for a given round.
 
@@ -558,8 +570,6 @@ def resolve_runtime_for_phase(cfg, phase_name):
     silently returns base — config-load is responsible for typo catching;
     this function is defensive.
     """
-    import dataclasses
-
     base = cfg.runtime
     if phase_name is None:
         return base

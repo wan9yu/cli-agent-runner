@@ -6,22 +6,7 @@ from pathlib import Path
 
 import pytest
 
-
-def _toml(tmp_path: Path, *, prompt_block: str, phases_block: str = "") -> Path:
-    """Build a minimal TOML at tmp_path with custom [prompt] body."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir(exist_ok=True)
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "[prompt]\n" + prompt_block + "\n" + phases_block
-    )
-    return toml
+from tests._test_helpers import make_toml_with_sections as _toml
 
 
 def test_given_files_list_when_assemble_then_concat_in_order(tmp_path: Path) -> None:

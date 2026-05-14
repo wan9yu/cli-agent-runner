@@ -4,30 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests._test_helpers import make_toml_with_sections
+
 
 def _cfg_with_overrides(tmp_path: Path) -> Path:
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir(exist_ok=True)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "round_timeout_s = 1800\n"
-        "[prompt]\n"
-        f'file = "{prompt_file}"\n'
-        "[phases]\n"
-        'list = ["dev", "qa"]\n'
-        "[phases.dev]\n"
-        "round_timeout_s = 3600\n"
-        "disable_pre_round_hooks = true\n"
+    return make_toml_with_sections(
+        tmp_path,
+        runtime_extra="round_timeout_s = 1800\n",
+        phases_block=(
+            "[phases]\n"
+            'list = ["dev", "qa"]\n'
+            "[phases.dev]\n"
+            "round_timeout_s = 3600\n"
+            "disable_pre_round_hooks = true\n"
+        ),
     )
-    return toml
 
 
 def test_given_none_phase_when_resolved_then_base_runtime(tmp_path: Path) -> None:

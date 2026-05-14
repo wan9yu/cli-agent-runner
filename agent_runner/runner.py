@@ -24,6 +24,8 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner.api import assemble_prompt as _api_assemble_prompt
+from agent_runner.api import primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
 from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms, parse_iso_ms
@@ -216,13 +218,6 @@ def _stitch_enricher_slices(
     return out
 
 
-def _hook_prompt_file(cfg) -> Path | None:
-    """Return the 'primary' prompt file for HookContext — first file or back-compat single."""
-    if cfg.prompt.files:
-        return cfg.prompt.files[0]
-    return cfg.prompt.file
-
-
 def _run_pre_round_hooks(
     hook_ctx: hooks.HookContext,
     log_dir: Path,
@@ -334,8 +329,6 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
-    from agent_runner.api import resolve_runtime_for_phase
-
     resolved_rt = resolve_runtime_for_phase(cfg, phase)
     timeout_s = resolved_rt.round_timeout_s
     started_at = now_iso_ms()
@@ -364,7 +357,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         hook_ctx,
         log_dir,
         disabled=resolved_rt.disable_pre_round_hooks,
-        prompt_file=_hook_prompt_file(cfg),
+        prompt_file=primary_prompt_file(cfg),
     )
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
 
@@ -383,8 +376,6 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir(exist_ok=True)
     log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
-
-    from agent_runner.api import assemble_prompt as _api_assemble_prompt
 
     prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 

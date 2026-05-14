@@ -52,15 +52,15 @@ def assemble_prompt(
     """
     if not prompt_files:
         raise ValueError("assemble_prompt: prompt_files must be non-empty")
-    first = prompt_files[0]
-    if not first.exists():
-        raise FileNotFoundError(f"prompt.files[0] missing: {first}")
     bodies: list[str] = []
     for i, path in enumerate(prompt_files):
-        if not path.exists():
+        try:
+            body = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if i == 0:
+                raise FileNotFoundError(f"prompt.files[0] missing: {path}") from None
             _log.warning("prompt.files[%d] missing: %s — skipping", i, path)
             continue
-        body = path.read_text(encoding="utf-8")
         if i == 0 and strip_first_frontmatter:
             body = strip_yaml_frontmatter(body)
         bodies.append(body)

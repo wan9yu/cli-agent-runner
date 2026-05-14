@@ -58,6 +58,45 @@ def make_toml(tmp_path: Path) -> Path:
     return toml
 
 
+def make_toml_with_sections(
+    tmp_path: Path,
+    *,
+    prompt_block: str | None = None,
+    runtime_extra: str = "",
+    phases_block: str = "",
+) -> Path:
+    """Like make_toml but with customizable sections.
+
+    - prompt_block: replaces the default ``file = "<prompt.md>"`` line.
+      e.g. ``'files = ["a.md"]'``
+    - runtime_extra: additional keys appended inside the ``[runtime]`` section.
+      e.g. ``'round_timeout_s = 1800\\n'``
+    - phases_block: appended after the ``[prompt]`` section.
+      e.g. ``'[phases]\\nlist = ["dev"]\\n'``
+
+    Creates ``tmp_path/logs/`` and ``tmp_path/prompt.md`` as side-effects so
+    callers that need a prompt.md on disk (single-file fallback tests) get one
+    automatically; tests using prompt_block with different files can ignore it.
+    """
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("p")
+    toml = tmp_path / "agent-runner.toml"
+    if prompt_block is None:
+        prompt_block = f'file = "{prompt_file}"'
+    toml.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n' + runtime_extra + "[prompt]\n"
+        f"{prompt_block}\n" + phases_block
+    )
+    return toml
+
+
 def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
     """Return an autouse fixture that snapshots, clears, and restores registries.
 
