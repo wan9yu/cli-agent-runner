@@ -185,7 +185,7 @@ def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, t
 def test_given_monitor_mode_narrate_when_with_host_then_rejected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--mode narrate --host is rejected (out of scope for 0.1.12)."""
+    """--mode narrate is local-only; --host is incompatible."""
     from agent_runner.cli import main
 
     (tmp_path / "prompt.md").write_text("p")

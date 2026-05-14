@@ -513,6 +513,8 @@ def _format_narrate_line(evt: dict[str, Any]) -> str:
     kv_parts = []
     for k, v in fields.items():
         if k == "round_num":
+            # Cosmetic shorten: `round=N` is more scannable than `round_num=N` in
+            # one-line narrate output. The wire field stays `round_num` in events.jsonl.
             kv_parts.append(f"round={v}")
         else:
             kv_parts.append(f"{k}={v}")

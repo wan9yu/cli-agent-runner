@@ -6,9 +6,11 @@ branches based on prior round state (§7 IMMUTABLE).
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import sys
+import traceback as tb_mod
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -59,11 +61,10 @@ def _write_holder_sidecar(lock_path: Path) -> None:
 def _format_holder_msg(lock_path: Path) -> str:
     """Read the sidecar and format a human-readable holder description."""
     sidecar = _holder_sidecar(lock_path)
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    data = context_store.read_json(sidecar)
+    if data is None:
         return "holder unknown, sidecar missing"
-    except (json.JSONDecodeError, OSError):
+    if not isinstance(data, dict):
         return "holder info unreadable"
 
     pid = data.get("pid")
@@ -211,8 +212,6 @@ def _stitch_enricher_slices(
     Any exception is caught and emitted as a ``hook_failed`` event; the
     round continues with whatever slices succeeded.
     """
-    import traceback as tb_mod
-
     out = dict(base)
     for enricher in enrichers:
         try:
@@ -247,9 +246,6 @@ def _run_pre_round_hooks(
     """
     if disabled:
         return
-
-    import hashlib
-    import traceback as tb_mod
 
     def _file_sha256(p: Path) -> str:
         try:
@@ -295,8 +291,6 @@ def _run_post_round_hooks(
     log_dir: Path,
 ) -> None:
     """Invoke registered PostRoundHook plugins. Failures are isolated."""
-    import traceback as tb_mod
-
     for hook in hooks.post_round_hooks():
         try:
             hook.after_round(hook_ctx, result)
