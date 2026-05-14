@@ -230,6 +230,18 @@ hard-to-diagnose ways.
 Make hooks idempotent — they may fire multiple times during a serve restart
 cycle. Check for existing state before seeding.
 
+### Env contract: `AGENT_RUNNER_LOG_DIR`
+
+`agent-runner serve` injects `AGENT_RUNNER_LOG_DIR=<resolved log_dir path>`
+into the round subprocess env. Agents can use this to construct paths to
+on-disk state files — most notably the self-termination sentinel:
+
+```bash
+echo "done: hypothesis X covered" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
+```
+
+This contract is stable; agents from any language / framework can rely on it.
+
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor

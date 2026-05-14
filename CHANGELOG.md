@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-05-14
+
+### Acknowledgements
+
+Designed in a 2026-05-14 conversation about agents that should know when their
+own work is done (research / bug-fix / refactor projects with natural
+completion criteria), with transparent operator visibility via browser. Two
+independent components bundled into one release because both serve the same
+"agent lifecycle transparency" theme.
+
+### Added
+
+- **Agent self-termination via `log_dir/.agent-done` sentinel**: the agent writes this file (with optional reason text, capped 200 chars in the event payload) to signal "research wrapped up". `agent-runner serve` detects the sentinel between rounds, emits `agent_self_terminated` event, and exits 0 cleanly.
+- **New env var `AGENT_RUNNER_LOG_DIR`** injected into round subprocesses. Agents construct the sentinel path from it language-agnostically (bash: `echo done > "$AGENT_RUNNER_LOG_DIR/.agent-done"`).
+- **New built-in event kind `agent_self_terminated`**: payload `{reason: str}`, capped 200 chars.
+- **Per-round stdout/stderr capture**: round subprocess output now written to `log_dir/round-<N>.log`, with `log_dir/round-current.log` symlink atomically relinked at each round start. Retention configurable via `runtime.round_log_retention` (default 100).
+- **New CLI mode `agent-runner monitor --mode http --port 8765 --config X.toml`**: browser-friendly progress page on `http://127.0.0.1:8765/`. 5-section view (round state, narrative, recent events, round log tail, self-termination flag), 5-second meta-refresh, `/api/state` JSON endpoint. Local-only (like narrate/events), zero new dependencies (stdlib `http.server`).
+- **New config fields** `runtime.round_log_retention` (int, default 100) and `runtime.narrative_file` (path, default `log_dir/narrative.md`).
+- **New public API helpers** `agent_runner.api.read_round_num()` and `agent_runner.api.check_self_terminated_sentinel()`.
+
+### Migration notes
+
+- Fully additive. No schema changes. No breaking API changes.
+- **Behavior change for `agent-runner serve` under systemd**: round subprocess stdout/stderr now goes to `log_dir/round-<N>.log` instead of supervisor stdout. journalctl will no longer show per-round agent output — supervisor lifecycle messages remain. Use `tail -F log_dir/round-current.log` for live raw view, or `agent-runner monitor --mode http` for browser view.
+- Agents that want to support self-termination opt in by writing the sentinel; existing agents are unaffected.
+
 ## [0.1.14] - 2026-05-14
 
 ### Acknowledgements
@@ -502,7 +528,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...v0.1.12

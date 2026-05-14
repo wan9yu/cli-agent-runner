@@ -131,6 +131,64 @@ Example pipe:
 agent-runner monitor --mode events | jq 'select(.event == "round_start" or .event == "round_end")'
 ```
 
+## Agent self-termination
+
+For projects with natural completion criteria (research, bug-fix sweeps,
+refactors), the agent can signal "research wrapped up" by writing a sentinel
+file:
+
+```bash
+# Inside the agent's logic, when it decides it's done
+echo "research wrapped: hypothesis X covered" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
+```
+
+`agent-runner serve` injects `AGENT_RUNNER_LOG_DIR` into the round subprocess
+env. Between rounds, the supervisor checks for `.agent-done`. If present:
+emits `agent_self_terminated` event (payload `{reason}`, capped 200 chars) and
+exits with code 0.
+
+The sentinel is cleaned at serve startup so a stale flag from a previous run
+doesn't immediately stop a fresh `serve` invocation.
+
+To inspect terminations: `grep agent_self_terminated {log_dir}/events-*.jsonl`.
+
+## Per-round stdout/stderr log files
+
+Each round subprocess writes its merged stdout+stderr to
+`{log_dir}/round-<N>.log`, where `<N>` matches the `round_num` field in
+`events.jsonl`. A symlink `{log_dir}/round-current.log` always points to the
+active round's log — `tail -F {log_dir}/round-current.log` for live view.
+
+Retention configurable via `runtime.round_log_retention` (default 100). At
+each serve startup, files beyond the retention count (by mtime) are pruned.
+
+Note for systemd deployments: journalctl will no longer show per-round agent
+output — supervisor lifecycle messages remain in journal, raw agent output
+lives in the round log files.
+
+## HTTP progress endpoint
+
+For browser-friendly live visibility:
+
+```
+agent-runner monitor --mode http --port 8765 --config /path/to/agent-runner.toml
+```
+
+Open `http://localhost:8765/` to see a 5-section page (auto-refresh 5s):
+1. Round-level state (round_num, phase, last outcome, duration)
+2. High-level narrative (last 50 lines of `runtime.narrative_file`, default `log_dir/narrative.md`)
+3. Recent events (last 20)
+4. Round stdout/stderr tail (last 50 lines)
+5. Self-termination flag status
+
+JSON endpoint at `/api/state` for scripts.
+
+Local-only (binds 127.0.0.1, no auth). For remote monitoring use
+`--mode anomaly`. Zero new dependencies — stdlib `http.server`.
+
+If the port is in use, monitor exits with code 1 and a structured stderr
+message. Pick another port via `--port`.
+
 ## Troubleshooting
 
 ### OAuth / auth failures (agent rejects requests)
