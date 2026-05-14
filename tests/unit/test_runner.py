@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent_runner.agent_runtime import RunResult
+from agent_runner.api import resolve_runtime_for_phase
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -19,7 +20,6 @@ from agent_runner.config import (
 from agent_runner.runner import (
     LockHeldError,
     _acquire_lock_or_raise,
-    _round_timeout_for,
     _scan_round_log_for_network_blip,
     run_one_round,
 )
@@ -165,15 +165,15 @@ def _unit_cfg(
 
 
 def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> None:
-    """phase=None (no phases configured) → global timeout."""
+    """phase=None → resolve_runtime_for_phase returns base timeout unchanged."""
     cfg = _unit_cfg(tmp_path)
-    assert _round_timeout_for(cfg, None) == 1800
+    assert resolve_runtime_for_phase(cfg, None).round_timeout_s == 1800
 
 
-def test_given_phase_name_when_lookup_then_returns_global(tmp_path: Path) -> None:
-    """Any phase → global timeout (per-phase resolution moves to Task 3)."""
+def test_given_phase_name_no_override_when_lookup_then_returns_global(tmp_path: Path) -> None:
+    """Phase with no [phases.<name>] sub-table → base timeout unchanged."""
     cfg = _unit_cfg(tmp_path, round_timeout_s=3600, phases=["dev"])
-    assert _round_timeout_for(cfg, "dev") == 3600
+    assert resolve_runtime_for_phase(cfg, "dev").round_timeout_s == 3600
 
 
 def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_blip(

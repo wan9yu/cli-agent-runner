@@ -28,7 +28,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
-from agent_runner.config import _DEFAULT_AUTH_PATTERNS
+from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import emit as emit_event
 from agent_runner.events import now_iso_ms, parse_iso_ms
@@ -118,21 +118,33 @@ def detect_timeout_rate(
     )
 
 
+def _phase_timeout(
+    phases_overrides: dict[str, PhaseOverride] | None, phase: str | None, fallback: int
+) -> int:
+    """Return effective timeout for the given phase, falling back to ``fallback``."""
+    if phase is None or phases_overrides is None:
+        return fallback
+    override = phases_overrides.get(phase)
+    if override is None or override.round_timeout_s is None:
+        return fallback
+    return override.round_timeout_s
+
+
 def detect_hung(
     events: list[dict[str, Any]],
     *,
     now: datetime,
     factor: float = 1.5,
     round_timeout_s: int = 1800,
-    round_timeout_per_phase: dict[str, int] | None = None,
+    phases_overrides: dict[str, PhaseOverride] | None = None,
 ) -> Alert | None:
     """A round_start without a matching round_end after timeout * factor.
 
-    When ``round_timeout_per_phase`` is supplied and the round's ``phase`` is in
-    it, that override applies. Otherwise falls back to ``round_timeout_s``.
-    Rounds with no recorded phase always use the global timeout.
+    When ``phases_overrides`` is supplied and the round's ``phase`` is in it
+    with a ``round_timeout_s`` override, that value applies. Otherwise falls
+    back to ``round_timeout_s``. Rounds with no recorded phase always use the
+    global timeout.
     """
-    per_phase = round_timeout_per_phase or {}
     open_rounds: dict[int, tuple[str, str | None]] = {}
     for e in events:
         kind = e.get("event")
@@ -144,8 +156,7 @@ def detect_hung(
     for rn, (started_ts, phase) in open_rounds.items():
         started = parse_iso_ms(started_ts)
         elapsed = (now - started).total_seconds()
-        # phase None or empty string → fall back to global; otherwise consult per_phase
-        effective_timeout = per_phase.get(phase, round_timeout_s) if phase else round_timeout_s
+        effective_timeout = _phase_timeout(phases_overrides, phase, round_timeout_s)
         threshold = effective_timeout * factor
         if elapsed > threshold:
             return _alert(
@@ -438,7 +449,7 @@ def run_all_detectors(
     now: datetime | None = None,
     auth_fail_patterns: list[str] | None = None,
     auth_fail_hint: str | None = None,
-    round_timeout_per_phase: dict[str, int] | None = None,
+    phases_overrides: dict[str, PhaseOverride] | None = None,
 ) -> list[Alert]:
     """Run all 9 detectors; returns alerts (empty = healthy)."""
     if now is None:
@@ -452,7 +463,7 @@ def run_all_detectors(
             events,
             now=now,
             round_timeout_s=round_timeout_s,
-            round_timeout_per_phase=round_timeout_per_phase,
+            phases_overrides=phases_overrides,
         ),
         detect_orphan_chain(events),
         detect_disk_warning(metrics),

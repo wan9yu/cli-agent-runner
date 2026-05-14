@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from agent_runner.api_types import Alert
+from agent_runner.config import PhaseOverride
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
     detect_disk_critical,
@@ -245,7 +246,7 @@ def test_given_default_patterns_when_detect_oauth_fail_then_uses_empty_hint_defa
 
 
 def test_given_per_phase_override_when_detect_hung_then_uses_phase_value() -> None:
-    """detect_hung honors round_timeout_per_phase override for matching phase."""
+    """detect_hung honors phases_overrides override for matching phase."""
     # Round started 500s ago in phase "warmup"; global timeout 1800, per-phase 300.
     # With factor=1.5, threshold for "warmup" = 300*1.5 = 450 → 500 > 450 → fire.
     # Without per-phase: threshold = 1800*1.5 = 2700 → 500 < 2700 → no fire.
@@ -262,7 +263,7 @@ def test_given_per_phase_override_when_detect_hung_then_uses_phase_value() -> No
         events,
         now=now,
         round_timeout_s=1800,
-        round_timeout_per_phase={"warmup": 300},
+        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
     )
     assert with_override is not None
     assert with_override.detector == "hung"
@@ -279,29 +280,29 @@ def test_given_phase_missing_when_detect_hung_then_falls_back_to_global() -> Non
         {"event": "round_start", "round_num": 7, "ts": started_ts},  # no phase field
     ]
 
-    # With per-phase config but phase missing → fall back to global (1800*1.5=2700 → no fire)
+    # With phases_overrides but phase missing → fall back to global (1800*1.5=2700 → no fire)
     out = detect_hung(
         events,
         now=now,
         round_timeout_s=1800,
-        round_timeout_per_phase={"warmup": 300},
+        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
     )
     assert out is None
 
 
 def test_given_phase_not_in_override_when_detect_hung_then_uses_global() -> None:
-    """A phase present in round_start but not in per_phase dict falls back to global."""
+    """A phase present in round_start but not in phases_overrides falls back to global."""
     now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
     started_ts = "2026-05-13T11:51:40.000Z"  # 500s before now
     events = [
         {"event": "round_start", "round_num": 7, "phase": "cleanup", "ts": started_ts},
     ]
 
-    # per_phase only configures "warmup", not "cleanup" → use global
+    # phases_overrides only configures "warmup", not "cleanup" → use global
     out = detect_hung(
         events,
         now=now,
         round_timeout_s=1800,
-        round_timeout_per_phase={"warmup": 300},
+        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
     )
     assert out is None

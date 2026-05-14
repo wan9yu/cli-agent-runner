@@ -512,6 +512,32 @@ def _tail_events_jsonl(
             _time.sleep(poll_interval_s)
 
 
+def resolve_runtime_for_phase(cfg, phase_name):
+    """Return effective RuntimeConfig for the given phase.
+
+    Merges base ``cfg.runtime`` with ``cfg.phases.overrides[phase_name]`` (if
+    present). ``None`` phase_name returns base unchanged. Unknown phase_name
+    silently returns base — config-load is responsible for typo catching;
+    this function is defensive.
+    """
+    import dataclasses
+
+    base = cfg.runtime
+    if phase_name is None:
+        return base
+    override = cfg.phases.overrides.get(phase_name)
+    if override is None:
+        return base
+    updates = {}
+    if override.round_timeout_s is not None:
+        updates["round_timeout_s"] = override.round_timeout_s
+    if override.disable_pre_round_hooks is not None:
+        updates["disable_pre_round_hooks"] = override.disable_pre_round_hooks
+    if not updates:
+        return base
+    return dataclasses.replace(base, **updates)
+
+
 def read_round_num(log_dir: Path) -> int:
     """Return the most recent round_num from status.json (or 0 if missing/corrupt).
 

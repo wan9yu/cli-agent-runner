@@ -130,12 +130,6 @@ def _phase_for(
     return phases[idx], idx
 
 
-def _round_timeout_for(cfg: Config, phase: str | None) -> int:
-    """Return per-round timeout. Per-phase resolution moves to api.resolve_runtime_for_phase
-    in Task 3; this function will be replaced then."""
-    return cfg.runtime.round_timeout_s
-
-
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
     if prev is None:
         return None
@@ -334,7 +328,10 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
-    timeout_s = _round_timeout_for(cfg, phase)
+    from agent_runner.api import resolve_runtime_for_phase
+
+    resolved_rt = resolve_runtime_for_phase(cfg, phase)
+    timeout_s = resolved_rt.round_timeout_s
     started_at = now_iso_ms()
 
     orphan = context_store.read_orphan_state(log_dir)
@@ -360,7 +357,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     _run_pre_round_hooks(
         hook_ctx,
         log_dir,
-        disabled=cfg.runtime.disable_pre_round_hooks,
+        disabled=resolved_rt.disable_pre_round_hooks,
         prompt_file=cfg.prompt.file,
     )
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
