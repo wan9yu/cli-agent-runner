@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-05-14
+
+### ⚠️ Breaking changes
+
+- **`runtime.round_timeout_per_phase` dict syntax removed**. Use `[phases.<name>] round_timeout_s = X` sub-table instead. Migration recipe in `docs/migrations/0.1.16.md`. Rationale: the dict syntax scaled poorly (N² as more per-phase fields would land); the sub-table is a one-time generalization that accommodates any per-phase field including the new `prompt.files`.
+- **`Config.phases` type changed** from `list[str] | None` to `PhasesConfig` dataclass with `.list: list[str] | None` and `.overrides: dict[str, PhaseOverride]`. Code reading `cfg.phases` as a list directly must update to `cfg.phases.list`. Internal callers and plugins are advised to check this access pattern.
+
+### Added
+
+- **`[phases.<name>]` sub-table syntax** — per-phase override for `round_timeout_s`, `disable_pre_round_hooks`, `prompt.files`. Phase name must appear in `phases.list` (typo catcher); unknown fields rejected at config load.
+- **`prompt.files = ["a.md", "b.md"]`** — multi-file prompt concat. Default separator `"\n\n"` (markdown-safe); customizable via `prompt.concat_separator`. Missing first file aborts; missing nth file warns + skips (supports optional preamble pattern).
+- **`prompt.strip_yaml_frontmatter: bool`** — new config field, default `true`. The existing R721 frontmatter-strip defense (single-file path has applied this since prior releases) is now explicit and opt-out-able. Operators with non-LLM-CLI agents can set `false`.
+- **Back-compat retained**: `prompt.file = "x.md"` single-file shorthand still works. Both `prompt.file` and `prompt.files` set → `ConfigError`.
+- **`docs/events.md`** — schema versioning contract: event kind name is the version discriminator; payload fields are append-only.
+- **New public API helpers**: `agent_runner.api.assemble_prompt(cfg, phase, context=None)` and `agent_runner.api.resolve_runtime_for_phase(cfg, phase_name)`.
+
+### Migration notes
+
+- Replace `runtime.round_timeout_per_phase = { dev = 3600, qa = 900 }` with `[phases.dev] round_timeout_s = 3600` + `[phases.qa] round_timeout_s = 900` sub-tables. See `docs/migrations/0.1.16.md` for full recipe.
+- Code reading `cfg.phases` (e.g. iterating phase names) must update to `cfg.phases.list`.
+- `prompt.file = "x.md"` continues to work unchanged; no migration required unless adopting multi-file concat.
+
+### Acknowledgements
+
+Argus Gateway's post-Q1-audit feedback (2026-05-14) surfaced the per-phase sub-table need (S3) and the multi-file prompt pattern (S1). Their R721 frontmatter-strip lesson informed making the (already-shipping) strip behavior an explicit opt-out config flag rather than hardcoded.
+
 ## [0.1.15] - 2026-05-14
 
 ### Acknowledgements
@@ -528,7 +554,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...v0.1.13

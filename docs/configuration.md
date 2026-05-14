@@ -79,6 +79,26 @@ guidance without authoring it themselves:
 
 Override in your `agent-runner.toml` if you ship a custom CLI.
 
+## `[prompt]` multi-file concat (0.1.16+)
+
+Use `prompt.files` to assemble the round prompt from multiple Markdown files
+(e.g. a shared preamble + a role-specific body):
+
+```toml
+[prompt]
+files = ["_common.md", "dev.md"]
+concat_separator = "\n\n"        # default; use "\n\n---\n\n" for visible breaks
+strip_yaml_frontmatter = true    # default; set false for non-LLM-CLI agents
+```
+
+- **Missing `files[0]`** → `ConfigError` (fail-fast; the first file is required).
+- **Missing `files[n≥1]`** → warning logged, file skipped (supports optional preamble pattern).
+- **Both `prompt.file` and `prompt.files` set** → `ConfigError`.
+- **`prompt.file = "x.md"` shorthand** — single-file back-compat, still works unchanged.
+- **`strip_yaml_frontmatter`** — YAML frontmatter on the first file is stripped before passing to the agent (R721 defense against `claude -p '---...'` arg-parse rejection). Set `false` to preserve frontmatter for agents that parse it themselves.
+
+Paths are resolved against `runtime.work_dir` (consistent with existing path resolution).
+
 ## `[phases]` (optional)
 
 | Field | Type | Default | Notes |
@@ -90,30 +110,46 @@ Override in your `agent-runner.toml` if you ship a custom CLI.
 > counter is unaffected — subsequent default rounds resume rotation. The name
 > must match one of the entries in `[phases].list`.
 
-## Per-phase timeouts (0.1.9+)
+## `[phases.<name>]` per-phase sub-tables (0.1.16+)
 
-If your `[phases]` rotation has phases with different wall-clock budgets,
-override the global timeout per phase:
+Each phase can carry its own overrides for up to three fields. The phase name
+must appear in `phases.list` (typo catcher); unknown fields are rejected at
+config load.
+
+**Whitelisted per-phase fields:**
+
+| Field | Type | Overrides |
+|---|---|---|
+| `round_timeout_s` | `int` | `runtime.round_timeout_s` |
+| `disable_pre_round_hooks` | `bool` | `runtime.disable_pre_round_hooks` |
+| `prompt.files` | `list[str]` | `prompt.files` |
 
 ```toml
 [runtime]
 round_timeout_s = 1800           # fallback for unconfigured phases
 
-[runtime.round_timeout_per_phase]
-dev = 3600                       # implementation work, longer budget
-qa = 1200                        # test review, tighter budget
-product = 1200                   # docs writing, tighter budget
-
 [phases]
 list = ["dev", "qa", "product"]
+
+[phases.dev]
+round_timeout_s = 3600           # implementation work, longer budget
+prompt.files = ["_common.md", "dev.md"]
+
+[phases.qa]
+round_timeout_s = 1200           # test review, tighter budget
+disable_pre_round_hooks = true   # audit phase: no hook pollution
+prompt.files = ["_common.md", "qa.md"]
+
+[phases.product]
+round_timeout_s = 1200           # docs writing, tighter budget
+prompt.files = ["_common.md", "product.md"]
 ```
 
-Validation: typos in phase names (keys not in `[phases] list`) and
-non-positive / non-integer values are caught at config-load time with
-`ValueError`.
+Unconfigured phases (and configs without `[phases]`) keep using the global
+`runtime.round_timeout_s`.
 
-Unconfigured phases (and configs without `[phases]`) keep using the
-global `round_timeout_s`.
+> **Migration from 0.1.15**: `runtime.round_timeout_per_phase` dict syntax is
+> removed. See `docs/migrations/0.1.16.md` for the full recipe.
 
 ## `[monitor]` (optional, defaults shown)
 
