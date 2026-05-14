@@ -27,7 +27,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     select_path,
 )
-from agent_runner.config import load_config
+from agent_runner.config import Config, RuntimeConfig, load_config
 from agent_runner.lifecycle import (
     PIDFile,
     detect_service_mode,
@@ -514,18 +514,20 @@ def _tail_events_jsonl(
             _time.sleep(poll_interval_s)
 
 
-def primary_prompt_file(cfg) -> Path | None:
+def _primary_prompt_file(cfg: Config) -> Path | None:
     """Return the primary prompt file: first of cfg.prompt.files, else cfg.prompt.file.
 
     Used by HookContext to give hooks a single Path to inspect (e.g.
-    prompt-mutation hash tracking).
+    prompt-mutation hash tracking). Internal — runner is the only caller.
     """
     if cfg.prompt.files:
         return cfg.prompt.files[0]
     return cfg.prompt.file
 
 
-def assemble_prompt(cfg, phase, *, context=None):
+def assemble_prompt(
+    cfg: Config, phase: str | None, *, context: dict[str, Any] | None = None
+) -> str:
     """Assemble the prompt for a given round.
 
     Resolves per-phase prompt.files override (via PhaseOverride.prompt_files); falls
@@ -562,7 +564,7 @@ def assemble_prompt(cfg, phase, *, context=None):
     )
 
 
-def resolve_runtime_for_phase(cfg, phase_name):
+def resolve_runtime_for_phase(cfg: Config, phase_name: str | None) -> RuntimeConfig:
     """Return effective RuntimeConfig for the given phase.
 
     Merges base ``cfg.runtime`` with ``cfg.phases.overrides[phase_name]`` (if

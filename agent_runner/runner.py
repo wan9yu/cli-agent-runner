@@ -24,8 +24,8 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner.api import _primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
-from agent_runner.api import primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api_types import RoundResult
 from agent_runner.config import Config
 from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms, parse_iso_ms
@@ -357,7 +357,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         hook_ctx,
         log_dir,
         disabled=resolved_rt.disable_pre_round_hooks,
-        prompt_file=primary_prompt_file(cfg),
+        prompt_file=_primary_prompt_file(cfg),
     )
     enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
 
