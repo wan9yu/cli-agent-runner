@@ -460,65 +460,31 @@ def monitor_loop(
         time.sleep(interval_s)
 
 
-def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
-    """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
+def _tail_events_jsonl(
+    log_dir: Path,
+    *,
+    start_at_now: bool,
+    poll_interval_s: float,
+) -> Iterator[dict[str, Any]]:
+    """Polling tailer: yields parsed event dicts from events-*.jsonl files.
 
-    Format: ``[HH:MM:SS.fff] {event:<20} key=value ...`` (excluding ts and event).
+    ``start_at_now``: if True, snapshot current file sizes at init so existing
+    events are skipped (machine-consumption use case). If False, yield from
+    byte 0 of every file present at start (human-narrate use case).
 
-    Polling-based (no inotify/kqueue — cross-platform). Designed for human-readable
-    live monitoring during debug / audit / short runs.
+    Follows file rotation transparently — when a new events-YYYY-MM-DD.jsonl
+    appears, it is picked up from byte 0.
     """
     import json as _json
     import time as _time
 
     seen_positions: dict[Path, int] = {}
-
-    while True:
-        files = sorted(log_dir.glob("events-*.jsonl"))
-        any_new = False
-        for path in files:
-            pos = seen_positions.get(path, 0)
+    if start_at_now:
+        for path in sorted(log_dir.glob("events-*.jsonl")):
             try:
-                size = path.stat().st_size
+                seen_positions[path] = path.stat().st_size
             except FileNotFoundError:
                 continue
-            if size <= pos:
-                continue
-            with path.open("r", encoding="utf-8") as f:
-                f.seek(pos)
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        evt = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    yield _format_narrate_line(evt)
-                    any_new = True
-                seen_positions[path] = f.tell()
-        if not any_new:
-            _time.sleep(poll_interval_s)
-
-
-def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[dict[str, Any]]:
-    """Tail events-*.jsonl files in log_dir, yielding one parsed event dict per line.
-
-    Subscription begins at "now": events present in the file before the iterator
-    starts are NOT yielded. Follows file rotation transparently (when a new
-    events-YYYY-MM-DD.jsonl appears, the iterator picks it up from byte 0).
-
-    Polling-based (no inotify/kqueue — cross-platform). Designed for machine
-    consumption (vs ``narrate_events`` which formats for humans).
-    """
-    import json as _json
-    import time as _time
-
-    seen_positions: dict[Path, int] = {}
-    for path in sorted(log_dir.glob("events-*.jsonl")):
-        try:
-            seen_positions[path] = path.stat().st_size
-        except FileNotFoundError:
-            continue
 
     while True:
         files = sorted(log_dir.glob("events-*.jsonl"))
@@ -545,6 +511,35 @@ def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.5) -> Itera
                 seen_positions[path] = f.tell()
         if not any_new:
             _time.sleep(poll_interval_s)
+
+
+def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
+    """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
+
+    Format: ``[HH:MM:SS.fff] {event:<20} key=value ...`` (excluding ts and event).
+
+    Polling-based (no inotify/kqueue — cross-platform). Designed for human-readable
+    live monitoring during debug / audit / short runs. Yields events from byte 0
+    of all files present at iterator start, then follows new appends.
+    """
+    for evt in _tail_events_jsonl(log_dir, start_at_now=False, poll_interval_s=poll_interval_s):
+        yield _format_narrate_line(evt)
+
+
+def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.1) -> Iterator[dict[str, Any]]:
+    """Tail events-*.jsonl files in log_dir, yielding one parsed event dict per line.
+
+    Subscription begins at "now": events present in the file before the iterator
+    starts are NOT yielded. Follows file rotation transparently (when a new
+    events-YYYY-MM-DD.jsonl appears, the iterator picks it up from byte 0).
+
+    Default poll_interval_s of 0.1 reflects machine-consumption latency
+    expectations (vs ``narrate_events`` which uses 0.5 for human pacing).
+
+    Polling-based (no inotify/kqueue — cross-platform). Designed for machine
+    consumption (vs ``narrate_events`` which formats for humans).
+    """
+    yield from _tail_events_jsonl(log_dir, start_at_now=True, poll_interval_s=poll_interval_s)
 
 
 def _format_narrate_line(evt: dict[str, Any]) -> str:

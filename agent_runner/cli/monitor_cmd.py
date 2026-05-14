@@ -75,16 +75,13 @@ def _cmd_anomaly(args) -> int:
 
 def _cmd_events(args) -> int:
     """JSONL event stream — machine-readable variant of narrate."""
-    import json as _json
-
-    from agent_runner import api
     from agent_runner.cli.common import cfg_from_args
 
     cfg = cfg_from_args(args)
     log_dir = cfg.runtime.log_dir
     try:
         for evt in api.stream_events_jsonl(log_dir):
-            print(_json.dumps(evt), flush=True)
+            print(json.dumps(evt), flush=True)
     except KeyboardInterrupt:
         pass
     return 0
