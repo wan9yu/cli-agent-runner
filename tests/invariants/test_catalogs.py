@@ -136,3 +136,10 @@ def test_given_serve_startup_hook_failed_kind_when_registered_then_in_known_even
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "serve_startup_hook_failed" in KNOWN_EVENT_KINDS
+
+
+def test_given_agent_self_terminated_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: agent_self_terminated must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "agent_self_terminated" in KNOWN_EVENT_KINDS

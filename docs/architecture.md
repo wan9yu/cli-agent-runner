@@ -143,6 +143,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 <!-- gen:event-kinds -->
 - `agent_exit`
 - `agent_network_blip`
+- `agent_self_terminated`
 - `agent_spawn`
 - `dirty_detected`
 - `hook_failed`
