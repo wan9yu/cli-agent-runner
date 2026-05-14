@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._test_helpers import make_toml
+from tests._test_helpers import FakeArgs, make_toml
 
 
 def test_given_no_registered_hooks_when_serve_startup_hooks_then_empty_list() -> None:
@@ -106,11 +106,7 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = True
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=True))
     assert rc == 0
     assert called["count"] == 1
 
@@ -150,11 +146,7 @@ def test_given_hook_raises_when_serve_then_abort_exit_1_emit_event(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 1
     assert called["subprocess_run"] == 0
 
@@ -206,10 +198,6 @@ def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    class FakeArgs:
-        config = cfg_path
-        once = False
-
-    rc = serve_cmd.cmd(FakeArgs())
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 1
     assert called_b["count"] == 0
