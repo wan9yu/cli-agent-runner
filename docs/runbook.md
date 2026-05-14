@@ -88,6 +88,49 @@ Three event kinds are interesting:
 - `service_upgrade_rolled_back` — attempted upgrade reverted (safety net fired)
 - `service_upgrade_rollback_failed` — critical: needs manual intervention
 
+## Plugin cold-start (serve-startup hooks)
+
+Plugins may register `ServeStartupHook` callbacks that fire once per
+`agent-runner serve` invocation. The hook receives the loaded `Config` and
+returns nothing.
+
+Typical use case: seed a file or external state that subsequent rounds depend
+on. Example: a plugin's `PreRoundHook` overwrites `/tmp/my-prompt.md` per
+round, but the first round needs the file to already exist. A serve-startup
+hook seeds it before any round runs.
+
+### Failure behavior
+
+If a serve-startup hook raises, `agent-runner serve` aborts with exit code 1
+before entering the round loop. A `serve_startup_hook_failed` event is emitted
+best-effort with payload `{hook, exc_type, exc_msg}`.
+
+To inspect failures: `grep serve_startup_hook_failed {log_dir}/events-*.jsonl`.
+
+Operators can disable a misbehaving hook via `[plugins] disable = ["hook_name"]`
+just like any other plugin component.
+
+## Live event stream (machine-readable)
+
+For machine consumption (parity comparisons, custom dashboards, automation
+scripts), use:
+
+```
+agent-runner monitor --mode events --config /path/to/agent-runner.toml
+```
+
+Stdout emits one event per line as JSON. Subscription begins at process-start;
+historical events are not replayed (use `cat events-*.jsonl | jq .` for that).
+The mode follows daily file rotation transparently.
+
+Local-only (no `--host` support). For remote monitoring use `--mode anomaly`.
+
+Example pipe:
+
+```bash
+agent-runner monitor --mode events | jq 'select(.event == "round_start" or .event == "round_end")'
+```
+
 ## Troubleshooting
 
 ### OAuth / auth failures (agent rejects requests)

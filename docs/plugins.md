@@ -182,6 +182,54 @@ The round itself continues — a broken plugin must not crash the supervisor.
 }
 ```
 
+### Serve-startup hooks
+
+Fires once per `agent-runner serve` invocation, after config load, before the
+supervisor loop. Use for seeding state that subsequent rounds depend on.
+
+Protocol:
+
+```python
+from typing import Protocol, runtime_checkable
+
+@runtime_checkable
+class ServeStartupHook(Protocol):
+    name: str
+    def __call__(self, cfg: Config) -> None: ...
+```
+
+Registration (in your plugin package's `__init__.py`):
+
+```python
+from agent_runner.hooks import register_serve_startup_hook
+
+class MySeederHook:
+    name = "my_seeder"
+    def __call__(self, cfg):
+        seed_path = cfg.runtime.work_dir / ".my-plugin-state"
+        if not seed_path.exists():
+            seed_path.write_text(_default_state())
+
+register_serve_startup_hook(MySeederHook())
+```
+
+Entry point declaration (in your plugin's `pyproject.toml`):
+
+```toml
+[project.entry-points."agent_runner.serve_startup_hooks"]
+my_seeder = "my_plugin_pkg"
+```
+
+### Failure semantics
+
+If your hook raises, `agent-runner serve` aborts with exit code 1 and emits a
+`serve_startup_hook_failed` event (best-effort). This is by design: hooks are
+plugin contracts. Failing fast and loudly beats subsequent rounds failing in
+hard-to-diagnose ways.
+
+Make hooks idempotent — they may fire multiple times during a serve restart
+cycle. Check for existing state before seeding.
+
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor

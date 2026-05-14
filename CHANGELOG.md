@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-05-14
+
+### Acknowledgements
+
+Two of six nice-to-have items surfaced in Argus Gateway's v0.1.12
+production-evaluation report (2026-05-14). An earlier scope also included
+per-phase runtime override; spec review caught that `runtime.round_timeout_per_phase`
+already covers Argus's stated need, so that component was deferred to a future
+release where a second per-phase field surfaces. Other items in the report
+(detector helper, hot-reload, replay) remain intentionally out of scope.
+
+### Added
+
+- New plugin extension point `agent_runner.serve_startup_hooks` (entry_points group). Hooks implement `ServeStartupHook` protocol — `name: str` + `__call__(cfg: Config) -> None`. Fires once per `agent-runner serve` invocation, after config load, before the supervisor loop. Useful for seeding state that subsequent rounds depend on (e.g. default prompt file).
+- New built-in event kind `serve_startup_hook_failed` — emitted (best-effort) when a serve-startup hook raises. Payload: `hook` (name), `exc_type`, `exc_msg` (capped 200 chars). `agent-runner serve` aborts with exit code 1.
+- New CLI mode `agent-runner monitor --mode events` — JSONL event stream to stdout, one event per line, line-buffered for pipe-friendliness. Subscription starts at "now" (no historical replay). Follows daily file rotation transparently. Local-only (like `narrate` mode).
+
+### Migration notes
+
+- Fully additive release. No schema changes. No breaking API changes.
+- Plugin authors: registering a serve-startup hook follows the same pattern as `pre_round_hooks` / `post_round_hooks` — declare an entry point under `agent_runner.serve_startup_hooks`, register via `register_serve_startup_hook()` at module import.
+
 ## [0.1.13] - 2026-05-14
 
 ### Acknowledgements
@@ -480,7 +502,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.10...v0.1.11
