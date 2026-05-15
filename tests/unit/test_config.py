@@ -913,7 +913,7 @@ def test_given_phase_sub_table_all_three_fields_when_loaded_then_all_parsed(
     o = cfg.phases.overrides["dev"]
     assert o.round_timeout_s == 3600
     assert o.disable_pre_round_hooks is True
-    assert o.prompt_files == [Path("a.md"), Path("b.md")]
+    assert o.prompt_files == [tmp_path / "a.md", tmp_path / "b.md"]
 
 
 def test_given_phase_name_not_in_list_when_loaded_then_config_error(
@@ -1015,7 +1015,7 @@ def test_given_prompt_files_list_when_loaded_then_files_attribute_set(
     )
 
     cfg = load_config(tmp_path / "agent-runner.toml")
-    assert cfg.prompt.files == [Path("a.md"), Path("b.md")]
+    assert cfg.prompt.files == [tmp_path / "a.md", tmp_path / "b.md"]
     assert cfg.prompt.file is None
     assert cfg.prompt.concat_separator == "\n\n"
     assert cfg.prompt.strip_yaml_frontmatter is True
@@ -1261,3 +1261,141 @@ def test_given_only_orphan_action_when_loaded_then_alias_with_deprecation_warnin
         issubclass(item.category, DeprecationWarning) and "orphan_action" in str(item.message)
         for item in w
     )
+
+
+def test_given_relative_log_dir_when_loaded_then_resolved_to_absolute(
+    tmp_path: Path,
+) -> None:
+    """log_dir = "logs" (relative) → resolved against work_dir at load."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        'log_dir = "logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.log_dir.is_absolute()
+    assert cfg.runtime.log_dir == (tmp_path / "logs").resolve()
+
+
+def test_given_relative_narrative_file_when_loaded_then_resolved(tmp_path: Path) -> None:
+    """narrative_file = "narrative.md" → absolute after load."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        'narrative_file = "narrative.md"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.narrative_file is not None
+    assert cfg.runtime.narrative_file.is_absolute()
+    assert cfg.runtime.narrative_file == (tmp_path / "narrative.md").resolve()
+
+
+def test_given_relative_prompt_file_when_loaded_then_resolved(tmp_path: Path) -> None:
+    """prompt.file = "prompt.md" (relative) → absolute after load."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'file = "prompt.md"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.prompt.file is not None
+    assert cfg.prompt.file.is_absolute()
+    assert cfg.prompt.file == (tmp_path / "prompt.md").resolve()
+
+
+def test_given_relative_prompt_files_list_when_loaded_then_all_resolved(
+    tmp_path: Path,
+) -> None:
+    """prompt.files = ["a.md", "b.md"] (both relative) → both absolute."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'files = ["a.md", "b.md"]\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    for path in cfg.prompt.files:
+        assert path.is_absolute()
+    assert cfg.prompt.files[0] == (tmp_path / "a.md").resolve()
+    assert cfg.prompt.files[1] == (tmp_path / "b.md").resolve()
+
+
+def test_given_relative_per_phase_prompt_files_when_loaded_then_resolved(
+    tmp_path: Path,
+) -> None:
+    """[phases.qa] prompt.files = ["x.md"] (relative) → absolute after load."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "p.md").write_text("p")
+    (tmp_path / "x.md").write_text("x")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        'file = "p.md"\n'
+        "[phases]\n"
+        'list = ["dev", "qa"]\n'
+        "[phases.qa]\n"
+        'prompt.files = ["x.md"]\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    qa = cfg.phases.overrides["qa"]
+    assert qa.prompt_files is not None
+    assert all(p.is_absolute() for p in qa.prompt_files)
+    assert qa.prompt_files[0] == (tmp_path / "x.md").resolve()
+
+
+def test_given_no_narrative_file_when_loaded_then_remains_none(tmp_path: Path) -> None:
+    """narrative_file unset → cfg.runtime.narrative_file is None (no resolution attempt)."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.narrative_file is None

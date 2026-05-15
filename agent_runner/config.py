@@ -138,6 +138,13 @@ def _expand_path(s: str, project_name: str) -> Path:
     return Path(s.replace("{project}", project_name)).expanduser()
 
 
+def _resolve_against_work_dir(p: Path | None, work_dir: Path) -> Path | None:
+    """Return absolute path: None passes through, abs unchanged, relative joined to work_dir."""
+    if p is None:
+        return None
+    return p if p.is_absolute() else (work_dir / p).resolve()
+
+
 def _require_positive_int(value: Any, *, field: str) -> int:
     """Validate a TOML value is a positive int. Rejects bool (subclass of int
     in Python, would silently coerce e.g. ``true`` → 1) and any non-int."""
@@ -184,7 +191,10 @@ _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
 
 
 def _parse_phase_overrides(
-    phases_d: dict[str, Any], phases_list: list[str] | None, project_name: str
+    phases_d: dict[str, Any],
+    phases_list: list[str] | None,
+    project_name: str,
+    work_dir: Path,
 ) -> dict[str, PhaseOverride]:
     """Parse [phases.<name>] sub-tables from raw TOML dict.
 
@@ -229,7 +239,10 @@ def _parse_phase_overrides(
             prompt_sub = value["prompt"]
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
                 raise ValueError(f"[phases.{phase_name}].prompt must have a 'files' list")
-            prompt_files = [_expand_path(str(p), project_name) for p in prompt_sub["files"]]
+            prompt_files = [
+                _resolve_against_work_dir(_expand_path(str(p), project_name), work_dir)
+                for p in prompt_sub["files"]
+            ]
         overrides[phase_name] = PhaseOverride(
             round_timeout_s=round_timeout_s,
             disable_pre_round_hooks=disable_hooks,
@@ -258,7 +271,7 @@ def load_config(toml_path: Path) -> Config:
     # Phases first — needed for per-phase round_timeout validation below.
     phases_d = raw.get("phases", {})
     phases_list = list(phases_d["list"]) if "list" in phases_d else None
-    phases_overrides = _parse_phase_overrides(phases_d, phases_list, project_name)
+    phases_overrides = _parse_phase_overrides(phases_d, phases_list, project_name, work_dir)
     phases_cfg = PhasesConfig(list=phases_list, overrides=phases_overrides)
 
     runtime_d = raw.get("runtime", {})
@@ -270,7 +283,10 @@ def load_config(toml_path: Path) -> Config:
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
-        log_dir=_expand_path(str(_require(raw, "runtime", "log_dir")), project_name),
+        log_dir=_resolve_against_work_dir(
+            _expand_path(str(_require(raw, "runtime", "log_dir")), project_name),
+            work_dir,
+        ),
         round_timeout_s=_require_positive_int(
             runtime_d.get("round_timeout_s", 1800), field="runtime.round_timeout_s"
         ),
@@ -284,10 +300,11 @@ def load_config(toml_path: Path) -> Config:
         round_log_retention=_require_positive_int(
             runtime_d.get("round_log_retention", 100), field="runtime.round_log_retention"
         ),
-        narrative_file=(
+        narrative_file=_resolve_against_work_dir(
             _expand_path(str(runtime_d["narrative_file"]), project_name)
             if "narrative_file" in runtime_d
-            else None
+            else None,
+            work_dir,
         ),
     )
     prompt_d = raw.get("prompt", {})
@@ -303,9 +320,18 @@ def load_config(toml_path: Path) -> Config:
         raise ValueError("set either prompt.file or prompt.files, not both")
     if not has_file and not has_files:
         raise ValueError("missing required field: prompt.file or prompt.files")
-    prompt_file = _expand_path(str(prompt_d["file"]), project_name) if has_file else None
+    prompt_file = (
+        _resolve_against_work_dir(_expand_path(str(prompt_d["file"]), project_name), work_dir)
+        if has_file
+        else None
+    )
     prompt_files = (
-        [_expand_path(str(p), project_name) for p in prompt_d["files"]] if has_files else []
+        [
+            _resolve_against_work_dir(_expand_path(str(p), project_name), work_dir)
+            for p in prompt_d["files"]
+        ]
+        if has_files
+        else []
     )
     prompt = PromptConfig(
         file=prompt_file,

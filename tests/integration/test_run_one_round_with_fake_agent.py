@@ -193,3 +193,57 @@ def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
 
     assert record.exists(), "fake agent didn't run -- check runner spawn path"
     assert "MY_FLAG=passed-through" in record.read_text()
+
+
+def test_given_relative_paths_when_round_runs_from_other_cwd_then_succeeds(
+    tmp_path: Path,
+) -> None:
+    """Launching `agent-runner round` from CWD ≠ work_dir with relative TOML paths
+    must succeed (regression for plan-b 0.1.16 STARTUP FAIL bug)."""
+    import sys
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    (work_dir / "prompts").mkdir()
+    # Prompt must be >= 500 bytes to pass prompt_smoke_passes startup check
+    (work_dir / "prompts" / "p.md").write_text("Substantive prompt content. " * 25)
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work_dir}"\n'
+        'log_dir = "logs"\n'
+        "[prompt]\n"
+        'files = ["prompts/p.md"]\n'
+    )
+    # work_dir must be a git repo to pass work_dir_is_git_repo startup check
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=work_dir, check=True)
+    subprocess.run(["git", "add", "."], cwd=work_dir, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        cwd=work_dir,
+        check=True,
+    )
+
+    # Launch round subprocess from a DIFFERENT cwd (the original repro)
+    other_cwd = tmp_path
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent_runner.cli",
+            "--config",
+            str(work_dir / "agent-runner.toml"),
+            "round",
+        ],
+        cwd=other_cwd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"round failed: stderr={result.stderr}"
+    assert "STARTUP FAIL" not in result.stderr
