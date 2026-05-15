@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of silently reporting success. Prints remediation hint.
 - `agent-runner install --system` shipped: writes `/etc/systemd/system/`
   with `User=$SUDO_USER`, enables (no auto-start). For headless distros.
+- New `gemini` preset: `agent-runner init --preset gemini` scaffolds
+  for Gemini CLI (uses `--yolo` for unattended operation).
 
 See `docs/migrations/0.1.19.md`.
 
