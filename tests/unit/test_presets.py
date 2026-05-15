@@ -101,4 +101,5 @@ def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_pa
         warnings.simplefilter("always")
         load_config(target)
     deps = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert not deps, f"preset {name}.toml emitted {len(deps)} DeprecationWarning(s): {[str(w.message) for w in deps]}"
+    msgs = [str(w.message) for w in deps]
+    assert not deps, f"preset {name}.toml emitted {len(deps)} DeprecationWarning(s): {msgs}"
