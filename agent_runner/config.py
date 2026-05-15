@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
+_VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,7 @@ class PromptConfig:
 @dataclass(frozen=True)
 class VcsConfig:
     stash_idempotency_s: int = 5
-    dirty_action: str = "stash"  # "stash" | "ignore" | "auto_commit"
+    dirty_action: Literal["stash", "ignore", "auto_commit"] = "stash"
 
 
 # Default auth-failure detection regex — matches common OAuth/401/expired-session
@@ -348,7 +349,7 @@ def load_config(toml_path: Path) -> Config:
             "see docs/migrations/0.1.17.md"
         )
     dirty_action = str(vcs_d.get("dirty_action", "stash"))
-    if dirty_action not in {"stash", "ignore", "auto_commit"}:
+    if dirty_action not in _VALID_DIRTY_ACTIONS:
         raise ValueError(
             f"vcs.dirty_action: {dirty_action!r} not in allowed values "
             f"{{'stash', 'ignore', 'auto_commit'}}"

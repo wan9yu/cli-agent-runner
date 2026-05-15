@@ -45,7 +45,7 @@ writes a templated copy you can edit.
 | Field | Type | Default |
 |---|---|---|
 | `stash_idempotency_s` | `int` | 5 |
-| `dirty_action` | `str` | 'stash' |
+| `dirty_action` | `Literal['stash', 'ignore', 'auto_commit']` | 'stash' |
 
 ### `[monitor]`
 
