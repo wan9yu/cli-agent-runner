@@ -58,6 +58,24 @@ writes a templated copy you can edit.
 | `remote_failure_tolerance_s` | `int` | 90 |
 <!-- /gen:config-schema -->
 
+### `vcs.dirty_action`
+
+Type: string, one of `"stash"`, `"ignore"`, `"auto_commit"`
+Default: `"stash"`
+
+Controls supervisor behavior when round subprocess exits with a dirty
+working tree:
+
+| Value | Behavior |
+|---|---|
+| `"stash"` | Auto-stash dirty tree with ORPHAN-prefix message. `dirty_detected` + `orphan_stashed` events emitted. |
+| `"ignore"` | Emit `dirty_detected` event only. Working tree left dirty for next round. |
+| `"auto_commit"` | Supervisor commits with subject `agent-runner auto-commit: R<N> <phase>`. No push. On failure, emits `dirty_commit_failed`, leaves tree dirty. |
+
+### `vcs.orphan_action` (DEPRECATED in 0.1.17, removed in 0.1.18)
+
+Use `vcs.dirty_action` instead. See `docs/migrations/0.1.17.md`.
+
 ## `[agent.env]` (optional)
 
 `[agent.env]` is a flat `dict[str, str]` of environment variables injected into

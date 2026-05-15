@@ -189,6 +189,94 @@ Local-only (binds 127.0.0.1, no auth). For remote monitoring use
 If the port is in use, monitor exits with code 1 and a structured stderr
 message. Pick another port via `--port`.
 
+## Long-running research project (24×7 unattended)
+
+For research-style work where the agent autonomously explores a question
+across many rounds and self-terminates when "done" — see the canonical
+example at https://github.com/wan9yu/inception/tree/main/plan-b.
+
+### Project layout
+
+```
+my-research/
+├── agent-runner.toml
+├── prompts/
+│   ├── _common.md       # preamble: goal, success criteria, guardrails
+│   ├── diverge.md       # phase=diverge round instructions
+│   └── converge.md      # phase=converge round instructions
+├── narrative.md         # agent-maintained thin synthesis (operator-facing)
+├── rounds/
+│   └── R<N>.md          # per-round detail file (created by agent each round)
+└── outputs/
+    └── plan-b-recommendation.md  # final deliverable on convergence
+```
+
+### TOML pattern
+
+```toml
+[agent]
+command = ["claude", "-p", "--permission-mode=bypassPermissions"]
+prompt_arg_template = ["{prompt}"]
+
+[runtime]
+work_dir = "/home/user/my-research"
+log_dir = "logs"                  # relative — resolved against work_dir (0.1.17+)
+narrative_file = "narrative.md"
+restart_delay_s = 30
+
+[prompt]
+files = ["prompts/_common.md", "prompts/diverge.md"]  # default before phase rotation
+concat_separator = "\n\n---\n\n"
+
+[phases]
+list = ["diverge", "converge"]
+
+[phases.diverge]
+prompt.files = ["prompts/_common.md", "prompts/diverge.md"]
+
+[phases.converge]
+prompt.files = ["prompts/_common.md", "prompts/converge.md"]
+
+[vcs]
+dirty_action = "ignore"   # agent does its own commits during round body
+```
+
+### Self-termination
+
+Agent writes `$AGENT_RUNNER_LOG_DIR/.agent-done` when it considers the
+research converged (per criteria in `prompts/_common.md`):
+
+```bash
+echo "converged: <one-line summary>" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
+```
+
+Supervisor detects between rounds and exits cleanly with code 0.
+
+### Memory awareness on Pi-class hardware
+
+For Raspberry Pi (≤512 MB RAM), include explicit memory-awareness in
+`prompts/_common.md`:
+- Use `head` / `tail` / `grep -m`, never `cat` on large files
+- Avoid recursive directory listings
+- Check `free -h` before expensive operations
+
+### Operator monitoring
+
+```bash
+agent-runner monitor --mode http --port 8765 --config <toml>
+# SSH-tunnel from your laptop:
+ssh -L 8765:127.0.0.1:8765 <pi-host>
+# Open http://localhost:8765/ in browser
+```
+
+### Going truly 24×7 (systemd)
+
+```bash
+agent-runner install --user --config <toml>
+systemctl --user start agent-runner@<project>
+systemctl --user enable agent-runner@<project>  # restart on Pi reboot
+```
+
 ## Troubleshooting
 
 ### OAuth / auth failures (agent rejects requests)

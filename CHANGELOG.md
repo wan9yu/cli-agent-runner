@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-05-15
+
+### ⚠️ Deprecations
+
+- **`vcs.orphan_action` deprecated** — renamed to `vcs.dirty_action` for
+  semantic clarity. Both names work in 0.1.17 (DeprecationWarning on
+  `orphan_action`); `orphan_action` removed in 0.1.18. Migration recipe
+  in `docs/migrations/0.1.17.md`.
+
+### Added
+
+- **`vcs.dirty_action` config** — three values:
+  - `"stash"` (default, current behavior preserved)
+  - `"ignore"` — leave dirty tree, next round inherits (use when agent
+    owns git lifecycle)
+  - `"auto_commit"` — supervisor auto-commits with subject
+    `agent-runner auto-commit: R<N> <phase>`. No body, no AI attribution.
+    No push (local commit only).
+- **New built-in event kind `dirty_commit_failed`** — emitted when
+  `auto_commit` fails (no git user.email, pre-commit hook failure, etc).
+  Payload: `{round_num, phase, reason}` (reason capped 200 chars).
+  Tree left dirty (effectively falls back to "ignore" behavior).
+- **All relative paths in TOML now resolve against `runtime.work_dir`**
+  at config load time. Affects `log_dir`, `narrative_file`, `prompt.file`,
+  `prompt.files[*]`, `phases.<name>.prompt.files[*]`. Operators using
+  absolute paths see no change. Operators using relative paths get
+  correct behavior regardless of CWD when launching `serve` / `round`.
+- **New round subprocess env vars** — `AGENT_RUNNER_ROUND_NUM` (matches
+  events.jsonl `round_num`) and `AGENT_RUNNER_PHASE` (`""` when no
+  phases configured). Joins existing `AGENT_RUNNER_LOG_DIR` (0.1.15).
+
+### Migration notes
+
+- `vcs.orphan_action = "stash"` → `vcs.dirty_action = "stash"`. Old name
+  still works in 0.1.17 with deprecation warning; removed in 0.1.18.
+- Relative-path TOMLs that were broken in 0.1.16 now work. Operators
+  who had absolute-path workarounds can simplify back to relative paths
+  if desired (no functional change).
+
+### Acknowledgements
+
+Friction points discovered during the 2026-05-14 plan-b research
+deployment on Pi (https://github.com/wan9yu/inception/tree/main/plan-b).
+Self-driven `agent-runner` + Claude Code surfaced 3 real bugs and 1
+missing primitive (round_num env) within the first 6 rounds.
+
 ## [0.1.16] - 2026-05-14
 
 ### ⚠️ Breaking changes
@@ -554,7 +600,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.13...v0.1.14

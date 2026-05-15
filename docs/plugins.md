@@ -230,17 +230,26 @@ hard-to-diagnose ways.
 Make hooks idempotent — they may fire multiple times during a serve restart
 cycle. Check for existing state before seeding.
 
-### Env contract: `AGENT_RUNNER_LOG_DIR`
+### Round subprocess env contract
 
-`agent-runner serve` injects `AGENT_RUNNER_LOG_DIR=<resolved log_dir path>`
-into the round subprocess env. Agents can use this to construct paths to
-on-disk state files — most notably the self-termination sentinel:
+`agent-runner serve` injects three environment variables into the round
+subprocess (which then propagates to the agent CLI):
+
+| Variable | Value |
+|---|---|
+| `AGENT_RUNNER_LOG_DIR` | Absolute path to `runtime.log_dir`. Use to construct paths to `events-*.jsonl`, `narrative.md`, `.agent-done` sentinel, etc. |
+| `AGENT_RUNNER_ROUND_NUM` | Current round number as string (matches `round_num` field in events.jsonl). |
+| `AGENT_RUNNER_PHASE` | Current phase name from rotation, or `""` (empty string) when no `[phases]` section is configured. |
+
+Example (bash):
 
 ```bash
-echo "done: hypothesis X covered" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
+echo "starting R$AGENT_RUNNER_ROUND_NUM phase=$AGENT_RUNNER_PHASE"
+echo "done: round complete" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
 ```
 
-This contract is stable; agents from any language / framework can rely on it.
+These contracts are stable; agents in any language / framework can rely
+on them.
 
 ## Custom monitor detectors (§3.3)
 
