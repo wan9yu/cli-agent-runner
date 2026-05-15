@@ -46,6 +46,11 @@ from agent_runner.service_unit import (
 
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
+_LINGER_HINT = (
+    "On headless distros, run `sudo loginctl enable-linger $USER` and "
+    "re-login, OR pass `--system` for a system-level unit."
+)
+
 
 def _project_name(work_dir: Path) -> str:
     name = work_dir.resolve().name or "default"
@@ -101,22 +106,21 @@ def _check_user_systemd_available() -> None:
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
     if not runtime_dir or not Path(runtime_dir).is_dir():
         raise RuntimeError(
-            "user systemd unavailable (XDG_RUNTIME_DIR not set or missing). "
-            "On headless distros, run `sudo loginctl enable-linger $USER` and "
-            "re-login, OR pass `--system` for a system-level unit."
+            "user systemd unavailable (XDG_RUNTIME_DIR not set or missing). " + _LINGER_HINT
         )
-    probe = subprocess.run(
-        ["systemctl", "--user", "is-system-running"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if "Failed to connect to bus" in (probe.stderr or ""):
+    try:
+        probe = subprocess.run(
+            ["systemctl", "--user", "is-system-running"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
         raise RuntimeError(
-            "user systemd unavailable (D-Bus session not running). "
-            "On headless distros, run `sudo loginctl enable-linger $USER` and "
-            "re-login, OR pass `--system` for a system-level unit."
-        )
+            "systemctl binary not found in PATH; user systemd is not available. " + _LINGER_HINT
+        ) from exc
+    if "Failed to connect to bus" in (probe.stderr or ""):
+        raise RuntimeError("user systemd unavailable (D-Bus session not running). " + _LINGER_HINT)
 
 
 def _systemctl_user(*args: str) -> None:
@@ -142,9 +146,7 @@ def init(
 _SYSTEM_UNITS_DIR = Path("/etc/systemd/system")
 
 
-def _install_system(
-    cfg: Config, project: str, script_path: Path, *, with_monitor: bool
-) -> InstallResult:
+def _install_system(cfg: Config, project: str, *, with_monitor: bool) -> InstallResult:
     if os.geteuid() != 0:
         raise RuntimeError(
             "--system requires sudo; run via `sudo -E agent-runner install --system`"
@@ -155,12 +157,12 @@ def _install_system(
             "--system needs SUDO_USER env var; run via "
             "`sudo -E agent-runner install --system` to preserve env"
         )
-    units_dir = _SYSTEM_UNITS_DIR
-    serve_path = units_dir / serve_unit_filename(project)
+    script_path = _agent_runner_script_path()
+    serve_path = _SYSTEM_UNITS_DIR / serve_unit_filename(project)
     serve_path.write_text(render_serve_unit(cfg, script_path=script_path, user=sudo_user))
     monitor_path: Path | None = None
     if with_monitor:
-        monitor_path = units_dir / monitor_unit_filename(project)
+        monitor_path = _SYSTEM_UNITS_DIR / monitor_unit_filename(project)
         monitor_path.write_text(render_monitor_unit(cfg, script_path=script_path, user=sudo_user))
     subprocess.run(["systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "enable", serve_unit_filename(project)], check=True)
@@ -182,12 +184,12 @@ def install(
     cfg_path = work_dir / "agent-runner.toml"
     cfg = load_config(cfg_path)
     project = _project_name(work_dir)
-    script_path = _agent_runner_script_path()
 
     if system:
-        return _install_system(cfg, project, script_path, with_monitor=with_monitor)
+        return _install_system(cfg, project, with_monitor=with_monitor)
 
     _check_user_systemd_available()
+    script_path = _agent_runner_script_path()
 
     units_dir = lifecycle._user_systemd_dir()
     units_dir.mkdir(parents=True, exist_ok=True)

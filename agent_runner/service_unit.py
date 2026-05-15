@@ -17,6 +17,17 @@ from agent_runner.config import Config
 _GRACE_S = 60
 
 
+def _unit_mode_lines(user: str | None) -> tuple[str, str]:
+    """Return (user_lines, wanted_by) for a unit's [Service]/[Install] sections.
+
+    user=None → user-mode unit (no User=, default.target).
+    user="dietpi" → system-mode unit (User=dietpi, multi-user.target).
+    """
+    if user:
+        return f"User={user}\nGroup={user}\n", "multi-user.target"
+    return "", "default.target"
+
+
 def serve_unit_filename(project: str) -> str:
     return f"agent-runner@{project}.service"
 
@@ -40,8 +51,7 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
             if override.round_timeout_s is not None:
                 max_timeout = max(max_timeout, override.round_timeout_s)
     timeout_total = max_timeout + _GRACE_S
-    user_lines = f"User={user}\nGroup={user}\n" if user else ""
-    wanted_by = "multi-user.target" if user else "default.target"
+    user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"
         f"Description=Agent Runner Supervisor ({cfg.runtime.work_dir.name})\n"
@@ -65,8 +75,7 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
 
 def render_monitor_unit(cfg: Config, *, script_path: Path, user: str | None = None) -> str:
     """Generate the monitor sidekick systemd unit body."""
-    user_lines = f"User={user}\nGroup={user}\n" if user else ""
-    wanted_by = "multi-user.target" if user else "default.target"
+    user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"
         f"Description=Agent Runner Monitor ({cfg.runtime.work_dir.name})\n"

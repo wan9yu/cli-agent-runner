@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
+from subprocess import (  # noqa: TID251 — exception class only, no subprocess calls here
+    CalledProcessError,
+)
 
 from agent_runner import api
 from agent_runner.cli.common import emit, fail, work_dir_from_args
@@ -38,11 +40,11 @@ def cmd_install(args) -> int:
     work_dir = work_dir_from_args(args)
     try:
         result = api.install(work_dir, system=args.system, with_monitor=args.monitor)
-    except (FileNotFoundError, RuntimeError, subprocess.CalledProcessError) as e:
+    except (FileNotFoundError, RuntimeError, CalledProcessError) as e:
         return fail(str(e))
     emit(result, json_mode=getattr(args, "json", False))
     if args.system and result.started is False:
-        project = work_dir.name if work_dir else "."
+        project = work_dir.name
         sys.stderr.write(f"next: systemctl start agent-runner@{project}\n")
     return 0
 
