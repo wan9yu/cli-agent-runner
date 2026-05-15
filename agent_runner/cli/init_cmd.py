@@ -10,7 +10,7 @@ def add_parser(sub, parent) -> None:
     p = sub.add_parser("init", parents=[parent], help="Scaffold agent-runner project files")
     p.add_argument(
         "--preset",
-        choices=["claude", "aider"],
+        choices=["claude", "aider", "gemini"],
         default="claude",
         help="Which agent CLI preset to scaffold (default: claude)",
     )
