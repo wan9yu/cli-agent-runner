@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-05-15
+
+- `agent-runner install` now derives `ExecStart` from the actual script
+  path (`shutil.which`) instead of hardcoding `Path(sys.executable).parent`.
+  Fixes `pip install --user` on Debian/Pi where the script lives at
+  `~/.local/bin/`.
+- `agent-runner install` fail-fasts when user systemd is unavailable
+  instead of silently lying about success. Prints remediation hint.
+- `agent-runner install --system` shipped: writes `/etc/systemd/system/`
+  with `User=$SUDO_USER`, enables (does not auto-start). For headless
+  distros where user systemd is impractical (dietpi, RPi OS Lite).
+
+See `docs/migrations/0.1.19.md`.
+
 ## [0.1.18] - 2026-05-15
 
 ### ⚠️ Breaking
@@ -575,7 +589,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...v0.1.16
