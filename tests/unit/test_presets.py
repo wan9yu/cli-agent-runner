@@ -7,7 +7,7 @@ import tomllib
 
 import pytest
 
-PRESET_NAMES = ["claude", "aider"]
+PRESET_NAMES = ["claude", "aider", "gemini"]
 
 
 def _preset_text(name: str) -> str:
