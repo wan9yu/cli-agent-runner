@@ -78,14 +78,21 @@ class StashRef:
     message: str  # human-readable label set at creation
 
 
-def _git(repo: Path, *args: str, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+def _git(
+    repo: Path,
+    *args: str,
+    pre_flags: tuple[str, ...] = (),
+    timeout: int = 10,
+) -> subprocess.CompletedProcess[str]:
     """Single sanctioned wrapper for git CLI invocations.
 
     Centralises cwd / capture / text / timeout so individual call sites stay
     one-liners and the noqa pragma lives in exactly one place.
+
+    pre_flags are injected between 'git' and command args (e.g. ('-c', 'commit.gpgsign=false')).
     """
     return subprocess.run(
-        ["git", *args],
+        ["git", *pre_flags, *args],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -292,21 +299,18 @@ def try_auto_commit(work_dir: Path, round_num: int, phase: str | None) -> str | 
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
-    try:
-        subprocess.run(
-            ["git", "add", "-A"],
-            cwd=work_dir,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "-c", "commit.gpgsign=false", "commit", "-m", subject],
-            cwd=work_dir,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return None
-    except subprocess.CalledProcessError as e:
-        return (e.stderr or str(e))[:200]
+    add_result = _git(work_dir, "add", "-A")
+    if add_result.returncode != 0:
+        return (add_result.stderr or "git add failed")[:200]
+
+    commit_result = _git(
+        work_dir,
+        "commit",
+        "-m",
+        subject,
+        pre_flags=("-c", "commit.gpgsign=false"),
+    )
+    if commit_result.returncode != 0:
+        return (commit_result.stderr or "git commit failed")[:200]
+
+    return None

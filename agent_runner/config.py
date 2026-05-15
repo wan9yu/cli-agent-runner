@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tomllib
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -145,6 +146,11 @@ def _resolve_against_work_dir(p: Path | None, work_dir: Path) -> Path | None:
     return p if p.is_absolute() else (work_dir / p).resolve()
 
 
+def _expand_and_resolve(s: str, project_name: str, work_dir: Path) -> Path:
+    """Expand ~ and {project} in s, then resolve relative paths against work_dir."""
+    return _resolve_against_work_dir(_expand_path(s, project_name), work_dir)  # type: ignore[return-value]
+
+
 def _require_positive_int(value: Any, *, field: str) -> int:
     """Validate a TOML value is a positive int. Rejects bool (subclass of int
     in Python, would silently coerce e.g. ``true`` → 1) and any non-int."""
@@ -194,6 +200,7 @@ def _parse_phase_overrides(
     phases_d: dict[str, Any],
     phases_list: list[str] | None,
     project_name: str,
+    *,
     work_dir: Path,
 ) -> dict[str, PhaseOverride]:
     """Parse [phases.<name>] sub-tables from raw TOML dict.
@@ -240,8 +247,7 @@ def _parse_phase_overrides(
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
                 raise ValueError(f"[phases.{phase_name}].prompt must have a 'files' list")
             prompt_files = [
-                _resolve_against_work_dir(_expand_path(str(p), project_name), work_dir)
-                for p in prompt_sub["files"]
+                _expand_and_resolve(str(p), project_name, work_dir) for p in prompt_sub["files"]
             ]
         overrides[phase_name] = PhaseOverride(
             round_timeout_s=round_timeout_s,
@@ -271,7 +277,9 @@ def load_config(toml_path: Path) -> Config:
     # Phases first — needed for per-phase round_timeout validation below.
     phases_d = raw.get("phases", {})
     phases_list = list(phases_d["list"]) if "list" in phases_d else None
-    phases_overrides = _parse_phase_overrides(phases_d, phases_list, project_name, work_dir)
+    phases_overrides = _parse_phase_overrides(
+        phases_d, phases_list, project_name, work_dir=work_dir
+    )
     phases_cfg = PhasesConfig(list=phases_list, overrides=phases_overrides)
 
     runtime_d = raw.get("runtime", {})
@@ -283,9 +291,8 @@ def load_config(toml_path: Path) -> Config:
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
-        log_dir=_resolve_against_work_dir(
-            _expand_path(str(_require(raw, "runtime", "log_dir")), project_name),
-            work_dir,
+        log_dir=_expand_and_resolve(
+            str(_require(raw, "runtime", "log_dir")), project_name, work_dir
         ),
         round_timeout_s=_require_positive_int(
             runtime_d.get("round_timeout_s", 1800), field="runtime.round_timeout_s"
@@ -300,12 +307,9 @@ def load_config(toml_path: Path) -> Config:
         round_log_retention=_require_positive_int(
             runtime_d.get("round_log_retention", 100), field="runtime.round_log_retention"
         ),
-        narrative_file=_resolve_against_work_dir(
-            _expand_path(str(runtime_d["narrative_file"]), project_name)
-            if "narrative_file" in runtime_d
-            else None,
-            work_dir,
-        ),
+        narrative_file=_expand_and_resolve(str(runtime_d["narrative_file"]), project_name, work_dir)
+        if "narrative_file" in runtime_d
+        else None,
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")
@@ -321,15 +325,10 @@ def load_config(toml_path: Path) -> Config:
     if not has_file and not has_files:
         raise ValueError("missing required field: prompt.file or prompt.files")
     prompt_file = (
-        _resolve_against_work_dir(_expand_path(str(prompt_d["file"]), project_name), work_dir)
-        if has_file
-        else None
+        _expand_and_resolve(str(prompt_d["file"]), project_name, work_dir) if has_file else None
     )
     prompt_files = (
-        [
-            _resolve_against_work_dir(_expand_path(str(p), project_name), work_dir)
-            for p in prompt_d["files"]
-        ]
+        [_expand_and_resolve(str(p), project_name, work_dir) for p in prompt_d["files"]]
         if has_files
         else []
     )
@@ -350,8 +349,6 @@ def load_config(toml_path: Path) -> Config:
     if has_dirty_action and has_orphan_action:
         raise ValueError("set either vcs.dirty_action or vcs.orphan_action, not both")
     if has_orphan_action and not has_dirty_action:
-        import warnings
-
         warnings.warn(
             "vcs.orphan_action is deprecated and will be removed in 0.1.18; "
             "use vcs.dirty_action instead — see docs/migrations/0.1.17.md",
