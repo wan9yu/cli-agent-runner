@@ -107,7 +107,9 @@ def _check_user_systemd_available() -> None:
         )
     probe = subprocess.run(
         ["systemctl", "--user", "is-system-running"],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if "Failed to connect to bus" in (probe.stderr or ""):
         raise RuntimeError(
@@ -159,16 +161,16 @@ def _install_system(
     monitor_path: Path | None = None
     if with_monitor:
         monitor_path = units_dir / monitor_unit_filename(project)
-        monitor_path.write_text(
-            render_monitor_unit(cfg, script_path=script_path, user=sudo_user)
-        )
+        monitor_path.write_text(render_monitor_unit(cfg, script_path=script_path, user=sudo_user))
     subprocess.run(["systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "enable", serve_unit_filename(project)], check=True)
     if with_monitor:
         subprocess.run(["systemctl", "enable", monitor_unit_filename(project)], check=True)
     return InstallResult(
-        unit_path=serve_path, monitor_unit_path=monitor_path,
-        enabled=True, started=False,
+        unit_path=serve_path,
+        monitor_unit_path=monitor_path,
+        enabled=True,
+        started=False,
     )
 
 

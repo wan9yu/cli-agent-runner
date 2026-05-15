@@ -27,16 +27,20 @@ def test_given_shutil_which_none_when_sysconfig_has_script_then_returns_fallback
     fake_scripts.mkdir()
     fake_script = fake_scripts / "agent-runner"
     fake_script.write_text("#!/bin/sh\n")
-    with patch("agent_runner.api.shutil.which", return_value=None), \
-         patch("agent_runner.api.sysconfig.get_path", return_value=str(fake_scripts)):
+    with (
+        patch("agent_runner.api.shutil.which", return_value=None),
+        patch("agent_runner.api.sysconfig.get_path", return_value=str(fake_scripts)),
+    ):
         assert _agent_runner_script_path() == fake_script
 
 
 def test_given_neither_shutil_nor_sysconfig_when_called_then_raises_filenotfounderror(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
-    with patch("agent_runner.api.shutil.which", return_value=None), \
-         patch("agent_runner.api.sysconfig.get_path", return_value=str(empty)):
+    with (
+        patch("agent_runner.api.shutil.which", return_value=None),
+        patch("agent_runner.api.sysconfig.get_path", return_value=str(empty)),
+    ):
         with pytest.raises(FileNotFoundError, match=r"agent-runner script not found"):
             _agent_runner_script_path()
 
@@ -93,8 +97,10 @@ def test_given_system_mode_without_sudo_user_when_install_then_raises(tmp_path):
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
-    with patch("agent_runner.api.os.geteuid", return_value=0), \
-         patch.dict(os.environ, {}, clear=True):
+    with (
+        patch("agent_runner.api.os.geteuid", return_value=0),
+        patch.dict(os.environ, {}, clear=True),
+    ):
         with pytest.raises(RuntimeError, match=r"SUDO_USER"):
             api.install(tmp_path, system=True)
 
@@ -121,11 +127,13 @@ def test_given_system_mode_happy_path_when_install_then_writes_to_etc_and_does_n
         m = type("R", (), {"returncode": 0, "stderr": "", "stdout": ""})()
         return m
 
-    with patch("agent_runner.api.os.geteuid", return_value=0), \
-         patch.dict(os.environ, {"SUDO_USER": "dietpi"}), \
-         patch("agent_runner.api.shutil.which", return_value="/fake/agent-runner"), \
-         patch("agent_runner.api.subprocess.run", side_effect=fake_subprocess_run), \
-         patch("agent_runner.api._SYSTEM_UNITS_DIR", fake_etc):
+    with (
+        patch("agent_runner.api.os.geteuid", return_value=0),
+        patch.dict(os.environ, {"SUDO_USER": "dietpi"}),
+        patch("agent_runner.api.shutil.which", return_value="/fake/agent-runner"),
+        patch("agent_runner.api.subprocess.run", side_effect=fake_subprocess_run),
+        patch("agent_runner.api._SYSTEM_UNITS_DIR", fake_etc),
+    ):
         result = api.install(work_dir, system=True)
 
     assert result.enabled is True
