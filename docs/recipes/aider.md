@@ -49,7 +49,7 @@ file = "./prompts/main.md"
 inject_context = true
 
 [vcs]
-orphan_action = "stash"
+dirty_action = "stash"
 stash_idempotency_s = 5
 
 [monitor]

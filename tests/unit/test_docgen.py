@@ -178,4 +178,4 @@ def test_given_render_config_schema_table_when_called_then_lists_sections() -> N
     assert "stash_idempotency_s" in md
     # Defaults are shown for fields that have them
     assert "1800" in md
-    assert "stash" in md  # vcs.orphan_action default
+    assert "stash" in md  # vcs.dirty_action default
