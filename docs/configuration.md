@@ -46,6 +46,7 @@ writes a templated copy you can edit.
 |---|---|---|
 | `orphan_action` | `str` | 'stash' |
 | `stash_idempotency_s` | `int` | 5 |
+| `dirty_action` | `str` | 'stash' |
 
 ### `[monitor]`
 

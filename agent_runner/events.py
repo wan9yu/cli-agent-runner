@@ -37,6 +37,7 @@ SERVICE_UPGRADE_ROLLED_BACK = "service_upgrade_rolled_back"
 SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
 SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
 SELF_TERMINATED = "agent_self_terminated"
+DIRTY_COMMIT_FAILED = "dirty_commit_failed"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -46,6 +47,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         AGENT_NETWORK_BLIP,
         SELF_TERMINATED,
         "dirty_detected",
+        DIRTY_COMMIT_FAILED,
         "orphan_stashed",
         "orphan_idempotent_skip",
         "orphan_stash_failed",

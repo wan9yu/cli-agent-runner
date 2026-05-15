@@ -145,6 +145,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `agent_network_blip`
 - `agent_self_terminated`
 - `agent_spawn`
+- `dirty_commit_failed`
 - `dirty_detected`
 - `hook_failed`
 - `monitor_alert_emitted`

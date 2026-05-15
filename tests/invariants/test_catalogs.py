@@ -143,3 +143,10 @@ def test_given_agent_self_terminated_kind_when_registered_then_in_known_event_ki
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "agent_self_terminated" in KNOWN_EVENT_KINDS
+
+
+def test_given_dirty_commit_failed_kind_when_registered_then_in_known_event_kinds() -> None:
+    """Belt-and-suspenders: dirty_commit_failed must be in KNOWN_EVENT_KINDS."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    assert "dirty_commit_failed" in KNOWN_EVENT_KINDS

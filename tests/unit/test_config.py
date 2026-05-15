@@ -1111,3 +1111,153 @@ def test_given_strip_yaml_frontmatter_false_when_loaded_then_opt_out_honored(
 
     cfg = load_config(tmp_path / "agent-runner.toml")
     assert cfg.prompt.strip_yaml_frontmatter is False
+
+
+def test_given_dirty_action_stash_when_loaded_then_field_set(tmp_path: Path) -> None:
+    """vcs.dirty_action = "stash" parses correctly."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'dirty_action = "stash"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.vcs.dirty_action == "stash"
+
+
+def test_given_dirty_action_ignore_when_loaded_then_field_set(tmp_path: Path) -> None:
+    """vcs.dirty_action = "ignore" parses correctly."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'dirty_action = "ignore"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.vcs.dirty_action == "ignore"
+
+
+def test_given_dirty_action_auto_commit_when_loaded_then_field_set(tmp_path: Path) -> None:
+    """vcs.dirty_action = "auto_commit" parses correctly."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'dirty_action = "auto_commit"\n'
+    )
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.vcs.dirty_action == "auto_commit"
+
+
+def test_given_dirty_action_invalid_value_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """vcs.dirty_action with invalid value → ConfigError listing allowed."""
+    import pytest
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'dirty_action = "explode"\n'
+    )
+    with pytest.raises(
+        ValueError, match=r"vcs\.dirty_action.*explode.*allowed.*stash.*ignore.*auto_commit"
+    ):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_both_dirty_action_and_orphan_action_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """Both vcs.dirty_action and vcs.orphan_action set → ConfigError."""
+    import pytest
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'dirty_action = "stash"\n'
+        'orphan_action = "stash"\n'
+    )
+    with pytest.raises(
+        ValueError, match=r"set either vcs\.dirty_action or vcs\.orphan_action, not both"
+    ):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_only_orphan_action_when_loaded_then_alias_with_deprecation_warning(
+    tmp_path: Path, recwarn
+) -> None:
+    """Only vcs.orphan_action set → alias to dirty_action + DeprecationWarning."""
+    import warnings
+
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+        "[vcs]\n"
+        'orphan_action = "stash"\n'
+    )
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        cfg = load_config(tmp_path / "agent-runner.toml")
+
+    assert cfg.vcs.dirty_action == "stash"
+    assert any(
+        issubclass(item.category, DeprecationWarning) and "orphan_action" in str(item.message)
+        for item in w
+    )
