@@ -85,3 +85,20 @@ def test_given_preset_when_full_load_via_load_config_then_no_errors(name: str, t
     cfg = load_config(target)
     assert cfg.agent.command
     assert cfg.agent.prompt_arg_template
+
+
+@pytest.mark.parametrize("name", PRESET_NAMES)
+def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_path) -> None:
+    """Shipped presets must not emit DeprecationWarning on first load."""
+    import warnings
+
+    from agent_runner.config import load_config
+
+    text = _preset_text(name).replace("{project}", "test-project")
+    target = tmp_path / "agent-runner.toml"
+    target.write_text(text)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        load_config(target)
+    deps = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert not deps, f"preset {name}.toml emitted {len(deps)} DeprecationWarning(s): {[str(w.message) for w in deps]}"
