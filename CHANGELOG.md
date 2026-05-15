@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-05-15
+
+### ⚠️ Breaking
+
+- `vcs.orphan_action` removed (deprecated in 0.1.17). TOML using the
+  old key raises `ValueError` with migration hint. Use `vcs.dirty_action`.
+  See `docs/migrations/0.1.17.md`.
+
 ## [0.1.17] - 2026-05-15
 
 - `vcs.dirty_action` replaces `vcs.orphan_action`; supports `stash` /
@@ -567,7 +575,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.14...v0.1.15
