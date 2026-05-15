@@ -9,15 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.19] - 2026-05-15
 
-- `agent-runner install` now derives `ExecStart` from the actual script
-  path (`shutil.which`) instead of hardcoding `Path(sys.executable).parent`.
-  Fixes `pip install --user` on Debian/Pi where the script lives at
-  `~/.local/bin/`.
+- `agent-runner install` derives `ExecStart` via `shutil.which`; fixes
+  `pip install --user` on Debian/Pi (script lives at `~/.local/bin/`).
 - `agent-runner install` fail-fasts when user systemd is unavailable
-  instead of silently lying about success. Prints remediation hint.
+  instead of silently reporting success. Prints remediation hint.
 - `agent-runner install --system` shipped: writes `/etc/systemd/system/`
-  with `User=$SUDO_USER`, enables (does not auto-start). For headless
-  distros where user systemd is impractical (dietpi, RPi OS Lite).
+  with `User=$SUDO_USER`, enables (no auto-start). For headless distros.
 
 See `docs/migrations/0.1.19.md`.
 
