@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("preset_name", ["claude", "aider"])
+@pytest.mark.parametrize("preset_name", ["claude", "aider", "gemini"])
 def test_given_preset_when_init_then_toml_is_loadable(tmp_git_repo: Path, preset_name: str) -> None:
     from agent_runner.api import init
     from agent_runner.config import load_config
@@ -78,3 +78,16 @@ def test_given_existing_toml_when_init_with_force_then_overwrites(tmp_git_repo: 
     init(tmp_git_repo, preset="aider", force=True, commit=False)
     text = (tmp_git_repo / "agent-runner.toml").read_text()
     assert 'command = ["aider"' in text
+
+
+def test_given_gemini_preset_when_init_then_gemini_specific_fields_present(
+    tmp_git_repo: Path,
+) -> None:
+    from agent_runner.api import init
+
+    init(tmp_git_repo, preset="gemini", commit=False)
+    text = (tmp_git_repo / "agent-runner.toml").read_text()
+    parsed = tomllib.loads(text)
+    assert parsed["agent"]["name"] == "gemini"
+    assert "gemini" in parsed["agent"]["command"]
+    assert "--yolo" in parsed["agent"]["command"]
