@@ -199,7 +199,7 @@ def test_given_relative_paths_when_round_runs_from_other_cwd_then_succeeds(
     tmp_path: Path,
 ) -> None:
     """Launching `agent-runner round` from CWD ≠ work_dir with relative TOML paths
-    must succeed (regression for plan-b 0.1.16 STARTUP FAIL bug)."""
+    must succeed (regression for 0.1.16 path-resolution bug)."""
     import sys
 
     work_dir = tmp_path / "proj"

@@ -192,8 +192,9 @@ message. Pick another port via `--port`.
 ## Long-running research project (24×7 unattended)
 
 For research-style work where the agent autonomously explores a question
-across many rounds and self-terminates when "done" — see the canonical
-example at https://github.com/wan9yu/inception/tree/main/plan-b.
+across many rounds and self-terminates when "done", the pattern below
+combines diverge/converge phase rotation, multi-file prompt concat, a
+thin operator-facing synthesis file, and the `.agent-done` sentinel.
 
 ### Project layout
 
@@ -208,7 +209,7 @@ my-research/
 ├── rounds/
 │   └── R<N>.md          # per-round detail file (created by agent each round)
 └── outputs/
-    └── plan-b-recommendation.md  # final deliverable on convergence
+    └── recommendation.md  # final deliverable on convergence
 ```
 
 ### TOML pattern
