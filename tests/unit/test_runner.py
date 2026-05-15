@@ -848,3 +848,134 @@ def test_given_dirty_action_auto_commit_when_git_unconfigured_then_dirty_commit_
     assert len(failed) == 1
     assert failed[0]["round_num"] == 1
     assert "reason" in failed[0]
+
+
+def test_given_round_subprocess_when_invoked_then_env_contains_round_num(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """agent_runtime.run receives env_extra with AGENT_RUNNER_ROUND_NUM."""
+    from agent_runner import runner
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    captured_env: dict[str, str] = {}
+
+    def fake_run(*, env_extra, **_kwargs):
+        captured_env.update(env_extra)
+        from agent_runner.agent_runtime import RunResult
+
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
+    monkeypatch.setattr(runner.vcs_state, "detect_dirty_files", lambda _w: [])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    assert captured_env.get("AGENT_RUNNER_ROUND_NUM") == "1"
+    assert captured_env.get("AGENT_RUNNER_LOG_DIR") == str(log_dir)
+
+
+def test_given_no_phases_when_round_runs_then_env_phase_is_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without [phases], AGENT_RUNNER_PHASE env var = ''."""
+    from agent_runner import runner
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    captured_env: dict[str, str] = {}
+
+    def fake_run(*, env_extra, **_kwargs):
+        captured_env.update(env_extra)
+        from agent_runner.agent_runtime import RunResult
+
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
+    monkeypatch.setattr(runner.vcs_state, "detect_dirty_files", lambda _w: [])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(list=None),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    assert captured_env.get("AGENT_RUNNER_PHASE") == ""
+
+
+def test_given_phases_when_round_runs_then_env_phase_matches_rotation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With [phases].list, AGENT_RUNNER_PHASE matches the rotation result for round_num."""
+    from agent_runner import runner
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    captured_env: dict[str, str] = {}
+
+    def fake_run(*, env_extra, **_kwargs):
+        captured_env.update(env_extra)
+        from agent_runner.agent_runtime import RunResult
+
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
+    monkeypatch.setattr(runner.vcs_state, "detect_dirty_files", lambda _w: [])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(list=["diverge", "converge"]),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    # round_num = 1 (no prior status), phase_for(1, ["diverge","converge"]) = "diverge"
+    assert captured_env.get("AGENT_RUNNER_PHASE") == "diverge"

@@ -380,13 +380,18 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 
     events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=timeout_s)
+    framework_env = {
+        "AGENT_RUNNER_LOG_DIR": str(log_dir),
+        "AGENT_RUNNER_ROUND_NUM": str(round_num),
+        "AGENT_RUNNER_PHASE": phase or "",
+    }
     result = agent_runtime.run(
         command=cfg.agent.command,
         prompt_arg_template=cfg.agent.prompt_arg_template,
         prompt=prompt,
         timeout_s=timeout_s,
         log_path=log_path,
-        env_extra=dict(cfg.agent.env),
+        env_extra={**framework_env, **dict(cfg.agent.env)},
     )
     events.emit(
         log_dir,
