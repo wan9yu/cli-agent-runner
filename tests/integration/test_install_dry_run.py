@@ -17,6 +17,11 @@ def test_given_install_dry_run_when_called_then_writes_unit_files(
     fake_systemd = tmp_git_repo / "systemd"
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr(
+        "agent_runner.api._agent_runner_script_path",
+        lambda: tmp_git_repo / "fake-agent-runner",
+    )
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
     assert result.unit_path.exists()
     assert result.monitor_unit_path is not None

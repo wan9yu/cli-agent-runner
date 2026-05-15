@@ -9,10 +9,12 @@ entirely.
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
+import shutil
 import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
-import sys
+import sysconfig
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -70,13 +72,53 @@ def _log_dir(work_dir: Path) -> Path:
     return Path.home() / ".agent-runner" / _project_name(work_dir) / "logs"
 
 
-def _venv_bin() -> Path:
-    """Where this Python interpreter lives — for ExecStart."""
-    return Path(sys.executable).parent
+def _agent_runner_script_path() -> Path:
+    """Locate the agent-runner CLI script for systemd ExecStart.
+
+    Tries shutil.which first (honors PATH). Falls back to sysconfig's
+    scripts dir (handles cases where PATH excludes the install dir).
+    Raises FileNotFoundError if neither resolves to an existing file.
+    """
+    which = shutil.which("agent-runner")
+    if which:
+        return Path(which)
+    scripts_dir = Path(sysconfig.get_path("scripts"))
+    candidate = scripts_dir / "agent-runner"
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(
+        "agent-runner script not found in PATH or "
+        f"{scripts_dir}; reinstall via pip or activate the right venv"
+    )
+
+
+def _check_user_systemd_available() -> None:
+    """Raise RuntimeError if user systemd is not usable.
+
+    Common on headless distros (dietpi, RPi OS Lite, Debian Server) without
+    `loginctl enable-linger $USER`. Error includes remediation hint.
+    """
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
+    if not runtime_dir or not Path(runtime_dir).is_dir():
+        raise RuntimeError(
+            "user systemd unavailable (XDG_RUNTIME_DIR not set or missing). "
+            "On headless distros, run `sudo loginctl enable-linger $USER` and "
+            "re-login, OR pass `--system` for a system-level unit."
+        )
+    probe = subprocess.run(
+        ["systemctl", "--user", "is-system-running"],
+        capture_output=True, text=True, check=False,
+    )
+    if "Failed to connect to bus" in (probe.stderr or ""):
+        raise RuntimeError(
+            "user systemd unavailable (D-Bus session not running). "
+            "On headless distros, run `sudo loginctl enable-linger $USER` and "
+            "re-login, OR pass `--system` for a system-level unit."
+        )
 
 
 def _systemctl_user(*args: str) -> None:
-    subprocess.run(["systemctl", "--user", *args], check=False)
+    subprocess.run(["systemctl", "--user", *args], check=True)
 
 
 # ---------------------------------------------------------------------------
@@ -95,27 +137,66 @@ def init(
     return scaffold_project(work_dir, preset=preset, force=force, commit=commit)
 
 
+_SYSTEM_UNITS_DIR = Path("/etc/systemd/system")
+
+
+def _install_system(
+    cfg: Config, project: str, script_path: Path, *, with_monitor: bool
+) -> InstallResult:
+    if os.geteuid() != 0:
+        raise RuntimeError(
+            "--system requires sudo; run via `sudo -E agent-runner install --system`"
+        )
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user:
+        raise RuntimeError(
+            "--system needs SUDO_USER env var; run via "
+            "`sudo -E agent-runner install --system` to preserve env"
+        )
+    units_dir = _SYSTEM_UNITS_DIR
+    serve_path = units_dir / serve_unit_filename(project)
+    serve_path.write_text(render_serve_unit(cfg, script_path=script_path, user=sudo_user))
+    monitor_path: Path | None = None
+    if with_monitor:
+        monitor_path = units_dir / monitor_unit_filename(project)
+        monitor_path.write_text(
+            render_monitor_unit(cfg, script_path=script_path, user=sudo_user)
+        )
+    subprocess.run(["systemctl", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "enable", serve_unit_filename(project)], check=True)
+    if with_monitor:
+        subprocess.run(["systemctl", "enable", monitor_unit_filename(project)], check=True)
+    return InstallResult(
+        unit_path=serve_path, monitor_unit_path=monitor_path,
+        enabled=True, started=False,
+    )
+
+
 def install(
     work_dir: Path | None = None, *, system: bool = False, with_monitor: bool = False
 ) -> InstallResult:
     if work_dir is None:
         work_dir = Path.cwd()
-    if system:
-        raise NotImplementedError("--system install not yet implemented")
     cfg_path = work_dir / "agent-runner.toml"
     cfg = load_config(cfg_path)
     project = _project_name(work_dir)
+    script_path = _agent_runner_script_path()
+
+    if system:
+        return _install_system(cfg, project, script_path, with_monitor=with_monitor)
+
+    _check_user_systemd_available()
 
     units_dir = lifecycle._user_systemd_dir()
     units_dir.mkdir(parents=True, exist_ok=True)
 
     serve_path = units_dir / serve_unit_filename(project)
-    serve_path.write_text(render_serve_unit(cfg, venv_bin=_venv_bin()))
+    serve_path.write_text(render_serve_unit(cfg, script_path=script_path))
 
     monitor_path: Path | None = None
     if with_monitor:
         monitor_path = units_dir / monitor_unit_filename(project)
-        monitor_path.write_text(render_monitor_unit(cfg, venv_bin=_venv_bin()))
+        monitor_path.write_text(render_monitor_unit(cfg, script_path=script_path))
 
     _systemctl_user("daemon-reload")
     _systemctl_user("enable", serve_unit_filename(project))

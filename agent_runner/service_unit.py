@@ -30,7 +30,7 @@ def _config_path(cfg: Config) -> Path:
     return cfg.runtime.work_dir / "agent-runner.toml"
 
 
-def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
+def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None) -> str:
     """Generate the serve systemd unit body."""
     # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
     # doesn't SIGKILL a mid-flight round in any phase.
@@ -40,6 +40,8 @@ def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
             if override.round_timeout_s is not None:
                 max_timeout = max(max_timeout, override.round_timeout_s)
     timeout_total = max_timeout + _GRACE_S
+    user_lines = f"User={user}\nGroup={user}\n" if user else ""
+    wanted_by = "multi-user.target" if user else "default.target"
     return (
         f"[Unit]\n"
         f"Description=Agent Runner Supervisor ({cfg.runtime.work_dir.name})\n"
@@ -47,8 +49,9 @@ def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
         f"\n"
         f"[Service]\n"
         f"Type=simple\n"
+        f"{user_lines}"
         f"WorkingDirectory={cfg.runtime.work_dir}\n"
-        f"ExecStart={venv_bin}/agent-runner serve "
+        f"ExecStart={script_path} serve "
         f"--config {_config_path(cfg)}\n"
         f"Restart=always\n"
         f"RestartSec=3\n"
@@ -56,12 +59,14 @@ def render_serve_unit(cfg: Config, *, venv_bin: Path) -> str:
         f"TimeoutStopSec={timeout_total}\n"
         f"\n"
         f"[Install]\n"
-        f"WantedBy=default.target\n"
+        f"WantedBy={wanted_by}\n"
     )
 
 
-def render_monitor_unit(cfg: Config, *, venv_bin: Path) -> str:
+def render_monitor_unit(cfg: Config, *, script_path: Path, user: str | None = None) -> str:
     """Generate the monitor sidekick systemd unit body."""
+    user_lines = f"User={user}\nGroup={user}\n" if user else ""
+    wanted_by = "multi-user.target" if user else "default.target"
     return (
         f"[Unit]\n"
         f"Description=Agent Runner Monitor ({cfg.runtime.work_dir.name})\n"
@@ -70,12 +75,13 @@ def render_monitor_unit(cfg: Config, *, venv_bin: Path) -> str:
         f"\n"
         f"[Service]\n"
         f"Type=simple\n"
+        f"{user_lines}"
         f"WorkingDirectory={cfg.runtime.work_dir}\n"
-        f"ExecStart={venv_bin}/agent-runner monitor "
+        f"ExecStart={script_path} monitor "
         f"--config {_config_path(cfg)}\n"
         f"Restart=always\n"
         f"RestartSec=10\n"
         f"\n"
         f"[Install]\n"
-        f"WantedBy=default.target\n"
+        f"WantedBy={wanted_by}\n"
     )

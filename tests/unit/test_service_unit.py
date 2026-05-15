@@ -52,38 +52,38 @@ def test_given_monitor_unit_filename_when_built_then_distinct_from_serve(tmp_pat
 
 def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
-    venv_bin = tmp_path / ".venv" / "bin"
-    body = render_serve_unit(cfg, venv_bin=venv_bin)
+    script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+    body = render_serve_unit(cfg, script_path=script_path)
     for needle in ("[Unit]", "[Service]", "[Install]", "Restart=always", "KillSignal=SIGTERM"):
         assert needle in body, f"missing {needle!r} in unit body"
 
 
 def test_given_serve_unit_when_rendered_then_timeout_includes_grace(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)  # round_timeout_s=600
-    body = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
+    body = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
     assert "TimeoutStopSec=660" in body  # 600 + 60 grace
 
 
 def test_given_serve_unit_when_rendered_then_paths_substituted(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
-    venv_bin = tmp_path / ".venv" / "bin"
-    body = render_serve_unit(cfg, venv_bin=venv_bin)
+    script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+    body = render_serve_unit(cfg, script_path=script_path)
     assert str(cfg.runtime.work_dir) in body
-    assert f"{venv_bin}/agent-runner serve" in body
+    assert f"{script_path} serve" in body
 
 
 def test_given_monitor_unit_when_rendered_then_runs_monitor_command(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
-    venv_bin = tmp_path / ".venv" / "bin"
-    body = render_monitor_unit(cfg, venv_bin=venv_bin)
-    assert f"{venv_bin}/agent-runner monitor" in body
+    script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+    body = render_monitor_unit(cfg, script_path=script_path)
+    assert f"{script_path} monitor" in body
     assert str(cfg.runtime.work_dir) in body
 
 
 def test_given_round_timeout_when_render_then_timeout_includes_grace(tmp_path: Path) -> None:
     """TimeoutStopSec = round_timeout_s + 60 grace."""
     cfg = _cfg(tmp_path, round_timeout_s=1800)
-    unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
+    unit = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
     assert "TimeoutStopSec=1860" in unit  # 1800 + 60
 
 
@@ -106,6 +106,21 @@ def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
         ),
     )
 
-    unit = render_serve_unit(cfg, venv_bin=tmp_path / ".venv" / "bin")
+    unit = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
     # max(1800, 3600) + 60 = 3660
     assert "TimeoutStopSec=3660" in unit
+
+
+def test_given_user_arg_when_render_serve_unit_then_includes_user_directive(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    body = render_serve_unit(cfg, script_path=tmp_path / "ar", user="dietpi")
+    assert "User=dietpi" in body
+    assert "Group=dietpi" in body
+    assert "WantedBy=multi-user.target" in body
+
+
+def test_given_no_user_arg_when_render_serve_unit_then_no_user_directive(tmp_path: Path) -> None:
+    cfg = _cfg(tmp_path)
+    body = render_serve_unit(cfg, script_path=tmp_path / "ar")
+    assert "User=" not in body
+    assert "WantedBy=default.target" in body

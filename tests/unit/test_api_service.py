@@ -116,6 +116,11 @@ def test_given_install_with_no_systemctl_when_called_then_returns_install_result
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
     )
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr(
+        "agent_runner.api._agent_runner_script_path",
+        lambda: tmp_git_repo / "fake-agent-runner",
+    )
     result = api.install(tmp_git_repo, system=False, with_monitor=False)
     assert result.unit_path.exists()
     assert result.monitor_unit_path is None
@@ -130,6 +135,11 @@ def test_given_install_with_monitor_when_called_then_writes_two_units(
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
     )
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr(
+        "agent_runner.api._agent_runner_script_path",
+        lambda: tmp_git_repo / "fake-agent-runner",
+    )
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
     assert result.unit_path.exists()
     assert result.monitor_unit_path is not None
@@ -144,6 +154,11 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
     fake_systemd = tmp_git_repo / "fake-systemd"
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr(
+        "agent_runner.api._agent_runner_script_path",
+        lambda: tmp_git_repo / "fake-agent-runner",
+    )
     api.install(tmp_git_repo, system=False, with_monitor=True)
     api.uninstall(tmp_git_repo)
     unit_name = f"agent-runner@{tmp_git_repo.name}.service"
