@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import tomllib
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -68,9 +67,8 @@ class PromptConfig:
 
 @dataclass(frozen=True)
 class VcsConfig:
-    orphan_action: str = "stash"  # DEPRECATED: removed in 0.1.18; use dirty_action
     stash_idempotency_s: int = 5
-    dirty_action: str = "stash"  # NEW: "stash" | "ignore" | "auto_commit"
+    dirty_action: str = "stash"  # "stash" | "ignore" | "auto_commit"
 
 
 # Default auth-failure detection regex — matches common OAuth/401/expired-session
@@ -344,27 +342,18 @@ def load_config(toml_path: Path) -> Config:
         ),
     )
     vcs_d = raw.get("vcs", {})
-    has_dirty_action = "dirty_action" in vcs_d
-    has_orphan_action = "orphan_action" in vcs_d
-    if has_dirty_action and has_orphan_action:
-        raise ValueError("set either vcs.dirty_action or vcs.orphan_action, not both")
-    if has_orphan_action and not has_dirty_action:
-        warnings.warn(
-            "vcs.orphan_action is deprecated and will be removed in 0.1.18; "
-            "use vcs.dirty_action instead — see docs/migrations/0.1.17.md",
-            DeprecationWarning,
-            stacklevel=2,
+    if "orphan_action" in vcs_d:
+        raise ValueError(
+            "vcs.orphan_action removed in 0.1.18; use vcs.dirty_action — "
+            "see docs/migrations/0.1.17.md"
         )
-        dirty_action = str(vcs_d["orphan_action"])
-    else:
-        dirty_action = str(vcs_d.get("dirty_action", "stash"))
+    dirty_action = str(vcs_d.get("dirty_action", "stash"))
     if dirty_action not in {"stash", "ignore", "auto_commit"}:
         raise ValueError(
             f"vcs.dirty_action: {dirty_action!r} not in allowed values "
             f"{{'stash', 'ignore', 'auto_commit'}}"
         )
     vcs = VcsConfig(
-        orphan_action=dirty_action,  # alias: keep both fields in sync for back-compat
         stash_idempotency_s=_require_positive_int(
             vcs_d.get("stash_idempotency_s", 5), field="vcs.stash_idempotency_s"
         ),

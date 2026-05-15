@@ -50,7 +50,7 @@ file = "./prompts/main.md"
     assert cfg.prompt.inject_context is True  # default
     assert cfg.phases.list is None
     assert cfg.phases.overrides == {}
-    assert cfg.vcs.orphan_action == "stash"
+    assert cfg.vcs.dirty_action == "stash"
 
 
 def test_given_phases_in_toml_when_loaded_then_phases_list_populated(
@@ -1203,16 +1203,13 @@ def test_given_dirty_action_invalid_value_when_loaded_then_config_error(
         load_config(tmp_path / "agent-runner.toml")
 
 
-def test_given_both_dirty_action_and_orphan_action_when_loaded_then_config_error(
+def test_given_orphan_action_in_toml_when_loaded_then_raises_with_migration_hint(
     tmp_path: Path,
 ) -> None:
-    """Both vcs.dirty_action and vcs.orphan_action set → ConfigError."""
-    import pytest
-
-    from agent_runner.config import load_config
-
-    (tmp_path / "prompt.md").write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
+    """vcs.orphan_action removed in 0.1.18 — TOML using it must raise with migration hint."""
+    cfg_path = tmp_path / "agent-runner.toml"
+    (tmp_path / "p.md").write_text("hi")
+    cfg_path.write_text(
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1220,47 +1217,12 @@ def test_given_both_dirty_action_and_orphan_action_when_loaded_then_config_error
         f'work_dir = "{tmp_path}"\n'
         f'log_dir = "{tmp_path}/logs"\n'
         "[prompt]\n"
-        f'file = "{tmp_path}/prompt.md"\n'
-        "[vcs]\n"
-        'dirty_action = "stash"\n'
-        'orphan_action = "stash"\n'
-    )
-    with pytest.raises(
-        ValueError, match=r"set either vcs\.dirty_action or vcs\.orphan_action, not both"
-    ):
-        load_config(tmp_path / "agent-runner.toml")
-
-
-def test_given_only_orphan_action_when_loaded_then_alias_with_deprecation_warning(
-    tmp_path: Path, recwarn
-) -> None:
-    """Only vcs.orphan_action set → alias to dirty_action + DeprecationWarning."""
-    import warnings
-
-    from agent_runner.config import load_config
-
-    (tmp_path / "prompt.md").write_text("p")
-    (tmp_path / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{tmp_path}"\n'
-        f'log_dir = "{tmp_path}/logs"\n'
-        "[prompt]\n"
-        f'file = "{tmp_path}/prompt.md"\n'
+        f'file = "{tmp_path}/p.md"\n'
         "[vcs]\n"
         'orphan_action = "stash"\n'
     )
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        cfg = load_config(tmp_path / "agent-runner.toml")
-
-    assert cfg.vcs.dirty_action == "stash"
-    assert any(
-        issubclass(item.category, DeprecationWarning) and "orphan_action" in str(item.message)
-        for item in w
-    )
+    with pytest.raises(ValueError, match=r"vcs\.orphan_action removed in 0\.1\.18"):
+        load_config(cfg_path)
 
 
 def test_given_relative_log_dir_when_loaded_then_resolved_to_absolute(

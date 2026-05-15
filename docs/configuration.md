@@ -44,7 +44,6 @@ writes a templated copy you can edit.
 
 | Field | Type | Default |
 |---|---|---|
-| `orphan_action` | `str` | 'stash' |
 | `stash_idempotency_s` | `int` | 5 |
 | `dirty_action` | `str` | 'stash' |
 
@@ -71,10 +70,6 @@ working tree:
 | `"stash"` | Auto-stash dirty tree with ORPHAN-prefix message. `dirty_detected` + `orphan_stashed` events emitted. |
 | `"ignore"` | Emit `dirty_detected` event only. Working tree left dirty for next round. |
 | `"auto_commit"` | Supervisor commits with subject `agent-runner auto-commit: R<N> <phase>`. No push. On failure, emits `dirty_commit_failed`, leaves tree dirty. |
-
-### `vcs.orphan_action` (DEPRECATED in 0.1.17, removed in 0.1.18)
-
-Use `vcs.dirty_action` instead. See `docs/migrations/0.1.17.md`.
 
 ## `[agent.env]` (optional)
 
