@@ -1,5 +1,40 @@
 # Operator runbook
 
+## Install prerequisites by distro
+
+`agent-runner install` writes a systemd unit and enables it. User-mode
+installs (`agent-runner install`) require a user systemd session;
+system-mode (`agent-runner install --system`, requires sudo) writes to
+`/etc/systemd/system/` and works without one.
+
+| Distro                       | User systemd default       | linger required | `--system` recommended |
+|------------------------------|----------------------------|-----------------|------------------------|
+| Ubuntu 22.04+ desktop        | runs                       | optional        | no                     |
+| Ubuntu Server                | needs `loginctl enable-linger $USER` | required | optional         |
+| Debian 12+                   | needs linger               | required        | optional               |
+| dietpi (Debian-based)        | default off, dbus quirk    | often blocked   | **recommended**        |
+| Raspberry Pi OS Lite         | similar to dietpi          | required        | recommended            |
+| Alpine (OpenRC, no systemd)  | N/A                        | N/A             | not supported          |
+
+### User-mode prerequisites
+
+```bash
+sudo loginctl enable-linger $USER   # persist user session at boot
+# re-login or reboot, then:
+agent-runner install --monitor
+```
+
+### System-mode (recommended for headless distros)
+
+```bash
+sudo -E agent-runner install --system [--monitor]
+# Then manually start (system-mode does not auto-start):
+sudo systemctl start agent-runner@<project>
+```
+
+`-E` preserves `SUDO_USER` so the unit's `User=` directive is set
+correctly (process still runs as your user, not root).
+
 ## Daily operations
 
 ### Health check
