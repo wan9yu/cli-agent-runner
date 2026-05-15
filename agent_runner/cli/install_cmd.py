@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 from agent_runner import api
 from agent_runner.cli.common import emit, fail, work_dir_from_args
 
@@ -13,7 +16,10 @@ def add_parser(sub, parent) -> None:
     p.add_argument(
         "--system",
         action="store_true",
-        help="Install at system level (not yet supported)",
+        help=(
+            "Install at system level (writes to /etc/systemd/system/,"
+            " requires sudo, does not auto-start)"
+        ),
     )
     p.add_argument(
         "--monitor",
@@ -32,9 +38,12 @@ def cmd_install(args) -> int:
     work_dir = work_dir_from_args(args)
     try:
         result = api.install(work_dir, system=args.system, with_monitor=args.monitor)
-    except (NotImplementedError, FileNotFoundError) as e:
+    except (FileNotFoundError, RuntimeError, subprocess.CalledProcessError) as e:
         return fail(str(e))
     emit(result, json_mode=getattr(args, "json", False))
+    if args.system and result.started is False:
+        project = work_dir.name if work_dir else "."
+        sys.stderr.write(f"next: systemctl start agent-runner@{project}\n")
     return 0
 
 
