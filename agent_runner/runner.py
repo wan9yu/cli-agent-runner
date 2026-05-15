@@ -410,33 +410,48 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         events.emit(log_dir, "dirty_detected", round_num=round_num, files=dirty[:20])
 
     stashed = False
+    action = cfg.vcs.dirty_action
     if dirty and not result.timed_out and result.exit_code == 0:
-        ref = vcs_state.stash_orphan(
-            cfg.runtime.work_dir,
-            round_num=round_num,
-            phase=phase,
-            idempotency_s=cfg.vcs.stash_idempotency_s,
-        )
-        if ref is not None:
-            context_store.write_orphan_state(
-                log_dir,
-                context_store.OrphanState(
-                    round_num=round_num,
-                    files=dirty,
-                    stashed_ref=ref.sha,
-                    stash_message=ref.message,
-                    timestamp=now_iso_ms(),
-                    phase=phase,
-                ),
-            )
-            events.emit(
-                log_dir,
-                "orphan_stashed",
+        if action == "stash":
+            ref = vcs_state.stash_orphan(
+                cfg.runtime.work_dir,
                 round_num=round_num,
-                ref=ref.sha,
-                reason="clean_exit_with_dirty_tree",
+                phase=phase,
+                idempotency_s=cfg.vcs.stash_idempotency_s,
             )
-            stashed = True
+            if ref is not None:
+                context_store.write_orphan_state(
+                    log_dir,
+                    context_store.OrphanState(
+                        round_num=round_num,
+                        files=dirty,
+                        stashed_ref=ref.sha,
+                        stash_message=ref.message,
+                        timestamp=now_iso_ms(),
+                        phase=phase,
+                    ),
+                )
+                events.emit(
+                    log_dir,
+                    "orphan_stashed",
+                    round_num=round_num,
+                    ref=ref.sha,
+                    reason="clean_exit_with_dirty_tree",
+                )
+                stashed = True
+        elif action == "ignore":
+            # Leave tree dirty for next round; dirty_detected already emitted
+            pass
+        elif action == "auto_commit":
+            err = vcs_state.try_auto_commit(cfg.runtime.work_dir, round_num, phase)
+            if err is not None:
+                events.emit(
+                    log_dir,
+                    events.DIRTY_COMMIT_FAILED,
+                    round_num=round_num,
+                    phase=phase,
+                    reason=err,
+                )
     elif not dirty:
         context_store.clear_orphan_state(log_dir)
 

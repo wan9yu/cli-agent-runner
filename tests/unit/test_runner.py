@@ -626,3 +626,225 @@ def test_given_disable_pre_round_hooks_true_when_run_then_hooks_skipped(
         hooks._PRE_ROUND_HOOKS[:] = [
             h for h in hooks._PRE_ROUND_HOOKS if h.name != "test_skip_target"
         ]
+
+
+def _make_mock_runtime(fake_run):  # type: ignore[no-untyped-def]
+    """Build a minimal agent_runtime mock object with the given fake_run callable."""
+    from agent_runner import agent_runtime as _ar
+
+    return type("M", (), {"run": staticmethod(fake_run), "RunResult": _ar.RunResult})()
+
+
+def test_given_dirty_action_stash_when_dirty_post_round_then_stash_orphan_called(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """dirty_action='stash' (default): stash_orphan called, orphan_stashed event."""
+    from agent_runner import runner, vcs_state
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    # Mock agent_runtime.run to simulate clean exit + leave dirty file
+    def fake_run(**_kwargs):
+        (tmp_path / "scratch.md").write_text("from agent")
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    # Mock vcs_state to count stash invocations
+    stash_calls = []
+
+    def fake_stash(*args, **kwargs):
+        stash_calls.append(kwargs)
+        from agent_runner.vcs_state import StashRef
+
+        return StashRef(sha="fake_sha", message="ORPHAN R1")
+
+    monkeypatch.setattr(vcs_state, "stash_orphan", fake_stash)
+    monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="stash"),
+        phases=PhasesConfig(),
+    )
+
+    # Run the round inner (skip lock for simplicity)
+    runner._run_one_round_inner(cfg)
+
+    assert len(stash_calls) == 1, "stash_orphan should be called once for stash mode"
+
+
+def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """dirty_action='ignore': stash NOT called, dirty_detected still fires."""
+    import json
+
+    from agent_runner import runner, vcs_state
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    def fake_run(**_kwargs):
+        (tmp_path / "scratch.md").write_text("from agent")
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    stash_calls = []
+    monkeypatch.setattr(vcs_state, "stash_orphan", lambda *a, **k: stash_calls.append(k))
+    monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="ignore"),
+        phases=PhasesConfig(),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    assert stash_calls == [], "stash_orphan must NOT be called for ignore mode"
+    # dirty_detected event should still fire
+    all_events = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert any(e["event"] == "dirty_detected" for e in all_events)
+
+
+def test_given_dirty_action_auto_commit_when_dirty_post_round_then_git_commit_invoked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """dirty_action='auto_commit': git commit invoked with hardcoded subject."""
+    import subprocess
+
+    from agent_runner import runner
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    # Init a real git repo in tmp_path so commit can succeed
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitkeep").write_text("")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    def fake_run(**_kwargs):
+        (tmp_path / "scratch.md").write_text("from agent")
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="auto_commit"),
+        phases=PhasesConfig(),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    # Verify a commit was created with the expected subject
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert log.stdout.strip() == "agent-runner auto-commit: R1"
+
+
+def test_given_dirty_action_auto_commit_when_git_unconfigured_then_dirty_commit_failed_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """auto_commit failure (empty identity) → dirty_commit_failed event."""
+    import json
+    import subprocess
+
+    from agent_runner import runner
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    # Git repo with empty user.email + user.name → commit fails regardless of global config
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", ""], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", ""], cwd=tmp_path, check=True)
+    (tmp_path / ".gitkeep").write_text("")
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    def fake_run(**_kwargs):
+        (tmp_path / "scratch.md").write_text("from agent")
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="auto_commit"),
+        phases=PhasesConfig(),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    all_events = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    failed = [e for e in all_events if e["event"] == "dirty_commit_failed"]
+    assert len(failed) == 1
+    assert failed[0]["round_num"] == 1
+    assert "reason" in failed[0]

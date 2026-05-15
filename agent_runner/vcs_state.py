@@ -278,3 +278,35 @@ def pop_stash(repo: Path, sha: str) -> bool:
     if sel is None:
         return False
     return _git(repo, "stash", "pop", sel).returncode == 0
+
+
+def try_auto_commit(work_dir: Path, round_num: int, phase: str | None) -> str | None:
+    """Auto-commit dirty tree with hardcoded subject. Return None on success, error on failure.
+
+    Subject: ``agent-runner auto-commit: R<N> <phase>`` (phase part omitted if None).
+    Uses ``git -c commit.gpgsign=false`` to skip GPG; honors pre-commit hooks
+    (no ``--no-verify``). DOES NOT push — local commit only.
+
+    Callers (runner.py) emit ``dirty_commit_failed`` event when return value is not None.
+    """
+    phase_part = f" {phase}" if phase else ""
+    subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
+
+    try:
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=work_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-m", subject],
+            cwd=work_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return None
+    except subprocess.CalledProcessError as e:
+        return (e.stderr or str(e))[:200]
