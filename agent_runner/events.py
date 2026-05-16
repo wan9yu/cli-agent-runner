@@ -41,6 +41,8 @@ DIRTY_COMMIT_FAILED = "dirty_commit_failed"
 RATE_LIMIT_REJECTED = "rate_limit_rejected"
 RATE_LIMIT_RECOVERED = "rate_limit_recovered"
 RATE_LIMIT_BACKOFF_CAPPED = "rate_limit_backoff_capped"
+MAX_ROUNDS_REACHED = "max_rounds_reached"
+STOP_FILE_DETECTED = "stop_file_detected"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -74,6 +76,8 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         RATE_LIMIT_REJECTED,
         RATE_LIMIT_RECOVERED,
         RATE_LIMIT_BACKOFF_CAPPED,
+        MAX_ROUNDS_REACHED,
+        STOP_FILE_DETECTED,
     }
 )
 

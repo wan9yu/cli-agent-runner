@@ -171,3 +171,17 @@ def test_given_rate_limit_backoff_capped_constant_when_exported_then_matches_kin
 
     assert RATE_LIMIT_BACKOFF_CAPPED == "rate_limit_backoff_capped"
     assert RATE_LIMIT_BACKOFF_CAPPED in _BUILTIN_KINDS
+
+
+def test_given_max_rounds_reached_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, MAX_ROUNDS_REACHED
+
+    assert MAX_ROUNDS_REACHED == "max_rounds_reached"
+    assert MAX_ROUNDS_REACHED in _BUILTIN_KINDS
+
+
+def test_given_stop_file_detected_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, STOP_FILE_DETECTED
+
+    assert STOP_FILE_DETECTED == "stop_file_detected"
+    assert STOP_FILE_DETECTED in _BUILTIN_KINDS

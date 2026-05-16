@@ -149,6 +149,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `dirty_commit_failed`
 - `dirty_detected`
 - `hook_failed`
+- `max_rounds_reached`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`
@@ -172,6 +173,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `sigterm_received`
 - `smoke_check_failed`
 - `status_recovered`
+- `stop_file_detected`
 <!-- /gen:event-kinds -->
 
 ## 中文摘要
