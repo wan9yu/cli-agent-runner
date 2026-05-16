@@ -44,6 +44,9 @@ Changelog = "https://github.com/wan9yu/cli-agent-runner/blob/main/CHANGELOG.md"
 [project.scripts]
 agent-runner = "agent_runner.cli:main"
 
+[project.entry-points."agent_runner.post_round_hooks"]
+claude_rate_limit_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeRateLimitDetector"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
