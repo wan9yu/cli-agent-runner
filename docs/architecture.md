@@ -148,6 +148,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `agent_spawn`
 - `dirty_commit_failed`
 - `dirty_detected`
+- `fresh_eyes_round_triggered`
 - `hook_failed`
 - `max_rounds_reached`
 - `monitor_alert_emitted`
@@ -165,6 +166,8 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `rate_limit_rejected`
 - `round_end`
 - `round_start`
+- `round_substrate_after`
+- `round_substrate_before`
 - `round_timeout_kill`
 - `serve_startup_hook_failed`
 - `service_upgrade_rollback_failed`

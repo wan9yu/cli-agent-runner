@@ -185,3 +185,24 @@ def test_given_stop_file_detected_constant_when_exported_then_matches_kind():
 
     assert STOP_FILE_DETECTED == "stop_file_detected"
     assert STOP_FILE_DETECTED in _BUILTIN_KINDS
+
+
+def test_given_round_substrate_before_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, ROUND_SUBSTRATE_BEFORE
+
+    assert ROUND_SUBSTRATE_BEFORE == "round_substrate_before"
+    assert ROUND_SUBSTRATE_BEFORE in _BUILTIN_KINDS
+
+
+def test_given_round_substrate_after_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, ROUND_SUBSTRATE_AFTER
+
+    assert ROUND_SUBSTRATE_AFTER == "round_substrate_after"
+    assert ROUND_SUBSTRATE_AFTER in _BUILTIN_KINDS
+
+
+def test_given_fresh_eyes_round_triggered_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, FRESH_EYES_ROUND_TRIGGERED
+
+    assert FRESH_EYES_ROUND_TRIGGERED == "fresh_eyes_round_triggered"
+    assert FRESH_EYES_ROUND_TRIGGERED in _BUILTIN_KINDS
