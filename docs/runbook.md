@@ -66,6 +66,81 @@ agent-runner start
 > design; if systemd takes longer than `TimeoutStopSec`, consult the systemd
 > journal for the underlying reason.
 
+## Bounded runs (stress tests, batch jobs)
+
+`agent-runner serve` defaults to infinite-supervisor mode. For bounded
+runs (stress tests, scheduled batch jobs, migration validation, dev
+iteration), use the three between-rounds stop triggers:
+
+| Trigger | Use case |
+|---|---|
+| `.agent-done` sentinel | Agent self-determines "I'm done" (research / refactor / bug-fix sweeps) |
+| `[runtime] stop_file` | Operator graceful pause for maintenance |
+| `[runtime] max_rounds` + `--max-rounds N` | Config or CLI-driven N-round bound |
+
+All three exit cleanly with code 0 and emit a distinct event.
+
+### Bounded job pattern (max_rounds)
+
+For "run N rounds and stop":
+
+```toml
+[runtime]
+max_rounds = 3
+```
+
+```bash
+agent-runner serve --max-rounds 3 --config ./test.toml
+```
+
+Pair with systemd `Restart=on-failure` so clean exits don't respawn:
+
+```ini
+[Service]
+ExecStart=... serve --config /etc/test.toml --max-rounds 3
+Restart=on-failure
+RestartSec=5
+```
+
+### Operator graceful pause (stop_file)
+
+For pausing without killing in-flight rounds:
+
+```toml
+[runtime]
+stop_file = "logs/stop-requested"
+```
+
+Ops workflow:
+
+```bash
+touch ~/.agent-runner/<project>/logs/stop-requested
+# Supervisor finishes current round, emits stop_file_detected, exits 0
+sudo systemctl status agent-runner@<project>   # verify clean exit
+
+# To resume:
+rm ~/.agent-runner/<project>/logs/stop-requested
+sudo systemctl start agent-runner@<project>
+```
+
+Deletion does NOT auto-resume. Explicit `systemctl start` required.
+
+### systemd unit pattern recommendations
+
+```ini
+# Prod (infinite supervisor) — current default
+[Service]
+ExecStart=... serve --config /etc/agent-runner.toml
+Restart=always
+RestartSec=5
+
+# Bounded job
+[Service]
+ExecStart=... serve --config /etc/test.toml --max-rounds 10
+Restart=on-failure
+RestartSec=5
+```
+
 ## Upgrading agent-runner
 
 ### Recommended: single command

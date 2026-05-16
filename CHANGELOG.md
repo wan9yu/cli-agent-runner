@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-05-16
+
+- `[runtime] max_rounds = N` + `--max-rounds N` CLI flag: supervisor
+  exits cleanly after N round completions. Pair with systemd
+  `Restart=on-failure` for bounded jobs.
+- `[runtime] stop_file = "..."`: operator sentinel; touching the file
+  pauses between rounds and exits cleanly. Requires explicit
+  `systemctl start` to resume.
+- 2 new events: `max_rounds_reached`, `stop_file_detected`.
+
+See `docs/migrations/0.1.21.md`.
+
 ## [0.1.20] - 2026-05-16
 
 - Built-in detection of claude rate-limit rejections (5h OAuth quota).
@@ -602,7 +614,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...v0.1.18
