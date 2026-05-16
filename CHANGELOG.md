@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-05-16
+
+- Built-in detection of claude rate-limit rejections (5h OAuth quota).
+  New `claude_rate_limit_detector` post_round_hook emits
+  `rate_limit_rejected` when claude returns `api_error_status:429`.
+- Supervisor backs off until `resetsAt` epoch, then emits
+  `rate_limit_recovered` and resumes. Restart-safe.
+- New config `[runtime] rate_limit_action = "back_off" | "skip" | "stop"`
+  (default `back_off`).
+- `peek --json` schema bumped 1.8 → 1.9 (additive `rate_limit` field).
+- New monitor detector `rate_limit_active` (warning, no auto-stop).
+
+See `docs/migrations/0.1.20.md`.
+
 ## [0.1.19] - 2026-05-15
 
 - `agent-runner install` derives `ExecStart` via `shutil.which`; fixes
@@ -588,7 +602,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.16...v0.1.17

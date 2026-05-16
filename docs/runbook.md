@@ -432,6 +432,47 @@ gzip ~/.agent-runner/<project>/logs/events-2026-04.jsonl   # for example
 agent-runner start
 ```
 
+### Rate limits (claude.ai OAuth)
+
+**Symptom:** `[WARN] rate_limit_active` alert from monitor; `rate_limit_rejected`
+events appear in events.jsonl; supervisor pauses round dispatch.
+
+Claude.ai OAuth accounts have a rolling 5-hour token quota. When exhausted,
+claude exits quickly with `api_error_status:429`. The built-in
+`claude_rate_limit_detector` detects this and emits `rate_limit_rejected`.
+
+**Default behavior (`rate_limit_action = "back_off"`):**
+
+The supervisor sleeps until the `resetsAt` epoch (plus a 5–30s jitter),
+then emits `rate_limit_recovered` and resumes automatically. No operator
+action needed during back-off.
+
+**Forcing immediate stop instead:**
+
+```toml
+# agent-runner.toml
+[runtime]
+rate_limit_action = "stop"
+```
+
+This causes the supervisor to emit `agent_self_terminated` with
+`reason = "rate_limit"` and exit cleanly. Restart with
+`agent-runner start` after the quota resets.
+
+**Checking throttle status:**
+
+```bash
+agent-runner peek --json | python3 -m json.tool | grep -A5 rate_limit
+# "rate_limit": null  → not throttled
+# "rate_limit": { "throttled_until_epoch": ... }  → throttled
+```
+
+**Monitor alert:**
+
+The `rate_limit_active` detector fires a `warning`-severity alert while
+throttled. It clears automatically when `rate_limit_recovered` is emitted.
+No configuration needed; auto-stop is NOT triggered.
+
 ## 中文摘要
 
 故障手册按场景：OAuth/auth 401（自动停服 → 刷新对应 provider 凭据，例如

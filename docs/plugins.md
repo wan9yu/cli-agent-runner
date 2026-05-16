@@ -251,10 +251,39 @@ echo "done: round complete" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
 These contracts are stable; agents in any language / framework can rely
 on them.
 
+## Built-in post_round_hooks
+
+agent-runner ships one built-in `post_round_hooks` plugin registered
+automatically via its own entry-point:
+
+### `claude_rate_limit_detector` (0.1.20+)
+
+**Entry-point group:** `agent_runner.post_round_hooks`
+**Module:** `agent_runner.builtin_plugins.claude_rate_limit`
+
+After each round, scans the last 50 lines of the round's JSONL log for
+rate-limit signals:
+
+- A `rate_limit_event` message in the JSONL stream, or
+- A result with `is_error: true` and `api_error_status: 429`.
+
+When detected, emits a `rate_limit_rejected` event to `events.jsonl` with
+fields: `agent`, `reset_at_epoch`, `limit_type`, `round_num`, `raw` (≤200 chars).
+
+The supervisor reads this event on the next dispatch cycle and applies
+the configured `rate_limit_action`. No additional configuration is required
+to enable the detector; it activates for any project using claude as the
+agent CLI.
+
+Non-claude agents: the detector returns early when `cfg.agent.command`
+does not contain `"claude"`. Third-party plugin authors may use the
+same `register_post_round_hook` API to ship equivalent detectors for
+other agent CLIs.
+
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
-detectors that run alongside the 9 builtins on every monitor poll.
+detectors that run alongside the 10 builtins on every monitor poll.
 
 ### Group + Protocol
 
@@ -322,7 +351,7 @@ detector. Other plugin detectors and all builtins still run normally.
 
 ```json
 {
-  "schema_version": "1.8",
+  "schema_version": "1.9",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": [...],
