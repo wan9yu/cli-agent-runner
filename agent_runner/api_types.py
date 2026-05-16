@@ -29,12 +29,23 @@ class ServiceMode(StrEnum):
 
 
 @dataclass(frozen=True)
+class RateLimitState:
+    """Public: surfaced via peek --json when supervisor is currently throttled."""
+
+    throttled_until_epoch: int
+    limit_type: str
+    agent: str
+    since_round: int
+
+
+@dataclass(frozen=True)
 class ServiceStatus:
     mode: ServiceMode
     active: bool
     pid: int | None = None
     uptime_s: float | None = None
     unit_file: Path | None = None
+    rate_limit: RateLimitState | None = None
 
 
 @dataclass(frozen=True)

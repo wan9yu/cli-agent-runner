@@ -88,6 +88,7 @@ def _build_state(log_dir: Path, narrative_file: Path) -> dict[str, Any]:
         "recent_events": _recent_events(log_dir, max_count=20),
         "round_log_tail": _read_tail(log_dir / "round-current.log", max_lines=50),
         "self_terminated": _self_terminated_state(log_dir),
+        "rate_limit": _rate_limit_state(log_dir),
     }
 
 
@@ -147,11 +148,38 @@ def _self_terminated_state(log_dir: Path) -> dict[str, Any]:
     return {"present": reason is not None, "reason": reason}
 
 
+def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
+    """Rate limit throttle state — None if not currently throttled."""
+    from datetime import UTC, datetime
+
+    from agent_runner._throttle import _check_throttle_state
+
+    throttle = _check_throttle_state(log_dir)
+    if throttle is None:
+        return None
+    iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()
+    return {
+        "throttled_until_iso": iso,
+        "limit_type": throttle.limit_type,
+        "since_round": throttle.since_round,
+    }
+
+
 def _render_html(state: dict[str, Any]) -> str:
     """Render the 5-section HTML page. No JS/CSS framework — just <pre> and <h2>."""
     rs = state["round_state"]
     selft = state["self_terminated"]
+    rl = state.get("rate_limit")
     events_block = "\n".join(_render_event_line(e) for e in state["recent_events"])
+    rate_limit_banner = ""
+    if rl is not None:
+        _style = "background:#fee;color:#900;padding:1em;border:2px solid #900;margin:1em 0;"
+        rate_limit_banner = (
+            f'<div style="{_style}">'
+            f"Throttled until {html.escape(rl['throttled_until_iso'])} "
+            f"({html.escape(rl['limit_type'])}, since R{html.escape(str(rl['since_round']))})"
+            "</div>"
+        )
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -159,7 +187,7 @@ def _render_html(state: dict[str, Any]) -> str:
 <title>agent-runner progress</title>
 </head><body>
 <h1>agent-runner progress</h1>
-
+{rate_limit_banner}
 <h2>Round state</h2>
 <pre>round_num: {html.escape(str(rs["round_num"]))}
 phase: {html.escape(str(rs.get("phase")))}

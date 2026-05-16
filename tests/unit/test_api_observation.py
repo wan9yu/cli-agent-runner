@@ -209,7 +209,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     )
     emit(state, json_mode=True)
     out = json.loads(capsys.readouterr().out)
-    assert out["schema_version"] == "1.8"
+    assert out["schema_version"] == "1.9"
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
     assert "owned_paths" in out["plugins"]
@@ -541,6 +541,44 @@ def test_given_seeded_events_when_narrate_then_yields_formatted_lines(
     assert "[12:00:01.456]" in lines[1]
     assert "agent_spawn" in lines[1]
     assert "pid=12345" in lines[1]
+
+
+def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """peek returns ServiceStatus.rate_limit populated when rate_limit_rejected is active."""
+    import time
+
+    from agent_runner.api_types import RateLimitState
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    future = int(time.time() + 3600)
+    (log_dir / "events-2026-05.jsonl").write_text(
+        json.dumps(
+            {
+                "kind": "rate_limit_rejected",
+                "ts": "2026-05-16T00:00:00Z",
+                "agent": "claude",
+                "reset_at_epoch": future,
+                "limit_type": "five_hour",
+                "round_num": 42,
+            }
+        )
+        + "\n"
+    )
+
+    state = api.peek(tmp_git_repo)
+    assert state.service.rate_limit is not None
+    assert isinstance(state.service.rate_limit, RateLimitState)
+    assert state.service.rate_limit.throttled_until_epoch == future
+    assert state.service.rate_limit.limit_type == "five_hour"
+    assert state.service.rate_limit.since_round == 42
 
 
 def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(

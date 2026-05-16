@@ -25,6 +25,7 @@ from agent_runner.api_types import (
     InitResult,
     InstallResult,
     ProjectState,
+    RateLimitState,
     ServiceMode,
     ServiceStatus,
     select_path,
@@ -396,6 +397,22 @@ def peek(
     )
     recent_blips = _recent_events_of_kind(parsed_events, AGENT_NETWORK_BLIP, _RECENT_BLIPS_LIMIT)
 
+    from agent_runner._throttle import _check_throttle_state
+
+    throttle = _check_throttle_state(log_dir)
+    rate_limit: RateLimitState | None = None
+    if throttle is not None:
+        rate_limit = RateLimitState(
+            throttled_until_epoch=throttle.reset_at_epoch,
+            limit_type=throttle.limit_type,
+            agent=throttle.agent,
+            since_round=throttle.since_round,
+        )
+    raw_service = status(project if project is not None else work_dir)
+    import dataclasses
+
+    svc = dataclasses.replace(raw_service, rate_limit=rate_limit)
+
     state = ProjectState(
         project=base_state.project,
         status=base_state.status,
@@ -413,7 +430,7 @@ def peek(
         recent_rounds=base_state.recent_rounds,
         orphan=base_state.orphan,
         system=base_state.system,
-        service=status(project if project is not None else work_dir),
+        service=svc,
         recent_events=recent,
         recent_hook_failures=recent_hook_failures,
         recent_blips=recent_blips,
