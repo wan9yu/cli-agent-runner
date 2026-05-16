@@ -745,6 +745,33 @@ def emit_rate_limit_stop(log_dir: Path) -> None:
     events.emit(log_dir, events.SELF_TERMINATED, reason="rate_limit")
 
 
+def emit_max_rounds_reached(log_dir: Path, *, rounds_completed: int, max_rounds: int) -> None:
+    """Centralises emission so cli/serve_cmd.py need not import agent_runner.events
+    directly (which violates its import allowlist).
+
+    Emitted by the supervisor when the configured max_rounds (CLI flag or
+    [runtime] config) is reached. Payload mirrors the spec.
+    """
+    from agent_runner.events import MAX_ROUNDS_REACHED, emit
+
+    emit(log_dir, MAX_ROUNDS_REACHED, rounds_completed=rounds_completed, max_rounds=max_rounds)
+
+
+def emit_stop_file_detected(
+    log_dir: Path, *, stop_file: Path, content: str, rounds_completed: int
+) -> None:
+    """Centralises emission so cli/serve_cmd.py need not import agent_runner.events directly."""
+    from agent_runner.events import STOP_FILE_DETECTED, emit
+
+    emit(
+        log_dir,
+        STOP_FILE_DETECTED,
+        stop_file=str(stop_file),
+        content=content,
+        rounds_completed=rounds_completed,
+    )
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 

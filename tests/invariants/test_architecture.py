@@ -25,9 +25,16 @@ ALLOWED_SERVE_IMPORTS = {
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
-    ("agent_runner.api", {"check_self_terminated_sentinel", "emit_rate_limit_stop"}),
+    (
+        "agent_runner.api",
+        {
+            "check_self_terminated_sentinel",
+            "emit_max_rounds_reached",
+            "emit_rate_limit_stop",
+            "emit_stop_file_detected",
+        },
+    ),
     ("agent_runner.cli.common", {"cfg_from_args"}),
-    ("agent_runner.events", {"MAX_ROUNDS_REACHED", "STOP_FILE_DETECTED", "emit"}),
     ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
     (
         "agent_runner.round_log",

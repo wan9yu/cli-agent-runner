@@ -19,9 +19,13 @@ import time
 from pathlib import Path
 
 from agent_runner._throttle import _check_throttle_state
-from agent_runner.api import check_self_terminated_sentinel, emit_rate_limit_stop
+from agent_runner.api import (
+    check_self_terminated_sentinel,
+    emit_max_rounds_reached,
+    emit_rate_limit_stop,
+    emit_stop_file_detected,
+)
 from agent_runner.cli.common import cfg_from_args
-from agent_runner.events import MAX_ROUNDS_REACHED, STOP_FILE_DETECTED, emit
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile, send_signal_to_pid
 from agent_runner.round_log import (
@@ -34,15 +38,26 @@ from agent_runner.runner import _apply_back_off
 
 
 def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> int | None:
-    """CLI flag overrides config; validates resulting effective value.
+    """Resolve effective max_rounds: CLI flag overrides [runtime] config value.
 
-    Returns None if neither is set (unbounded). Raises ValueError if effective
-    value is <= 0 (catches malformed CLI input that argparse type=int allowed).
+    Returns None if neither is set (unbounded). Raises ValueError if the CLI
+    value is <= 0 (argparse type=int admits zero/negative; config_value is
+    already validated by _require_positive_int at load_config time).
     """
     effective = cli_value if cli_value is not None else config_value
     if effective is not None and effective < 1:
         raise ValueError(f"--max-rounds must be positive integer, got {effective}")
     return effective
+
+
+def _add_max_rounds_arg(parser) -> None:
+    parser.add_argument(
+        "--max-rounds",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Stop after N round completions (overrides [runtime] max_rounds in config)",
+    )
 
 
 def _build_serve_parser() -> argparse.ArgumentParser:
@@ -53,26 +68,14 @@ def _build_serve_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="agent-runner serve")
     p.add_argument("--config", type=Path, default=Path("./agent-runner.toml"))
     p.add_argument("--once", action="store_true", help="Run a single round then exit (debug)")
-    p.add_argument(
-        "--max-rounds",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Stop after N round completions (overrides [runtime] max_rounds in config)",
-    )
+    _add_max_rounds_arg(p)
     return p
 
 
 def add_parser(sub, parent) -> None:
     p = sub.add_parser("serve", parents=[parent], help="Long-running supervisor loop")
     p.add_argument("--once", action="store_true", help="Run a single round then exit (debug)")
-    p.add_argument(
-        "--max-rounds",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Stop after N round completions (overrides [runtime] max_rounds in config)",
-    )
+    _add_max_rounds_arg(p)
     p.set_defaults(func=cmd)
 
 
@@ -113,6 +116,7 @@ def cmd(args) -> int:
     effective_max_rounds = _resolve_max_rounds(
         cli_value=args.max_rounds, config_value=cfg.runtime.max_rounds
     )
+    stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     rounds_completed = 0
 
     try:
@@ -131,23 +135,21 @@ def cmd(args) -> int:
                 elif action == "stop":
                     emit_rate_limit_stop(log_dir)
                     break
-            if cfg.runtime.stop_file is not None and cfg.runtime.stop_file.exists():
+            if stop_file is not None and stop_file.exists():
                 try:
-                    content = cfg.runtime.stop_file.read_text()[:200]
+                    content = stop_file.read_text(encoding="utf-8", errors="replace")[:200]
                 except OSError:
                     content = ""
-                emit(
+                emit_stop_file_detected(
                     log_dir,
-                    STOP_FILE_DETECTED,
-                    stop_file=str(cfg.runtime.stop_file),
+                    stop_file=stop_file,
                     content=content,
                     rounds_completed=rounds_completed,
                 )
                 break
             if effective_max_rounds is not None and rounds_completed >= effective_max_rounds:
-                emit(
+                emit_max_rounds_reached(
                     log_dir,
-                    MAX_ROUNDS_REACHED,
                     rounds_completed=rounds_completed,
                     max_rounds=effective_max_rounds,
                 )
