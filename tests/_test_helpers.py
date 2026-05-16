@@ -22,12 +22,14 @@ class FakeArgs:
         config: Path,
         *,
         once: bool = True,
+        max_rounds: int | None = None,
         port: int = 8765,
         mode: str = "anomaly",
         host: str | None = None,
     ):
         self.config = config
         self.once = once
+        self.max_rounds = max_rounds
         self.port = port
         self.mode = mode
         self.host = host

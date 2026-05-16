@@ -14,6 +14,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 ALLOWED_SERVE_IMPORTS = {
+    "argparse",
     "os",
     "sys",
     "signal",
@@ -26,6 +27,7 @@ ALLOWED_SERVE_FROM = [
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     ("agent_runner.api", {"check_self_terminated_sentinel", "emit_rate_limit_stop"}),
     ("agent_runner.cli.common", {"cfg_from_args"}),
+    ("agent_runner.events", {"MAX_ROUNDS_REACHED", "STOP_FILE_DETECTED", "emit"}),
     ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
     (
         "agent_runner.round_log",
