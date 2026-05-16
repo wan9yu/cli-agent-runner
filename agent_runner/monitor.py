@@ -44,6 +44,7 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "smoke_fail_rate",
         "oauth_fail",
         "network_fail",
+        "rate_limit_active",
     }
 )
 
@@ -341,6 +342,36 @@ def detect_network_fail(
     )
 
 
+def detect_rate_limit_active(
+    events: list[dict[str, Any]], *, now: float | None = None
+) -> Alert | None:
+    """Fire warning alert if currently throttled (latest rate_limit_rejected
+    has reset_at_epoch in future, no matching recovered after)."""
+    import time as _time
+
+    if now is None:
+        now = _time.time()
+    for ev in reversed(events):
+        kind = ev.get("kind") or ev.get("event")
+        if kind == "rate_limit_recovered":
+            return None
+        if kind == "rate_limit_rejected":
+            if int(ev.get("reset_at_epoch", 0)) > now:
+                iso = datetime.fromtimestamp(ev["reset_at_epoch"], UTC).isoformat()
+                return _alert(
+                    "rate_limit_active",
+                    "warning",
+                    f"throttled until {iso} ({ev.get('limit_type', 'unknown')})",
+                    {
+                        "throttled_until_iso": iso,
+                        "limit_type": ev.get("limit_type", "unknown"),
+                        "agent": ev.get("agent", "unknown"),
+                    },
+                )
+            return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # State-tree assembly (Task 3.2)
 # ---------------------------------------------------------------------------
@@ -451,7 +482,7 @@ def run_all_detectors(
     auth_fail_hint: str | None = None,
     phases_overrides: dict[str, PhaseOverride] | None = None,
 ) -> list[Alert]:
-    """Run all 9 detectors; returns alerts (empty = healthy)."""
+    """Run all 10 detectors; returns alerts (empty = healthy)."""
     if now is None:
         now = datetime.now(UTC)
     compiled_auth_pats = (
@@ -472,6 +503,7 @@ def run_all_detectors(
         detect_smoke_fail_rate(events),
         detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
         detect_network_fail(events, log_tails),
+        detect_rate_limit_active(events, now=now.timestamp()),
     ]
     return [a for a in candidates if a is not None]
 

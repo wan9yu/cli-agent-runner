@@ -85,6 +85,7 @@ API quota / writing to a near-full disk).
 - `network_fail`
 - `oauth_fail` — **auto-stop**
 - `orphan_chain`
+- `rate_limit_active`
 - `smoke_fail_rate`
 - `timeout_rate`
 <!-- /gen:detector-list -->
