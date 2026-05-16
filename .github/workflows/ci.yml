@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Force JS actions (checkout/setup-python/upload-artifact) onto the Node.js 24
-# runtime ahead of the June 2026 default flip — silences the Node 20 deprecation
-# warning without waiting for action vendors to ship Node 24 bundles.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # Cancel in-flight runs on the same PR ref when a new push lands.
 # Push-to-main runs always complete (cancel-in-progress only on PRs).
 concurrency:
