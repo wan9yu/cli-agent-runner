@@ -3,7 +3,7 @@
 - serve_cmd.py imports from a strict allowlist (no business logic)
 - cli command files call api.X (not direct module imports)
 - All api_types are frozen dataclasses
-- KNOWN_ALERT_KINDS in monitor.py matches the 9 builtin detectors
+- KNOWN_ALERT_KINDS in monitor.py matches the 10 builtin detectors
 """
 
 from __future__ import annotations
@@ -31,7 +31,8 @@ ALLOWED_SERVE_FROM = [
         "agent_runner.round_log",
         {"ROUND_CURRENT_LINK", "atomic_relink", "next_round_num", "prune_old_round_logs"},
     ),
-    ("agent_runner.runner", {"_apply_back_off", "_check_throttle_state"}),
+    ("agent_runner._throttle", {"_check_throttle_state"}),
+    ("agent_runner.runner", {"_apply_back_off"}),
 ]
 
 

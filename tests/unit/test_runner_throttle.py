@@ -21,14 +21,14 @@ def _write_events(log_dir: Path, events: list[dict]):
 
 
 def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_state(tmp_path):
-    from agent_runner.runner import _check_throttle_state
+    from agent_runner._throttle import _check_throttle_state
 
     future = int(time.time() + 3600)
     _write_events(
         tmp_path,
         [
             {
-                "kind": "rate_limit_rejected",
+                "event": "rate_limit_rejected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,
@@ -46,14 +46,14 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
 
 
 def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_path):
-    from agent_runner.runner import _check_throttle_state
+    from agent_runner._throttle import _check_throttle_state
 
     future = int(time.time() + 3600)
     _write_events(
         tmp_path,
         [
             {
-                "kind": "rate_limit_rejected",
+                "event": "rate_limit_rejected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,
@@ -61,7 +61,7 @@ def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_p
                 "round_num": 42,
             },
             {
-                "kind": "rate_limit_recovered",
+                "event": "rate_limit_recovered",
                 "ts": "2026-05-16T00:01:00Z",
                 "agent": "claude",
                 "throttled_for_s": 60,
@@ -74,14 +74,14 @@ def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_p
 
 
 def test_given_rejected_with_reset_in_past_when_check_then_returns_none(tmp_path):
-    from agent_runner.runner import _check_throttle_state
+    from agent_runner._throttle import _check_throttle_state
 
     past = int(time.time() - 3600)
     _write_events(
         tmp_path,
         [
             {
-                "kind": "rate_limit_rejected",
+                "event": "rate_limit_rejected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": past,
@@ -95,7 +95,7 @@ def test_given_rejected_with_reset_in_past_when_check_then_returns_none(tmp_path
 
 
 def test_given_no_events_when_check_then_returns_none(tmp_path):
-    from agent_runner.runner import _check_throttle_state
+    from agent_runner._throttle import _check_throttle_state
 
     state = _check_throttle_state(tmp_path)
     assert state is None

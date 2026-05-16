@@ -294,7 +294,7 @@ def load_config(toml_path: Path) -> Config:
     if rate_limit_action not in _VALID_RATE_LIMIT_ACTIONS:
         raise ValueError(
             f"runtime.rate_limit_action: {rate_limit_action!r} not in allowed values "
-            f"{{'back_off', 'skip', 'stop'}}"
+            f"{sorted(_VALID_RATE_LIMIT_ACTIONS)}"
         )
     runtime = RuntimeConfig(
         work_dir=work_dir,

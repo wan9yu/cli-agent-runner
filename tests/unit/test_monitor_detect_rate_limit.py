@@ -11,7 +11,7 @@ def test_given_active_throttle_in_events_when_detect_then_warning_alert():
     future = int(time.time() + 3600)
     events = [
         {
-            "kind": "rate_limit_rejected",
+            "event": "rate_limit_rejected",
             "ts": "2026-05-16T00:00:00Z",
             "agent": "claude",
             "reset_at_epoch": future,
@@ -30,14 +30,14 @@ def test_given_recovered_after_rejected_when_detect_then_no_alert():
     future = int(time.time() + 3600)
     events = [
         {
-            "kind": "rate_limit_rejected",
+            "event": "rate_limit_rejected",
             "ts": "2026-05-16T00:00:00Z",
             "agent": "claude",
             "reset_at_epoch": future,
             "limit_type": "five_hour",
         },
         {
-            "kind": "rate_limit_recovered",
+            "event": "rate_limit_recovered",
             "ts": "2026-05-16T00:01:00Z",
             "agent": "claude",
             "throttled_for_s": 60,

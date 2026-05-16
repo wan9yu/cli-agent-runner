@@ -562,7 +562,7 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     (log_dir / "events-2026-05.jsonl").write_text(
         json.dumps(
             {
-                "kind": "rate_limit_rejected",
+                "event": "rate_limit_rejected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,

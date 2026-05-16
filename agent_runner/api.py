@@ -409,8 +409,6 @@ def peek(
             since_round=throttle.since_round,
         )
     raw_service = status(project if project is not None else work_dir)
-    import dataclasses
-
     svc = dataclasses.replace(raw_service, rate_limit=rate_limit)
 
     state = ProjectState(

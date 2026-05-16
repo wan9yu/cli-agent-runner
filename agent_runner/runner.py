@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+import random
 import sys
 import time
 import traceback as tb_mod
@@ -25,7 +26,6 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
-from agent_runner._throttle import _check_throttle_state  # noqa: F401 — re-exported for serve_cmd
 from agent_runner.api import _primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult, ThrottleState
@@ -50,8 +50,6 @@ def _apply_back_off(log_dir: Path, throttle: ThrottleState) -> None:
 
     Capped at _BACK_OFF_CAP_S to defend against malformed reset epochs.
     """
-    import random
-
     now = time.time()
     requested = (
         throttle.reset_at_epoch
@@ -63,6 +61,7 @@ def _apply_back_off(log_dir: Path, throttle: ThrottleState) -> None:
             log_dir,
             RATE_LIMIT_BACKOFF_CAPPED,
             agent=throttle.agent,
+            limit_type=throttle.limit_type,
             requested_sleep_s=int(requested),
             applied_sleep_s=_BACK_OFF_CAP_S,
         )

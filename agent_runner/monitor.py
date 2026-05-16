@@ -1,6 +1,6 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
-9 built-in detectors. Two trigger ``auto_action="stop_service"``:
+10 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,8 +31,15 @@ from agent_runner.api_types import (
 )
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
 from agent_runner.context_store import read_json
-from agent_runner.events import emit as emit_event
-from agent_runner.events import now_iso_ms, parse_iso_ms
+from agent_runner.events import (
+    RATE_LIMIT_RECOVERED,
+    RATE_LIMIT_REJECTED,
+    now_iso_ms,
+    parse_iso_ms,
+)
+from agent_runner.events import (
+    emit as emit_event,
+)
 
 KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
     {
@@ -347,15 +355,13 @@ def detect_rate_limit_active(
 ) -> Alert | None:
     """Fire warning alert if currently throttled (latest rate_limit_rejected
     has reset_at_epoch in future, no matching recovered after)."""
-    import time as _time
-
     if now is None:
-        now = _time.time()
+        now = time.time()
     for ev in reversed(events):
-        kind = ev.get("kind") or ev.get("event")
-        if kind == "rate_limit_recovered":
+        kind = ev.get("event")
+        if kind == RATE_LIMIT_RECOVERED:
             return None
-        if kind == "rate_limit_rejected":
+        if kind == RATE_LIMIT_REJECTED:
             if int(ev.get("reset_at_epoch", 0)) > now:
                 iso = datetime.fromtimestamp(ev["reset_at_epoch"], UTC).isoformat()
                 return _alert(

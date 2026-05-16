@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import ThrottleState
+from agent_runner.events import RATE_LIMIT_RECOVERED, RATE_LIMIT_REJECTED
 
 
 def _check_throttle_state(log_dir: Path) -> ThrottleState | None:
@@ -27,20 +29,21 @@ def _check_throttle_state(log_dir: Path) -> ThrottleState | None:
         return None
     raw_events: list[dict[str, Any]] = []
     with candidates[-1].open() as f:
-        for line in f.readlines()[-100:]:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                raw_events.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        tail = deque(f, maxlen=100)
+    for line in tail:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            raw_events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     latest_rejected: dict[str, Any] | None = None
     for ev in reversed(raw_events):
-        kind = ev.get("kind") or ev.get("event")
-        if kind == "rate_limit_recovered":
+        kind = ev.get("event")
+        if kind == RATE_LIMIT_RECOVERED:
             return None  # Already recovered; no active throttle
-        if kind == "rate_limit_rejected":
+        if kind == RATE_LIMIT_REJECTED:
             latest_rejected = ev
             break
     if latest_rejected is None:

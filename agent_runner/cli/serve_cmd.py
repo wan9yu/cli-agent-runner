@@ -16,6 +16,7 @@ import subprocess  # noqa: TID251
 import sys
 import time
 
+from agent_runner._throttle import _check_throttle_state
 from agent_runner.api import check_self_terminated_sentinel, emit_rate_limit_stop
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
@@ -26,7 +27,7 @@ from agent_runner.round_log import (
     next_round_num,
     prune_old_round_logs,
 )
-from agent_runner.runner import _apply_back_off, _check_throttle_state
+from agent_runner.runner import _apply_back_off
 
 
 def add_parser(sub, parent) -> None:
