@@ -32,6 +32,8 @@ class RuntimeConfig:
     rate_limit_action: Literal["back_off", "skip", "stop"] = "back_off"
     max_rounds: int | None = None  # None = unbounded
     stop_file: Path | None = None  # None = disabled
+    substrate_fingerprint_paths: list[str] = field(default_factory=list)
+    fresh_eyes_every_n: int | None = None  # None = disabled
 
 
 @dataclass(frozen=True)
@@ -260,6 +262,20 @@ def _parse_phase_overrides(
     return overrides
 
 
+def _parse_substrate_fingerprint_paths(runtime_d: dict) -> list[str]:
+    raw = runtime_d.get("substrate_fingerprint_paths", [])
+    if not isinstance(raw, list):
+        raise ValueError("runtime.substrate_fingerprint_paths: must be list of glob strings")
+    return [str(p) for p in raw]
+
+
+def _parse_fresh_eyes_every_n(runtime_d: dict) -> int | None:
+    raw = runtime_d.get("fresh_eyes_every_n")
+    if raw is None:
+        return None
+    return _require_positive_int(raw, field="runtime.fresh_eyes_every_n")
+
+
 def load_config(toml_path: Path) -> Config:
     if not toml_path.exists():
         raise FileNotFoundError(f"config not found: {toml_path}")
@@ -326,6 +342,8 @@ def load_config(toml_path: Path) -> Config:
         stop_file=_expand_and_resolve(str(runtime_d["stop_file"]), project_name, work_dir)
         if "stop_file" in runtime_d
         else None,
+        substrate_fingerprint_paths=_parse_substrate_fingerprint_paths(runtime_d),
+        fresh_eyes_every_n=_parse_fresh_eyes_every_n(runtime_d),
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")

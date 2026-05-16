@@ -29,6 +29,8 @@ writes a templated copy you can edit.
 | `rate_limit_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
 | `max_rounds` | `int | None` | None |
 | `stop_file` | `Path | None` | None |
+| `substrate_fingerprint_paths` | `list[str]` | [] |
+| `fresh_eyes_every_n` | `int | None` | None |
 
 ### `[prompt]`
 
