@@ -97,7 +97,7 @@ jobs:
         run: pytest tests/literate/ -q
       - name: upload coverage
         if: matrix.python == '3.12' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
