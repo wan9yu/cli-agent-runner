@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
+_VALID_RATE_LIMIT_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class RuntimeConfig:
     disable_pre_round_hooks: bool = False
     round_log_retention: int = 100
     narrative_file: Path | None = None
+    rate_limit_action: Literal["back_off", "skip", "stop"] = "back_off"
 
 
 @dataclass(frozen=True)
@@ -288,6 +290,12 @@ def load_config(toml_path: Path) -> Config:
             "use [phases.<name>] round_timeout_s = X — see docs/migrations/0.1.16.md"
         )
 
+    rate_limit_action = str(runtime_d.get("rate_limit_action", "back_off"))
+    if rate_limit_action not in _VALID_RATE_LIMIT_ACTIONS:
+        raise ValueError(
+            f"runtime.rate_limit_action: {rate_limit_action!r} not in allowed values "
+            f"{{'back_off', 'skip', 'stop'}}"
+        )
     runtime = RuntimeConfig(
         work_dir=work_dir,
         log_dir=_expand_and_resolve(
@@ -309,6 +317,7 @@ def load_config(toml_path: Path) -> Config:
         narrative_file=_expand_and_resolve(str(runtime_d["narrative_file"]), project_name, work_dir)
         if "narrative_file" in runtime_d
         else None,
+        rate_limit_action=rate_limit_action,  # type: ignore[arg-type]  # narrowed by validation
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")
