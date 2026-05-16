@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-05-16
+
+- `[runtime] substrate_fingerprint_paths` + `round_substrate_before` /
+  `round_substrate_after` events: each round captures git HEAD (always)
+  plus optional file-content hash (opt-in via glob list). Raw data for
+  downstream confabulation / lineage-rot detectors.
+- `[runtime] fresh_eyes_every_n` + `AGENT_RUNNER_FRESH_EYES` env var:
+  every Nth round, supervisor sets env to `"1"`. User prompts/hooks
+  decide what fresh-eyes context means.
+- New `docs/long-running-agents.md`: hazards + 4 primitives + framework
+  abstraction boundary.
+
+See `docs/migrations/0.1.22.md`.
+
 ## [0.1.21] - 2026-05-16
 
 - `[runtime] max_rounds = N` + `--max-rounds N` CLI flag: supervisor
@@ -614,7 +628,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.18...v0.1.19
