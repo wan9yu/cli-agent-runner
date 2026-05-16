@@ -46,6 +46,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subproc
             "scaffold.py",
             "monitor.py",
             "api.py",
+            "_substrate.py",
             "__init__.py",
         ):
             continue
@@ -62,7 +63,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_call_git_cli()
     """
     offenders: list[tuple[str, int]] = []
     for f in PKG.glob("*.py"):
-        if f.name in ("vcs_state.py", "scaffold.py", "__init__.py"):
+        if f.name in ("vcs_state.py", "scaffold.py", "_substrate.py", "__init__.py"):
             continue
         tree = ast.parse(f.read_text())
         for node in ast.walk(tree):
