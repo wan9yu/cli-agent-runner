@@ -31,6 +31,7 @@ class RuntimeConfig:
     narrative_file: Path | None = None
     rate_limit_action: Literal["back_off", "skip", "stop"] = "back_off"
     max_rounds: int | None = None  # None = unbounded
+    stop_file: Path | None = None  # None = disabled
 
 
 @dataclass(frozen=True)
@@ -321,6 +322,9 @@ def load_config(toml_path: Path) -> Config:
         rate_limit_action=rate_limit_action,  # type: ignore[arg-type]  # narrowed by validation
         max_rounds=_require_positive_int(runtime_d["max_rounds"], field="runtime.max_rounds")
         if "max_rounds" in runtime_d
+        else None,
+        stop_file=_expand_and_resolve(str(runtime_d["stop_file"]), project_name, work_dir)
+        if "stop_file" in runtime_d
         else None,
     )
     prompt_d = raw.get("prompt", {})

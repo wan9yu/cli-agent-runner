@@ -28,6 +28,7 @@ writes a templated copy you can edit.
 | `narrative_file` | `Path | None` | None |
 | `rate_limit_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
 | `max_rounds` | `int | None` | None |
+| `stop_file` | `Path | None` | None |
 
 ### `[prompt]`
 
