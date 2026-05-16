@@ -31,8 +31,6 @@ def test_given_absolute_stop_file_when_loaded_then_unchanged(tmp_path: Path):
     from agent_runner.config import load_config
 
     abs_path = "/tmp/agent-runner-stop-fixed"
-    cfg_path = make_toml_with_sections(
-        tmp_path, runtime_extra=f'stop_file = "{abs_path}"\n'
-    )
+    cfg_path = make_toml_with_sections(tmp_path, runtime_extra=f'stop_file = "{abs_path}"\n')
     cfg = load_config(cfg_path)
     assert cfg.runtime.stop_file == Path(abs_path)
