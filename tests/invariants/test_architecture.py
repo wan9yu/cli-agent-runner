@@ -24,6 +24,7 @@ ALLOWED_SERVE_IMPORTS = {
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
+    ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     (
         "agent_runner.api",
@@ -32,6 +33,9 @@ ALLOWED_SERVE_FROM = [
             "emit_max_rounds_reached",
             "emit_rate_limit_stop",
             "emit_stop_file_detected",
+            "emit_round_substrate_before",
+            "emit_round_substrate_after",
+            "emit_fresh_eyes_round_triggered",
         },
     ),
     ("agent_runner.cli.common", {"cfg_from_args"}),

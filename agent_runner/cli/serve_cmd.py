@@ -18,11 +18,15 @@ import sys
 import time
 from pathlib import Path
 
+from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
 from agent_runner.api import (
     check_self_terminated_sentinel,
+    emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
+    emit_round_substrate_after,
+    emit_round_substrate_before,
     emit_stop_file_detected,
 )
 from agent_runner.cli.common import cfg_from_args
@@ -48,6 +52,17 @@ def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> i
     if effective is not None and effective < 1:
         raise ValueError(f"--max-rounds must be positive integer, got {effective}")
     return effective
+
+
+def _is_fresh_eyes_round(*, round_num: int, every_n: int | None) -> bool:
+    """True if this round should signal fresh-eyes mode to the agent subprocess.
+
+    round_num <= 0 guard: very first round is never fresh-eyes (need warm
+    baseline first). every_n=None → feature disabled.
+    """
+    if every_n is None or round_num <= 0:
+        return False
+    return round_num % every_n == 0
 
 
 def _add_max_rounds_arg(parser) -> None:
@@ -155,6 +170,27 @@ def cmd(args) -> int:
                 )
                 break
             round_num = next_round_num(log_dir)
+            work_dir = cfg.runtime.work_dir
+            git_head_before = compute_git_head(work_dir)
+            paths_hash_before = compute_paths_hash(
+                work_dir, cfg.runtime.substrate_fingerprint_paths
+            )
+            emit_round_substrate_before(
+                log_dir,
+                round_num=round_num,
+                git_head=git_head_before,
+                paths_hash=paths_hash_before,
+            )
+            fresh_eyes = _is_fresh_eyes_round(
+                round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n
+            )
+            round_env["AGENT_RUNNER_FRESH_EYES"] = "1" if fresh_eyes else "0"
+            if fresh_eyes:
+                emit_fresh_eyes_round_triggered(
+                    log_dir,
+                    round_num=round_num,
+                    every_n=cfg.runtime.fresh_eyes_every_n,
+                )
             round_log_path = log_dir / f"round-{round_num}.log"
             with round_log_path.open("w") as f:
                 r = subprocess.run(
@@ -171,6 +207,14 @@ def cmd(args) -> int:
                     stderr=subprocess.STDOUT,
                 )
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
+            git_head_after = compute_git_head(work_dir)
+            paths_hash_after = compute_paths_hash(work_dir, cfg.runtime.substrate_fingerprint_paths)
+            emit_round_substrate_after(
+                log_dir,
+                round_num=round_num,
+                git_head=git_head_after,
+                paths_hash=paths_hash_after,
+            )
             rounds_completed += 1
             if args.once or stop["requested"]:
                 break

@@ -26,12 +26,12 @@ def compute_git_head(work_dir: Path) -> str | None:
             check=False,
             timeout=5,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        if r.returncode != 0:
+            return None
+        sha = r.stdout.strip()
+        return sha or None
+    except (FileNotFoundError, subprocess.TimeoutExpired, AttributeError):
         return None
-    if r.returncode != 0:
-        return None
-    sha = r.stdout.strip()
-    return sha or None
 
 
 def compute_paths_hash(work_dir: Path, patterns: list[str]) -> str | None:

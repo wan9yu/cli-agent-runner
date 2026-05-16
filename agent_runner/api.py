@@ -772,6 +772,52 @@ def emit_stop_file_detected(
     )
 
 
+def emit_round_substrate_before(
+    log_dir: Path, *, round_num: int, git_head: str | None, paths_hash: str | None
+) -> None:
+    """Emit pre-round substrate fingerprint (git HEAD + optional file hash).
+
+    Centralises emission so cli/serve_cmd.py need not import agent_runner.events
+    directly (architecture invariant).
+    """
+    from agent_runner.events import ROUND_SUBSTRATE_BEFORE, emit
+
+    emit(
+        log_dir,
+        ROUND_SUBSTRATE_BEFORE,
+        round_num=round_num,
+        git_head=git_head,
+        paths_hash=paths_hash,
+    )
+
+
+def emit_round_substrate_after(
+    log_dir: Path, *, round_num: int, git_head: str | None, paths_hash: str | None
+) -> None:
+    """Emit post-round substrate fingerprint."""
+    from agent_runner.events import ROUND_SUBSTRATE_AFTER, emit
+
+    emit(
+        log_dir,
+        ROUND_SUBSTRATE_AFTER,
+        round_num=round_num,
+        git_head=git_head,
+        paths_hash=paths_hash,
+    )
+
+
+def emit_fresh_eyes_round_triggered(log_dir: Path, *, round_num: int, every_n: int) -> None:
+    """Emit fresh-eyes signal trigger event (only on triggered rounds)."""
+    from agent_runner.events import FRESH_EYES_ROUND_TRIGGERED, emit
+
+    emit(
+        log_dir,
+        FRESH_EYES_ROUND_TRIGGERED,
+        round_num=round_num,
+        every_n=every_n,
+    )
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 
