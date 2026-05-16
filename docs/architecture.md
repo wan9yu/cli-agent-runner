@@ -158,6 +158,9 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `orphan_stash_failed`
 - `orphan_stashed`
 - `prompt_overwritten`
+- `rate_limit_backoff_capped`
+- `rate_limit_recovered`
+- `rate_limit_rejected`
 - `round_end`
 - `round_start`
 - `round_timeout_kill`

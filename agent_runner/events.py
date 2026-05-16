@@ -38,6 +38,9 @@ SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
 SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
 SELF_TERMINATED = "agent_self_terminated"
 DIRTY_COMMIT_FAILED = "dirty_commit_failed"
+RATE_LIMIT_REJECTED = "rate_limit_rejected"
+RATE_LIMIT_RECOVERED = "rate_limit_recovered"
+RATE_LIMIT_BACKOFF_CAPPED = "rate_limit_backoff_capped"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -68,6 +71,9 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         SERVICE_UPGRADE_ROLLED_BACK,
         SERVICE_UPGRADE_ROLLBACK_FAILED,
         HOOK_FAILED,
+        RATE_LIMIT_REJECTED,
+        RATE_LIMIT_RECOVERED,
+        RATE_LIMIT_BACKOFF_CAPPED,
     }
 )
 
