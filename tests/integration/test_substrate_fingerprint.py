@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
-from tests._test_helpers import make_toml_with_sections
-
-
-def _read_events(log_dir: Path) -> list[dict]:
-    month = datetime.now(UTC).strftime("%Y-%m")
-    events_path = log_dir / f"events-{month}.jsonl"
-    return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
+from tests._test_helpers import make_toml_with_sections, read_events_for_current_month
 
 
 def test_given_round_runs_when_substrate_emitted_then_before_and_after_present(
@@ -38,7 +30,7 @@ def test_given_round_runs_when_substrate_emitted_then_before_and_after_present(
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
-    events = _read_events(log_dir)
+    events = read_events_for_current_month(log_dir)
     before_events = [e for e in events if e.get("event") == "round_substrate_before"]
     after_events = [e for e in events if e.get("event") == "round_substrate_after"]
     assert len(before_events) == 1
@@ -72,7 +64,7 @@ def test_given_paths_config_when_round_runs_then_paths_hash_populated(tmp_path: 
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
-    events = _read_events(log_dir)
+    events = read_events_for_current_month(log_dir)
     before_events = [e for e in events if e.get("event") == "round_substrate_before"]
     assert len(before_events) == 1
     assert before_events[0]["paths_hash"] is not None
@@ -116,7 +108,7 @@ def test_given_git_repo_when_round_runs_then_git_head_populated(tmp_path: Path):
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
-    events = _read_events(log_dir)
+    events = read_events_for_current_month(log_dir)
     before_events = [e for e in events if e.get("event") == "round_substrate_before"]
     assert len(before_events) == 1
     assert before_events[0]["git_head"] is not None

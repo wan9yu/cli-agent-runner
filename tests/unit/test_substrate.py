@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,28 +13,10 @@ def test_given_non_git_directory_when_compute_git_head_then_returns_none(tmp_pat
     assert result is None
 
 
-def test_given_git_directory_when_compute_git_head_then_returns_sha(tmp_path: Path):
+def test_given_git_directory_when_compute_git_head_then_returns_sha(tmp_git_repo: Path):
     from agent_runner._substrate import compute_git_head
 
-    # Init a fresh git repo with one commit
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "init",
-            "-q",
-        ],
-        cwd=tmp_path,
-        check=True,
-    )
-    result = compute_git_head(tmp_path)
+    result = compute_git_head(tmp_git_repo)
     assert result is not None
     assert len(result) >= 7  # at least short SHA
     assert all(c in "0123456789abcdef" for c in result)

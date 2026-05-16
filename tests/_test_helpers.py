@@ -99,6 +99,16 @@ def make_toml_with_sections(
     return toml
 
 
+def read_events_for_current_month(log_dir: Path) -> list[dict]:
+    """Read all events from the current month's events-YYYY-MM.jsonl."""
+    import json
+    from datetime import UTC, datetime
+
+    month = datetime.now(UTC).strftime("%Y-%m")
+    events_path = log_dir / f"events-{month}.jsonl"
+    return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
+
+
 def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
     """Return an autouse fixture that snapshots, clears, and restores registries.
 

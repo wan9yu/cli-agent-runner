@@ -54,9 +54,10 @@ def test_given_sentinel_present_pre_round_when_serve_then_break_loop_exit_0(
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
-    # 2 compute_git_head calls (before+after round) + 1 round subprocess = 3 total.
-    # Key invariant: sentinel written on call 1 (before-round git), so the loop
-    # breaks before launching a second round — total stays at 3 (not 6).
+    # call_count breakdown: 1 = compute_git_head (before-round), 2 = round subprocess,
+    # 3 = compute_git_head (after-round). Sentinel is written on call 1 but checked
+    # only at the TOP of the next loop iteration — the first round completes fully
+    # (all 3 calls), then iteration 2 finds the sentinel and breaks. Total = 3 (not 6).
     assert call_count[0] == 3  # second round NOT invoked
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))

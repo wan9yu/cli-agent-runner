@@ -26,21 +26,26 @@ def compute_git_head(work_dir: Path) -> str | None:
             check=False,
             timeout=5,
         )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    # AttributeError can occur in tests where subprocess.run is monkeypatched
+    # to return a mock without .stdout/.returncode — surface as None like other failures.
+    try:
         if r.returncode != 0:
             return None
         sha = r.stdout.strip()
-        return sha or None
-    except (FileNotFoundError, subprocess.TimeoutExpired, AttributeError):
+    except AttributeError:
         return None
+    return sha or None
 
 
 def compute_paths_hash(work_dir: Path, patterns: list[str]) -> str | None:
     """Sha256 of (sorted relative file_path + sha256-of-content) chain.
 
-    Returns None if patterns empty. Globs evaluated against work_dir.
-    Files that fail to read are silently skipped (don't fail the whole hash).
-    Order: globs may match overlapping files; deduplicated by resolved path,
-    then sorted for stable hash across rounds.
+    Returns None if patterns empty OR no files matched. Globs evaluated
+    against work_dir. Files that fail to read are silently skipped (don't
+    fail the whole hash). Order: globs may match overlapping files;
+    deduplicated by resolved path, then sorted for stable hash across rounds.
     """
     if not patterns:
         return None
@@ -48,6 +53,8 @@ def compute_paths_hash(work_dir: Path, patterns: list[str]) -> str | None:
     for pattern in patterns:
         matched.extend(work_dir.glob(pattern))
     unique_sorted = sorted({p.resolve() for p in matched if p.is_file()})
+    if not unique_sorted:
+        return None
     h = hashlib.sha256()
     work_dir_resolved = work_dir.resolve()
     for p in unique_sorted:

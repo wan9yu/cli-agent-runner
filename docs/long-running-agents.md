@@ -116,9 +116,11 @@ def before_round(ctx):
         cfg.prompt.file = "prompts/fresh-eyes.md"
 ```
 
-Or in the agent's own prompt template:
+Or in the agent's own prompt template (using your preferred templating
+tool — agent-runner does not preprocess prompt files itself, but
+operators commonly run a Jinja2 / similar templating pass beforehand):
 
-```markdown
+```jinja2
 {% if env.AGENT_RUNNER_FRESH_EYES == "1" %}
 You are doing a fresh-eyes round. Ignore prior memos and chat-room
 context. Re-evaluate progress against the ORIGINAL task spec only.

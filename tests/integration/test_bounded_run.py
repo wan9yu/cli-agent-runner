@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
-from tests._test_helpers import make_toml_with_sections
-
-
-def _read_events_for_current_month(log_dir: Path) -> list[dict]:
-    """Read all events from the current month's events-YYYY-MM.jsonl."""
-    month = datetime.now(UTC).strftime("%Y-%m")
-    events_path = log_dir / f"events-{month}.jsonl"
-    return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
+from tests._test_helpers import make_toml_with_sections, read_events_for_current_month
 
 
 def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: Path):
@@ -35,7 +26,7 @@ def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: 
         timeout=20,
     )
     assert proc.returncode == 0
-    events = _read_events_for_current_month(log_dir)
+    events = read_events_for_current_month(log_dir)
     max_rounds_events = [e for e in events if e.get("event") == "max_rounds_reached"]
     assert len(max_rounds_events) == 1
     assert max_rounds_events[0]["rounds_completed"] == 3
@@ -65,7 +56,7 @@ def test_given_stop_file_touched_when_serve_runs_then_exits_with_event(tmp_path:
         timeout=10,
     )
     assert proc.returncode == 0
-    events = _read_events_for_current_month(log_dir)
+    events = read_events_for_current_month(log_dir)
     stop_events = [e for e in events if e.get("event") == "stop_file_detected"]
     assert len(stop_events) == 1
     assert stop_events[0]["content"] == "stop test"
@@ -94,7 +85,7 @@ def test_given_cli_max_rounds_overrides_config_value(tmp_path: Path):
         timeout=20,
     )
     assert proc.returncode == 0
-    events = _read_events_for_current_month(log_dir)
+    events = read_events_for_current_month(log_dir)
     max_events = [e for e in events if e.get("event") == "max_rounds_reached"]
     assert len(max_events) == 1
     assert max_events[0]["max_rounds"] == 2  # CLI value wins

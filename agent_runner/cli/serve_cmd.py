@@ -132,6 +132,7 @@ def cmd(args) -> int:
         cli_value=args.max_rounds, config_value=cfg.runtime.max_rounds
     )
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
+    work_dir = cfg.runtime.work_dir
     rounds_completed = 0
 
     try:
@@ -170,7 +171,6 @@ def cmd(args) -> int:
                 )
                 break
             round_num = next_round_num(log_dir)
-            work_dir = cfg.runtime.work_dir
             git_head_before = compute_git_head(work_dir)
             paths_hash_before = compute_paths_hash(
                 work_dir, cfg.runtime.substrate_fingerprint_paths

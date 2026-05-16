@@ -775,11 +775,7 @@ def emit_stop_file_detected(
 def emit_round_substrate_before(
     log_dir: Path, *, round_num: int, git_head: str | None, paths_hash: str | None
 ) -> None:
-    """Emit pre-round substrate fingerprint (git HEAD + optional file hash).
-
-    Centralises emission so cli/serve_cmd.py need not import agent_runner.events
-    directly (architecture invariant).
-    """
+    """Emit pre-round substrate fingerprint (git HEAD + optional file hash)."""
     from agent_runner.events import ROUND_SUBSTRATE_BEFORE, emit
 
     emit(
@@ -794,7 +790,7 @@ def emit_round_substrate_before(
 def emit_round_substrate_after(
     log_dir: Path, *, round_num: int, git_head: str | None, paths_hash: str | None
 ) -> None:
-    """Emit post-round substrate fingerprint."""
+    """Emit post-round substrate fingerprint (git HEAD + optional file hash)."""
     from agent_runner.events import ROUND_SUBSTRATE_AFTER, emit
 
     emit(
