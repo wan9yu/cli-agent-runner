@@ -16,7 +16,7 @@ import subprocess  # noqa: TID251
 import sys
 import time
 
-from agent_runner.api import check_self_terminated_sentinel
+from agent_runner.api import check_self_terminated_sentinel, emit_rate_limit_stop
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile, send_signal_to_pid
@@ -26,6 +26,7 @@ from agent_runner.round_log import (
     next_round_num,
     prune_old_round_logs,
 )
+from agent_runner.runner import _apply_back_off, _check_throttle_state
 
 
 def add_parser(sub, parent) -> None:
@@ -73,6 +74,17 @@ def cmd(args) -> int:
         while not stop["requested"]:
             if check_self_terminated_sentinel(log_dir):
                 break
+            throttle = _check_throttle_state(log_dir)
+            if throttle is not None:
+                action = cfg.runtime.rate_limit_action
+                if action == "back_off":
+                    _apply_back_off(log_dir, throttle)
+                    # Fall through to normal launch
+                elif action == "skip":
+                    pass  # Proceed to normal launch
+                elif action == "stop":
+                    emit_rate_limit_stop(log_dir)
+                    break
             round_num = next_round_num(log_dir)
             round_log_path = log_dir / f"round-{round_num}.log"
             with round_log_path.open("w") as f:

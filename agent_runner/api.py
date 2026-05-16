@@ -718,6 +718,18 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
     return True
 
 
+def emit_rate_limit_stop(log_dir: Path) -> None:
+    """Emit ``agent_self_terminated`` with reason ``rate_limit``.
+
+    Called by serve_cmd when ``rate_limit_action = "stop"`` and throttle is
+    detected. Centralises the event emission so serve_cmd.py need not import
+    agent_runner.events directly (which violates its import allowlist).
+    """
+    from agent_runner import events
+
+    events.emit(log_dir, events.SELF_TERMINATED, reason="rate_limit")
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 

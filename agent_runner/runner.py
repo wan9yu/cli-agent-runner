@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import traceback as tb_mod
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,12 +25,59 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner._throttle import _check_throttle_state  # noqa: F401 — re-exported for serve_cmd
 from agent_runner.api import _primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
-from agent_runner.api_types import RoundResult
+from agent_runner.api_types import RoundResult, ThrottleState
 from agent_runner.config import Config
-from agent_runner.events import AGENT_NETWORK_BLIP, now_iso_ms, parse_iso_ms
+from agent_runner.events import (
+    AGENT_NETWORK_BLIP,
+    RATE_LIMIT_BACKOFF_CAPPED,
+    RATE_LIMIT_RECOVERED,
+    emit,
+    now_iso_ms,
+    parse_iso_ms,
+)
 from agent_runner.monitor import NETWORK_PATTERNS
+
+_BACK_OFF_CAP_S = 28800  # 8h — defensive cap; 1.6× the 5h-window
+_BACK_OFF_JITTER_MIN_S = 5
+_BACK_OFF_JITTER_MAX_S = 30
+
+
+def _apply_back_off(log_dir: Path, throttle: ThrottleState) -> None:
+    """Sleep until throttle.reset_at_epoch + jitter; emit recovered (and capped if applicable).
+
+    Capped at _BACK_OFF_CAP_S to defend against malformed reset epochs.
+    """
+    import random
+
+    now = time.time()
+    requested = (
+        throttle.reset_at_epoch
+        - now
+        + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
+    )
+    if requested > _BACK_OFF_CAP_S:
+        emit(
+            log_dir,
+            RATE_LIMIT_BACKOFF_CAPPED,
+            agent=throttle.agent,
+            requested_sleep_s=int(requested),
+            applied_sleep_s=_BACK_OFF_CAP_S,
+        )
+        sleep_s = _BACK_OFF_CAP_S
+    else:
+        sleep_s = max(requested, 0.0)
+    sleep_start = time.time()
+    time.sleep(sleep_s)
+    emit(
+        log_dir,
+        RATE_LIMIT_RECOVERED,
+        agent=throttle.agent,
+        throttled_for_s=int(time.time() - sleep_start),
+        limit_type=throttle.limit_type,
+    )
 
 
 class LockHeldError(RuntimeError):

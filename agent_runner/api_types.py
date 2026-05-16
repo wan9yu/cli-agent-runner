@@ -108,6 +108,20 @@ class Detector(Protocol):
 
 
 @dataclass(frozen=True)
+class ThrottleState:
+    """Internal: supervisor-detected active rate-limit window state.
+
+    Reconstructed from events.jsonl tail (latest unmatched
+    rate_limit_rejected). Surfaced via ServiceStatus.rate_limit.
+    """
+
+    reset_at_epoch: int
+    limit_type: str
+    agent: str
+    since_round: int
+
+
+@dataclass(frozen=True)
 class RoundResult:
     """Result of one ``run_one_round`` call.
 
