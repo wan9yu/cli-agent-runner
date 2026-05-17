@@ -94,19 +94,22 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
 
 
 def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
-    """Build agent_usage_recorded payload from gemini result.stats."""
+    """Build agent_usage_recorded payload from gemini result.stats.
+
+    Uses ``stats.input`` directly (gemini provides net non-cached input in
+    that field; ``stats.input_tokens`` is gross including cached, so the
+    subtraction in earlier code was unnecessary).
+    """
     models = stats.get("models") or {}
     primary_model = (
         max(models, key=lambda m: models[m].get("total_tokens", 0)) if models else "unknown"
     )
-    input_total = int(stats.get("input_tokens", 0))
-    cached = int(stats.get("cached", 0))
     return {
         "agent": "gemini",
         "model": primary_model,
-        "input_tokens": max(input_total - cached, 0),
+        "input_tokens": int(stats.get("input", 0)),
         "output_tokens": int(stats.get("output_tokens", 0)),
-        "cached_tokens": cached,
+        "cached_tokens": int(stats.get("cached", 0)),
         "cost_usd": None,  # gemini doesn't expose USD
         "duration_ms": int(stats.get("duration_ms", 0)),
         "models_breakdown": models if len(models) > 1 else None,

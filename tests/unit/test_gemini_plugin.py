@@ -78,6 +78,7 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
                     "input_tokens": 19733,
                     "output_tokens": 91,
                     "cached": 15119,
+                    "input": 4614,  # net: input_tokens - cached
                     "duration_ms": 5337,
                     "models": {
                         "gemini-3-flash-preview": {
@@ -85,12 +86,14 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
                             "input_tokens": 18816,
                             "output_tokens": 51,
                             "cached": 15119,
+                            "input": 3697,
                         },
                         "gemini-3.1-flash-lite": {
                             "total_tokens": 1052,
                             "input_tokens": 917,
                             "output_tokens": 40,
                             "cached": 0,
+                            "input": 917,
                         },
                     },
                 },
