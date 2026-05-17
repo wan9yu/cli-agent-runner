@@ -118,13 +118,15 @@ def _classify_transient_error(
     """Refactored from prior _scan_log_for_transient_error 0.1.23 logic; same shape, same
     priority (rate_limit_event.rejected > 429 > 5xx > 408).
     """
-    if rate_limit_info is not None:
+    if rate_limit_info is not None and rate_limit_info.get("rateLimitType") == "five_hour":
         return {
             "classification": "rate_limit_account",
             "agent": "claude",
             "reset_at_epoch": int(rate_limit_info.get("resetsAt", time.time() + 300)),
             "raw": str((result_event or {}).get("result", ""))[:_RAW_CAP],
         }
+    # rate_limit_event with null/other rateLimitType falls through to status-based
+    # classification below.
     if result_event is None or result_event.get("is_error") is not True:
         return None
     status = result_event.get("api_error_status")

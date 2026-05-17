@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 from tests._test_helpers import make_hook_context, write_round_log
@@ -355,3 +356,64 @@ def test_given_claude_log_without_assistant_event_when_extracted_then_model_unkn
             with patch(f"{_MOD}.time.time", return_value=1000):
                 ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
     assert usage_emit.call_args.kwargs["model"] == "unknown"
+
+
+def test_given_429_with_null_rate_limit_type_when_classified_then_rate_limit_model(tmp_path):
+    """rate_limit_event with rateLimitType=null + api_error_status=429 must classify as
+    rate_limit_model (infra), not rate_limit_account (5h quota).
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    assistant_line = (
+        '{"type":"assistant","message":{"model":"claude-opus-4-7",'
+        '"content":[{"type":"text","text":"API Error: rate limited"}]}}\n'
+    )
+    result_line = (
+        '{"type":"result","is_error":true,"api_error_status":429,'
+        '"stop_reason":"stop_sequence","result":"API Error: rate limited",'
+        '"usage":{"input_tokens":100,"output_tokens":10,"cache_read_input_tokens":0},'
+        '"duration_ms":1000,"total_cost_usd":0.01}\n'
+    )
+    log.write_text(
+        '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":null}}\n'
+        + assistant_line
+        + result_line,
+        encoding="utf-8",
+    )
+    parsed = _parse_claude_log(log)
+    assert parsed["transient_error"]["classification"] == "rate_limit_model"
+    # reset_at_epoch ≈ now + 60 (_BACK_OFF_DEFAULTS["rate_limit_model"])
+    now = int(time.time())
+    assert now + 55 <= parsed["transient_error"]["reset_at_epoch"] <= now + 65
+
+
+def test_given_429_without_rate_limit_event_when_classified_then_rate_limit_model(tmp_path):
+    """Regression: result_event with status 429 only (no rate_limit_event line) still
+    classifies as rate_limit_model.
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    log.write_text(
+        '{"type":"result","is_error":true,"api_error_status":429,'
+        '"result":"429 Too Many Requests"}\n',
+        encoding="utf-8",
+    )
+    parsed = _parse_claude_log(log)
+    assert parsed["transient_error"]["classification"] == "rate_limit_model"
+
+
+def test_given_rate_limit_event_null_type_without_result_when_classified_then_none(tmp_path):
+    """Edge: rate_limit_event with rateLimitType=null but no result_event returns no
+    transient_error (without a status code we can't bucket; supervisor uses generic retry).
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    log.write_text(
+        '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":null}}\n',
+        encoding="utf-8",
+    )
+    parsed = _parse_claude_log(log)
+    assert "transient_error" not in parsed
