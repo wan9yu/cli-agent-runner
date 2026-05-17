@@ -82,9 +82,9 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
         "#!/bin/sh\n"
         "cat <<'EOF'\n"
         '{"type":"system","subtype":"init"}\n'
+        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[]}}\n'
         '{"type":"result","subtype":"success","is_error":false,'
         '"total_cost_usd":0.05,'
-        '"message":{"model":"claude-opus-4-7"},'
         '"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":80},'
         '"duration_ms":1234}\n'
         "EOF\n"
@@ -118,8 +118,8 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
     assert len(usage) == 1, f"expected 1 usage event from real flow, got {usage}"
     assert usage[0]["agent"] == "claude"
     assert usage[0]["model"] == "claude-opus-4-7"
-    # NET semantic: input_tokens = 100 - 80 = 20
-    assert usage[0]["input_tokens"] == 20
+    # NET direct: Anthropic input_tokens is already net (0.1.26 fix)
+    assert usage[0]["input_tokens"] == 100
     assert usage[0]["cached_tokens"] == 80
     assert usage[0]["output_tokens"] == 50
     assert usage[0]["cost_usd"] == 0.05

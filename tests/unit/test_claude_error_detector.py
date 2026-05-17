@@ -228,27 +228,27 @@ _MOD = "agent_runner.builtin_plugins.claude_rate_limit"
 
 
 def test_given_successful_round_with_usage_when_after_round_then_emits_usage(tmp_path):
-    """Successful round (no error) still emits agent_usage_recorded from result.usage."""
+    """Successful round emits agent_usage_recorded with correct input_tokens (NET per Anthropic)."""
     from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
 
     write_round_log(
         tmp_path,
         1,
         [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7"}},  # NEW 0.1.26
             {
                 "type": "result",
                 "is_error": False,
                 "subtype": "success",
                 "result": "done",
                 "total_cost_usd": 0.0812,
-                "message": {"model": "claude-opus-4-7"},
                 "usage": {
-                    "input_tokens": 100,
+                    "input_tokens": 100,  # Anthropic schema: already NET
                     "output_tokens": 6,
                     "cache_read_input_tokens": 80,
                 },
                 "duration_ms": 14470,
-            }
+            },
         ],
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
@@ -258,8 +258,8 @@ def test_given_successful_round_with_usage_when_after_round_then_emits_usage(tmp
     usage_emit.assert_called_once()
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["agent"] == "claude"
-    assert kwargs["model"] == "claude-opus-4-7"
-    assert kwargs["input_tokens"] == 20  # net: 100 gross - 80 cached
+    assert kwargs["model"] == "claude-opus-4-7"  # was "unknown" pre-0.1.26
+    assert kwargs["input_tokens"] == 100  # was 20 (broken NET formula 100-80) pre-0.1.26
     assert kwargs["output_tokens"] == 6
     assert kwargs["cached_tokens"] == 80
     assert kwargs["cost_usd"] == 0.0812
@@ -275,16 +275,16 @@ def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_
         tmp_path,
         1,
         [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7"}},  # NEW 0.1.26
             {
                 "type": "result",
                 "is_error": True,
                 "api_error_status": 500,
                 "result": "API Error: 500",
                 "total_cost_usd": 0.001,
-                "message": {"model": "claude-opus-4-7"},
-                "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0},
+                "usage": {"input_tokens": 10, "output_tokens": 0, "cache_read_input_tokens": 0},
                 "duration_ms": 562,
-            }
+            },
         ],
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
@@ -295,3 +295,63 @@ def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
     usage_emit.assert_called_once()
     assert usage_emit.call_args.kwargs["agent"] == "claude"
+    assert usage_emit.call_args.kwargs["model"] == "claude-opus-4-7"  # NEW 0.1.26
+    assert usage_emit.call_args.kwargs["input_tokens"] == 10  # NET; was 0 pre-0.1.26
+
+
+def test_given_claude_log_with_assistant_event_when_extracted_then_model_populated(tmp_path):
+    """Plugin tracks latest assistant event's message.model (was 'unknown' pre-0.1.26)."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-4-7",
+                    "content": [{"type": "text", "text": "hi"}],
+                },
+            },
+            {
+                "type": "result",
+                "is_error": False,
+                "subtype": "success",
+                "result": "done",
+                "total_cost_usd": 0.05,
+                "usage": {"input_tokens": 5, "output_tokens": 3, "cache_read_input_tokens": 0},
+                "duration_ms": 1234,
+            },
+        ],
+    )
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+    usage_emit.assert_called_once()
+    assert usage_emit.call_args.kwargs["model"] == "claude-opus-4-7"
+
+
+def test_given_claude_log_without_assistant_event_when_extracted_then_model_unknown(tmp_path):
+    """No assistant event (e.g. immediate error before model response) -> model='unknown'."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 500,
+                "result": "err",
+                "total_cost_usd": 0.0,
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0},
+                "duration_ms": 50,
+            },
+        ],
+    )
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        with patch(f"{_MOD}.emit_transient_error_detected"):
+            with patch(f"{_MOD}.time.time", return_value=1000):
+                ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+    assert usage_emit.call_args.kwargs["model"] == "unknown"

@@ -73,6 +73,7 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
         tail = deque(f, maxlen=_TAIL_LINES)
     rate_limit_info: dict | None = None
     result_event: dict | None = None
+    assistant_model: str | None = None
     for line in tail:
         line = line.strip()
         if not line:
@@ -81,12 +82,18 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") == "rate_limit_event":
+        event_type = event.get("type")
+        if event_type == "rate_limit_event":
             rli = event.get("rate_limit_info", {})
             if rli.get("status") == "rejected":
                 rate_limit_info = rli
-        elif event.get("type") == "result":
+        elif event_type == "result":
             result_event = event
+        elif event_type == "assistant":
+            msg = event.get("message", {})
+            model_val = msg.get("model") if isinstance(msg, dict) else None
+            if model_val:
+                assistant_model = str(model_val)
 
     out: dict[str, Any] = {}
 
@@ -95,9 +102,9 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
     if error_payload is not None:
         out["transient_error"] = error_payload
 
-    # Usage extraction (0.1.24)
+    # Usage extraction (0.1.24+)
     if result_event is not None:
-        usage_payload = _extract_usage(result_event)
+        usage_payload = _extract_usage(result_event, model=assistant_model)
         if usage_payload is not None:
             out["usage"] = usage_payload
 
@@ -130,33 +137,34 @@ def _classify_transient_error(
     return None
 
 
-def _extract_usage(result_event: dict) -> dict | None:
+def _extract_usage(result_event: dict, *, model: str | None) -> dict | None:
     """Extract usage payload from claude result event.
 
     Returns None if no usage field present.
 
-    Semantic note (matches gemini plugin for unified schema):
-    - `input_tokens` is NET non-cached input (anthropic ``input_tokens``
-      field is gross; we subtract ``cache_read_input_tokens`` so consumers
-      can compute ``total = input_tokens + cached_tokens`` consistently
-      across claude and gemini plugins).
-    - `cached_tokens` is cache reads (claude ``cache_read_input_tokens``).
-    - `models_breakdown` is always None for claude (single-model per round);
+    Semantic note:
+    - ``input_tokens`` is the NET fresh input — Anthropic's ``usage.input_tokens``
+      already excludes ``cache_read_input_tokens`` and ``cache_creation_input_tokens``
+      (they're independent counts). Earlier 0.1.24 simplify pass incorrectly
+      subtracted cached from input; 0.1.26 reverts to the correct direct read.
+    - ``cached_tokens`` is cache reads only (``cache_read_input_tokens``).
+      Cache-creation is omitted from the unified schema; can be added in 0.1.27+
+      if aggregation needs distinguishing.
+    - ``models_breakdown`` always None for claude (single-model per round);
       only populated by gemini multi-model rounds.
+    - ``model`` from caller — ``_parse_claude_log`` tracks the latest
+      ``assistant.message.model`` event; claude's terminal ``result`` event
+      has no model field (lives on ``assistant`` events).
     """
     usage = result_event.get("usage")
     if not usage:
         return None
-    msg = result_event.get("message") or {}
-    cached = int(usage.get("cache_read_input_tokens", 0))
-    input_gross = int(usage.get("input_tokens", 0))
-    input_net = max(input_gross - cached, 0)
     return {
         "agent": "claude",
-        "model": str(msg.get("model", "unknown")),
-        "input_tokens": input_net,
+        "model": model or "unknown",
+        "input_tokens": int(usage.get("input_tokens", 0)),
         "output_tokens": int(usage.get("output_tokens", 0)),
-        "cached_tokens": cached,
+        "cached_tokens": int(usage.get("cache_read_input_tokens", 0)),
         "cost_usd": result_event.get("total_cost_usd"),
         "duration_ms": int(result_event.get("duration_ms", 0)),
         "models_breakdown": None,
