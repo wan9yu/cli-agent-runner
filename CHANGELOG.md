@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-05-17
+
+### Fixed
+- claude plugin: rate_limit_event with rateLimitType=null no longer misclassified as account
+  5h quota; falls through to api_error_status-based bucket (e.g. infra 429 → rate_limit_model).
+  Affects supervisors consuming transient_error_detected.
+
+### Added
+- docs/migrations/0.1.27.md: supervisor usage guide for transient_error_detected event
+  (4-bucket dispatch table + back-off recipe).
+
+See `docs/migrations/0.1.27.md`.
+
 ## [0.1.26] - 2026-05-17
 
 - Fix claude `agent_usage_recorded` `model` field (was always
