@@ -139,10 +139,6 @@ class TransientErrorState:
     since_round: int
 
 
-# 0.1.23 back-compat alias; drop in 0.1.24
-ThrottleState = TransientErrorState
-
-
 @dataclass(frozen=True)
 class RoundResult:
     """Result of one ``run_one_round`` call.
