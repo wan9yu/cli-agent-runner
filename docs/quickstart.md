@@ -36,14 +36,14 @@ agent-runner init            # writes agent-runner.toml + prompts/main.md + .git
 Edit `prompts/main.md` to describe what the agent should do per round.
 Edit `agent-runner.toml` if you need to change `round_timeout_s` or `[phases]`.
 
-The default preset (`--preset claude`) invokes `claude`. For aider, use
-`agent-runner init --preset aider`. To use any other CLI, edit
-`agent.command` to your CLI's invocation and `agent.prompt_arg_template` to
-its prompt-argument syntax — for example:
+The default preset (`--preset claude`) invokes `claude`. Other built-in
+presets: `--preset aider` and `--preset gemini`. To use any other CLI,
+edit `agent.command` to your CLI's invocation and `agent.prompt_arg_template`
+to its prompt-argument syntax — for example:
 
 ```toml
 [agent]
-command = ["gemini", "chat"]
+command = ["your-cli", "--flag1", "--flag2"]
 prompt_arg_template = ["--prompt", "{prompt}"]
 ```
 <!-- skip-test -->

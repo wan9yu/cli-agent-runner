@@ -324,10 +324,19 @@ my-research/
 
 ### TOML pattern
 
+Use `agent-runner init --preset claude` to scaffold a current preset
+(includes `--dangerously-skip-permissions`, `--verbose`, `--output-format
+stream-json` — the latter required for `claude_error_detector` to parse
+JSONL and emit `agent_usage_recorded` / `transient_error_detected`).
+
 ```toml
 [agent]
-command = ["claude", "-p", "--permission-mode=bypassPermissions"]
-prompt_arg_template = ["{prompt}"]
+command = [
+  "claude", "--model", "claude-opus-4-7",
+  "--dangerously-skip-permissions",
+  "--verbose", "--output-format", "stream-json",
+]
+prompt_arg_template = ["-p", "{prompt}"]
 
 [runtime]
 work_dir = "/home/user/my-research"
@@ -507,32 +516,44 @@ gzip ~/.agent-runner/<project>/logs/events-2026-04.jsonl   # for example
 agent-runner start
 ```
 
-### Rate limits (claude.ai OAuth)
+### Transient errors (rate limits + 5xx + timeouts)
 
-**Symptom:** `[WARN] rate_limit_active` alert from monitor; `rate_limit_rejected`
-events appear in events.jsonl; supervisor pauses round dispatch.
+**Symptom:** `[WARN] rate_limit_active` alert from monitor;
+`transient_error_detected` events appear in events.jsonl; supervisor
+pauses round dispatch.
 
-Claude.ai OAuth accounts have a rolling 5-hour token quota. When exhausted,
-claude exits quickly with `api_error_status:429`. The built-in
-`claude_rate_limit_detector` detects this and emits `rate_limit_rejected`.
+The built-in `claude_error_detector` classifies transient errors into
+4 buckets:
 
-**Default behavior (`rate_limit_action = "back_off"`):**
+- `rate_limit_account` — claude.ai OAuth 5-hour quota exhausted
+  (`rate_limit_event.rateLimitType = "five_hour"`). `reset_at_epoch`
+  is server-provided.
+- `rate_limit_model` — claude.ai infrastructure 429 (no 5h-type hint).
+  60s default back-off.
+- `api_transient_5xx` — server outage (500/502/503/504). 60s default.
+- `api_timeout` — 408 timeout. 30s default.
 
-The supervisor sleeps until the `resetsAt` epoch (plus a 5–30s jitter),
-then emits `rate_limit_recovered` and resumes automatically. No operator
-action needed during back-off.
+For `rate_limit_account` only, a legacy `rate_limit_rejected` event is
+also dual-emitted for pre-0.1.23 consumers.
+
+**Default behavior (`transient_error_action = "back_off"`):**
+
+The supervisor sleeps until `reset_at_epoch` (plus a 5–30s jitter),
+then emits `transient_error_recovered` and resumes automatically. No
+operator action needed during back-off.
 
 **Forcing immediate stop instead:**
 
 ```toml
 # agent-runner.toml
 [runtime]
-rate_limit_action = "stop"
+transient_error_action = "stop"   # 0.1.23+ canonical name
+# rate_limit_action = "stop"      # deprecated alias, still accepted
 ```
 
 This causes the supervisor to emit `agent_self_terminated` with
-`reason = "rate_limit"` and exit cleanly. Restart with
-`agent-runner start` after the quota resets.
+`reason = "transient_error"` and exit cleanly. Restart with
+`agent-runner start` after the underlying issue resolves.
 
 **Checking throttle status:**
 
@@ -545,14 +566,13 @@ agent-runner peek --json | python3 -m json.tool | grep -A5 rate_limit
 **Monitor alert:**
 
 The `rate_limit_active` detector fires a `warning`-severity alert while
-throttled. It clears automatically when `rate_limit_recovered` is emitted.
-No configuration needed; auto-stop is NOT triggered.
+throttled (for any classification). It clears automatically when
+`transient_error_recovered` is emitted. No configuration needed;
+auto-stop is NOT triggered.
 
-**0.1.23+**: this back-off behavior also kicks in for transient API errors
-beyond the 5h quota — 5xx server outages (500/502/503/504), 429 model
-overloads, and 408 timeouts. The config knob is renamed to
-`transient_error_action` (same values; `rate_limit_action` kept as a
-deprecated alias through 0.1.23). See `docs/migrations/0.1.23.md`.
+See `docs/migrations/0.1.23.md` (initial 4-bucket classifier) and
+`docs/migrations/0.1.27.md` (supervisor consumer guide with dispatch
+table + back-off recipe per bucket).
 
 ## 中文摘要
 

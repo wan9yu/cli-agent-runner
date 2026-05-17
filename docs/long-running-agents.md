@@ -140,9 +140,11 @@ token breakdown + cost (where the underlying CLI exposes it).
 ```
 
 Use as input to a cost-tracking detector or external billing reconciler.
-See `docs/migrations/0.1.24.md` for the payload schema and a consumer
-sketch. 0.1.25+ will ship aggregation helpers (`peek --json .usage`,
-budget warnings, etc.) so most operators won't need to roll their own.
+See `docs/migrations/0.1.28.md` for the current 12-field payload schema
+(includes `cache_creation_tokens`, `tool_call_count`, `phase`, `success`)
+plus a consumer dispatcher sketch. Aggregation (rollups, budget warnings)
+is the consumer's responsibility — agent-runner emits raw per-round
+events; downstream tooling computes daily/hourly/per-phase summaries.
 
 ## What agent-runner does NOT do (intentional boundary)
 
@@ -214,8 +216,10 @@ the underlying problem is unbounded lineage on a shared resource.
 event family is now `transient_error_detected` with a `classification`
 field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
 `api_timeout`). The same back-off mechanism covers all 4 classifications.
-Old event names kept as aliases for `rate_limit_account` through 0.1.23;
-subscribers should migrate to `transient_error_detected` for full coverage.
+The legacy `rate_limit_rejected` event is still dual-emitted for the
+`rate_limit_account` case only (no removal date set); new subscribers
+should consume `transient_error_detected` for full coverage. See
+`docs/migrations/0.1.27.md` for the consumer dispatch recipe.
 
 ## Writing post_round_hook plugins
 
