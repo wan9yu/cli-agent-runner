@@ -121,7 +121,5 @@ def test_throttle_state_removed() -> None:
 
     Consumers should switch to TransientErrorState.
     """
-    with pytest.raises((ImportError, AttributeError)):
-        from agent_runner import api_types  # noqa: F401
-
-        _ = api_types.ThrottleState  # type: ignore[attr-defined]
+    with pytest.raises(ImportError):
+        from agent_runner.api_types import ThrottleState  # noqa: F401
