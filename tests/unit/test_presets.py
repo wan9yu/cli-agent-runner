@@ -87,6 +87,19 @@ def test_given_preset_when_full_load_via_load_config_then_no_errors(name: str, t
     assert cfg.agent.prompt_arg_template
 
 
+def test_given_gemini_preset_when_parsed_then_includes_skip_trust() -> None:
+    """gemini --skip-trust required for unattended operation in untrusted dirs.
+
+    Same semantic as claude's --dangerously-skip-permissions.
+    """
+    text = _preset_text("gemini").replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    assert "--skip-trust" in parsed["agent"]["command"], (
+        "gemini preset must include --skip-trust; gemini CLI refuses headless "
+        "operation in untrusted directories."
+    )
+
+
 @pytest.mark.parametrize("name", PRESET_NAMES)
 def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_path) -> None:
     """Shipped presets must not emit DeprecationWarning on first load."""
