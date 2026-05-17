@@ -24,76 +24,70 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-# Cross-module event-kind constants. Most kinds are emitted in only one place
-# (runner.py), but kinds that are also CONSUMED elsewhere (filtered, surfaced
-# in peek, asserted in tests) earn a constant to keep the spelling honest.
-HOOK_FAILED = "hook_failed"
+# Cross-module event-kind constants. Every module-level UPPER_CASE constant
+# whose value is a snake_case string is automatically collected into
+# _BUILTIN_KINDS via _collect_builtin_kinds() below (single-source).
+AGENT_EXIT = "agent_exit"
 AGENT_NETWORK_BLIP = "agent_network_blip"
+AGENT_SPAWN = "agent_spawn"
+AGENT_USAGE_RECORDED = "agent_usage_recorded"
+DIRTY_COMMIT_FAILED = "dirty_commit_failed"
+DIRTY_DETECTED = "dirty_detected"
+FRESH_EYES_ROUND_TRIGGERED = "fresh_eyes_round_triggered"
+HOOK_FAILED = "hook_failed"
+MAX_ROUNDS_REACHED = "max_rounds_reached"
+MONITOR_ALERT_EMITTED = "monitor_alert_emitted"
+MONITOR_AUTO_STOP_FAILED = "monitor_auto_stop_failed"
+MONITOR_AUTO_STOP_TRIGGERED = "monitor_auto_stop_triggered"
 MONITOR_REMOTE_BLIP = "monitor_remote_blip"
 MONITOR_REMOTE_GIVEUP = "monitor_remote_giveup"
+MONITOR_STARTED = "monitor_started"
+ORPHAN_IDEMPOTENT_SKIP = "orphan_idempotent_skip"
+ORPHAN_STASH_FAILED = "orphan_stash_failed"
+ORPHAN_STASHED = "orphan_stashed"
 PROMPT_OVERWRITTEN = "prompt_overwritten"
-SERVICE_UPGRADED = "service_upgraded"
-SERVICE_UPGRADE_ROLLED_BACK = "service_upgrade_rolled_back"
-SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
-SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
-SELF_TERMINATED = "agent_self_terminated"
-DIRTY_COMMIT_FAILED = "dirty_commit_failed"
-RATE_LIMIT_REJECTED = "rate_limit_rejected"
-RATE_LIMIT_RECOVERED = "rate_limit_recovered"
 RATE_LIMIT_BACKOFF_CAPPED = "rate_limit_backoff_capped"
+RATE_LIMIT_RECOVERED = "rate_limit_recovered"
+RATE_LIMIT_REJECTED = "rate_limit_rejected"
+ROUND_END = "round_end"
+ROUND_START = "round_start"
+ROUND_SUBSTRATE_AFTER = "round_substrate_after"
+ROUND_SUBSTRATE_BEFORE = "round_substrate_before"
+ROUND_TIMEOUT_KILL = "round_timeout_kill"
+SELF_TERMINATED = "agent_self_terminated"
+SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
+SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
+SERVICE_UPGRADE_ROLLED_BACK = "service_upgrade_rolled_back"
+SERVICE_UPGRADED = "service_upgraded"
+SIGTERM_RECEIVED = "sigterm_received"
+SMOKE_CHECK_FAILED = "smoke_check_failed"
+STATUS_RECOVERED = "status_recovered"
+STOP_FILE_DETECTED = "stop_file_detected"
+TRANSIENT_ERROR_BACKOFF_CAPPED = "transient_error_backoff_capped"
 TRANSIENT_ERROR_DETECTED = "transient_error_detected"
 TRANSIENT_ERROR_RECOVERED = "transient_error_recovered"
-TRANSIENT_ERROR_BACKOFF_CAPPED = "transient_error_backoff_capped"
-MAX_ROUNDS_REACHED = "max_rounds_reached"
-STOP_FILE_DETECTED = "stop_file_detected"
-ROUND_SUBSTRATE_BEFORE = "round_substrate_before"
-ROUND_SUBSTRATE_AFTER = "round_substrate_after"
-FRESH_EYES_ROUND_TRIGGERED = "fresh_eyes_round_triggered"
-AGENT_USAGE_RECORDED = "agent_usage_recorded"
 
-_BUILTIN_KINDS: frozenset[str] = frozenset(
-    {
-        "round_start",
-        "agent_spawn",
-        "agent_exit",
-        AGENT_NETWORK_BLIP,
-        SELF_TERMINATED,
-        "dirty_detected",
-        DIRTY_COMMIT_FAILED,
-        "orphan_stashed",
-        "orphan_idempotent_skip",
-        "orphan_stash_failed",
-        PROMPT_OVERWRITTEN,
-        "round_timeout_kill",
-        "sigterm_received",
-        "status_recovered",
-        "smoke_check_failed",
-        "round_end",
-        "monitor_alert_emitted",
-        "monitor_auto_stop_failed",
-        "monitor_auto_stop_triggered",
-        MONITOR_REMOTE_BLIP,
-        MONITOR_REMOTE_GIVEUP,
-        "monitor_started",
-        SERVE_STARTUP_HOOK_FAILED,
-        SERVICE_UPGRADED,
-        SERVICE_UPGRADE_ROLLED_BACK,
-        SERVICE_UPGRADE_ROLLBACK_FAILED,
-        HOOK_FAILED,
-        RATE_LIMIT_REJECTED,
-        RATE_LIMIT_RECOVERED,
-        RATE_LIMIT_BACKOFF_CAPPED,
-        TRANSIENT_ERROR_DETECTED,
-        TRANSIENT_ERROR_RECOVERED,
-        TRANSIENT_ERROR_BACKOFF_CAPPED,
-        MAX_ROUNDS_REACHED,
-        STOP_FILE_DETECTED,
-        ROUND_SUBSTRATE_BEFORE,
-        ROUND_SUBSTRATE_AFTER,
-        FRESH_EYES_ROUND_TRIGGERED,
-        AGENT_USAGE_RECORDED,
-    }
-)
+
+def _collect_builtin_kinds() -> frozenset[str]:
+    """Single-source: every module-level UPPER_CASE str constant whose value
+    is a snake_case kind name is a builtin event kind. Drift between the
+    constant list and a hand-maintained set is impossible by construction.
+    """
+    import sys
+
+    mod = sys.modules[__name__]
+    return frozenset(
+        v
+        for k, v in vars(mod).items()
+        if k.isupper()
+        and isinstance(v, str)
+        and v.islower()
+        and not v.startswith("_")
+        and v.replace("_", "").isalnum()
+    )
+
+
+_BUILTIN_KINDS: frozenset[str] = _collect_builtin_kinds()
 
 _PLUGIN_KINDS: dict[str, str] = {}
 
