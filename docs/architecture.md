@@ -177,6 +177,9 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `smoke_check_failed`
 - `status_recovered`
 - `stop_file_detected`
+- `transient_error_backoff_capped`
+- `transient_error_detected`
+- `transient_error_recovered`
 <!-- /gen:event-kinds -->
 
 ## 中文摘要

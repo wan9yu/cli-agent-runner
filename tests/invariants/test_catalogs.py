@@ -206,3 +206,24 @@ def test_given_fresh_eyes_round_triggered_constant_when_exported_then_matches_ki
 
     assert FRESH_EYES_ROUND_TRIGGERED == "fresh_eyes_round_triggered"
     assert FRESH_EYES_ROUND_TRIGGERED in _BUILTIN_KINDS
+
+
+def test_given_transient_error_detected_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, TRANSIENT_ERROR_DETECTED
+
+    assert TRANSIENT_ERROR_DETECTED == "transient_error_detected"
+    assert TRANSIENT_ERROR_DETECTED in _BUILTIN_KINDS
+
+
+def test_given_transient_error_recovered_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, TRANSIENT_ERROR_RECOVERED
+
+    assert TRANSIENT_ERROR_RECOVERED == "transient_error_recovered"
+    assert TRANSIENT_ERROR_RECOVERED in _BUILTIN_KINDS
+
+
+def test_given_transient_error_backoff_capped_constant_when_exported_then_matches_kind():
+    from agent_runner.events import _BUILTIN_KINDS, TRANSIENT_ERROR_BACKOFF_CAPPED
+
+    assert TRANSIENT_ERROR_BACKOFF_CAPPED == "transient_error_backoff_capped"
+    assert TRANSIENT_ERROR_BACKOFF_CAPPED in _BUILTIN_KINDS

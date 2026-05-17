@@ -41,6 +41,9 @@ DIRTY_COMMIT_FAILED = "dirty_commit_failed"
 RATE_LIMIT_REJECTED = "rate_limit_rejected"
 RATE_LIMIT_RECOVERED = "rate_limit_recovered"
 RATE_LIMIT_BACKOFF_CAPPED = "rate_limit_backoff_capped"
+TRANSIENT_ERROR_DETECTED = "transient_error_detected"
+TRANSIENT_ERROR_RECOVERED = "transient_error_recovered"
+TRANSIENT_ERROR_BACKOFF_CAPPED = "transient_error_backoff_capped"
 MAX_ROUNDS_REACHED = "max_rounds_reached"
 STOP_FILE_DETECTED = "stop_file_detected"
 ROUND_SUBSTRATE_BEFORE = "round_substrate_before"
@@ -79,6 +82,9 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         RATE_LIMIT_REJECTED,
         RATE_LIMIT_RECOVERED,
         RATE_LIMIT_BACKOFF_CAPPED,
+        TRANSIENT_ERROR_DETECTED,
+        TRANSIENT_ERROR_RECOVERED,
+        TRANSIENT_ERROR_BACKOFF_CAPPED,
         MAX_ROUNDS_REACHED,
         STOP_FILE_DETECTED,
         ROUND_SUBSTRATE_BEFORE,
