@@ -689,12 +689,7 @@ def resolve_runtime_for_phase(cfg: Config, phase_name: str | None) -> RuntimeCon
 
 
 def read_round_num(log_dir: Path) -> int:
-    """Return the most recent round_num from status.json (or 0 if missing/corrupt).
-
-    Used by ``agent-runner serve`` to coordinate per-round log filenames with
-    the round_num that the round subprocess itself writes to events.jsonl —
-    ensures ``round-<N>.log`` file matches the ``round_num`` field in events.
-    """
+    """Return the most recent round_num from status.json, or 0 if missing/corrupt."""
     from agent_runner.context_store import read_status
 
     s = read_status(log_dir)
@@ -702,12 +697,7 @@ def read_round_num(log_dir: Path) -> int:
 
 
 def read_sentinel_content(log_dir: Path) -> str | None:
-    """Return sentinel content (capped 200) or None if absent.
-
-    Used by both ``check_self_terminated_sentinel`` (which emits an event) and
-    HTTP progress rendering (which displays the reason). Identical read logic
-    with ``errors='replace'`` for non-UTF-8 robustness.
-    """
+    """Return ``log_dir/.agent-done`` content capped at 200 chars, or None if absent."""
     sentinel = log_dir / ".agent-done"
     if not sentinel.exists():
         return None
@@ -718,11 +708,9 @@ def read_sentinel_content(log_dir: Path) -> str | None:
 
 
 def check_self_terminated_sentinel(log_dir: Path) -> bool:
-    """Check for ``log_dir/.agent-done`` and emit ``agent_self_terminated`` if present.
+    """Check for ``log_dir/.agent-done``; emit ``agent_self_terminated`` if present.
 
-    Returns True if sentinel was found and event emitted (caller should stop),
-    False otherwise. Reason text is read with errors='replace' for non-UTF-8
-    robustness and truncated to 200 chars in the event payload.
+    Returns True if sentinel found (caller should stop), False otherwise.
     """
     from agent_runner import events
 
@@ -734,12 +722,7 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
 
 
 def emit_rate_limit_stop(log_dir: Path) -> None:
-    """Emit ``agent_self_terminated`` with reason ``rate_limit``.
-
-    Called by serve_cmd when ``transient_error_action = "stop"`` and throttle is
-    detected. Centralises the event emission so serve_cmd.py need not import
-    agent_runner.events directly (which violates its import allowlist).
-    """
+    """Emit ``agent_self_terminated`` with reason ``rate_limit`` (serve_cmd wrapper)."""
     from agent_runner import events
 
     events.emit(log_dir, events.SELF_TERMINATED, reason="rate_limit")
@@ -807,12 +790,7 @@ def emit_rate_limit_backoff_capped(
 
 
 def emit_max_rounds_reached(log_dir: Path, *, rounds_completed: int, max_rounds: int) -> None:
-    """Centralises emission so cli/serve_cmd.py need not import agent_runner.events
-    directly (which violates its import allowlist).
-
-    Emitted by the supervisor when the configured max_rounds (CLI flag or
-    [runtime] config) is reached. Payload mirrors the spec.
-    """
+    """Emit max_rounds_reached event (serve_cmd wrapper; avoids direct events import)."""
     from agent_runner.events import MAX_ROUNDS_REACHED, emit
 
     emit(log_dir, MAX_ROUNDS_REACHED, rounds_completed=rounds_completed, max_rounds=max_rounds)
@@ -930,11 +908,7 @@ def emit_agent_usage_recorded(
     duration_ms: int,
     models_breakdown: dict[str, dict[str, int]] | None = None,
 ) -> None:
-    """Emit per-round usage record from a CLI plugin.
-
-    Raw data only — aggregation (totals, projections, budget warnings) is
-    deferred to consumers and the 0.1.25 capability layer.
-    """
+    """Emit per-round usage record from a CLI plugin (raw data; aggregation deferred to 0.1.25)."""
     from agent_runner.events import AGENT_USAGE_RECORDED, emit
 
     emit(

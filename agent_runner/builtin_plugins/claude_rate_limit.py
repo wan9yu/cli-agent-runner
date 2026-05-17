@@ -4,6 +4,9 @@ Classifies into 4 buckets (rate_limit_account / rate_limit_model /
 api_transient_5xx / api_timeout) and emits transient_error_detected events
 with computed reset_at_epoch. Supervisor consumes the event.
 
+Also emits agent_usage_recorded per-round with token/cost data from the
+claude result event (0.1.24+).
+
 Naming history: was `claude_rate_limit_detector` in 0.1.20 (single-purpose
 rate-limit detector). Renamed + generalized to multi-classification in 0.1.23.
 Old plugin name `claude_rate_limit_detector` retained as entry-point alias
@@ -19,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_runner.api import (
+    emit_agent_usage_recorded,  # 0.1.24
     emit_rate_limit_rejected,  # 0.1.20 alias, dual-emit during 0.1.23
     emit_transient_error_detected,
 )
@@ -42,7 +46,7 @@ _5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504})
 
 
 class ClaudeErrorDetector:
-    """Classify claude transient errors; emit transient_error_detected."""
+    """Classify claude transient errors; emit transient_error_detected + usage events."""
 
     name = "claude_error_detector"
 
@@ -52,32 +56,32 @@ class ClaudeErrorDetector:
         log_path = ctx.log_dir / f"round-{ctx.round_num}.log"
         if not log_path.exists():
             return
-        payload = _scan_log_for_transient_error(log_path)
-        if payload is None:
-            return
-        payload["round_num"] = ctx.round_num
+        parsed = _parse_claude_log(log_path)
 
-        # Emit new generic event (all classifications)
-        emit_transient_error_detected(ctx.log_dir, **payload)
+        if parsed.get("transient_error"):
+            te = parsed["transient_error"]
+            te["round_num"] = ctx.round_num
+            # Emit new generic event (all classifications)
+            emit_transient_error_detected(ctx.log_dir, **te)
+            # 0.1.23 BACK-COMPAT: also emit 0.1.20 event for rate_limit_account only
+            if te["classification"] == "rate_limit_account":
+                emit_rate_limit_rejected(
+                    ctx.log_dir,
+                    agent=te["agent"],
+                    reset_at_epoch=te["reset_at_epoch"],
+                    limit_type="five_hour",
+                    round_num=ctx.round_num,
+                    raw=te["raw"],
+                )
 
-        # 0.1.23 BACK-COMPAT: also emit 0.1.20 event for rate_limit_account only
-        if payload["classification"] == "rate_limit_account":
-            emit_rate_limit_rejected(
-                ctx.log_dir,
-                agent=payload["agent"],
-                reset_at_epoch=payload["reset_at_epoch"],
-                limit_type="five_hour",
-                round_num=payload["round_num"],
-                raw=payload["raw"],
+        if parsed.get("usage"):
+            emit_agent_usage_recorded(
+                ctx.log_dir, round_num=ctx.round_num, **parsed["usage"]
             )
 
 
-def _scan_log_for_transient_error(log_path: Path) -> dict[str, Any] | None:
-    """Scan last _TAIL_LINES; classify into one of 4 buckets or None.
-
-    Priority (first match wins): rate_limit_event.rejected > 429 > 5xx > 408.
-    Other api_error_status (403, 404, etc.) -> None (not transient; let supervisor proceed).
-    """
+def _parse_claude_log(log_path: Path) -> dict[str, Any]:
+    """Scan last _TAIL_LINES; return {transient_error: ...?, usage: ...?}."""
     with log_path.open("r", encoding="utf-8", errors="replace") as f:
         tail = deque(f, maxlen=_TAIL_LINES)
     rate_limit_info: dict | None = None
@@ -94,10 +98,31 @@ def _scan_log_for_transient_error(log_path: Path) -> dict[str, Any] | None:
             rli = event.get("rate_limit_info", {})
             if rli.get("status") == "rejected":
                 rate_limit_info = rli
-        elif event.get("type") == "result" and event.get("is_error") is True:
+        elif event.get("type") == "result":
             result_event = event
 
-    # Priority 1: rate_limit_event rejected -> rate_limit_account
+    out: dict[str, Any] = {}
+
+    # Transient error classification (existing 0.1.23 logic, factored)
+    error_payload = _classify_transient_error(rate_limit_info, result_event)
+    if error_payload is not None:
+        out["transient_error"] = error_payload
+
+    # Usage extraction (0.1.24)
+    if result_event is not None:
+        usage_payload = _extract_usage(result_event)
+        if usage_payload is not None:
+            out["usage"] = usage_payload
+
+    return out
+
+
+def _classify_transient_error(
+    rate_limit_info: dict | None, result_event: dict | None
+) -> dict | None:
+    """Refactored from prior _scan_log_for_transient_error 0.1.23 logic; same shape, same
+    priority (rate_limit_event.rejected > 429 > 5xx > 408).
+    """
     if rate_limit_info is not None:
         return {
             "classification": "rate_limit_account",
@@ -105,22 +130,35 @@ def _scan_log_for_transient_error(log_path: Path) -> dict[str, Any] | None:
             "reset_at_epoch": int(rate_limit_info.get("resetsAt", time.time() + 300)),
             "raw": str((result_event or {}).get("result", ""))[:_RAW_CAP],
         }
-
-    if result_event is None:
+    if result_event is None or result_event.get("is_error") is not True:
         return None
-
     status = result_event.get("api_error_status")
     raw = str(result_event.get("result", ""))[:_RAW_CAP]
-
-    # Priority 2-4: api_error_status-based classifications
     if status == 429:
         return _classify("rate_limit_model", raw)
     if status in _5XX_STATUSES:
         return _classify("api_transient_5xx", raw)
     if status == 408:
         return _classify("api_timeout", raw)
+    return None
 
-    return None  # not a transient error we recognize
+
+def _extract_usage(result_event: dict) -> dict | None:
+    """Build agent_usage_recorded payload from claude result.usage. None if no usage field."""
+    usage = result_event.get("usage")
+    if not usage:
+        return None
+    msg = result_event.get("message") or {}
+    return {
+        "agent": "claude",
+        "model": str(msg.get("model", "unknown")),
+        "input_tokens": int(usage.get("input_tokens", 0)),
+        "output_tokens": int(usage.get("output_tokens", 0)),
+        "cached_tokens": int(usage.get("cache_read_input_tokens", 0)),
+        "cost_usd": result_event.get("total_cost_usd"),  # may be None
+        "duration_ms": int(result_event.get("duration_ms", 0)),
+        "models_breakdown": None,  # claude single-model per round
+    }
 
 
 def _classify(classification: str, raw: str) -> dict[str, Any]:

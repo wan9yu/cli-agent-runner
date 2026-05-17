@@ -238,3 +238,76 @@ def test_given_missing_log_file_when_classified_then_no_crash_no_emit(tmp_path):
             _make_hook_context(tmp_path, round_num=99), result=MagicMock()
         )
     new_emit.assert_not_called()
+
+
+_MOD = "agent_runner.builtin_plugins.claude_rate_limit"
+
+
+def test_given_successful_round_with_usage_when_after_round_then_emits_usage(tmp_path):
+    """Successful round (no error) still emits agent_usage_recorded from result.usage."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    _write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": False,
+                "subtype": "success",
+                "result": "done",
+                "total_cost_usd": 0.0812,
+                "message": {"model": "claude-opus-4-7"},
+                "usage": {
+                    "input_tokens": 6,
+                    "output_tokens": 6,
+                    "cache_read_input_tokens": 17806,
+                },
+                "duration_ms": 14470,
+            }
+        ],
+    )
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+            ClaudeErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+    err_emit.assert_not_called()
+    usage_emit.assert_called_once()
+    kwargs = usage_emit.call_args.kwargs
+    assert kwargs["agent"] == "claude"
+    assert kwargs["model"] == "claude-opus-4-7"
+    assert kwargs["input_tokens"] == 6
+    assert kwargs["output_tokens"] == 6
+    assert kwargs["cached_tokens"] == 17806
+    assert kwargs["cost_usd"] == 0.0812
+    assert kwargs["duration_ms"] == 14470
+    assert kwargs["models_breakdown"] is None
+
+
+def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_path):
+    """Failed round emits BOTH transient_error_detected AND agent_usage_recorded."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    _write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 500,
+                "result": "API Error: 500",
+                "total_cost_usd": 0.001,
+                "message": {"model": "claude-opus-4-7"},
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0},
+                "duration_ms": 562,
+            }
+        ],
+    )
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+            with patch(f"{_MOD}.time.time", return_value=1000):
+                ClaudeErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+    err_emit.assert_called_once()
+    assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
+    usage_emit.assert_called_once()
+    assert usage_emit.call_args.kwargs["agent"] == "claude"
