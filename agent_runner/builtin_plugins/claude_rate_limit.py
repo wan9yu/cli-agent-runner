@@ -75,9 +75,7 @@ class ClaudeErrorDetector:
                 )
 
         if parsed.get("usage"):
-            emit_agent_usage_recorded(
-                ctx.log_dir, round_num=ctx.round_num, **parsed["usage"]
-            )
+            emit_agent_usage_recorded(ctx.log_dir, round_num=ctx.round_num, **parsed["usage"])
 
 
 def _parse_claude_log(log_path: Path) -> dict[str, Any]:
