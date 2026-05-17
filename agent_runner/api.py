@@ -404,7 +404,7 @@ def peek(
     if throttle is not None:
         rate_limit = RateLimitState(
             throttled_until_epoch=throttle.reset_at_epoch,
-            limit_type=throttle.limit_type,
+            limit_type=throttle.classification,  # classification replaces limit_type (0.1.23+)
             agent=throttle.agent,
             since_round=throttle.since_round,
         )

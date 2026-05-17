@@ -40,7 +40,8 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
     state = _check_throttle_state(tmp_path)
     assert state is not None
     assert state.reset_at_epoch == future
-    assert state.limit_type == "five_hour"
+    # Old rate_limit_rejected events imply rate_limit_account classification
+    assert state.classification == "rate_limit_account"
     assert state.agent == "claude"
     assert state.since_round == 42
 
@@ -102,24 +103,24 @@ def test_given_no_events_when_check_then_returns_none(tmp_path):
 
 
 def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp_path):
-    """When reset_at_epoch implies sleep > 8h, cap and emit rate_limit_backoff_capped."""
-    from agent_runner.api_types import ThrottleState
+    """When reset_at_epoch implies sleep > 8h, cap and emit transient_error_backoff_capped."""
+    from agent_runner.api_types import TransientErrorState
     from agent_runner.runner import _apply_back_off
 
     far_future = int(time.time() + 86400)  # 24h out
-    throttle = ThrottleState(
+    throttle = TransientErrorState(
         reset_at_epoch=far_future,
-        limit_type="daily",
+        classification="rate_limit_account",
         agent="claude",
         since_round=42,
     )
     with patch("agent_runner.runner.time.sleep") as mock_sleep:
-        with patch("agent_runner.runner.emit") as mock_emit:
-            _apply_back_off(tmp_path, throttle)
+        with patch("agent_runner.api.emit_transient_error_backoff_capped") as mock_new_capped:
+            with patch("agent_runner.api.emit_transient_error_recovered") as mock_new_recovered:
+                _apply_back_off(tmp_path, throttle)
     # sleep should be capped
     assert mock_sleep.called
     sleep_arg = mock_sleep.call_args[0][0]
     assert sleep_arg <= 28800 + 30  # 8h cap + max jitter
-    kinds = [call.args[1] for call in mock_emit.call_args_list]
-    assert "rate_limit_backoff_capped" in kinds
-    assert "rate_limit_recovered" in kinds
+    mock_new_capped.assert_called_once()
+    mock_new_recovered.assert_called_once()

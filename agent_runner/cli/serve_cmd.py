@@ -142,7 +142,7 @@ def cmd(args) -> int:
                 break
             throttle = _check_throttle_state(log_dir)
             if throttle is not None:
-                action = cfg.runtime.rate_limit_action
+                action = cfg.runtime.transient_error_action
                 if action == "back_off":
                     _apply_back_off(log_dir, throttle)
                     # Fall through to normal launch

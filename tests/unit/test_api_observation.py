@@ -577,7 +577,8 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     assert state.service.rate_limit is not None
     assert isinstance(state.service.rate_limit, RateLimitState)
     assert state.service.rate_limit.throttled_until_epoch == future
-    assert state.service.rate_limit.limit_type == "five_hour"
+    # Old rate_limit_rejected events imply rate_limit_account classification
+    assert state.service.rate_limit.limit_type == "rate_limit_account"
     assert state.service.rate_limit.since_round == 42
 
 

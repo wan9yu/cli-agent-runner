@@ -119,17 +119,21 @@ class Detector(Protocol):
 
 
 @dataclass(frozen=True)
-class ThrottleState:
-    """Internal: supervisor-detected active rate-limit window state.
+class TransientErrorState:
+    """Internal: supervisor-detected active transient error state.
 
     Reconstructed from events.jsonl tail (latest unmatched
-    rate_limit_rejected). Surfaced via ServiceStatus.rate_limit.
+    transient_error_detected or 0.1.20-alias rate_limit_rejected).
     """
 
     reset_at_epoch: int
-    limit_type: str
+    classification: str  # NEW in 0.1.23 (was implicit "rate_limit" before)
     agent: str
     since_round: int
+
+
+# 0.1.23 back-compat alias; drop in 0.1.24
+ThrottleState = TransientErrorState
 
 
 @dataclass(frozen=True)
