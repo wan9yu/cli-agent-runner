@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-05-17
+
+- Fix claude `agent_usage_recorded` `model` field (was always
+  `"unknown"`; now extracts from claude's `assistant` event).
+- Fix claude `agent_usage_recorded` `input_tokens` field (0.1.24
+  simplify introduced wrong NET formula assuming Anthropic schema is
+  gross; it's already net). Aggregation scripts reading 0.1.24 data
+  will see non-zero values now — this is the correction, not a spike.
+- Fix gemini preset: `-o text` → `-o stream-json` so the
+  `gemini_error_detector` plugin can parse output. Existing scaffolds
+  need manual TOML edit; round log format changes (text → JSONL).
+
+See `docs/migrations/0.1.26.md`.
+
 ## [0.1.25] - 2026-05-17
 
 - **Hotfix**: built-in `claude_error_detector` and `gemini_error_detector`
@@ -668,7 +682,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...v0.1.23
