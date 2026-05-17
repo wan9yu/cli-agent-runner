@@ -77,6 +77,7 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
     rate_limit_info: dict | None = None
     result_event: dict | None = None
     assistant_model: str | None = None
+    tool_call_count = 0
     for line in tail:
         line = line.strip()
         if not line:
@@ -97,6 +98,11 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
             model_val = msg.get("model") if isinstance(msg, dict) else None
             if model_val:
                 assistant_model = str(model_val)
+            content = msg.get("content", []) if isinstance(msg, dict) else []
+            if isinstance(content, list):
+                tool_call_count += sum(
+                    1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use"
+                )
 
     out: dict[str, Any] = {}
 
@@ -105,7 +111,9 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
         out["transient_error"] = error_payload
 
     if result_event is not None:
-        usage_payload = _extract_usage(result_event, model=assistant_model)
+        usage_payload = _extract_usage(
+            result_event, model=assistant_model, tool_call_count=tool_call_count
+        )
         if usage_payload is not None:
             out["usage"] = usage_payload
 
@@ -140,7 +148,7 @@ def _classify_transient_error(
     return None
 
 
-def _extract_usage(result_event: dict, *, model: str | None) -> dict | None:
+def _extract_usage(result_event: dict, *, model: str | None, tool_call_count: int) -> dict | None:
     """Extract usage payload from claude result event.
 
     Returns None if no usage field present.
@@ -151,8 +159,8 @@ def _extract_usage(result_event: dict, *, model: str | None) -> dict | None:
       (they're independent counts). Earlier 0.1.24 simplify pass incorrectly
       subtracted cached from input; 0.1.26 reverts to the correct direct read.
     - ``cached_tokens`` is cache reads only (``cache_read_input_tokens``).
-      Cache-creation is omitted from the unified schema; can be added in 0.1.27+
-      if aggregation needs distinguishing.
+    - ``cache_creation_tokens`` is ``cache_creation_input_tokens`` (write cost,
+      billed at ~25% premium over fresh input per Anthropic pricing).
     - ``models_breakdown`` always None for claude (single-model per round);
       only populated by gemini multi-model rounds.
     - ``model`` from caller — ``_parse_claude_log`` tracks the latest
@@ -168,9 +176,11 @@ def _extract_usage(result_event: dict, *, model: str | None) -> dict | None:
         "input_tokens": int(usage.get("input_tokens", 0)),
         "output_tokens": int(usage.get("output_tokens", 0)),
         "cached_tokens": int(usage.get("cache_read_input_tokens", 0)),
+        "cache_creation_tokens": int(usage.get("cache_creation_input_tokens", 0)),
         "cost_usd": result_event.get("total_cost_usd"),
         "duration_ms": int(result_event.get("duration_ms", 0)),
         "models_breakdown": None,
+        "tool_call_count": tool_call_count,
     }
 
 

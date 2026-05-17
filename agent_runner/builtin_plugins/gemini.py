@@ -110,9 +110,11 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
         "input_tokens": int(stats.get("input", 0)),
         "output_tokens": int(stats.get("output_tokens", 0)),
         "cached_tokens": int(stats.get("cached", 0)),
+        "cache_creation_tokens": 0,  # gemini has no cache-creation concept
         "cost_usd": None,  # gemini doesn't expose USD
         "duration_ms": int(stats.get("duration_ms", 0)),
         "models_breakdown": models if len(models) > 1 else None,
+        "tool_call_count": int(stats.get("tool_calls", 0)),
     }
 
 

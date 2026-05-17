@@ -216,6 +216,10 @@ def emit_agent_usage_recorded(
     cost_usd: float | None,
     duration_ms: int,
     models_breakdown: dict[str, dict[str, int]] | None = None,
+    cache_creation_tokens: int = 0,
+    tool_call_count: int = 0,
+    phase: str = "",
+    success: bool = True,
 ) -> None:
     """Emit per-round usage record from a CLI plugin.
 
@@ -229,6 +233,14 @@ def emit_agent_usage_recorded(
       (gemini has no cost field; claude exposes total_cost_usd).
     - ``models_breakdown``: only populated when a round used multiple models
       (gemini multi-model rounds). None for claude (always single-model).
+    - ``cache_creation_tokens``: claude only — ``usage.cache_creation_input_tokens``,
+      independent count from ``cached_tokens`` (cache_read). Billed at ~25% premium
+      over fresh input per Anthropic pricing. Gemini has no equivalent → 0.
+    - ``tool_call_count``: number of tool invocations the agent made in the round.
+      Claude: count of ``tool_use`` content blocks across all assistant events.
+      Gemini: ``stats.tool_calls``.
+    - ``phase``: phase label from HookContext (e.g. "planning"); empty string when None.
+    - ``success``: True when exit_code == 0 and not timed_out.
     """
     from agent_runner.events import AGENT_USAGE_RECORDED, emit
 
@@ -244,6 +256,10 @@ def emit_agent_usage_recorded(
         cost_usd=cost_usd,
         duration_ms=duration_ms,
         models_breakdown=models_breakdown,
+        cache_creation_tokens=cache_creation_tokens,
+        tool_call_count=tool_call_count,
+        phase=phase,
+        success=success,
     )
 
 

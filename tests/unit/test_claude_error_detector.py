@@ -266,6 +266,8 @@ def test_given_successful_round_with_usage_when_after_round_then_emits_usage(tmp
     assert kwargs["cost_usd"] == 0.0812
     assert kwargs["duration_ms"] == 14470
     assert kwargs["models_breakdown"] is None
+    assert kwargs["cache_creation_tokens"] == 0
+    assert kwargs["tool_call_count"] == 0
 
 
 def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_path):
@@ -401,3 +403,21 @@ def test_given_rate_limit_event_null_type_without_result_when_classified_then_no
     )
     parsed = _parse_claude_log(log)
     assert "transient_error" not in parsed
+
+
+def test_given_claude_log_with_tool_use_blocks_when_extracted_then_tool_call_count_populated(
+    tmp_path,
+):
+    """Two assistant events each containing a tool_use content block → tool_call_count == 2."""
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    log.write_text(
+        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","id":"a","name":"Read","input":{}}]}}\n'
+        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"text","text":"thinking"},{"type":"tool_use","id":"b","name":"Bash","input":{}}]}}\n'
+        '{"type":"result","is_error":false,"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":100},"duration_ms":1000,"total_cost_usd":0.01}\n',
+        encoding="utf-8",
+    )
+    parsed = _parse_claude_log(log)
+    assert parsed["usage"]["tool_call_count"] == 2
+    assert parsed["usage"]["cache_creation_tokens"] == 100

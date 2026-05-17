@@ -58,6 +58,8 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
     assert kwargs["cost_usd"] is None
     assert kwargs["duration_ms"] == 5337
     assert kwargs["models_breakdown"] is None  # single-model
+    assert kwargs["tool_call_count"] == 1
+    assert kwargs["cache_creation_tokens"] == 0  # gemini has no creation concept
     err_emit.assert_not_called()
 
 
