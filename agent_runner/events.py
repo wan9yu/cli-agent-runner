@@ -49,6 +49,7 @@ STOP_FILE_DETECTED = "stop_file_detected"
 ROUND_SUBSTRATE_BEFORE = "round_substrate_before"
 ROUND_SUBSTRATE_AFTER = "round_substrate_after"
 FRESH_EYES_ROUND_TRIGGERED = "fresh_eyes_round_triggered"
+AGENT_USAGE_RECORDED = "agent_usage_recorded"
 
 _BUILTIN_KINDS: frozenset[str] = frozenset(
     {
@@ -90,6 +91,7 @@ _BUILTIN_KINDS: frozenset[str] = frozenset(
         ROUND_SUBSTRATE_BEFORE,
         ROUND_SUBSTRATE_AFTER,
         FRESH_EYES_ROUND_TRIGGERED,
+        AGENT_USAGE_RECORDED,
     }
 )
 
