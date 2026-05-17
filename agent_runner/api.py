@@ -814,6 +814,69 @@ def emit_fresh_eyes_round_triggered(log_dir: Path, *, round_num: int, every_n: i
     )
 
 
+def emit_transient_error_detected(
+    log_dir: Path,
+    *,
+    classification: str,
+    agent: str,
+    reset_at_epoch: int,
+    round_num: int,
+    raw: str,
+) -> None:
+    """Emit detection of a transient agent error (rate limit / 5xx / timeout)."""
+    from agent_runner.events import TRANSIENT_ERROR_DETECTED, emit
+
+    emit(
+        log_dir,
+        TRANSIENT_ERROR_DETECTED,
+        classification=classification,
+        agent=agent,
+        reset_at_epoch=reset_at_epoch,
+        round_num=round_num,
+        raw=raw,
+    )
+
+
+def emit_transient_error_recovered(
+    log_dir: Path,
+    *,
+    classification: str,
+    agent: str,
+    throttled_for_s: int,
+) -> None:
+    """Emit recovery from a transient error back-off (right before resuming)."""
+    from agent_runner.events import TRANSIENT_ERROR_RECOVERED, emit
+
+    emit(
+        log_dir,
+        TRANSIENT_ERROR_RECOVERED,
+        classification=classification,
+        agent=agent,
+        throttled_for_s=throttled_for_s,
+    )
+
+
+def emit_transient_error_backoff_capped(
+    log_dir: Path,
+    *,
+    classification: str,
+    agent: str,
+    requested_sleep_s: int,
+    applied_sleep_s: int,
+) -> None:
+    """Emit defensive event when computed back-off exceeded 8h cap."""
+    from agent_runner.events import TRANSIENT_ERROR_BACKOFF_CAPPED, emit
+
+    emit(
+        log_dir,
+        TRANSIENT_ERROR_BACKOFF_CAPPED,
+        classification=classification,
+        agent=agent,
+        requested_sleep_s=requested_sleep_s,
+        applied_sleep_s=applied_sleep_s,
+    )
+
+
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
 
