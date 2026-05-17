@@ -110,6 +110,19 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
     primary_model = (
         max(models, key=lambda m: models[m].get("total_tokens", 0)) if models else "unknown"
     )
+    breakdown = (
+        {
+            name: {
+                "total_tokens": int(m.get("total_tokens", 0)),
+                "input_tokens": int(m.get("input_tokens", m.get("input", 0))),
+                "output_tokens": int(m.get("output_tokens", 0)),
+                "cached_tokens": int(m.get("cached", 0)),
+            }
+            for name, m in models.items()
+        }
+        if len(models) > 1
+        else None
+    )
     return {
         "agent": "gemini",
         "model": primary_model,
@@ -119,7 +132,7 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
         "cache_creation_tokens": 0,  # gemini has no cache-creation concept
         "cost_usd": None,  # gemini doesn't expose USD
         "duration_ms": int(stats.get("duration_ms", 0)),
-        "models_breakdown": models if len(models) > 1 else None,
+        "models_breakdown": breakdown,
         "tool_call_count": int(stats.get("tool_calls", 0)),
     }
 

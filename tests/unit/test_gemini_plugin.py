@@ -230,6 +230,64 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
     usage_emit.assert_called_once()
 
 
+def test_given_gemini_multi_model_when_extracted_then_breakdown_entries_use_canonical_keys(
+    tmp_path,
+):
+    """models_breakdown per-model entries must not duplicate raw input/cached keys.
+
+    Pre-0.1.28 gemini stats.input + stats.cached were passed through to breakdown
+    entries alongside canonical input_tokens / cached_tokens (duplicates of same value).
+    """
+    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "status": "success",
+                "stats": {
+                    "total_tokens": 100,
+                    "input_tokens": 80,
+                    "output_tokens": 10,
+                    "cached": 5,
+                    "input": 75,
+                    "duration_ms": 100,
+                    "tool_calls": 0,
+                    "models": {
+                        "gemini-3-flash-preview": {
+                            "total_tokens": 100,
+                            "input_tokens": 80,
+                            "output_tokens": 10,
+                            "cached": 5,
+                            "input": 75,
+                        },
+                        "gemini-3.1-flash-lite": {
+                            "total_tokens": 50,
+                            "input_tokens": 40,
+                            "output_tokens": 10,
+                            "cached": 0,
+                            "input": 40,
+                        },
+                    },
+                },
+            }
+        ],
+    )
+    ctx = make_hook_context(tmp_path, agent_name="gemini")
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        GeminiErrorDetector().after_round(ctx, result=MagicMock(exit_code=0, timed_out=False))
+    breakdown = usage_emit.call_args.kwargs["models_breakdown"]
+    entry = breakdown["gemini-3-flash-preview"]
+    assert "input" not in entry, f"raw 'input' key leaked: {entry}"
+    assert "cached" not in entry, f"raw 'cached' key leaked: {entry}"
+    assert entry["input_tokens"] == 80
+    assert entry["cached_tokens"] == 5
+    assert entry["output_tokens"] == 10
+    assert entry["total_tokens"] == 100
+
+
 def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_emitted(
     tmp_path,
 ):
