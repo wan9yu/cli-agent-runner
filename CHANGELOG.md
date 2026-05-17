@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-05-17
+
+### Added
+- `agent_usage_recorded` event: new fields `cache_creation_tokens` (claude only, 0 for gemini),
+  `tool_call_count`, `phase`, `success`. Enables full cost reconciliation and phase/status
+  segmentation by consumers.
+
+### Changed
+- gemini `models_breakdown` per-model entries no longer include raw `input` / `cached` keys;
+  canonical `input_tokens` / `cached_tokens` only. Consumers reading raw keys must migrate.
+
+### Removed
+- `agent_runner.api_types.ThrottleState` dead alias (0.1.23 back-compat; deprecation window
+  passed; switch to `TransientErrorState`).
+
+See `docs/migrations/0.1.28.md`.
+
 ## [0.1.27] - 2026-05-17
 
 ### Fixed
