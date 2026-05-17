@@ -68,7 +68,10 @@ class ClaudeErrorDetector:
 
 
 def _parse_claude_log(log_path: Path) -> dict[str, Any]:
-    """Scan last _TAIL_LINES; return {transient_error: ...?, usage: ...?}."""
+    """Scan last _TAIL_LINES for rate_limit/result/assistant events.
+
+    Returns dict with optional 'transient_error' and 'usage' keys.
+    """
     with log_path.open("r", encoding="utf-8", errors="replace") as f:
         tail = deque(f, maxlen=_TAIL_LINES)
     rate_limit_info: dict | None = None
@@ -97,12 +100,10 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
 
     out: dict[str, Any] = {}
 
-    # Transient error classification (existing 0.1.23 logic, factored)
     error_payload = _classify_transient_error(rate_limit_info, result_event)
     if error_payload is not None:
         out["transient_error"] = error_payload
 
-    # Usage extraction (0.1.24+)
     if result_event is not None:
         usage_payload = _extract_usage(result_event, model=assistant_model)
         if usage_payload is not None:

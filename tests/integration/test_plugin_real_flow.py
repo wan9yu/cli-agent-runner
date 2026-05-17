@@ -118,7 +118,6 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
     assert len(usage) == 1, f"expected 1 usage event from real flow, got {usage}"
     assert usage[0]["agent"] == "claude"
     assert usage[0]["model"] == "claude-opus-4-7"
-    # NET direct: Anthropic input_tokens is already net (0.1.26 fix)
     assert usage[0]["input_tokens"] == 100
     assert usage[0]["cached_tokens"] == 80
     assert usage[0]["output_tokens"] == 50
@@ -169,7 +168,6 @@ def test_given_real_serve_with_fake_gemini_agent_when_round_completes_then_usage
     assert len(usage) == 1, f"expected 1 usage event from real flow, got {usage}"
     assert usage[0]["agent"] == "gemini"
     assert usage[0]["model"] == "gemini-3-flash-preview"
-    # NET direct: gemini stats.input is already net (0.1.26 fix)
     assert usage[0]["input_tokens"] == 600
     assert usage[0]["cached_tokens"] == 200
     assert usage[0]["output_tokens"] == 50
