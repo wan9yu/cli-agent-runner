@@ -100,6 +100,24 @@ def test_given_gemini_preset_when_parsed_then_includes_skip_trust() -> None:
     )
 
 
+def test_given_gemini_preset_when_parsed_then_uses_stream_json_output_format() -> None:
+    """gemini -o stream-json required so gemini_error_detector plugin can parse JSONL.
+
+    Pre-0.1.26 the preset shipped -o text (human-readable), which the plugin
+    cannot parse — meaning agent_usage_recorded events never fired for gemini
+    rounds in production. Fixed in 0.1.26 by switching to -o stream-json.
+    """
+    text = _preset_text("gemini").replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    cmd = parsed["agent"]["command"]
+    assert "-o" in cmd, f"gemini preset must include -o flag, got: {cmd}"
+    o_idx = cmd.index("-o")
+    assert cmd[o_idx + 1] == "stream-json", (
+        f"gemini preset must use -o stream-json (plugin requires JSONL); "
+        f"got {cmd[o_idx + 1]!r}. See docs/migrations/0.1.26.md."
+    )
+
+
 @pytest.mark.parametrize("name", PRESET_NAMES)
 def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_path) -> None:
     """Shipped presets must not emit DeprecationWarning on first load."""
