@@ -20,6 +20,11 @@ _HOOK_GROUPS = (
 # Surfaced via peek --json `plugins.disabled` for operator visibility.
 _DISABLED_PLUGIN_NAMES: list[str] = []
 
+# Plugin name aliases for back-compat: old entry-point name -> canonical name.
+_PLUGIN_NAME_ALIASES: dict[str, str] = {
+    "claude_rate_limit_detector": "claude_error_detector",  # 0.1.20 -> 0.1.23 rename
+}
+
 
 def _load_plugins_from_group(group: str) -> None:
     """Discover and load entry_points in ``group``, isolating per-plugin failures.
@@ -92,6 +97,9 @@ def apply_plugin_disable(names: list[str]) -> None:
 
     if not names:
         return
+
+    # Translate aliases so old config names keep working
+    names = [_PLUGIN_NAME_ALIASES.get(n, n) for n in names]
 
     global _DISABLED_PLUGIN_NAMES
     _DISABLED_PLUGIN_NAMES = list(names)

@@ -45,7 +45,8 @@ Changelog = "https://github.com/wan9yu/cli-agent-runner/blob/main/CHANGELOG.md"
 agent-runner = "agent_runner.cli:main"
 
 [project.entry-points."agent_runner.post_round_hooks"]
-claude_rate_limit_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeRateLimitDetector"
+claude_rate_limit_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeErrorDetector"  # 0.1.20 alias
+claude_error_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeErrorDetector"      # 0.1.23 canonical
 
 [project.optional-dependencies]
 dev = [
