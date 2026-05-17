@@ -42,7 +42,13 @@ class GeminiErrorDetector:
             te = parsed["transient_error"]
             emit_transient_error_detected(ctx.log_dir, round_num=ctx.round_num, **te)
         if parsed.get("usage"):
-            emit_agent_usage_recorded(ctx.log_dir, round_num=ctx.round_num, **parsed["usage"])
+            emit_agent_usage_recorded(
+                ctx.log_dir,
+                round_num=ctx.round_num,
+                phase=ctx.phase or "",
+                success=(result.exit_code == 0 and not result.timed_out),
+                **parsed["usage"],
+            )
 
 
 def _parse_gemini_log(log_path: Path) -> dict[str, Any]:

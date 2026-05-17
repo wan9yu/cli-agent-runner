@@ -228,3 +228,37 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
             )
     err_emit.assert_not_called()
     usage_emit.assert_called_once()
+
+
+def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_emitted(
+    tmp_path,
+):
+    """phase and success plumbed through from HookContext / RoundResult for gemini."""
+    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "status": "success",
+                "stats": {
+                    "total_tokens": 100,
+                    "input_tokens": 80,
+                    "output_tokens": 10,
+                    "cached": 5,
+                    "input": 75,
+                    "duration_ms": 100,
+                    "tool_calls": 0,
+                    "models": {},
+                },
+            }
+        ],
+    )
+    ctx = make_hook_context(tmp_path, agent_name="gemini", phase="planning")
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        GeminiErrorDetector().after_round(ctx, result=MagicMock(exit_code=0, timed_out=False))
+    kwargs = usage_emit.call_args.kwargs
+    assert kwargs["phase"] == "planning"
+    assert kwargs["success"] is True

@@ -421,3 +421,84 @@ def test_given_claude_log_with_tool_use_blocks_when_extracted_then_tool_call_cou
     parsed = _parse_claude_log(log)
     assert parsed["usage"]["tool_call_count"] == 2
     assert parsed["usage"]["cache_creation_tokens"] == 100
+
+
+def test_given_claude_round_with_phase_when_after_round_then_phase_in_usage_event(tmp_path):
+    """HookContext.phase='planning' surfaces as phase='planning' in emitted event."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7", "content": []}},
+            {
+                "type": "result",
+                "is_error": False,
+                "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0},
+                "duration_ms": 100,
+                "total_cost_usd": 0.001,
+            },
+        ],
+    )
+    ctx = make_hook_context(tmp_path, agent_name="claude", phase="planning")
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        ClaudeErrorDetector().after_round(ctx, result)
+    kwargs = usage_emit.call_args.kwargs
+    assert kwargs["phase"] == "planning"
+    assert kwargs["success"] is True
+
+
+def test_given_claude_round_no_phase_when_after_round_then_phase_empty_string(tmp_path):
+    """HookContext.phase=None becomes phase='' in event (matches env-var contract)."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": False,
+                "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0},
+                "duration_ms": 100,
+                "total_cost_usd": 0.001,
+            }
+        ],
+    )
+    ctx = make_hook_context(tmp_path, agent_name="claude", phase=None)
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        ClaudeErrorDetector().after_round(ctx, result)
+    kwargs = usage_emit.call_args.kwargs
+    assert kwargs["phase"] == ""
+
+
+def test_given_claude_round_failed_when_after_round_then_success_false(tmp_path):
+    """exit_code != 0 → success=False in emitted event."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 500,
+                "result": "500 err",
+                "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0},
+                "duration_ms": 100,
+                "total_cost_usd": 0.001,
+            }
+        ],
+    )
+    ctx = make_hook_context(tmp_path, agent_name="claude")
+    result = MagicMock(exit_code=1, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+        with patch(f"{_MOD}.emit_transient_error_detected"):
+            with patch(f"{_MOD}.time.time", return_value=1000):
+                ClaudeErrorDetector().after_round(ctx, result)
+    kwargs = usage_emit.call_args.kwargs
+    assert kwargs["success"] is False

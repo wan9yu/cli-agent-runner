@@ -109,7 +109,13 @@ def read_events_for_current_month(log_dir: Path) -> list[dict]:
     return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
 
 
-def make_hook_context(tmp_path: Path, *, agent_name: str = "claude", round_num: int = 1):
+def make_hook_context(
+    tmp_path: Path,
+    *,
+    agent_name: str = "claude",
+    round_num: int = 1,
+    phase: str | None = None,
+):
     """Build a minimal HookContext for plugin testing.
 
     agent_log_path is populated to match where runner.py writes the
@@ -126,7 +132,7 @@ def make_hook_context(tmp_path: Path, *, agent_name: str = "claude", round_num: 
         log_dir=tmp_path,
         project="testproj",
         round_num=round_num,
-        phase=None,
+        phase=phase,
         agent_name=agent_name,
         agent_log_path=agent_log_path,
     )
