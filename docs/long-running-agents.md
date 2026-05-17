@@ -217,6 +217,28 @@ field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
 Old event names kept as aliases for `rate_limit_account` through 0.1.23;
 subscribers should migrate to `transient_error_detected` for full coverage.
 
+## Writing post_round_hook plugins
+
+### Reading agent stdout from a plugin
+
+Use `ctx.agent_log_path` (added in 0.1.25). This points to the agent's
+actual JSONL stdout for the current round
+(`log_dir/rounds/R<N>-<timestamp>.log`). Do NOT compute the path from
+`ctx.log_dir + round_num` — historical naming conventions in that directory
+are subject to change.
+
+```python
+def after_round(self, ctx: HookContext, result: Any) -> None:
+    log_path = ctx.agent_log_path
+    if log_path is None or not log_path.exists():
+        return
+    # parse log_path for agent JSONL output ...
+```
+
+The `None` guard is required: the field defaults to `None` for backward
+compatibility with manually-constructed HookContext instances in unit tests.
+In production, the supervisor always populates it.
+
 ## Related primitives
 
 - `docs/runbook.md` § Rate limits — 5h OAuth account quota + transient error handling
@@ -224,3 +246,4 @@ subscribers should migrate to `transient_error_detected` for full coverage.
 - `docs/migrations/0.1.22.md` — substrate fingerprint + fresh-eyes (0.1.22)
 - `docs/migrations/0.1.23.md` — unified transient-error classifier (0.1.23)
 - `docs/migrations/0.1.24.md` — usage events + gemini plugin (0.1.24)
+- `docs/migrations/0.1.25.md` — plugin path hotfix + HookContext.agent_log_path (0.1.25)

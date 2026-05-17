@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-05-17
+
+- **Hotfix**: built-in `claude_error_detector` and `gemini_error_detector`
+  plugins were reading the wrong log file path since 0.1.20, silently
+  no-op'ing all detection (rate-limit, transient error, usage events)
+  in real `agent-runner serve` use. Fix: plugins now use new
+  `HookContext.agent_log_path` field populated by the supervisor.
+- `HookContext.agent_log_path: Path | None = None` (additive). 3rd-party
+  plugin authors reading `ctx.log_dir / "round-{N}.log"` should migrate.
+
+See `docs/migrations/0.1.25.md`.
+
 ## [0.1.24] - 2026-05-17
 
 - New `agent_usage_recorded` event: per-round token + cost data, emitted
@@ -656,7 +668,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...v0.1.22
