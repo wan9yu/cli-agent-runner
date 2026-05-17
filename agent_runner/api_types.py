@@ -123,7 +123,7 @@ class TransientErrorState:
     """Internal: supervisor-detected active transient error state.
 
     Reconstructed from events.jsonl tail (latest unmatched
-    transient_error_detected or 0.1.20-alias rate_limit_rejected).
+    transient_error_detected with no matching transient_error_recovered after).
 
     ``classification`` is typed as ``str`` (not ``Literal[...]``) so third-party
     CLI plugins (e.g. aider / gemini error detectors) can emit their own
