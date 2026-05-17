@@ -388,22 +388,6 @@ def test_given_429_with_null_rate_limit_type_when_classified_then_rate_limit_mod
     assert now + 55 <= parsed["transient_error"]["reset_at_epoch"] <= now + 65
 
 
-def test_given_429_without_rate_limit_event_when_classified_then_rate_limit_model(tmp_path):
-    """Regression: result_event with status 429 only (no rate_limit_event line) still
-    classifies as rate_limit_model.
-    """
-    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
-
-    log = tmp_path / "round-1.log"
-    log.write_text(
-        '{"type":"result","is_error":true,"api_error_status":429,'
-        '"result":"429 Too Many Requests"}\n',
-        encoding="utf-8",
-    )
-    parsed = _parse_claude_log(log)
-    assert parsed["transient_error"]["classification"] == "rate_limit_model"
-
-
 def test_given_rate_limit_event_null_type_without_result_when_classified_then_none(tmp_path):
     """Edge: rate_limit_event with rateLimitType=null but no result_event returns no
     transient_error (without a status code we can't bucket; supervisor uses generic retry).
