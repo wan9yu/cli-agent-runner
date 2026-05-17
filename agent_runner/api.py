@@ -404,7 +404,7 @@ def peek(
     if throttle is not None:
         rate_limit = RateLimitState(
             throttled_until_epoch=throttle.reset_at_epoch,
-            limit_type=throttle.classification,  # classification replaces limit_type (0.1.23+)
+            limit_type=throttle.classification,
             agent=throttle.agent,
             since_round=throttle.since_round,
         )
@@ -736,7 +736,7 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
 def emit_rate_limit_stop(log_dir: Path) -> None:
     """Emit ``agent_self_terminated`` with reason ``rate_limit``.
 
-    Called by serve_cmd when ``rate_limit_action = "stop"`` and throttle is
+    Called by serve_cmd when ``transient_error_action = "stop"`` and throttle is
     detected. Centralises the event emission so serve_cmd.py need not import
     agent_runner.events directly (which violates its import allowlist).
     """

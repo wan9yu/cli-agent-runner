@@ -160,7 +160,7 @@ def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
     iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()
     return {
         "throttled_until_iso": iso,
-        "limit_type": throttle.classification,  # classification replaces limit_type (0.1.23+)
+        "limit_type": throttle.classification,
         "since_round": throttle.since_round,
     }
 

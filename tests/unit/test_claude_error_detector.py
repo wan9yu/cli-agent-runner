@@ -195,3 +195,46 @@ def test_given_unknown_error_status_when_classified_then_no_emit(tmp_path):
     ) as new_emit:
         ClaudeErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
     new_emit.assert_not_called()
+
+
+def test_given_malformed_jsonl_when_classified_then_skips_invalid_and_continues(tmp_path):
+    """Malformed JSONL line (not parseable) is silently skipped; valid lines still classified."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    log_path = tmp_path / "round-1.log"
+    log_path.write_text(
+        "this is not json\n"
+        + json.dumps(
+            {
+                "type": "rate_limit_event",
+                "rate_limit_info": {
+                    "status": "rejected",
+                    "resetsAt": 1778903400,
+                    "rateLimitType": "five_hour",
+                },
+            }
+        )
+        + "\n"
+        + "{partial json\n"
+    )
+    with patch(
+        "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
+    ) as new_emit:
+        with patch("agent_runner.builtin_plugins.claude_rate_limit.emit_rate_limit_rejected"):
+            ClaudeErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+    new_emit.assert_called_once()
+    assert new_emit.call_args.kwargs["classification"] == "rate_limit_account"
+
+
+def test_given_missing_log_file_when_classified_then_no_crash_no_emit(tmp_path):
+    """Missing round-N.log file: no crash, no emit (defensive guard)."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    # round-99.log does not exist in tmp_path
+    with patch(
+        "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
+    ) as new_emit:
+        ClaudeErrorDetector().after_round(
+            _make_hook_context(tmp_path, round_num=99), result=MagicMock()
+        )
+    new_emit.assert_not_called()

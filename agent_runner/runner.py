@@ -60,7 +60,6 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
         + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
     )
     if requested > _BACK_OFF_CAP_S:
-        # New event
         api.emit_transient_error_backoff_capped(
             log_dir,
             classification=throttle.classification,
@@ -83,7 +82,6 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
     sleep_start = time.time()
     time.sleep(sleep_s)
 
-    # New event
     api.emit_transient_error_recovered(
         log_dir,
         classification=throttle.classification,

@@ -10,7 +10,6 @@ from typing import Any, Literal
 
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
-_VALID_RATE_LIMIT_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
 _VALID_TRANSIENT_ERROR_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
 
 
@@ -32,7 +31,7 @@ class RuntimeConfig:
     round_log_retention: int = 100
     narrative_file: Path | None = None
     rate_limit_action: Literal["back_off", "skip", "stop"] = "back_off"  # DEPRECATED: alias
-    transient_error_action: Literal["back_off", "skip", "stop"] = "back_off"  # NEW (0.1.23)
+    transient_error_action: Literal["back_off", "skip", "stop"] = "back_off"
     max_rounds: int | None = None  # None = unbounded
     stop_file: Path | None = None  # None = disabled
     substrate_fingerprint_paths: list[str] = field(default_factory=list)

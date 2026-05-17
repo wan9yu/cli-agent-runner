@@ -124,10 +124,17 @@ class TransientErrorState:
 
     Reconstructed from events.jsonl tail (latest unmatched
     transient_error_detected or 0.1.20-alias rate_limit_rejected).
+
+    ``classification`` is typed as ``str`` (not ``Literal[...]``) so third-party
+    CLI plugins (e.g. aider / gemini error detectors) can emit their own
+    classification names without core changes.
+
+    See :class:`RateLimitState` for the public peek-schema counterpart surfaced
+    via ``ServiceStatus.rate_limit``.
     """
 
     reset_at_epoch: int
-    classification: str  # NEW in 0.1.23 (was implicit "rate_limit" before)
+    classification: str
     agent: str
     since_round: int
 
