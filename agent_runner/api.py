@@ -917,6 +917,41 @@ def emit_transient_error_recovered(
     )
 
 
+def emit_agent_usage_recorded(
+    log_dir: Path,
+    *,
+    agent: str,
+    model: str,
+    round_num: int,
+    input_tokens: int,
+    output_tokens: int,
+    cached_tokens: int,
+    cost_usd: float | None,
+    duration_ms: int,
+    models_breakdown: dict[str, dict[str, int]] | None = None,
+) -> None:
+    """Emit per-round usage record from a CLI plugin.
+
+    Raw data only — aggregation (totals, projections, budget warnings) is
+    deferred to consumers and the 0.1.25 capability layer.
+    """
+    from agent_runner.events import AGENT_USAGE_RECORDED, emit
+
+    emit(
+        log_dir,
+        AGENT_USAGE_RECORDED,
+        agent=agent,
+        model=model,
+        round_num=round_num,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_tokens=cached_tokens,
+        cost_usd=cost_usd,
+        duration_ms=duration_ms,
+        models_breakdown=models_breakdown,
+    )
+
+
 def emit_transient_error_backoff_capped(
     log_dir: Path,
     *,
