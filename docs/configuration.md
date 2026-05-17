@@ -26,7 +26,6 @@ writes a templated copy you can edit.
 | `disable_pre_round_hooks` | `bool` | False |
 | `round_log_retention` | `int` | 100 |
 | `narrative_file` | `Path | None` | None |
-| `rate_limit_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
 | `transient_error_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
 | `max_rounds` | `int | None` | None |
 | `stop_file` | `Path | None` | None |

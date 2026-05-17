@@ -1361,3 +1361,52 @@ def test_given_no_narrative_file_when_loaded_then_remains_none(tmp_path: Path) -
     )
     cfg = load_config(tmp_path / "agent-runner.toml")
     assert cfg.runtime.narrative_file is None
+
+
+def test_rate_limit_action_in_toml_raises_config_error_with_migration_hint(tmp_path):
+    """0.1.29: alias removed. TOML containing rate_limit_action must error."""
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'name = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        'rate_limit_action = "back_off"\n\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/p.md"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(toml)
+    assert "rate_limit_action" in str(exc_info.value)
+    assert "transient_error_action" in str(exc_info.value)
+    assert "0.1.29" in str(exc_info.value)
+
+
+def test_transient_error_action_still_accepted(tmp_path):
+    """Sanity: canonical key still works post-alias-removal."""
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'name = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        'transient_error_action = "stop"\n\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/p.md"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
+    cfg = load_config(toml)
+    assert cfg.runtime.transient_error_action == "stop"

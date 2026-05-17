@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import tomllib
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -11,6 +10,10 @@ from typing import Any, Literal
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
 _VALID_TRANSIENT_ERROR_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
+
+
+class ConfigError(ValueError):
+    """Raised when a config TOML contains a removed or invalid field."""
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,6 @@ class RuntimeConfig:
     disable_pre_round_hooks: bool = False
     round_log_retention: int = 100
     narrative_file: Path | None = None
-    rate_limit_action: Literal["back_off", "skip", "stop"] = "back_off"  # DEPRECATED: alias
     transient_error_action: Literal["back_off", "skip", "stop"] = "back_off"
     max_rounds: int | None = None  # None = unbounded
     stop_file: Path | None = None  # None = disabled
@@ -310,25 +312,14 @@ def load_config(toml_path: Path) -> Config:
             "use [phases.<name>] round_timeout_s = X — see docs/migrations/0.1.16.md"
         )
 
-    rate_limit_action_raw = runtime_d.get("rate_limit_action")
+    if runtime_d.get("rate_limit_action") is not None:
+        raise ConfigError(
+            "runtime.rate_limit_action was removed in 0.1.29; use "
+            "runtime.transient_error_action (same allowed values: "
+            "back_off / skip / stop). See docs/migrations/0.1.29.md."
+        )
+
     transient_error_action_raw = runtime_d.get("transient_error_action")
-
-    if rate_limit_action_raw is not None and transient_error_action_raw is not None:
-        raise ValueError(
-            "set either runtime.transient_error_action or runtime.rate_limit_action, not both "
-            "(rate_limit_action is a deprecated alias for transient_error_action)"
-        )
-
-    if rate_limit_action_raw is not None and transient_error_action_raw is None:
-        warnings.warn(
-            "runtime.rate_limit_action is deprecated; use runtime.transient_error_action "
-            "(same values, broader semantic: also applies to 5xx / timeout / model-rate-limit). "
-            "See docs/migrations/0.1.23.md",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        transient_error_action_raw = rate_limit_action_raw
-
     transient_error_action = str(
         transient_error_action_raw if transient_error_action_raw is not None else "back_off"
     )
@@ -337,8 +328,6 @@ def load_config(toml_path: Path) -> Config:
             f"runtime.transient_error_action: {transient_error_action!r} not in allowed values "
             f"{sorted(_VALID_TRANSIENT_ERROR_ACTIONS)}"
         )
-    # Keep rate_limit_action in sync so existing code reading the alias still works.
-    rate_limit_action = transient_error_action
 
     runtime = RuntimeConfig(
         work_dir=work_dir,
@@ -361,7 +350,6 @@ def load_config(toml_path: Path) -> Config:
         narrative_file=_expand_and_resolve(str(runtime_d["narrative_file"]), project_name, work_dir)
         if "narrative_file" in runtime_d
         else None,
-        rate_limit_action=rate_limit_action,  # type: ignore[arg-type]  # narrowed by validation
         transient_error_action=transient_error_action,  # type: ignore[arg-type]
         max_rounds=_require_positive_int(runtime_d["max_rounds"], field="runtime.max_rounds")
         if "max_rounds" in runtime_d
