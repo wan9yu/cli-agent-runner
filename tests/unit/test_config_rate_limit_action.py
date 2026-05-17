@@ -28,7 +28,6 @@ def test_given_invalid_rate_limit_action_when_loaded_then_raises(tmp_path):
     from agent_runner.config import load_config
 
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra='rate_limit_action = "explode"\n')
-    with pytest.raises(
-        ValueError, match=r"runtime\.rate_limit_action.*explode.*back_off.*skip.*stop"
-    ):
+    # rate_limit_action is now an alias for transient_error_action; validation uses the new name
+    with pytest.raises(ValueError, match=r"runtime\.transient_error_action.*explode"):
         load_config(cfg_path)
