@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-05-17
+
+### Added
+- Invariants: entry_point resolvability, event-kind constant SSOT, transient-error classification SSOT.
+
+### Changed
+- `_BUILTIN_KINDS` now derived from module reflection (single-source).
+- Forward cross-refs added to historical migration docs 0.1.23.md, 0.1.24.md.
+
+### Removed
+- Legacy event aliases: `rate_limit_rejected`, `rate_limit_recovered`, `rate_limit_backoff_capped` — use `transient_error_*` equivalents.
+- Legacy API exports: `emit_rate_limit_rejected`, `emit_rate_limit_recovered`, `emit_rate_limit_backoff_capped`.
+- Config alias `runtime.rate_limit_action` — use `runtime.transient_error_action`. Removed configs now error with migration hint.
+
+See `docs/migrations/0.1.29.md`.
+
 ## [0.1.28] - 2026-05-17
 
 ### Added
