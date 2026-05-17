@@ -19,10 +19,9 @@ from agent_runner.api_types import TransientErrorState
 def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
     """Scan events.jsonl tail for latest unmatched transient error.
 
-    Reads both 0.1.23 `transient_error_detected` and 0.1.20-alias
-    `rate_limit_rejected` event names. Returns TransientErrorState if
-    currently throttled (reset still in future, no matching recovered after).
-    Restart-safe.
+    Reads `transient_error_detected` / `transient_error_recovered` event names.
+    Returns TransientErrorState if currently throttled (reset still in future,
+    no matching recovered after). Restart-safe.
     """
     candidates = sorted(log_dir.glob("events-*.jsonl"))
     if not candidates:
@@ -42,11 +41,9 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
     latest_detected: dict[str, Any] | None = None
     for ev in reversed(events):
         kind = ev.get("event")
-        # Recovered events (new OR old alias) -> no active throttle
-        if kind in ("transient_error_recovered", "rate_limit_recovered"):
+        if kind == "transient_error_recovered":
             return None
-        # Detected events (new OR old alias) — pick latest
-        if kind in ("transient_error_detected", "rate_limit_rejected"):
+        if kind == "transient_error_detected":
             latest_detected = ev
             break
 
@@ -56,7 +53,6 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
     if reset_at <= time.time():
         return None  # Reset already passed without recovery emit; treat as recovered
 
-    # Derive classification: new event has it explicit; old alias implies rate_limit_account
     classification = str(latest_detected.get("classification", "rate_limit_account"))
 
     return TransientErrorState(

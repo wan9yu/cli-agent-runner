@@ -42,28 +42,6 @@ def _seed_transient_error_event(log_dir: Path, classification: str, *, future_s:
     )
 
 
-def _seed_legacy_rate_limit_event(log_dir: Path, *, future_s: int = 60) -> None:
-    """Write a legacy rate_limit_rejected event to events.jsonl."""
-    log_dir.mkdir(parents=True, exist_ok=True)
-    month = datetime.now(UTC).strftime("%Y-%m")
-    events_path = log_dir / f"events-{month}.jsonl"
-    future = int(time.time() + future_s)
-    events_path.write_text(
-        json.dumps(
-            {
-                "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-                "event": "rate_limit_rejected",
-                "agent": "claude",
-                "reset_at_epoch": future,
-                "limit_type": "five_hour",
-                "round_num": 1,
-                "raw": "rate limited",
-            }
-        )
-        + "\n"
-    )
-
-
 def test_given_5xx_detected_event_when_serve_skip_then_no_sleep(tmp_path: Path):
     """transient_error_action = skip -> supervisor proceeds past transient error immediately."""
     cfg_path = make_toml_with_sections(
@@ -130,49 +108,3 @@ def test_given_transient_error_action_stop_when_5xx_detected_then_terminates_ear
     # supervisor stopped early due to stop action
     assert len(self_term) >= 1
     assert self_term[0].get("reason") == "rate_limit"
-
-
-def test_given_legacy_rate_limit_event_when_supervisor_reads_then_classification_account(
-    tmp_path: Path,
-):
-    """Legacy rate_limit_rejected events are read and imply rate_limit_account classification."""
-    from agent_runner._throttle import _check_throttle_state
-
-    log_dir = tmp_path / "logs"
-    _seed_legacy_rate_limit_event(log_dir)
-
-    state = _check_throttle_state(log_dir)
-    assert state is not None
-    assert state.classification == "rate_limit_account"
-    assert state.agent == "claude"
-
-
-def test_given_rate_limit_action_alias_when_serve_skip_then_supervisor_uses_value(tmp_path: Path):
-    """Old rate_limit_action = skip config propagates to transient_error_action correctly."""
-    cfg_path = make_toml_with_sections(
-        tmp_path,
-        runtime_extra='rate_limit_action = "skip"\nrestart_delay_s = 1\n',
-    )
-    log_dir = tmp_path / "logs"
-    _seed_transient_error_event(log_dir, "api_transient_5xx")
-
-    start = time.time()
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "agent_runner.cli",
-            "--config",
-            str(cfg_path),
-            "serve",
-            "--max-rounds",
-            "1",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    duration = time.time() - start
-    assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
-    # skip means no sleep; completes quickly even with seeded transient error
-    assert duration < 30, f"unexpected duration: {duration:.1f}s"

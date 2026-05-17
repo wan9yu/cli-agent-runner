@@ -547,7 +547,7 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """peek returns ServiceStatus.rate_limit populated when rate_limit_rejected is active."""
+    """peek returns ServiceStatus.rate_limit populated when transient_error_detected is active."""
     import time
 
     from agent_runner.api_types import RateLimitState
@@ -562,11 +562,11 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     (log_dir / "events-2026-05.jsonl").write_text(
         json.dumps(
             {
-                "event": "rate_limit_rejected",
+                "event": "transient_error_detected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,
-                "limit_type": "five_hour",
+                "classification": "rate_limit_account",
                 "round_num": 42,
             }
         )
@@ -577,7 +577,6 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     assert state.service.rate_limit is not None
     assert isinstance(state.service.rate_limit, RateLimitState)
     assert state.service.rate_limit.throttled_until_epoch == future
-    # Old rate_limit_rejected events imply rate_limit_account classification
     assert state.service.rate_limit.limit_type == "rate_limit_account"
     assert state.service.rate_limit.since_round == 42
 

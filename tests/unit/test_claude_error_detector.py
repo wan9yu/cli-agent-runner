@@ -36,16 +36,11 @@ def test_given_rate_limit_event_when_classified_then_rate_limit_account(tmp_path
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch(
-            "agent_runner.builtin_plugins.claude_rate_limit.emit_rate_limit_rejected"
-        ) as old_emit:
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
     # New event emitted with rate_limit_account classification
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_account"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1778903400
-    # Old event ALSO emitted (back-compat for rate_limit_account only)
-    old_emit.assert_called_once()
 
 
 def test_given_5xx_error_when_classified_then_api_transient_5xx(tmp_path):
@@ -66,18 +61,11 @@ def test_given_5xx_error_when_classified_then_api_transient_5xx(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch(
-            "agent_runner.builtin_plugins.claude_rate_limit.emit_rate_limit_rejected"
-        ) as old_emit:
-            with patch(
-                "agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000
-            ):
-                ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
+            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1060  # now + 60s default
-    # Old event NOT emitted for non-rate_limit_account
-    old_emit.assert_not_called()
 
 
 def test_given_502_error_then_classified_as_api_transient_5xx(tmp_path):
@@ -205,8 +193,7 @@ def test_given_malformed_jsonl_when_classified_then_skips_invalid_and_continues(
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch("agent_runner.builtin_plugins.claude_rate_limit.emit_rate_limit_rejected"):
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_account"
 

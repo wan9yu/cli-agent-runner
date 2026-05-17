@@ -46,11 +46,6 @@ _BACK_OFF_JITTER_MAX_S = 30
 def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
     """Sleep until throttle.reset_at_epoch + jitter; emit recovered (and capped if applicable).
 
-    Always emits new transient_error_* events. For backward compatibility,
-    also emits 0.1.20 rate_limit_* events only when classification is
-    rate_limit_account (the original 0.1.20 case). After 0.1.24 drops aliases,
-    only the new events are emitted.
-
     Capped at _BACK_OFF_CAP_S to defend against malformed reset epochs.
     """
     now = time.time()
@@ -67,14 +62,6 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
             requested_sleep_s=int(requested),
             applied_sleep_s=_BACK_OFF_CAP_S,
         )
-        # 0.1.23 back-compat: also emit old for rate_limit_account only
-        if throttle.classification == "rate_limit_account":
-            api.emit_rate_limit_backoff_capped(
-                log_dir,
-                agent=throttle.agent,
-                requested_sleep_s=int(requested),
-                applied_sleep_s=_BACK_OFF_CAP_S,
-            )
         sleep_s = _BACK_OFF_CAP_S
     else:
         sleep_s = max(requested, 0.0)
@@ -88,14 +75,6 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
         agent=throttle.agent,
         throttled_for_s=int(time.time() - sleep_start),
     )
-    # 0.1.23 back-compat: also emit old for rate_limit_account only
-    if throttle.classification == "rate_limit_account":
-        api.emit_rate_limit_recovered(
-            log_dir,
-            agent=throttle.agent,
-            throttled_for_s=int(time.time() - sleep_start),
-            limit_type="five_hour",
-        )
 
 
 class LockHeldError(RuntimeError):

@@ -23,7 +23,6 @@ from typing import Any
 
 from agent_runner.api import (
     emit_agent_usage_recorded,
-    emit_rate_limit_rejected,  # 0.1.20 alias, dual-emit during 0.1.23
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
@@ -50,18 +49,7 @@ class ClaudeErrorDetector:
 
         if parsed.get("transient_error"):
             te = parsed["transient_error"]
-            # Emit new generic event (all classifications)
             emit_transient_error_detected(ctx.log_dir, round_num=ctx.round_num, **te)
-            # 0.1.23 BACK-COMPAT: also emit 0.1.20 event for rate_limit_account only
-            if te["classification"] == "rate_limit_account":
-                emit_rate_limit_rejected(
-                    ctx.log_dir,
-                    agent=te["agent"],
-                    reset_at_epoch=te["reset_at_epoch"],
-                    limit_type="five_hour",
-                    round_num=ctx.round_num,
-                    raw=te["raw"],
-                )
 
         if parsed.get("usage"):
             emit_agent_usage_recorded(

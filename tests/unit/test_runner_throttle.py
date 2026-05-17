@@ -28,11 +28,11 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
         tmp_path,
         [
             {
-                "event": "rate_limit_rejected",
+                "event": "transient_error_detected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,
-                "limit_type": "five_hour",
+                "classification": "rate_limit_account",
                 "round_num": 42,
             }
         ],
@@ -40,7 +40,6 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
     state = _check_throttle_state(tmp_path)
     assert state is not None
     assert state.reset_at_epoch == future
-    # Old rate_limit_rejected events imply rate_limit_account classification
     assert state.classification == "rate_limit_account"
     assert state.agent == "claude"
     assert state.since_round == 42
@@ -54,19 +53,19 @@ def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_p
         tmp_path,
         [
             {
-                "event": "rate_limit_rejected",
+                "event": "transient_error_detected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": future,
-                "limit_type": "five_hour",
+                "classification": "rate_limit_account",
                 "round_num": 42,
             },
             {
-                "event": "rate_limit_recovered",
+                "event": "transient_error_recovered",
                 "ts": "2026-05-16T00:01:00Z",
                 "agent": "claude",
                 "throttled_for_s": 60,
-                "limit_type": "five_hour",
+                "classification": "rate_limit_account",
             },
         ],
     )
@@ -82,11 +81,11 @@ def test_given_rejected_with_reset_in_past_when_check_then_returns_none(tmp_path
         tmp_path,
         [
             {
-                "event": "rate_limit_rejected",
+                "event": "transient_error_detected",
                 "ts": "2026-05-16T00:00:00Z",
                 "agent": "claude",
                 "reset_at_epoch": past,
-                "limit_type": "five_hour",
+                "classification": "rate_limit_account",
                 "round_num": 42,
             }
         ],

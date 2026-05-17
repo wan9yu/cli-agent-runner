@@ -152,27 +152,6 @@ def test_given_dirty_commit_failed_kind_when_registered_then_in_known_event_kind
     assert "dirty_commit_failed" in KNOWN_EVENT_KINDS
 
 
-def test_given_rate_limit_rejected_constant_when_exported_then_matches_kind():
-    from agent_runner.events import _BUILTIN_KINDS, RATE_LIMIT_REJECTED
-
-    assert RATE_LIMIT_REJECTED == "rate_limit_rejected"
-    assert RATE_LIMIT_REJECTED in _BUILTIN_KINDS
-
-
-def test_given_rate_limit_recovered_constant_when_exported_then_matches_kind():
-    from agent_runner.events import _BUILTIN_KINDS, RATE_LIMIT_RECOVERED
-
-    assert RATE_LIMIT_RECOVERED == "rate_limit_recovered"
-    assert RATE_LIMIT_RECOVERED in _BUILTIN_KINDS
-
-
-def test_given_rate_limit_backoff_capped_constant_when_exported_then_matches_kind():
-    from agent_runner.events import _BUILTIN_KINDS, RATE_LIMIT_BACKOFF_CAPPED
-
-    assert RATE_LIMIT_BACKOFF_CAPPED == "rate_limit_backoff_capped"
-    assert RATE_LIMIT_BACKOFF_CAPPED in _BUILTIN_KINDS
-
-
 def test_given_max_rounds_reached_constant_when_exported_then_matches_kind():
     from agent_runner.events import _BUILTIN_KINDS, MAX_ROUNDS_REACHED
 

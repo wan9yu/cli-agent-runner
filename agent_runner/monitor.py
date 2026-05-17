@@ -32,8 +32,8 @@ from agent_runner.api_types import (
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
-    RATE_LIMIT_RECOVERED,
-    RATE_LIMIT_REJECTED,
+    TRANSIENT_ERROR_DETECTED,
+    TRANSIENT_ERROR_RECOVERED,
     now_iso_ms,
     parse_iso_ms,
 )
@@ -353,24 +353,25 @@ def detect_network_fail(
 def detect_rate_limit_active(
     events: list[dict[str, Any]], *, now: float | None = None
 ) -> Alert | None:
-    """Fire warning alert if currently throttled (latest rate_limit_rejected
+    """Fire warning alert if currently throttled (latest transient_error_detected
     has reset_at_epoch in future, no matching recovered after)."""
     if now is None:
         now = time.time()
     for ev in reversed(events):
         kind = ev.get("event")
-        if kind == RATE_LIMIT_RECOVERED:
+        if kind == TRANSIENT_ERROR_RECOVERED:
             return None
-        if kind == RATE_LIMIT_REJECTED:
+        if kind == TRANSIENT_ERROR_DETECTED:
             if int(ev.get("reset_at_epoch", 0)) > now:
                 iso = datetime.fromtimestamp(ev["reset_at_epoch"], UTC).isoformat()
+                classification = ev.get("classification", "unknown")
                 return _alert(
                     "rate_limit_active",
                     "warning",
-                    f"throttled until {iso} ({ev.get('limit_type', 'unknown')})",
+                    f"throttled until {iso} ({classification})",
                     {
                         "throttled_until_iso": iso,
-                        "limit_type": ev.get("limit_type", "unknown"),
+                        "classification": classification,
                         "agent": ev.get("agent", "unknown"),
                     },
                 )

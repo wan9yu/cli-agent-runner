@@ -17,9 +17,6 @@ __all__ = [
     "emit_agent_usage_recorded",
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
-    "emit_rate_limit_backoff_capped",
-    "emit_rate_limit_recovered",
-    "emit_rate_limit_rejected",
     "emit_rate_limit_stop",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
@@ -35,67 +32,6 @@ def emit_rate_limit_stop(log_dir: Path) -> None:
     from agent_runner import events
 
     events.emit(log_dir, events.SELF_TERMINATED, reason="rate_limit")
-
-
-def emit_rate_limit_rejected(
-    log_dir: Path,
-    *,
-    agent: str,
-    reset_at_epoch: int,
-    limit_type: str,
-    round_num: int,
-    raw: str,
-) -> None:
-    """Emit 0.1.20 rate_limit_rejected event (kept as alias; dual-emitted through 0.1.23)."""
-    from agent_runner.events import RATE_LIMIT_REJECTED, emit
-
-    emit(
-        log_dir,
-        RATE_LIMIT_REJECTED,
-        agent=agent,
-        reset_at_epoch=reset_at_epoch,
-        limit_type=limit_type,
-        round_num=round_num,
-        raw=raw,
-    )
-
-
-def emit_rate_limit_recovered(
-    log_dir: Path,
-    *,
-    agent: str,
-    throttled_for_s: int,
-    limit_type: str,
-) -> None:
-    """Emit 0.1.20 rate_limit_recovered event (kept as alias; dual-emitted through 0.1.23)."""
-    from agent_runner.events import RATE_LIMIT_RECOVERED, emit
-
-    emit(
-        log_dir,
-        RATE_LIMIT_RECOVERED,
-        agent=agent,
-        throttled_for_s=throttled_for_s,
-        limit_type=limit_type,
-    )
-
-
-def emit_rate_limit_backoff_capped(
-    log_dir: Path,
-    *,
-    agent: str,
-    requested_sleep_s: int,
-    applied_sleep_s: int,
-) -> None:
-    """Emit 0.1.20 rate_limit_backoff_capped event (kept as alias; dual-emitted through 0.1.23)."""
-    from agent_runner.events import RATE_LIMIT_BACKOFF_CAPPED, emit
-
-    emit(
-        log_dir,
-        RATE_LIMIT_BACKOFF_CAPPED,
-        agent=agent,
-        requested_sleep_s=requested_sleep_s,
-        applied_sleep_s=applied_sleep_s,
-    )
 
 
 def emit_max_rounds_reached(log_dir: Path, *, rounds_completed: int, max_rounds: int) -> None:
