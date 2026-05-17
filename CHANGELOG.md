@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-05-17
+
+- Generalized claude error handling: new `transient_error_*` event family
+  + `[runtime] transient_error_action` config replaces the 0.1.20
+  rate-limit-only machinery. Detects 4 classifications: `rate_limit_account`,
+  `rate_limit_model` (429), `api_transient_5xx` (500/502/503/504),
+  `api_timeout` (408). All auto-back-off via the same code path.
+- 0.1.20 `rate_limit_*` events + `rate_limit_action` config kept as
+  aliases (deprecated; removed 0.1.24). DeprecationWarning on use.
+- Plugin `claude_rate_limit_detector` renamed to `claude_error_detector`
+  (entry-point alias preserved).
+
+See `docs/migrations/0.1.23.md`.
+
 ## [0.1.22] - 2026-05-16
 
 - `[runtime] substrate_fingerprint_paths` + `round_substrate_before` /
@@ -629,6 +643,7 @@ Initial public release on PyPI as `cli-agent-runner`.
   gated by a manual approval on the `pypi` GitHub environment.
 
 [Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...HEAD
+[0.1.23]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.19...v0.1.20

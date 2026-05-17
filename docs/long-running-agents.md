@@ -189,11 +189,21 @@ across role rotations.
 
 The 5h rolling rate limit is per OAuth account (see `docs/runbook.md`).
 Long lineages that share an account with production scheduling will
-trigger throttling. agent-runner 0.1.20+ auto-detects and backs off, but
+trigger throttling. agent-runner auto-detects and backs off (0.1.20+
+for 5h quota; 0.1.23+ also covers 5xx server outages, 429 model overloads,
+and 408 timeouts via the unified `transient_error_*` event family), but
 the underlying problem is unbounded lineage on a shared resource.
+
+**Transient-error events (0.1.23+)**: what was the `rate_limit_rejected`
+event family is now `transient_error_detected` with a `classification`
+field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
+`api_timeout`). The same back-off mechanism covers all 4 classifications.
+Old event names kept as aliases for `rate_limit_account` through 0.1.23;
+subscribers should migrate to `transient_error_detected` for full coverage.
 
 ## Related primitives
 
-- `docs/runbook.md` § Rate limits — 5h OAuth account quota handling
+- `docs/runbook.md` § Rate limits — 5h OAuth account quota + transient error handling
 - `docs/runbook.md` § Bounded runs — max_rounds + stop_file workflow
-- `docs/migrations/0.1.22.md` — what changed in this release
+- `docs/migrations/0.1.22.md` — substrate fingerprint + fresh-eyes (0.1.22)
+- `docs/migrations/0.1.23.md` — unified transient-error classifier (0.1.23)

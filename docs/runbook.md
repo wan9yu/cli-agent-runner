@@ -548,6 +548,12 @@ The `rate_limit_active` detector fires a `warning`-severity alert while
 throttled. It clears automatically when `rate_limit_recovered` is emitted.
 No configuration needed; auto-stop is NOT triggered.
 
+**0.1.23+**: this back-off behavior also kicks in for transient API errors
+beyond the 5h quota — 5xx server outages (500/502/503/504), 429 model
+overloads, and 408 timeouts. The config knob is renamed to
+`transient_error_action` (same values; `rate_limit_action` kept as a
+deprecated alias through 0.1.23). See `docs/migrations/0.1.23.md`.
+
 ## 中文摘要
 
 故障手册按场景：OAuth/auth 401（自动停服 → 刷新对应 provider 凭据，例如
