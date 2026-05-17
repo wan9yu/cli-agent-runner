@@ -56,6 +56,13 @@ class HookContext:
     round_num: int
     phase: str | None
     agent_name: str | None
+    agent_log_path: Path | None = None
+    """Path to the agent's stdout JSONL log for this round (e.g.
+    ``log_dir/rounds/R<N>-<timestamp>.log``). Plugins parse this to
+    extract usage / classify errors. Default ``None`` for backward
+    compatibility with manually-constructed HookContext instances
+    (rare; the supervisor always populates this from 0.1.25+).
+    """
 
 
 @runtime_checkable

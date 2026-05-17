@@ -411,6 +411,11 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     previous_block = _previous_block(prev_status, dirty_last=bool(orphan))
 
     base_ctx = _round_context_for_prompt(round_num, started_at, phase, orphan_block)
+
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir(exist_ok=True)
+    log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
+
     hook_ctx = hooks.HookContext(
         work_dir=cfg.runtime.work_dir,
         log_dir=log_dir,
@@ -418,6 +423,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         round_num=round_num,
         phase=phase,
         agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
+        agent_log_path=log_path,  # NEW 0.1.25
     )
     _run_pre_round_hooks(
         hook_ctx,
@@ -438,10 +444,6 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     events.emit(log_dir, "round_start", round_num=round_num, phase=phase)
     metrics.log_metrics(log_dir, event="round_start", round_num=round_num, phase=phase)
-
-    rounds_dir = log_dir / "rounds"
-    rounds_dir.mkdir(exist_ok=True)
-    log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
 
     prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 
