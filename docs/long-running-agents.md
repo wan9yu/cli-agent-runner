@@ -34,7 +34,7 @@ Original task spec loses anchor weight as context is increasingly dominated
 by accumulated agent output. The agent reasons about its own past memos
 rather than the original problem.
 
-## Four primitives agent-runner provides
+## Five primitives agent-runner provides
 
 agent-runner does NOT detect or prevent these hazards directly (see
 boundary section below). Instead, it provides infrastructure that
@@ -128,6 +128,22 @@ Re-run `wc -l`, `git log`, etc. before making any numeric claims.
 {% endif %}
 ```
 
+### 5. `agent_usage_recorded` (0.1.24+) — per-round token + cost data
+
+Each round (claude or gemini) emits an `agent_usage_recorded` event with
+token breakdown + cost (where the underlying CLI exposes it).
+
+```toml
+# No config needed — events emit automatically when a built-in plugin
+# (claude_error_detector / gemini_error_detector) is registered.
+# To suppress: [plugins] disable = ["claude_error_detector", "gemini_error_detector"]
+```
+
+Use as input to a cost-tracking detector or external billing reconciler.
+See `docs/migrations/0.1.24.md` for the payload schema and a consumer
+sketch. 0.1.25+ will ship aggregation helpers (`peek --json .usage`,
+budget warnings, etc.) so most operators won't need to roll their own.
+
 ## What agent-runner does NOT do (intentional boundary)
 
 agent-runner is a **process supervisor**. It runs subprocesses, captures
@@ -207,3 +223,4 @@ subscribers should migrate to `transient_error_detected` for full coverage.
 - `docs/runbook.md` § Bounded runs — max_rounds + stop_file workflow
 - `docs/migrations/0.1.22.md` — substrate fingerprint + fresh-eyes (0.1.22)
 - `docs/migrations/0.1.23.md` — unified transient-error classifier (0.1.23)
+- `docs/migrations/0.1.24.md` — usage events + gemini plugin (0.1.24)

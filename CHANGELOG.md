@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-05-17
+
+- New `agent_usage_recorded` event: per-round token + cost data, emitted
+  by claude + gemini plugins. Raw data for downstream aggregation;
+  framework neutral on aggregation policy.
+- New `gemini` built-in plugin (`agent_runner/builtin_plugins/gemini.py`)
+  emits both usage + `transient_error_detected` events. Validates 0.1.23
+  multi-CLI architecture.
+- Hotfix: `gemini` preset now includes `--skip-trust` flag. Required for
+  unattended operation (gemini CLI refuses headless runs in untrusted
+  dirs). Existing scaffolds need manual edit.
+
+See `docs/migrations/0.1.24.md`.
+
 ## [0.1.23] - 2026-05-17
 
 - Generalized claude error handling: new `transient_error_*` event family
@@ -642,7 +656,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.20...v0.1.21
