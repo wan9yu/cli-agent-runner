@@ -3,30 +3,11 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from tests._test_helpers import make_hook_context, write_round_log
+
 _MOD = "agent_runner.builtin_plugins.gemini"
-
-
-def _make_hook_context(tmp_path: Path, *, agent_name: str = "gemini", round_num: int = 1):
-    from agent_runner.hooks import HookContext
-
-    return HookContext(
-        work_dir=tmp_path,
-        log_dir=tmp_path,
-        project="testproj",
-        round_num=round_num,
-        phase=None,
-        agent_name=agent_name,
-    )
-
-
-def _write_round_log(log_dir: Path, round_num: int, events: list[dict]) -> Path:
-    log_path = log_dir / f"round-{round_num}.log"
-    log_path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
-    return log_path
 
 
 def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_with_primary_model(
@@ -34,7 +15,7 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
 ):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [
@@ -64,7 +45,9 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-            GeminiErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+            GeminiErrorDetector().after_round(
+                make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+            )
     usage_emit.assert_called_once()
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["agent"] == "gemini"
@@ -83,7 +66,7 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
 ):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [
@@ -115,7 +98,9 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
         ],
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-        GeminiErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+        GeminiErrorDetector().after_round(
+            make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+        )
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["model"] == "gemini-3-flash-preview"  # primary by total_tokens
     assert kwargs["models_breakdown"] is not None
@@ -127,7 +112,7 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
 def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [{"type": "result", "status": "success", "stats": {"total_tokens": 100}}],
@@ -135,7 +120,7 @@ def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             GeminiErrorDetector().after_round(
-                _make_hook_context(tmp_path, agent_name="claude"), result=MagicMock()
+                make_hook_context(tmp_path, agent_name="claude"), result=MagicMock()
             )
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
@@ -144,7 +129,7 @@ def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
 def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [
@@ -166,7 +151,9 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch(f"{_MOD}.time.time", return_value=1000):
-                GeminiErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+                GeminiErrorDetector().after_round(
+                    make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                )
     err_emit.assert_called_once()
     kwargs = err_emit.call_args.kwargs
     assert kwargs["classification"] == "api_transient_5xx"
@@ -177,7 +164,7 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
 def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_limit(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [
@@ -199,7 +186,9 @@ def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_l
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch(f"{_MOD}.time.time", return_value=1000):
-                GeminiErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+                GeminiErrorDetector().after_round(
+                    make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                )
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "rate_limit_model"
 
@@ -208,7 +197,7 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
     """403/404/etc. not transient — no transient_error_detected emit; usage still emitted."""
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
-    _write_round_log(
+    write_round_log(
         tmp_path,
         1,
         [
@@ -229,6 +218,8 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-            GeminiErrorDetector().after_round(_make_hook_context(tmp_path), result=MagicMock())
+            GeminiErrorDetector().after_round(
+                make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+            )
     err_emit.assert_not_called()
     usage_emit.assert_called_once()

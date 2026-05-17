@@ -17,23 +17,13 @@ from agent_runner.api import (
     emit_agent_usage_recorded,
     emit_transient_error_detected,
 )
+from agent_runner.builtin_plugins._constants import (
+    _5XX_STATUSES,
+    _BACK_OFF_DEFAULTS,
+    _RAW_CAP,
+    _TAIL_LINES,
+)
 from agent_runner.hooks import HookContext, register_post_round_hook
-
-_TAIL_LINES = 50
-_RAW_CAP = 200
-
-# Default back-off durations for gemini transient classifications.
-# Matches claude defaults (same 0.1.23 semantics).
-_BACK_OFF_DEFAULTS: dict[str, int] = {
-    "rate_limit_model": 60,
-    "api_transient_5xx": 60,
-    "api_timeout": 30,
-}
-
-# gemini 5xx codes treated as transient (retry-worthy server errors per RFC 9110):
-# 500 = unexpected error, 502 = bad gateway, 503 = unavailable, 504 = gateway timeout.
-# Excluded: 501 (not implemented = permanent), 505 (HTTP version mismatch = permanent).
-_5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504})
 
 
 class GeminiErrorDetector:
@@ -50,8 +40,7 @@ class GeminiErrorDetector:
         parsed = _parse_gemini_log(log_path)
         if parsed.get("transient_error"):
             te = parsed["transient_error"]
-            te["round_num"] = ctx.round_num
-            emit_transient_error_detected(ctx.log_dir, **te)
+            emit_transient_error_detected(ctx.log_dir, round_num=ctx.round_num, **te)
         if parsed.get("usage"):
             emit_agent_usage_recorded(ctx.log_dir, round_num=ctx.round_num, **parsed["usage"])
 

@@ -109,6 +109,33 @@ def read_events_for_current_month(log_dir: Path) -> list[dict]:
     return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
 
 
+def make_hook_context(tmp_path: Path, *, agent_name: str = "claude", round_num: int = 1):
+    """Build a minimal HookContext for plugin testing.
+
+    Default agent_name="claude" matches the most common test case. Override
+    for gemini / other CLI plugin tests.
+    """
+    from agent_runner.hooks import HookContext
+
+    return HookContext(
+        work_dir=tmp_path,
+        log_dir=tmp_path,
+        project="testproj",
+        round_num=round_num,
+        phase=None,
+        agent_name=agent_name,
+    )
+
+
+def write_round_log(log_dir: Path, round_num: int, events: list[dict]) -> Path:
+    """Write a fake round-N.log file with the given JSONL events."""
+    import json
+
+    log_path = log_dir / f"round-{round_num}.log"
+    log_path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    return log_path
+
+
 def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
     """Return an autouse fixture that snapshots, clears, and restores registries.
 
