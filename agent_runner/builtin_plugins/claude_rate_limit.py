@@ -43,8 +43,8 @@ class ClaudeErrorDetector:
     def after_round(self, ctx: HookContext, result: Any) -> None:
         if ctx.agent_name != "claude":
             return
-        log_path = ctx.log_dir / f"round-{ctx.round_num}.log"
-        if not log_path.exists():
+        log_path = ctx.agent_log_path
+        if log_path is None or not log_path.exists():
             return
         parsed = _parse_claude_log(log_path)
 

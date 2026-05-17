@@ -112,11 +112,15 @@ def read_events_for_current_month(log_dir: Path) -> list[dict]:
 def make_hook_context(tmp_path: Path, *, agent_name: str = "claude", round_num: int = 1):
     """Build a minimal HookContext for plugin testing.
 
-    Default agent_name="claude" matches the most common test case. Override
-    for gemini / other CLI plugin tests.
+    agent_log_path is populated to match where runner.py writes the
+    agent JSONL at runtime: ``log_dir/rounds/R{round_num}-test.log``.
+    Pairs with ``write_round_log`` — that helper writes to the same path.
     """
     from agent_runner.hooks import HookContext
 
+    rounds_dir = tmp_path / "rounds"
+    rounds_dir.mkdir(exist_ok=True)
+    agent_log_path = rounds_dir / f"R{round_num}-test.log"
     return HookContext(
         work_dir=tmp_path,
         log_dir=tmp_path,
@@ -124,14 +128,17 @@ def make_hook_context(tmp_path: Path, *, agent_name: str = "claude", round_num: 
         round_num=round_num,
         phase=None,
         agent_name=agent_name,
+        agent_log_path=agent_log_path,
     )
 
 
 def write_round_log(log_dir: Path, round_num: int, events: list[dict]) -> Path:
-    """Write a fake round-N.log file with the given JSONL events."""
+    """Write fake JSONL to the path where plugins read agent stdout (post-0.1.25)."""
     import json
 
-    log_path = log_dir / f"round-{round_num}.log"
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir(exist_ok=True)
+    log_path = rounds_dir / f"R{round_num}-test.log"
     log_path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
     return log_path
 

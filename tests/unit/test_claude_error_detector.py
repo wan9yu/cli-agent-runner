@@ -183,7 +183,9 @@ def test_given_malformed_jsonl_when_classified_then_skips_invalid_and_continues(
     """Malformed JSONL line (not parseable) is silently skipped; valid lines still classified."""
     from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
 
-    log_path = tmp_path / "round-1.log"
+    rounds_dir = tmp_path / "rounds"
+    rounds_dir.mkdir(exist_ok=True)
+    log_path = rounds_dir / "R1-test.log"
     log_path.write_text(
         "this is not json\n"
         + json.dumps(
