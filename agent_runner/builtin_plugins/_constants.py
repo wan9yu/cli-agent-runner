@@ -24,3 +24,17 @@ _BACK_OFF_DEFAULTS: dict[str, int] = {
 # 500=unexpected, 502=bad gateway, 503=unavailable, 504=gateway timeout.
 # Excluded: 501 (not implemented = permanent), 505 (HTTP version mismatch).
 _5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504})
+
+_CLASSIFICATIONS: frozenset[str] = frozenset(
+    {
+        "rate_limit_account",
+        "rate_limit_model",
+        "api_transient_5xx",
+        "api_timeout",
+    }
+)
+"""Canonical set of transient-error classifications.
+
+rate_limit_account uses server-provided resetsAt (excluded from
+_BACK_OFF_DEFAULTS table); others use defaults from that table.
+"""
