@@ -117,6 +117,9 @@ def make_hook_context(
     round_num: int = 1,
     phase: str | None = None,
     agent_log_path: Path | None = None,
+    dry_run: bool = False,
+    anomaly_repetitive_window: int = 0,
+    anomaly_repetitive_threshold: int = 0,
 ):
     """Build a minimal HookContext for plugin testing.
 
@@ -143,6 +146,9 @@ def make_hook_context(
         agent_name=agent_name,
         agent_binary=agent_binary if agent_binary is not None else agent_name,
         agent_log_path=agent_log_path,
+        dry_run=dry_run,
+        anomaly_repetitive_window=anomaly_repetitive_window,
+        anomaly_repetitive_threshold=anomaly_repetitive_threshold,
     )
 
 

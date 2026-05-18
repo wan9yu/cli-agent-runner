@@ -1410,3 +1410,50 @@ def test_transient_error_action_still_accepted(tmp_path):
     (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
     cfg = load_config(toml)
     assert cfg.runtime.transient_error_action == "stop"
+
+
+def test_runtime_dry_run_loads_from_toml(tmp_path):
+    """[runtime] dry_run = true populates cfg.runtime.dry_run."""
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("x" * 800, encoding="utf-8")
+    toml.write_text(
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'name = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "dry_run = true\n\n"
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.dry_run is True
+
+
+def test_runtime_dry_run_default_false(tmp_path):
+    """[runtime] dry_run omitted -> cfg.runtime.dry_run defaults to False."""
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("x" * 800, encoding="utf-8")
+    toml.write_text(
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'name = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.dry_run is False

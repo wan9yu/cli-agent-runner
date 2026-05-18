@@ -38,6 +38,8 @@ class RuntimeConfig:
     stop_file: Path | None = None  # None = disabled
     substrate_fingerprint_paths: list[str] = field(default_factory=list)
     fresh_eyes_every_n: int | None = None  # None = disabled
+    dry_run: bool = False
+    max_grace_after_result_s: int = 0  # 0 = disabled
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,8 @@ class MonitorConfig:
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
     auto_stop_on: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTO_STOP_ON))
     remote_failure_tolerance_s: int = _DEFAULT_REMOTE_FAILURE_TOLERANCE_S
+    anomaly_repetitive_window: int = 0  # 0 = disabled
+    anomaly_repetitive_threshold: int = 0  # 0 = disabled
 
 
 @dataclass(frozen=True)
@@ -359,6 +363,14 @@ def load_config(toml_path: Path) -> Config:
         else None,
         substrate_fingerprint_paths=_parse_substrate_fingerprint_paths(runtime_d),
         fresh_eyes_every_n=_parse_fresh_eyes_every_n(runtime_d),
+        dry_run=_require_bool(
+            runtime_d.get("dry_run", False),
+            field="runtime.dry_run",
+        ),
+        max_grace_after_result_s=_require_non_negative_int(
+            runtime_d.get("max_grace_after_result_s", 0),
+            field="runtime.max_grace_after_result_s",
+        ),
     )
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")
@@ -417,6 +429,14 @@ def load_config(toml_path: Path) -> Config:
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
         remote_failure_tolerance_s=_validate_remote_failure_tolerance(
             monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),
+        ),
+        anomaly_repetitive_window=_require_non_negative_int(
+            monitor_d.get("anomaly_repetitive_window", 0),
+            field="monitor.anomaly_repetitive_window",
+        ),
+        anomaly_repetitive_threshold=_require_non_negative_int(
+            monitor_d.get("anomaly_repetitive_threshold", 0),
+            field="monitor.anomaly_repetitive_threshold",
         ),
     )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop

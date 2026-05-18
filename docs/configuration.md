@@ -31,6 +31,8 @@ writes a templated copy you can edit.
 | `stop_file` | `Path | None` | None |
 | `substrate_fingerprint_paths` | `list[str]` | [] |
 | `fresh_eyes_every_n` | `int | None` | None |
+| `dry_run` | `bool` | False |
+| `max_grace_after_result_s` | `int` | 0 |
 
 ### `[prompt]`
 
@@ -60,6 +62,8 @@ writes a templated copy you can edit.
 | `auth_fail_hint` | `str` | '' |
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
 | `remote_failure_tolerance_s` | `int` | 90 |
+| `anomaly_repetitive_window` | `int` | 0 |
+| `anomaly_repetitive_threshold` | `int` | 0 |
 <!-- /gen:config-schema -->
 
 ### `vcs.dirty_action`

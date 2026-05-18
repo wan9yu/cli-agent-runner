@@ -126,3 +126,54 @@ def test_given_short_traceback_when_summarized_then_kept_intact() -> None:
     out = hooks._summarize_error(ValueError("x"), tb=short_tb)
     assert out["traceback"] == "short trace"
     assert "[truncated]" not in out["traceback"]
+
+
+def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
+    """RuntimeConfig.dry_run=True flows into HookContext.dry_run for plugins."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+    from agent_runner.runner import _run_one_round_inner
+
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Test prompt body. " * 50)
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    script = tmp_path / "agent.sh"
+    script.write_text("#!/bin/bash\nexit 0\n")
+    script.chmod(0o755)
+
+    cfg = Config(
+        agent=AgentConfig(command=[str(script)], prompt_arg_template=[]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=log_dir,
+            round_timeout_s=10,
+            dry_run=True,
+        ),
+        prompt=PromptConfig(file=prompt, inject_context=False),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(),
+    )
+
+    captured: list[hooks.HookContext] = []
+
+    class CapturingHook:
+        name = "ctx_capture"
+
+        def after_round(self, ctx: hooks.HookContext, result) -> None:
+            captured.append(ctx)
+
+    hooks.register_post_round_hook(CapturingHook())
+    try:
+        _run_one_round_inner(cfg)
+    finally:
+        hooks._POST_ROUND_HOOKS.clear()
+
+    assert captured, "post_round_hook was never called"
+    assert captured[0].dry_run is True

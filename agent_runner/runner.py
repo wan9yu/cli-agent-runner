@@ -404,6 +404,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
         agent_binary=Path(cfg.agent.command[0]).name if cfg.agent.command else None,
         agent_log_path=log_path,
+        dry_run=cfg.runtime.dry_run,
+        anomaly_repetitive_window=cfg.monitor.anomaly_repetitive_window,
+        anomaly_repetitive_threshold=cfg.monitor.anomaly_repetitive_threshold,
     )
     _run_pre_round_hooks(
         hook_ctx,

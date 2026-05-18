@@ -71,6 +71,20 @@ class HookContext:
     compatibility with manually-constructed HookContext instances
     (rare; the supervisor always populates this from 0.1.25+).
     """
+    dry_run: bool = False
+    """When True, plugins should skip side-effect actions (e.g. git ops,
+    network calls, external state mutations). Built-in plugins ignore this
+    flag (no side effects). Plugin authors read ``ctx.dry_run`` before any
+    irreversible action. Populated from ``[runtime] dry_run`` (0.1.31+).
+    """
+    anomaly_repetitive_window: int = 0
+    """Sliding-window size for repetitive-tool detection (0 = disabled).
+    Populated from ``[monitor] anomaly_repetitive_window`` (0.1.31+).
+    """
+    anomaly_repetitive_threshold: int = 0
+    """Count threshold for repetitive-tool anomaly (0 = disabled).
+    Populated from ``[monitor] anomaly_repetitive_threshold`` (0.1.31+).
+    """
 
 
 @runtime_checkable
