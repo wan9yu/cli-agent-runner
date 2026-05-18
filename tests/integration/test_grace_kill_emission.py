@@ -1,0 +1,79 @@
+"""Integration: round_grace_kill event reaches events.jsonl."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from agent_runner.config import (
+    AgentConfig,
+    Config,
+    PhasesConfig,
+    PromptConfig,
+    RuntimeConfig,
+    VcsConfig,
+)
+from agent_runner.runner import run_one_round
+from tests._test_helpers import read_events_for_current_month
+
+
+def _init_git(work_dir: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=work_dir, check=True)
+    gitignore = work_dir / ".gitignore"
+    gitignore.write_text("logs/\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=work_dir, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        cwd=work_dir,
+        check=True,
+    )
+
+
+def _make_grace_config(work_dir: Path, script_path: Path, grace_s: int) -> Config:
+    log_dir = work_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt = work_dir / "p.md"
+    prompt.write_text("Test prompt. " * 50)
+    return Config(
+        agent=AgentConfig(command=[str(script_path)], prompt_arg_template=[]),
+        runtime=RuntimeConfig(
+            work_dir=work_dir,
+            log_dir=log_dir,
+            round_timeout_s=10,
+            max_grace_after_result_s=grace_s,
+        ),
+        prompt=PromptConfig(file=prompt, inject_context=False),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(),
+    )
+
+
+def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
+    """Full runner flow: subprocess emits result then hangs; round_grace_kill event fires."""
+    _init_git(tmp_path)
+
+    script = tmp_path / "agent.sh"
+    script.write_text(
+        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nsleep 10\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+    cfg = _make_grace_config(tmp_path, script, grace_s=1)
+    result = run_one_round(cfg)
+
+    assert result.killed_for_grace is True
+    assert result.timed_out is True
+
+    events = read_events_for_current_month(cfg.runtime.log_dir)
+    grace_events = [e for e in events if e.get("event") == "round_grace_kill"]
+    assert len(grace_events) == 1
+    assert grace_events[0]["round_num"] == 1
+    assert grace_events[0]["grace_s"] == 1
+
+    # round_timeout_kill must NOT appear (grace kill is distinct)
+    timeout_events = [e for e in events if e.get("event") == "round_timeout_kill"]
+    assert len(timeout_events) == 0

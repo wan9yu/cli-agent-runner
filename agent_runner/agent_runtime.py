@@ -27,6 +27,7 @@ class RunResult:
     duration_s: float
     timed_out: bool
     pid: int
+    killed_for_grace: bool = False
 
 
 def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str) -> list[str]:
@@ -53,6 +54,9 @@ def _kill_pgroup(proc: subprocess.Popen) -> None:
         pass
 
 
+_RESULT_MARKER = b'"type":"result"'
+
+
 def run(
     *,
     command: list[str],
@@ -61,10 +65,15 @@ def run(
     timeout_s: int,
     log_path: Path,
     env_extra: dict[str, str],
+    max_grace_after_result_s: int = 0,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
     Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → REAP_GRACE_S → SIGKILL.
+
+    max_grace_after_result_s: when > 0, start a countdown after the first
+    type=result event is detected in the log; kill if subprocess is still
+    running after this many seconds (HUNG defense). 0 = disabled.
     """
     argv = _build_argv(command, prompt_arg_template, prompt)
     env = {**os.environ, **env_extra}
@@ -79,6 +88,7 @@ def run(
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    result_seen_at: float | None = None
     try:
         while True:
             ret = proc.poll()
@@ -93,6 +103,27 @@ def run(
                 return RunResult(
                     exit_code=exit_code, duration_s=duration, timed_out=True, pid=proc.pid
                 )
+            # Grace kill: result emitted but subprocess still running
+            if max_grace_after_result_s > 0:
+                if result_seen_at is None:
+                    # Cheap check: byte-scan log for marker substring
+                    try:
+                        with log_path.open("rb") as f:
+                            if _RESULT_MARKER in f.read():
+                                result_seen_at = now
+                    except OSError:
+                        pass  # log not flushed yet; check next tick
+                if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:
+                    _kill_pgroup(proc)
+                    duration = time.time() - start
+                    exit_code = proc.returncode if proc.returncode is not None else -1
+                    return RunResult(
+                        exit_code=exit_code,
+                        duration_s=duration,
+                        timed_out=True,
+                        pid=proc.pid,
+                        killed_for_grace=True,
+                    )
             time.sleep(0.2)
     finally:
         log_file.close()

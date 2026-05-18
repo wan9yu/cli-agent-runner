@@ -157,6 +157,7 @@ class RoundResult:
     log_path: Path
     dirty_files: list[str]
     stashed: bool
+    killed_for_grace: bool = False
 
 
 @dataclass(frozen=True)

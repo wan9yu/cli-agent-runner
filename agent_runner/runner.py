@@ -443,6 +443,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         timeout_s=timeout_s,
         log_path=log_path,
         env_extra={**framework_env, **dict(cfg.agent.env)},
+        max_grace_after_result_s=cfg.runtime.max_grace_after_result_s,
     )
     events.emit(
         log_dir,
@@ -511,7 +512,13 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     elif not dirty:
         context_store.clear_orphan_state(log_dir)
 
-    if result.timed_out:
+    if result.killed_for_grace:
+        api.emit_round_grace_kill(
+            log_dir,
+            round_num=round_num,
+            grace_s=cfg.runtime.max_grace_after_result_s,
+        )
+    elif result.timed_out:
         events.emit(
             log_dir,
             "round_timeout_kill",
@@ -546,6 +553,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         log_path=log_path,
         dirty_files=dirty,
         stashed=stashed,
+        killed_for_grace=result.killed_for_grace,
     )
     _run_post_round_hooks(hook_ctx, round_result, log_dir)
     return round_result
