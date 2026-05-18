@@ -212,10 +212,14 @@ def _latest(metrics: list[dict[str, Any]], key: str) -> Any:
 
 
 def detect_disk_warning(
-    metrics: list[dict[str, Any]], *, threshold_pct: float = 90.0
+    metrics: list[dict[str, Any]],
+    *,
+    threshold_pct: float = 90.0,
+    critical_pct: float = 95.0,
 ) -> Alert | None:
     val = _latest(metrics, "disk_used_pct")
-    if val is None or val < threshold_pct or val >= 95.0:  # >=95 handled by detect_disk_critical
+    if val is None or val < threshold_pct or val >= critical_pct:
+        # >=critical_pct handled by detect_disk_critical
         return None
     return _alert(
         "disk_warning",
@@ -534,6 +538,9 @@ def run_all_detectors(
     auth_fail_patterns: list[str] | None = None,
     auth_fail_hint: str | None = None,
     phases_overrides: dict[str, PhaseOverride] | None = None,
+    mem_avail_min_mb: int = 200,
+    disk_warning_pct: float = 90.0,
+    disk_critical_pct: float = 95.0,
 ) -> list[Alert]:
     """Run all 11 detectors; returns alerts (empty = healthy)."""
     if now is None:
@@ -550,9 +557,11 @@ def run_all_detectors(
             phases_overrides=phases_overrides,
         ),
         detect_orphan_chain(events),
-        detect_disk_warning(metrics),
-        detect_disk_critical(metrics),
-        detect_mem_pressure(metrics),
+        detect_disk_warning(
+            metrics, threshold_pct=disk_warning_pct, critical_pct=disk_critical_pct
+        ),
+        detect_disk_critical(metrics, threshold_pct=disk_critical_pct),
+        detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb),
         detect_smoke_fail_rate(events),
         detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
         detect_network_fail(events, log_tails),

@@ -1506,3 +1506,51 @@ def test_given_custom_mem_threshold_in_config_when_detect_mem_pressure_then_uses
     alert = detect_mem_pressure(metrics, threshold_mb=monitor_cfg.host_health.mem_avail_min_mb)
     assert alert is not None
     assert alert.detector == "mem_pressure"
+
+
+def test_given_host_health_overrides_when_run_all_detectors_then_thresholds_applied(
+    tmp_path: Path,
+) -> None:
+    """Regression: run_all_detectors must plumb host_health thresholds to detectors.
+
+    Pre-fix, the config was defined but never passed into run_all_detectors, so the
+    TOML override silently no-op'd in production. This test exercises the wired path.
+    """
+    from agent_runner.monitor import run_all_detectors
+
+    # mem_available_mb=300: below custom mem_avail_min_mb=500 but above default 200
+    metrics = [{"mem_available_mb": 300, "disk_used_pct": 92.0}]
+
+    alerts = run_all_detectors(
+        events=[],
+        metrics=metrics,
+        log_tails={},
+        mem_avail_min_mb=500,
+        disk_warning_pct=85.0,
+        disk_critical_pct=95.0,
+    )
+    kinds = {a.detector for a in alerts}
+    assert "mem_pressure" in kinds  # 300 < 500
+    assert "disk_warning" in kinds  # 92 in [85, 95)
+
+    # With defaults, neither would fire at these values
+    alerts_default = run_all_detectors(events=[], metrics=metrics, log_tails={})
+    kinds_default = {a.detector for a in alerts_default}
+    assert "mem_pressure" not in kinds_default  # 300 > default 200
+    assert "disk_warning" in kinds_default  # 92 still > default 90
+
+
+def test_given_high_disk_critical_when_disk_used_below_then_warning_still_fires(
+    tmp_path: Path,
+) -> None:
+    """detect_disk_warning's upper bound must scale with disk_critical_pct.
+
+    Pre-fix: hardcoded `val >= 95.0` masked warnings at 96–98% when critical was 98%.
+    """
+    from agent_runner.monitor import detect_disk_warning
+
+    metrics = [{"disk_used_pct": 96.0}]
+    # critical_pct=98 → 96 should fire as warning
+    alert = detect_disk_warning(metrics, threshold_pct=90.0, critical_pct=98.0)
+    assert alert is not None
+    assert alert.detector == "disk_warning"

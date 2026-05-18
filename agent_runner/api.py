@@ -455,6 +455,9 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,
         phases_overrides=cfg.phases.overrides if cfg.phases.overrides else None,
+        mem_avail_min_mb=cfg.monitor.host_health.mem_avail_min_mb,
+        disk_warning_pct=cfg.monitor.host_health.disk_warning_pct,
+        disk_critical_pct=cfg.monitor.host_health.disk_critical_pct,
     )
     if not monitor._PLUGIN_DETECTORS:
         return builtin  # skip ProjectState assembly when no plugins to feed
