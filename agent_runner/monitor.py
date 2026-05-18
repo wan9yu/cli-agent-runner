@@ -1,6 +1,6 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
-10 built-in detectors. Two trigger ``auto_action="stop_service"``:
+11 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
@@ -53,6 +53,7 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "oauth_fail",
         "network_fail",
         "rate_limit_active",
+        "anomaly_repetitive_active",
     }
 )
 
@@ -379,6 +380,52 @@ def detect_rate_limit_active(
     return None
 
 
+def detect_anomaly_repetitive_active(
+    events: list[dict[str, Any]],
+    *,
+    threshold: int = 1,
+    window_rounds: int = 5,
+) -> Alert | None:
+    """Notify-severity alert when anomaly_repetitive_tool events appear in recent rounds.
+
+    Activates 0.1.31's anomaly_repetitive_tool event in monitor's alert flow,
+    mirroring the rate_limit_active pattern (event consumer → alert).
+
+    Default: any anomaly event in last 5 rounds triggers a warning. Operators can
+    widen window_rounds or raise threshold if the default is too sensitive.
+    """
+    round_nums = [e["round_num"] for e in events if "round_num" in e]
+    if not round_nums:
+        return None
+    max_round = max(round_nums)
+    window_start = max_round - window_rounds + 1
+    anomalies = [
+        e
+        for e in events
+        if e.get("event") == "anomaly_repetitive_tool"
+        and e.get("round_num", 0) >= window_start
+    ]
+    if len(anomalies) < threshold:
+        return None
+    latest = anomalies[-1]
+    count = len(anomalies)
+    return _alert(
+        "anomaly_repetitive_active",
+        "warning",
+        (
+            f"{count} anomaly_repetitive_tool event(s) in last {window_rounds} rounds; "
+            f"latest: {latest.get('tool_name')} on {latest.get('target')!r} "
+            f"({latest.get('count')}x in window {latest.get('window')})"
+        ),
+        {
+            "count": count,
+            "window_rounds": window_rounds,
+            "latest_tool": latest.get("tool_name"),
+            "latest_target": latest.get("target"),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # State-tree assembly (Task 3.2)
 # ---------------------------------------------------------------------------
@@ -489,7 +536,7 @@ def run_all_detectors(
     auth_fail_hint: str | None = None,
     phases_overrides: dict[str, PhaseOverride] | None = None,
 ) -> list[Alert]:
-    """Run all 10 detectors; returns alerts (empty = healthy)."""
+    """Run all 11 detectors; returns alerts (empty = healthy)."""
     if now is None:
         now = datetime.now(UTC)
     compiled_auth_pats = (
@@ -511,6 +558,7 @@ def run_all_detectors(
         detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
         detect_network_fail(events, log_tails),
         detect_rate_limit_active(events, now=now.timestamp()),
+        detect_anomaly_repetitive_active(events),
     ]
     return [a for a in candidates if a is not None]
 

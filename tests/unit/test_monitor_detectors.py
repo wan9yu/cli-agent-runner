@@ -24,7 +24,7 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_given_known_alert_kinds_when_inspected_then_contains_all_ten() -> None:
+def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> None:
     expected = {
         "timeout_rate",
         "hung",
@@ -36,6 +36,7 @@ def test_given_known_alert_kinds_when_inspected_then_contains_all_ten() -> None:
         "oauth_fail",
         "network_fail",
         "rate_limit_active",
+        "anomaly_repetitive_active",
     }
     assert expected == KNOWN_ALERT_KINDS
 

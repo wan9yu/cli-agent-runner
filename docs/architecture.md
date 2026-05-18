@@ -78,6 +78,7 @@ Three categories by `auto_action`:
 API quota / writing to a near-full disk).
 
 <!-- gen:detector-list -->
+- `anomaly_repetitive_active`
 - `disk_critical` — **auto-stop**
 - `disk_warning`
 - `hung`

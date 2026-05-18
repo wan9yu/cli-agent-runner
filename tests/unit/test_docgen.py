@@ -108,9 +108,9 @@ def test_given_render_alert_kinds_list_when_called_then_returns_bullet_list() ->
     from agent_runner._docgen import render_alert_kinds_list
 
     md = render_alert_kinds_list()
-    # Bullet list, alphabetised, 10 entries
+    # Bullet list, alphabetised, 11 entries
     bullets = [line for line in md.splitlines() if line.startswith("- ")]
-    assert len(bullets) == 10
+    assert len(bullets) == 11
     assert any("oauth_fail" in line for line in bullets)
     assert any("disk_critical" in line for line in bullets)
 
