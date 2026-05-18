@@ -97,7 +97,7 @@ agent-runner peek --events 50              # last 50 events
 
 ### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--json]`
 
-Anomaly-detection daemon. Runs the 10 detectors against the live state on every
+Anomaly-detection daemon. Runs the 11 detectors against the live state on every
 poll. Without `--host`, watches local logs at default 30s interval. With
 `--host`, watches a remote agent-runner over plain ssh at default 60s interval.
 

@@ -202,9 +202,12 @@ Unconfigured phases (and configs without `[phases]`) keep using the global
 ```toml
 [monitor]
 auto_stop_on = ["oauth_fail", "disk_critical"]
-disk_warning_pct = 90.0
-disk_critical_pct = 95.0
-oauth_fail_threshold = 2     # number of last-10 rounds matching auth pattern before auto-stop
+round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress heartbeat events
+
+[monitor.host_health]
+mem_avail_min_mb = 200        # mem_pressure fires when mem_available_mb < this
+disk_warning_pct = 90.0       # disk_warning fires when disk_used_pct >= this
+disk_critical_pct = 95.0      # disk_critical fires when disk_used_pct >= this
 ```
 
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables

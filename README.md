@@ -12,7 +12,7 @@ full disks, runaway memory.
 
 ```
 ┌──────────────────────────────────────────┐
-│ Layer 3: The Witness (monitor)           │  10 detectors + auto-stop
+│ Layer 3: The Witness (monitor)           │  11 detectors + auto-stop
 ├──────────────────────────────────────────┤
 │ Layer 2: The Loop (serve, ~120 LOC)      │  signal-trapping restart loop
 ├──────────────────────────────────────────┤
@@ -49,7 +49,7 @@ Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 |---|---|
 | `init` / `install` / `uninstall` | `peek` — state snapshot |
 | `start` / `stop` / `kill` / `cancel` | `watch` — peek in a refresh loop |
-| `restart` / `status` | `monitor` — 10 detectors, alerts, auto-stop |
+| `restart` / `status` | `monitor` — 11 detectors, alerts, auto-stop |
 | `round` / `serve` | |
 
 Verb reference: [`docs/commands.md`](docs/commands.md).
@@ -69,10 +69,11 @@ guards it. Highlights:
 
 Full list and rationale: [`docs/architecture.md`](docs/architecture.md).
 
-## Monitor: 10 detectors
+## Monitor: 11 detectors
 
 Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
-`mem_pressure`, `smoke_fail_rate`, `network_fail`, `rate_limit_active`.
+`mem_pressure`, `smoke_fail_rate`, `network_fail`, `rate_limit_active`,
+`anomaly_repetitive_active`.
 
 **Auto-stop the service** (continuing is harmful):
 - `oauth_fail` — burning API quota on auth-rejected rounds
