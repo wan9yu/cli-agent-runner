@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"text","text":"reading file"},{"type":"tool_use","id":"a","name":"Read","input":{"path":"/example.md"}}]}}
+{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","id":"b","name":"Bash","input":{"command":"ls"}}]}}
