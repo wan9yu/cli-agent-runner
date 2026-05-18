@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-05-18
+
+### Added
+- `[monitor] round_progress_interval_s` — heartbeat `round_progress` event during a live round (log_size_kb, last_write_age_s, wall_age_s). Default 0 = disabled.
+- `agent-runner peek --select events.<kind> [--window N]` — native selector for events.jsonl query (replaces `tail -F | grep | jq` patterns). Current-month only.
+- `[monitor.host_health]` config section — `mem_avail_min_mb` / `disk_warning_pct` / `disk_critical_pct` thresholds for `mem_pressure` / `disk_warning` / `disk_critical` detectors. Defaults preserve prior behavior.
+- New monitor detector `anomaly_repetitive_active` (notify) — alerts when `anomaly_repetitive_tool` events fire in recent rounds. Detector count 10 → 11.
+
+See `docs/migrations/0.1.32.md`.
+
 ## [0.1.31] - 2026-05-18
 
 ### Added
