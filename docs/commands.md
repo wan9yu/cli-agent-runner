@@ -87,6 +87,8 @@ agent-runner peek
 agent-runner peek --json
 agent-runner peek --select system.disk_used_pct
 agent-runner peek --select defenses
+agent-runner peek --select events.agent_usage_recorded --window 5    # 0.1.32+: native event-kind query
+agent-runner peek --select events.transient_error_detected --window 20
 agent-runner peek --round 42 --log         # drill into round 42, include log tail
 agent-runner peek --events 50              # last 50 events
 ```

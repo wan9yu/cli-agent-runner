@@ -216,10 +216,11 @@ the underlying problem is unbounded lineage on a shared resource.
 event family is now `transient_error_detected` with a `classification`
 field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
 `api_timeout`). The same back-off mechanism covers all 4 classifications.
-The legacy `rate_limit_rejected` event is still dual-emitted for the
-`rate_limit_account` case only (no removal date set); new subscribers
-should consume `transient_error_detected` for full coverage. See
-`docs/migrations/0.1.27.md` for the consumer dispatch recipe.
+The legacy `rate_limit_rejected` aliases were removed in 0.1.29 — subscribe
+to `transient_error_detected` (filter by `classification == "rate_limit_account"`
+if you only want 5h-quota events). See `docs/migrations/0.1.27.md` for the
+consumer dispatch recipe and `docs/migrations/0.1.29.md` for alias-removal
+migration recipes.
 
 ## Writing post_round_hook plugins
 

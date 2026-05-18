@@ -95,8 +95,17 @@ class HookContext:
     project: str
     round_num: int
     phase: str | None
-    agent_name: str | None
+    agent_name: str | None       # cosmetic name from [agent].name TOML
+    agent_binary: str | None     # 0.1.30+: basename of agent.command[0]
+    # plus dry_run, anomaly_repetitive_*, agent_log_path — see source for full set
 ```
+
+For capability detection (e.g. "is this round running claude?"), plugins
+should check `ctx.agent_binary == "claude"`, NOT `ctx.agent_name`. The
+former is the actual binary basename; the latter is user-cosmetic and
+may be overridden in `[agent] name = "..."` (this was a real bug fixed
+in 0.1.30 — strict `agent_name` check silently suppressed events when
+operators set custom names).
 
 `PostRoundHook` additionally receives a `RoundResult` (`from agent_runner.api_types import RoundResult`).
 Its field set is stable across 0.1.x (additions only).
@@ -289,7 +298,7 @@ and applies the configured `transient_error_action` (default `back_off`;
 No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.
 
-Non-claude agents: the detector returns early when `ctx.agent_name != "claude"`.
+Non-claude agents: the detector returns early when `ctx.agent_binary != "claude"`.
 Third-party plugin authors may use the same `register_post_round_hook` API
 to ship equivalent detectors for other agent CLIs — the bundled
 `gemini_error_detector` is a working reference.
@@ -297,7 +306,7 @@ to ship equivalent detectors for other agent CLIs — the bundled
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
-detectors that run alongside the 10 builtins on every monitor poll.
+detectors that run alongside the 11 builtins on every monitor poll.
 
 ### Group + Protocol
 

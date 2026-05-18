@@ -65,7 +65,7 @@ surfacing everywhere.
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
 
-## Monitor: 9 detectors
+## Monitor: 11 detectors
 
 Three categories by `auto_action`:
 
