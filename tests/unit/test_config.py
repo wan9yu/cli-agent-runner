@@ -1457,3 +1457,52 @@ def test_runtime_dry_run_default_false(tmp_path):
     )
     cfg = load_config(toml)
     assert cfg.runtime.dry_run is False
+
+
+def test_given_monitor_host_health_defaults_when_inspected_then_match_detector_defaults(
+    tmp_path: Path,
+) -> None:
+    """Regression: MonitorHostHealthConfig defaults must match detector hardcoded thresholds."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig()
+    assert cfg.mem_avail_min_mb == 200
+    assert cfg.disk_warning_pct == 90.0
+    assert cfg.disk_critical_pct == 95.0
+
+
+def test_given_monitor_host_health_toml_section_when_loaded_then_overrides_applied(
+    tmp_path: Path,
+) -> None:
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("x" * 800, encoding="utf-8")
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        '[agent]\ncommand = ["claude"]\nname = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
+        f'[prompt]\nfile = "{prompt_file}"\n\n'
+        "[monitor.host_health]\nmem_avail_min_mb = 1000\ndisk_warning_pct = 85.0\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.mem_avail_min_mb == 1000
+    assert cfg.monitor.host_health.disk_warning_pct == 85.0
+    assert cfg.monitor.host_health.disk_critical_pct == 95.0  # still default
+
+
+def test_given_custom_mem_threshold_in_config_when_detect_mem_pressure_then_uses_config(
+    tmp_path: Path,
+) -> None:
+    """Detector fires at config-defined threshold, not hardcoded default."""
+    from agent_runner.config import MonitorConfig, MonitorHostHealthConfig
+    from agent_runner.monitor import detect_mem_pressure
+
+    host_health = MonitorHostHealthConfig(mem_avail_min_mb=500)
+    monitor_cfg = MonitorConfig(host_health=host_health)
+
+    # Value=300 is below custom threshold (500) but above default (200)
+    metrics = [{"mem_available_mb": 300}]
+    alert = detect_mem_pressure(metrics, threshold_mb=monitor_cfg.host_health.mem_avail_min_mb)
+    assert alert is not None
+    assert alert.detector == "mem_pressure"

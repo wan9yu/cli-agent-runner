@@ -119,6 +119,19 @@ class PluginsConfig:
 
 
 @dataclass(frozen=True)
+class MonitorHostHealthConfig:
+    """Thresholds for the host-health detectors (mem_pressure, disk_warning, disk_critical).
+
+    Defaults match the current hardcoded detector values — existing deployments are
+    unaffected unless the operator explicitly sets a [monitor.host_health] section.
+    """
+
+    mem_avail_min_mb: int = 200  # mem_pressure fires when mem_available_mb < this
+    disk_warning_pct: float = 90.0  # disk_warning fires when disk_used_pct >= this
+    disk_critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
+
+
+@dataclass(frozen=True)
 class MonitorConfig:
     auth_fail_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_AUTH_PATTERNS))
     auth_fail_hint: str = _DEFAULT_AUTH_HINT
@@ -126,6 +139,7 @@ class MonitorConfig:
     remote_failure_tolerance_s: int = _DEFAULT_REMOTE_FAILURE_TOLERANCE_S
     anomaly_repetitive_window: int = 0  # 0 = disabled
     anomaly_repetitive_threshold: int = 0  # 0 = disabled
+    host_health: MonitorHostHealthConfig = field(default_factory=MonitorHostHealthConfig)
 
 
 @dataclass(frozen=True)
@@ -423,6 +437,15 @@ def load_config(toml_path: Path) -> Config:
         dirty_action=dirty_action,
     )
     monitor_d = raw.get("monitor", {})
+    hh_d = monitor_d.get("host_health", {})
+    host_health = MonitorHostHealthConfig(
+        mem_avail_min_mb=_require_non_negative_int(
+            hh_d.get("mem_avail_min_mb", 200),
+            field="monitor.host_health.mem_avail_min_mb",
+        ),
+        disk_warning_pct=float(hh_d.get("disk_warning_pct", 90.0)),
+        disk_critical_pct=float(hh_d.get("disk_critical_pct", 95.0)),
+    )
     monitor = MonitorConfig(
         auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
@@ -438,6 +461,7 @@ def load_config(toml_path: Path) -> Config:
             monitor_d.get("anomaly_repetitive_threshold", 0),
             field="monitor.anomaly_repetitive_threshold",
         ),
+        host_health=host_health,
     )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
     disable = list(plugins_raw.pop("disable", []))
