@@ -402,8 +402,7 @@ def detect_anomaly_repetitive_active(
     anomalies = [
         e
         for e in events
-        if e.get("event") == "anomaly_repetitive_tool"
-        and e.get("round_num", 0) >= window_start
+        if e.get("event") == "anomaly_repetitive_tool" and e.get("round_num", 0) >= window_start
     ]
     if len(anomalies) < threshold:
         return None

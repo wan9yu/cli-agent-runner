@@ -436,6 +436,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         "AGENT_RUNNER_ROUND_NUM": str(round_num),
         "AGENT_RUNNER_PHASE": phase or "",
     }
+
     def _progress_emit(stats: dict) -> None:
         api.emit_round_progress(
             log_dir,

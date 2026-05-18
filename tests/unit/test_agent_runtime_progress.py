@@ -55,7 +55,7 @@ def test_given_progress_interval_zero_when_run_then_callback_never_called(tmp_pa
 
 def test_given_progress_callback_none_when_run_then_no_crash(tmp_path):
     """progress_callback=None with non-zero interval -> no crash."""
-    script = _write_fake_script(tmp_path, 'echo done\nexit 0')
+    script = _write_fake_script(tmp_path, "echo done\nexit 0")
     log_path = tmp_path / "round.log"
     result = run(
         command=[str(script)],
