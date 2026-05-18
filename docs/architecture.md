@@ -147,6 +147,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `agent_self_terminated`
 - `agent_spawn`
 - `agent_usage_recorded`
+- `anomaly_repetitive_tool`
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`
@@ -163,6 +164,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `orphan_stashed`
 - `prompt_overwritten`
 - `round_end`
+- `round_grace_kill`
 - `round_start`
 - `round_substrate_after`
 - `round_substrate_before`

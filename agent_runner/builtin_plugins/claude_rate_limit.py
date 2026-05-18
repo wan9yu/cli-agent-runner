@@ -23,6 +23,7 @@ from typing import Any
 
 from agent_runner.api import (
     emit_agent_usage_recorded,
+    emit_anomaly_repetitive_tool,
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
@@ -45,7 +46,11 @@ class ClaudeErrorDetector:
         log_path = ctx.agent_log_path
         if log_path is None or not log_path.exists():
             return
-        parsed = _parse_claude_log(log_path)
+        parsed = _parse_claude_log(
+            log_path,
+            anomaly_window=ctx.anomaly_repetitive_window,
+            anomaly_threshold=ctx.anomaly_repetitive_threshold,
+        )
 
         if parsed.get("transient_error"):
             te = parsed["transient_error"]
@@ -60,18 +65,70 @@ class ClaudeErrorDetector:
                 **parsed["usage"],
             )
 
+        if parsed.get("anomaly"):
+            emit_anomaly_repetitive_tool(
+                ctx.log_dir, round_num=ctx.round_num, **parsed["anomaly"]
+            )
 
-def _parse_claude_log(log_path: Path) -> dict[str, Any]:
+
+def _extract_tool_target(tool_input: Any) -> str | None:
+    """Best-effort primary-input extraction for repetition detection."""
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("file_path", "path", "pattern", "command"):
+        v = tool_input.get(key)
+        if isinstance(v, str):
+            return v[:100]  # truncate long commands
+    return None
+
+
+def _detect_repetitive_tool(
+    tool_calls: list[tuple[str, str | None]],
+    *,
+    window: int,
+    threshold: int,
+) -> dict | None:
+    """Slide a window of size ``window`` over tool_calls; return anomaly dict
+    when any (tool_name, target) tuple appears >= threshold times."""
+    if window <= 0 or threshold <= 0 or len(tool_calls) < threshold:
+        return None
+    from collections import Counter
+
+    n = len(tool_calls)
+    for start in range(max(0, n - window), n - threshold + 1):
+        window_slice = tool_calls[start : start + window]
+        if not window_slice:
+            continue
+        counts = Counter(window_slice)
+        most_common_tuple, most_common_count = counts.most_common(1)[0]
+        if most_common_count >= threshold:
+            return {
+                "tool_name": most_common_tuple[0],
+                "target": most_common_tuple[1],
+                "count": most_common_count,
+                "window": window,
+            }
+    return None
+
+
+def _parse_claude_log(
+    log_path: Path,
+    *,
+    anomaly_window: int = 0,
+    anomaly_threshold: int = 0,
+) -> dict[str, Any]:
     """Scan last _TAIL_LINES for rate_limit/result/assistant events.
 
-    Returns dict with optional 'transient_error' and 'usage' keys.
+    Returns dict with optional 'transient_error', 'usage', and 'anomaly' keys.
+    anomaly_window/anomaly_threshold: when both > 0, slide a window over
+    (tool_name, target) tuples; populate 'anomaly' if threshold reached.
     """
     with log_path.open("r", encoding="utf-8", errors="replace") as f:
         tail = deque(f, maxlen=_TAIL_LINES)
     rate_limit_info: dict | None = None
     result_event: dict | None = None
     assistant_model: str | None = None
-    tool_call_count = 0
+    tool_calls: list[tuple[str, str | None]] = []
     for line in tail:
         line = line.strip()
         if not line:
@@ -94,9 +151,11 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
                 assistant_model = str(model_val)
             content = msg.get("content", []) if isinstance(msg, dict) else []
             if isinstance(content, list):
-                tool_call_count += sum(
-                    1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use"
-                )
+                for c in content:
+                    if isinstance(c, dict) and c.get("type") == "tool_use":
+                        tool_calls.append(
+                            (str(c.get("name", "?")), _extract_tool_target(c.get("input", {})))
+                        )
 
     out: dict[str, Any] = {}
 
@@ -106,10 +165,16 @@ def _parse_claude_log(log_path: Path) -> dict[str, Any]:
 
     if result_event is not None:
         usage_payload = _extract_usage(
-            result_event, model=assistant_model, tool_call_count=tool_call_count
+            result_event, model=assistant_model, tool_call_count=len(tool_calls)
         )
         if usage_payload is not None:
             out["usage"] = usage_payload
+
+    anomaly = _detect_repetitive_tool(
+        tool_calls, window=anomaly_window, threshold=anomaly_threshold
+    )
+    if anomaly is not None:
+        out["anomaly"] = anomaly
 
     return out
 

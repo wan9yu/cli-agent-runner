@@ -15,9 +15,11 @@ from pathlib import Path
 
 __all__ = [
     "emit_agent_usage_recorded",
+    "emit_anomaly_repetitive_tool",
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
     "emit_rate_limit_stop",
+    "emit_round_grace_kill",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
     "emit_stop_file_detected",
@@ -196,6 +198,52 @@ def emit_agent_usage_recorded(
         tool_call_count=tool_call_count,
         phase=phase,
         success=success,
+    )
+
+
+def emit_round_grace_kill(
+    log_dir: Path,
+    *,
+    round_num: int,
+    grace_s: int,
+) -> None:
+    """Emit when subprocess killed because grace-after-result timer expired.
+
+    Subprocess emitted type=result in JSONL log then sat silent for longer
+    than max_grace_after_result_s seconds. Distinguishes from round_timeout_kill
+    (wall-clock exceeded without result event).
+    """
+    from agent_runner.events import ROUND_GRACE_KILL, emit
+
+    emit(log_dir, ROUND_GRACE_KILL, round_num=round_num, grace_s=grace_s)
+
+
+def emit_anomaly_repetitive_tool(
+    log_dir: Path,
+    *,
+    round_num: int,
+    tool_name: str,
+    target: str | None,
+    count: int,
+    window: int,
+) -> None:
+    """Emit when claude plugin detects the same (tool, target) tuple repeated
+    >= threshold times in a sliding window of tool-call events.
+
+    Claude-only (gemini JSONL stats summary does not expose per-tool events).
+    Default OFF: both anomaly_repetitive_window and anomaly_repetitive_threshold
+    must be > 0 in [monitor] config to activate.
+    """
+    from agent_runner.events import ANOMALY_REPETITIVE_TOOL, emit
+
+    emit(
+        log_dir,
+        ANOMALY_REPETITIVE_TOOL,
+        round_num=round_num,
+        tool_name=tool_name,
+        target=target,
+        count=count,
+        window=window,
     )
 
 

@@ -519,6 +519,63 @@ def test_given_custom_agent_name_with_claude_binary_when_after_round_then_event_
     emit.assert_called_once()
 
 
+def test_repetitive_tool_under_threshold_no_anomaly(tmp_path):
+    """5x Edit same file in 10-tool window, threshold=8 -> no anomaly."""
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    events_jsonl = "\n".join(
+        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+        for _ in range(5)
+    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
+    log.write_text(events_jsonl, encoding="utf-8")
+    parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
+    assert "anomaly" not in parsed
+
+
+def test_repetitive_tool_at_threshold_emits_anomaly(tmp_path):
+    """8x Edit same file -> anomaly with count=8."""
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    events_jsonl = "\n".join(
+        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+        for _ in range(8)
+    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
+    log.write_text(events_jsonl, encoding="utf-8")
+    parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
+    assert parsed["anomaly"]["tool_name"] == "Edit"
+    assert parsed["anomaly"]["target"] == "/x.md"
+    assert parsed["anomaly"]["count"] == 8
+
+
+def test_repetitive_tool_mixed_tools_no_anomaly(tmp_path):
+    """4x Edit + 4x Read mixed -> no anomaly (no tuple >= threshold=8)."""
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    edit_evt = '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+    read_evt = '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/y.md"}}]}}'
+    events_jsonl = "\n".join([edit_evt, read_evt] * 4) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
+    log.write_text(events_jsonl, encoding="utf-8")
+    parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
+    assert "anomaly" not in parsed
+
+
+def test_repetitive_tool_disabled_when_threshold_zero(tmp_path):
+    """10x same tuple but threshold=0 -> no detection (defaults disable)."""
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    events_jsonl = "\n".join(
+        '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+        for _ in range(10)
+    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
+    log.write_text(events_jsonl, encoding="utf-8")
+    parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=0)
+    assert "anomaly" not in parsed
+
+
 def test_given_non_claude_binary_when_after_round_then_no_event(tmp_path):
     """ClaudeErrorDetector must NOT fire for non-claude binaries
     (e.g. aider, custom CLI). Prevents cross-pollination.

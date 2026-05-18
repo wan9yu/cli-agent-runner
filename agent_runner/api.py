@@ -725,9 +725,11 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
 # Preserves the public import surface: `from agent_runner.api import emit_*` continues to work.
 from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-export
     emit_agent_usage_recorded,
+    emit_anomaly_repetitive_tool,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
+    emit_round_grace_kill,
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_stop_file_detected,

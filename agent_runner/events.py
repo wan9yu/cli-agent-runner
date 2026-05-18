@@ -28,6 +28,7 @@ from typing import Any
 # whose value is a snake_case string is automatically collected into
 # _BUILTIN_KINDS via _collect_builtin_kinds() below (single-source).
 AGENT_EXIT = "agent_exit"
+ANOMALY_REPETITIVE_TOOL = "anomaly_repetitive_tool"
 AGENT_NETWORK_BLIP = "agent_network_blip"
 AGENT_SPAWN = "agent_spawn"
 AGENT_USAGE_RECORDED = "agent_usage_recorded"
@@ -47,6 +48,7 @@ ORPHAN_STASH_FAILED = "orphan_stash_failed"
 ORPHAN_STASHED = "orphan_stashed"
 PROMPT_OVERWRITTEN = "prompt_overwritten"
 ROUND_END = "round_end"
+ROUND_GRACE_KILL = "round_grace_kill"
 ROUND_START = "round_start"
 ROUND_SUBSTRATE_AFTER = "round_substrate_after"
 ROUND_SUBSTRATE_BEFORE = "round_substrate_before"
