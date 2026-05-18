@@ -37,6 +37,11 @@ correctly (process still runs as your user, not root).
 
 ## Daily operations
 
+> **Config changes require restart**: editing `agent-runner.toml` does not
+> hot-reload. After any TOML change, run `agent-runner restart` to pick up
+> the new config. The supervisor reuses the loaded Config across all rounds
+> within a single `serve` session.
+
 ### Health check
 
 ```bash

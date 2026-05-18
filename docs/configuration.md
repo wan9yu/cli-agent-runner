@@ -3,6 +3,20 @@
 `agent-runner.toml` lives in your project's working directory. `agent-runner init`
 writes a templated copy you can edit.
 
+## Config reload
+
+`agent-runner.toml` changes do NOT take effect mid-round. The supervisor
+reads the TOML once at startup and reuses the loaded `Config` for every
+round. To pick up a TOML change:
+
+```bash
+agent-runner restart
+```
+
+This is intentional: changing config mid-round would tear semantics (e.g.
+a round dispatched with `dirty_action = "stash"` but committing while
+running with newly-set `dirty_action = "auto_commit"` is undefined).
+
 ## TOML schema
 
 <!-- gen:config-schema -->
@@ -132,6 +146,13 @@ Paths are resolved against `runtime.work_dir` (consistent with existing path res
 > the rotation counter (audit, debug, multi-script orchestration). The internal
 > counter is unaffected — subsequent default rounds resume rotation. The name
 > must match one of the entries in `[phases].list`.
+
+> **Phase rotation indexing**: `phase = phases.list[round_num % len(phases.list)]`.
+> When `round_num` doesn't start at 0 (e.g. resuming after a restart with an
+> existing round counter, or continuing into round 477), rotation appears to
+> "start" at `phases.list[round_num % len]`, not `phases.list[0]`. This is by
+> design (rotation is deterministic on round_num). If you need a specific
+> starting phase, ensure the starting `round_num` matches.
 
 ## `[phases.<name>]` per-phase sub-tables (0.1.16+)
 
