@@ -65,3 +65,12 @@ def test_given_select_malformed_events_prefix_when_parsed_then_argparse_exits(ca
     args = _build_parser().parse_args(["peek", "--select", "foo.bar"])
     # Argparse accepts it; dispatch determines fate at runtime
     assert args.select == "foo.bar"
+
+
+def test_given_window_zero_or_negative_when_parsed_then_argparse_rejects():
+    """--window must be a positive int; 0 and negatives are rejected at parse time."""
+    import pytest
+
+    for bad in ("0", "-1", "-5"):
+        with pytest.raises(SystemExit):
+            _build_parser().parse_args(["peek", "--select", "events.foo", "--window", bad])
