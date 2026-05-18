@@ -54,6 +54,9 @@ def _kill_pgroup(proc: subprocess.Popen) -> None:
         pass
 
 
+# Exact compact bytes — matches claude CLI's no-whitespace JSONL output.
+# A future CLI variant emitting `{"type": "result", ...}` (with space) would
+# bypass this scan; revisit if that happens.
 _RESULT_MARKER = b'"type":"result"'
 
 
