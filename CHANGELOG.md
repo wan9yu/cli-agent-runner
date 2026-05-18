@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-05-18
+
+### Fixed
+- Plugin guards (`ClaudeErrorDetector` + `GeminiErrorDetector`) now check `ctx.agent_binary` (basename of `agent.command[0]`) instead of `ctx.agent_name` (user-cosmetic). Custom `[agent] name = "..."` no longer suppresses `agent_usage_recorded` / `transient_error_detected` events.
+
+### Added
+- `HookContext.agent_binary` field — basename of `cfg.agent.command[0]`, distinct from user-cosmetic `agent_name`. Plugin authors should guard on `agent_binary`.
+- Upstream-CLI JSONL fixture canary tests — protects against silent schema drift from Anthropic/Google CLI version changes.
+- Layer 2 serve-loop LOC invariant — guards the README "~60 LOC" thesis claim.
+- `docs/thesis.md` — project non-goals SSOT for feature-request evaluation.
+- README + runbook callouts for SSH trust boundary of `monitor --host`.
+
+See `docs/migrations/0.1.30.md`.
+
 ## [0.1.29] - 2026-05-17
 
 ### Added
