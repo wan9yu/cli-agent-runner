@@ -519,16 +519,28 @@ def test_given_custom_agent_name_with_claude_binary_when_after_round_then_event_
     emit.assert_called_once()
 
 
+_EDIT_EVT = (
+    '{"type":"assistant","message":{"model":"claude-opus-4-7",'
+    '"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+)
+_READ_EVT = (
+    '{"type":"assistant","message":{"model":"x",'
+    '"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/y.md"}}]}}'
+)
+_RESULT_LINE = (
+    '{"type":"result","is_error":false,"usage":{"input_tokens":1,'
+    '"output_tokens":1,"cache_read_input_tokens":0,'
+    '"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}'
+)
+
+
 def test_repetitive_tool_under_threshold_no_anomaly(tmp_path):
     """5x Edit same file in 10-tool window, threshold=8 -> no anomaly."""
     from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
 
     log = tmp_path / "round-1.log"
-    events_jsonl = "\n".join(
-        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
-        for _ in range(5)
-    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
-    log.write_text(events_jsonl, encoding="utf-8")
+    lines = [_EDIT_EVT] * 5 + [_RESULT_LINE]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
     parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
     assert "anomaly" not in parsed
 
@@ -538,11 +550,8 @@ def test_repetitive_tool_at_threshold_emits_anomaly(tmp_path):
     from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
 
     log = tmp_path / "round-1.log"
-    events_jsonl = "\n".join(
-        '{"type":"assistant","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
-        for _ in range(8)
-    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
-    log.write_text(events_jsonl, encoding="utf-8")
+    lines = [_EDIT_EVT] * 8 + [_RESULT_LINE]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
     parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
     assert parsed["anomaly"]["tool_name"] == "Edit"
     assert parsed["anomaly"]["target"] == "/x.md"
@@ -554,10 +563,12 @@ def test_repetitive_tool_mixed_tools_no_anomaly(tmp_path):
     from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
 
     log = tmp_path / "round-1.log"
-    edit_evt = '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
-    read_evt = '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/y.md"}}]}}'
-    events_jsonl = "\n".join([edit_evt, read_evt] * 4) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
-    log.write_text(events_jsonl, encoding="utf-8")
+    mixed_edit = (
+        '{"type":"assistant","message":{"model":"x",'
+        '"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+    )
+    lines = [mixed_edit, _READ_EVT] * 4 + [_RESULT_LINE]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
     parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=8)
     assert "anomaly" not in parsed
 
@@ -567,11 +578,12 @@ def test_repetitive_tool_disabled_when_threshold_zero(tmp_path):
     from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
 
     log = tmp_path / "round-1.log"
-    events_jsonl = "\n".join(
-        '{"type":"assistant","message":{"model":"x","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
-        for _ in range(10)
-    ) + '\n{"type":"result","is_error":false,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"duration_ms":100,"total_cost_usd":0.001}\n'
-    log.write_text(events_jsonl, encoding="utf-8")
+    single_edit = (
+        '{"type":"assistant","message":{"model":"x",'
+        '"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/x.md"}}]}}'
+    )
+    lines = [single_edit] * 10 + [_RESULT_LINE]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
     parsed = _parse_claude_log(log, anomaly_window=10, anomaly_threshold=0)
     assert "anomaly" not in parsed
 

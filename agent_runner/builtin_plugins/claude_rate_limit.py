@@ -66,9 +66,7 @@ class ClaudeErrorDetector:
             )
 
         if parsed.get("anomaly"):
-            emit_anomaly_repetitive_tool(
-                ctx.log_dir, round_num=ctx.round_num, **parsed["anomaly"]
-            )
+            emit_anomaly_repetitive_tool(ctx.log_dir, round_num=ctx.round_num, **parsed["anomaly"])
 
 
 def _extract_tool_target(tool_input: Any) -> str | None:
