@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-05-18
+
+### Added
+- `[runtime] max_grace_after_result_s` — kill subprocess that emits `type=result` then sits silent for N seconds (0 = disabled). New `round_grace_kill` event distinguishes from regular `round_timeout_kill`.
+- `[monitor] anomaly_repetitive_window` + `anomaly_repetitive_threshold` — claude plugin emits `anomaly_repetitive_tool` event when same (tool, target) appears ≥threshold times in window-sized tool stream. Specific scar pattern; both 0 = disabled.
+- `[runtime] dry_run` boolean exposed via `HookContext.dry_run` for plugin authors to skip side-effect actions when set.
+- Documentation: TOML changes require daemon restart (no hot-reload); phase rotation indexing clarification.
+
+See `docs/migrations/0.1.31.md`.
+
 ## [0.1.30] - 2026-05-18
 
 ### Fixed
