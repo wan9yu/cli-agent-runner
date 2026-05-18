@@ -86,9 +86,12 @@ agent-runner monitor --host pi        # remote, 60s poll
 agent-runner monitor --json | jq -c   # pipe to downstream consumers
 ```
 
-> **Note:** Remote monitor (`monitor --host <alias>`) relies on your local
-> `~/.ssh/config` for `StrictHostKeyChecking` and other ssh policy. Use
-> `accept-new` or `yes` to avoid MITM exposure.
+> **SSH trust boundary**: `monitor --host <alias>` shells out via plain SSH
+> using your local `~/.ssh/config` (aliases, `StrictHostKeyChecking` behavior).
+> A monitor with `auto_stop` enabled can issue `agent-runner stop` on the
+> remote — verify your SSH config before pointing monitor at a remote service.
+> See [`docs/runbook.md`](docs/runbook.md) § "Remote monitor & SSH trust" for
+> recommended hygiene.
 
 ## Documentation
 

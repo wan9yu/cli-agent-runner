@@ -220,6 +220,33 @@ To inspect failures: `grep serve_startup_hook_failed {log_dir}/events-*.jsonl`.
 Operators can disable a misbehaving hook via `[plugins] disable = ["hook_name"]`
 just like any other plugin component.
 
+## Remote monitor & SSH trust
+
+`agent-runner monitor --host <alias>` is built on plain SSH, not a privileged
+API. Power profile:
+
+- Reads `~/.ssh/config` for the alias (host, user, identity file,
+  `StrictHostKeyChecking` policy).
+- Runs `agent-runner peek --json` on the remote to collect status.
+- When alerting with `auto_stop` enabled, runs `agent-runner stop` on the
+  remote — a real state change.
+- Default SSH behavior in many environments is `StrictHostKeyChecking
+  accept-new`, which silently trusts new host keys on first connect.
+
+### Recommended hygiene
+
+- **Dedicated SSH key**: use a key pair not shared with your shell user's
+  default identity. Add it via `IdentityFile` in `~/.ssh/config` for the
+  alias.
+- **Pin host key**: set `StrictHostKeyChecking yes` in the `~/.ssh/config`
+  entry for the alias. Never use `no`.
+- **Restrict remote user**: confine the remote account's shell access to
+  `agent-runner` commands via a `command="..."` restriction in
+  `~/.ssh/authorized_keys` on the server.
+- **Audit `auto_stop` triggers**: a monitor stopping a remote service is a
+  real state change. Verify the detector logic and thresholds before enabling
+  `auto_stop` on a production remote.
+
 ## Live event stream (machine-readable)
 
 For machine consumption (parity comparisons, custom dashboards, automation
