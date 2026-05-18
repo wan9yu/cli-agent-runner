@@ -165,6 +165,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `prompt_overwritten`
 - `round_end`
 - `round_grace_kill`
+- `round_progress`
 - `round_start`
 - `round_substrate_after`
 - `round_substrate_before`

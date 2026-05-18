@@ -20,6 +20,7 @@ __all__ = [
     "emit_max_rounds_reached",
     "emit_rate_limit_stop",
     "emit_round_grace_kill",
+    "emit_round_progress",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
     "emit_stop_file_detected",
@@ -198,6 +199,32 @@ def emit_agent_usage_recorded(
         tool_call_count=tool_call_count,
         phase=phase,
         success=success,
+    )
+
+
+def emit_round_progress(
+    log_dir: Path,
+    *,
+    round_num: int,
+    log_size_kb: int,
+    last_write_age_s: int,
+    wall_age_s: int,
+) -> None:
+    """Mid-round heartbeat event when round_progress_interval_s > 0.
+
+    Emitted periodically during a live round to surface visibility on long
+    rounds: log_size_kb shows writing activity; last_write_age_s and wall_age_s
+    together distinguish "agent thinking" from "agent stuck".
+    """
+    from agent_runner.events import ROUND_PROGRESS, emit
+
+    emit(
+        log_dir,
+        ROUND_PROGRESS,
+        round_num=round_num,
+        log_size_kb=log_size_kb,
+        last_write_age_s=last_write_age_s,
+        wall_age_s=wall_age_s,
     )
 
 

@@ -79,6 +79,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `anomaly_repetitive_window` | `int` | 0 |
 | `anomaly_repetitive_threshold` | `int` | 0 |
 | `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(mem_avail_min_mb=200, disk_warning_pct=90.0, disk_critical_pct=95.0) |
+| `round_progress_interval_s` | `int` | 0 |
 <!-- /gen:config-schema -->
 
 ### `vcs.dirty_action`

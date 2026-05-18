@@ -69,6 +69,8 @@ def run(
     log_path: Path,
     env_extra: dict[str, str],
     max_grace_after_result_s: int = 0,
+    progress_callback: Callable[[dict], None] | None = None,
+    progress_interval_s: int = 0,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
@@ -77,12 +79,18 @@ def run(
     max_grace_after_result_s: when > 0, start a countdown after the first
     type=result event is detected in the log; kill if subprocess is still
     running after this many seconds (HUNG defense). 0 = disabled.
+
+    progress_callback: when not None and progress_interval_s > 0, called every
+    progress_interval_s seconds with a dict of log stats (log_size_kb,
+    last_write_age_s, wall_age_s). Keeps agent_runtime event-free; callers
+    build the callback to emit events.
     """
     argv = _build_argv(command, prompt_arg_template, prompt)
     env = {**os.environ, **env_extra}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
     start = time.time()
+    last_progress_at = start
     proc = subprocess.Popen(
         argv,
         env=env,
@@ -127,6 +135,24 @@ def run(
                         pid=proc.pid,
                         killed_for_grace=True,
                     )
+            # Progress heartbeat: call back if interval elapsed
+            if progress_callback is not None and progress_interval_s > 0:
+                if now - last_progress_at >= progress_interval_s:
+                    try:
+                        st = log_path.stat()
+                        log_size_kb = st.st_size // 1024
+                        last_write_age_s = max(0, int(now - st.st_mtime))
+                    except OSError:
+                        log_size_kb = 0
+                        last_write_age_s = 0
+                    progress_callback(
+                        {
+                            "log_size_kb": log_size_kb,
+                            "last_write_age_s": last_write_age_s,
+                            "wall_age_s": int(now - start),
+                        }
+                    )
+                    last_progress_at = now
             time.sleep(0.2)
     finally:
         log_file.close()

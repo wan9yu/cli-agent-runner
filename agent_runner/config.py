@@ -140,6 +140,7 @@ class MonitorConfig:
     anomaly_repetitive_window: int = 0  # 0 = disabled
     anomaly_repetitive_threshold: int = 0  # 0 = disabled
     host_health: MonitorHostHealthConfig = field(default_factory=MonitorHostHealthConfig)
+    round_progress_interval_s: int = 0  # 0 = disabled; >0 = emit round_progress every N seconds
 
 
 @dataclass(frozen=True)
@@ -462,6 +463,10 @@ def load_config(toml_path: Path) -> Config:
             field="monitor.anomaly_repetitive_threshold",
         ),
         host_health=host_health,
+        round_progress_interval_s=_require_non_negative_int(
+            monitor_d.get("round_progress_interval_s", 0),
+            field="monitor.round_progress_interval_s",
+        ),
     )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
     disable = list(plugins_raw.pop("disable", []))
