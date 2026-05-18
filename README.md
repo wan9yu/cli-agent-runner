@@ -14,7 +14,7 @@ full disks, runaway memory.
 ┌──────────────────────────────────────────┐
 │ Layer 3: The Witness (monitor)           │  10 detectors + auto-stop
 ├──────────────────────────────────────────┤
-│ Layer 2: The Loop (serve, ~60 LOC)       │  signal-trapping restart loop
+│ Layer 2: The Loop (serve, ~120 LOC)      │  signal-trapping restart loop
 ├──────────────────────────────────────────┤
 │ Layer 1: The Round (round)               │  one agent invocation
 └──────────────────────────────────────────┘

@@ -1,10 +1,9 @@
 """Layer 2 (serve loop) LOC invariant.
 
-README claims: 'Layer 2: The Loop (serve, ~60 LOC) — signal-trapping
+README claims: 'Layer 2: The Loop (serve, ~120 LOC) — signal-trapping
 restart loop'. The supervisor loop is ``serve_cmd.cmd``; it currently
-runs ~120 LOC (non-blank, non-comment lines). The README "~60 LOC" claim
-predates several feature additions. This invariant guards against further
-unchecked growth.
+runs ~120 LOC (non-blank, non-comment lines). This invariant guards
+against further unchecked growth.
 
 If you're tempted to "just add X to the supervisor loop", extract X into:
 - a defense (events.py + monitor.py)

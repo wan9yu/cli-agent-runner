@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `HookContext.agent_binary` field — basename of `cfg.agent.command[0]`, distinct from user-cosmetic `agent_name`. Plugin authors should guard on `agent_binary`.
 - Upstream-CLI JSONL fixture canary tests — protects against silent schema drift from Anthropic/Google CLI version changes.
-- Layer 2 serve-loop LOC invariant — guards the README "~60 LOC" thesis claim.
+- Layer 2 serve-loop LOC invariant — guards the README "thin loop" claim (current ~120 LOC).
 - `docs/thesis.md` — project non-goals SSOT for feature-request evaluation.
 - README + runbook callouts for SSH trust boundary of `monitor --host`.
 
