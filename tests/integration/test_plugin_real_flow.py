@@ -77,7 +77,8 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
     plugin's wrong-path assumption); production behavior diverged silently.
     This test runs real agent-runner serve and checks the actual events file.
     """
-    fake_agent = tmp_path / "fake-claude.sh"
+    # Script must be named "claude" so agent_binary == "claude" (guard uses basename).
+    fake_agent = tmp_path / "claude"
     fake_agent.write_text(
         "#!/bin/sh\n"
         "cat <<'EOF'\n"
@@ -128,7 +129,8 @@ def test_given_real_serve_with_fake_gemini_agent_when_round_completes_then_usage
     tmp_path: Path,
 ) -> None:
     """Canary: real flow emits agent_usage_recorded for gemini."""
-    fake_agent = tmp_path / "fake-gemini.sh"
+    # Script must be named "gemini" so agent_binary == "gemini" (guard uses basename).
+    fake_agent = tmp_path / "gemini"
     fake_agent.write_text(
         "#!/bin/sh\n"
         "cat <<'EOF'\n"

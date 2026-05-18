@@ -40,7 +40,7 @@ class ClaudeErrorDetector:
     name = "claude_error_detector"
 
     def after_round(self, ctx: HookContext, result: Any) -> None:
-        if ctx.agent_name != "claude":
+        if ctx.agent_binary != "claude":
             return
         log_path = ctx.agent_log_path
         if log_path is None or not log_path.exists():

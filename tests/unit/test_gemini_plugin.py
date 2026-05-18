@@ -320,3 +320,47 @@ def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["phase"] == "planning"
     assert kwargs["success"] is True
+
+
+def test_given_custom_agent_name_with_gemini_binary_when_after_round_then_event_emitted(tmp_path):
+    """Regression: same 0.1.29 bug class for gemini detector — custom agent name
+    suppresses events when guard uses agent_name instead of agent_binary.
+    """
+    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    round_log = log_dir / "round-1.log"
+    round_log.write_text(
+        '{"type":"result","status":"success","stats":{"total_tokens":100,"input_tokens":80,'
+        '"output_tokens":10,"cached":5,"input":75,"duration_ms":100,"tool_calls":0,"models":{}}}\n',
+        encoding="utf-8",
+    )
+    ctx = make_hook_context(
+        tmp_path,
+        agent_name="argus_qa",
+        agent_binary="gemini",
+        agent_log_path=round_log,
+    )
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
+        GeminiErrorDetector().after_round(ctx, result)
+    emit.assert_called_once()
+
+
+def test_given_non_gemini_binary_when_after_round_then_no_event(tmp_path):
+    """GeminiErrorDetector must NOT fire for non-gemini binaries."""
+    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    ctx = make_hook_context(
+        tmp_path,
+        agent_name="claude",
+        agent_binary="claude",
+        agent_log_path=log_dir / "x.log",
+    )
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
+        GeminiErrorDetector().after_round(ctx, result)
+    emit.assert_not_called()

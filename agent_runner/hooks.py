@@ -56,6 +56,14 @@ class HookContext:
     round_num: int
     phase: str | None
     agent_name: str | None
+    agent_binary: str | None = None
+    """Basename of ``cfg.agent.command[0]`` (e.g. ``'claude'``, ``'gemini'``).
+    Distinct from ``agent_name`` (the user-cosmetic ``[agent] name`` field).
+    Plugins should guard on ``agent_binary``, not ``agent_name``, so a custom
+    ``[agent] name = "argus_dev"`` does not suppress events.
+    Populated from 0.1.30+; defaults to ``None`` for manually-constructed
+    HookContext instances (rare; tests set it via ``make_hook_context``).
+    """
     agent_log_path: Path | None = None
     """Path to the agent's stdout JSONL log for this round (e.g.
     ``log_dir/rounds/R<N>-<timestamp>.log``). Plugins parse this to

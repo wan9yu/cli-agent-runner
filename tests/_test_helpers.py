@@ -113,20 +113,27 @@ def make_hook_context(
     tmp_path: Path,
     *,
     agent_name: str = "claude",
+    agent_binary: str | None = None,
     round_num: int = 1,
     phase: str | None = None,
+    agent_log_path: Path | None = None,
 ):
     """Build a minimal HookContext for plugin testing.
 
-    agent_log_path is populated to match where runner.py writes the
-    agent JSONL at runtime: ``log_dir/rounds/R{round_num}-test.log``.
-    Pairs with ``write_round_log`` — that helper writes to the same path.
+    agent_log_path defaults to ``tmp_path/rounds/R{round_num}-test.log`` to
+    match where runner.py writes the agent JSONL at runtime. Pair with
+    ``write_round_log`` which writes to the same path.
+
+    agent_binary: if not specified, defaults to agent_name so existing tests
+    that only pass agent_name continue to exercise plugin guards correctly
+    (e.g. agent_name="claude" also seeds agent_binary="claude").
     """
     from agent_runner.hooks import HookContext
 
-    rounds_dir = tmp_path / "rounds"
-    rounds_dir.mkdir(exist_ok=True)
-    agent_log_path = rounds_dir / f"R{round_num}-test.log"
+    if agent_log_path is None:
+        rounds_dir = tmp_path / "rounds"
+        rounds_dir.mkdir(exist_ok=True)
+        agent_log_path = rounds_dir / f"R{round_num}-test.log"
     return HookContext(
         work_dir=tmp_path,
         log_dir=tmp_path,
@@ -134,6 +141,7 @@ def make_hook_context(
         round_num=round_num,
         phase=phase,
         agent_name=agent_name,
+        agent_binary=agent_binary if agent_binary is not None else agent_name,
         agent_log_path=agent_log_path,
     )
 

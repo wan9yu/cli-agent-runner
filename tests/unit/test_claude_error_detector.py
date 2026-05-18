@@ -489,3 +489,58 @@ def test_given_claude_round_failed_when_after_round_then_success_false(tmp_path)
                 ClaudeErrorDetector().after_round(ctx, result)
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["success"] is False
+
+
+def test_given_custom_agent_name_with_claude_binary_when_after_round_then_event_emitted(tmp_path):
+    """Regression: 0.1.29 bug — strict ctx.agent_name == "claude" guard
+    suppressed events when users set [agent] name = "<custom>". Fix uses
+    agent_binary basename instead.
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    round_log = log_dir / "round-1.log"
+    round_log.write_text(
+        '{"type":"result","is_error":false,"usage":{"input_tokens":10,"output_tokens":5,'
+        '"cache_read_input_tokens":0,"cache_creation_input_tokens":50},'
+        '"duration_ms":1000,"total_cost_usd":0.01}\n',
+        encoding="utf-8",
+    )
+    ctx = make_hook_context(
+        tmp_path,
+        agent_name="argus_dev",
+        agent_binary="claude",
+        agent_log_path=round_log,
+    )
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
+        ClaudeErrorDetector().after_round(ctx, result)
+    emit.assert_called_once()
+
+
+def test_given_non_claude_binary_when_after_round_then_no_event(tmp_path):
+    """ClaudeErrorDetector must NOT fire for non-claude binaries
+    (e.g. aider, custom CLI). Prevents cross-pollination.
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    round_log = log_dir / "round-1.log"
+    round_log.write_text(
+        '{"type":"result","is_error":false,"usage":{"input_tokens":10,"output_tokens":5,'
+        '"cache_read_input_tokens":0,"cache_creation_input_tokens":50},'
+        '"duration_ms":1000,"total_cost_usd":0.01}\n',
+        encoding="utf-8",
+    )
+    ctx = make_hook_context(
+        tmp_path,
+        agent_name="aider",
+        agent_binary="aider",
+        agent_log_path=round_log,
+    )
+    result = MagicMock(exit_code=0, timed_out=False)
+    with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
+        ClaudeErrorDetector().after_round(ctx, result)
+    emit.assert_not_called()

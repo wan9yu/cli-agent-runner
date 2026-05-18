@@ -402,7 +402,8 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         round_num=round_num,
         phase=phase,
         agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
-        agent_log_path=log_path,  # NEW 0.1.25
+        agent_binary=Path(cfg.agent.command[0]).name if cfg.agent.command else None,
+        agent_log_path=log_path,
     )
     _run_pre_round_hooks(
         hook_ctx,

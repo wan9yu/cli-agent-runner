@@ -32,7 +32,7 @@ class GeminiErrorDetector:
     name = "gemini_error_detector"
 
     def after_round(self, ctx: HookContext, result: Any) -> None:
-        if ctx.agent_name != "gemini":
+        if ctx.agent_binary != "gemini":
             return
         log_path = ctx.agent_log_path
         if log_path is None or not log_path.exists():
