@@ -281,15 +281,40 @@ def emit_transient_error_backoff_capped(
     agent: str,
     requested_sleep_s: int,
     applied_sleep_s: int,
+    original_reset_at_epoch: int | None = None,
+    applied_reset_at_epoch: int | None = None,
+    consecutive_count: int | None = None,
+    capped_by_absolute_max: bool | None = None,
 ) -> None:
-    """Emit defensive event when computed back-off exceeded 8h cap."""
+    """Emit when supervisor adjusts the plugin-emitted transient back-off.
+
+    Fires in two cases:
+    1. **Exp backoff applied** (0.1.33+): estimated-class transient errors
+       (`rate_limit_model` / `api_transient_5xx` / `api_timeout`) doubled
+       on consecutive failures. ``consecutive_count`` > 1, multiplier > 1×.
+    2. **Defensive cap hit** (0.1.20+): malformed `reset_at_epoch` or the
+       30-min absolute cap clipped the wait. ``capped_by_absolute_max`` True.
+
+    Fields ``original_reset_at_epoch`` / ``applied_reset_at_epoch`` /
+    ``consecutive_count`` / ``capped_by_absolute_max`` are 0.1.33+. Older
+    callers that pass only the first 4 kwargs continue to work; the new
+    fields are omitted from the payload when None.
+    """
     from agent_runner.events import TRANSIENT_ERROR_BACKOFF_CAPPED, emit
 
-    emit(
-        log_dir,
-        TRANSIENT_ERROR_BACKOFF_CAPPED,
-        classification=classification,
-        agent=agent,
-        requested_sleep_s=requested_sleep_s,
-        applied_sleep_s=applied_sleep_s,
-    )
+    kwargs: dict = {
+        "classification": classification,
+        "agent": agent,
+        "requested_sleep_s": requested_sleep_s,
+        "applied_sleep_s": applied_sleep_s,
+    }
+    if original_reset_at_epoch is not None:
+        kwargs["original_reset_at_epoch"] = original_reset_at_epoch
+    if applied_reset_at_epoch is not None:
+        kwargs["applied_reset_at_epoch"] = applied_reset_at_epoch
+    if consecutive_count is not None:
+        kwargs["consecutive_count"] = consecutive_count
+    if capped_by_absolute_max is not None:
+        kwargs["capped_by_absolute_max"] = capped_by_absolute_max
+
+    emit(log_dir, TRANSIENT_ERROR_BACKOFF_CAPPED, **kwargs)

@@ -149,3 +149,64 @@ def test_given_monitor_started_kind_when_imported_then_in_known_event_kinds() ->
 
     assert "monitor_started" in _BUILTIN_KINDS
     assert "monitor_started" in KNOWN_EVENT_KINDS
+
+
+def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
+    """0.1.33+ payload includes original_reset_at_epoch, applied_reset_at_epoch,
+    consecutive_count, capped_by_absolute_max for backoff-curve observability.
+    """
+    import json
+
+    from agent_runner._emit import emit_transient_error_backoff_capped
+
+    emit_transient_error_backoff_capped(
+        tmp_path,
+        classification="rate_limit_model",
+        agent="claude",
+        requested_sleep_s=120,
+        applied_sleep_s=120,
+        original_reset_at_epoch=1715990000,
+        applied_reset_at_epoch=1715990120,
+        consecutive_count=2,
+        capped_by_absolute_max=False,
+    )
+    events_files = sorted(tmp_path.glob("events-*.jsonl"))
+    assert events_files, "no events file emitted"
+    line = events_files[-1].read_text(encoding="utf-8").strip().splitlines()[-1]
+    payload = json.loads(line)
+    assert payload["event"] == "transient_error_backoff_capped"
+    assert payload["classification"] == "rate_limit_model"
+    assert payload["agent"] == "claude"
+    assert payload["requested_sleep_s"] == 120
+    assert payload["applied_sleep_s"] == 120
+    assert payload["original_reset_at_epoch"] == 1715990000
+    assert payload["applied_reset_at_epoch"] == 1715990120
+    assert payload["consecutive_count"] == 2
+    assert payload["capped_by_absolute_max"] is False
+
+
+def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path):
+    """Old call sites (only 4 kwargs) still work; new fields absent in payload.
+    Guards against breaking existing runner.py:_apply_back_off behavior.
+    """
+    import json
+
+    from agent_runner._emit import emit_transient_error_backoff_capped
+
+    emit_transient_error_backoff_capped(
+        tmp_path,
+        classification="rate_limit_model",
+        agent="claude",
+        requested_sleep_s=120,
+        applied_sleep_s=60,
+    )
+    events_files = sorted(tmp_path.glob("events-*.jsonl"))
+    line = events_files[-1].read_text(encoding="utf-8").strip().splitlines()[-1]
+    payload = json.loads(line)
+    assert payload["classification"] == "rate_limit_model"
+    assert payload["requested_sleep_s"] == 120
+    assert payload["applied_sleep_s"] == 60
+    # New fields absent (not in payload at all, since defaults are None and we
+    # skip emitting None-valued kwargs).
+    assert "original_reset_at_epoch" not in payload
+    assert "consecutive_count" not in payload
