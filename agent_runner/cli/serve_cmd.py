@@ -20,6 +20,7 @@ from pathlib import Path
 
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
+from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
     check_self_terminated_sentinel,
     emit_fresh_eyes_round_triggered,
@@ -151,6 +152,10 @@ def cmd(args) -> int:
                 elif action == "stop":
                     emit_rate_limit_stop(log_dir)
                     break
+            else:
+                # No active throttle this round — supervisor counters can reset.
+                # Next failure (if any) restarts the exp backoff curve from 1×.
+                _reset_counters()
             if stop_file is not None and stop_file.exists():
                 try:
                     content = stop_file.read_text(encoding="utf-8", errors="replace")[:200]

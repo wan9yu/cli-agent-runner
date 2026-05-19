@@ -40,3 +40,17 @@ _CLASSIFICATIONS: frozenset[str] = frozenset(
 rate_limit_account uses server-provided resetsAt (excluded from
 _BACK_OFF_DEFAULTS table); others use defaults from that table.
 """
+
+_EXP_CAP: int = 5
+"""Maximum exponent for transient-error consecutive backoff: 2^5 = 32×.
+
+Beyond this, the multiplier plateaus. Combined with _ABSOLUTE_CAP_S, this
+prevents runaway wait times during sustained outages (max wait = 30min).
+"""
+
+_ABSOLUTE_CAP_S: int = 1800
+"""Absolute upper bound on supervisor-applied transient back-off (30 min).
+
+Applies after exp multiplier — even if base × 2^5 exceeds this, the wait
+is clipped here. Defends against an indefinitely-stuck supervisor.
+"""

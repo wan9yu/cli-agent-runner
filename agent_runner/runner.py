@@ -44,17 +44,32 @@ _BACK_OFF_JITTER_MAX_S = 30
 
 
 def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
-    """Sleep until throttle.reset_at_epoch + jitter; emit recovered (and capped if applicable).
+    """Sleep until adjusted reset_at + jitter; emit recovered (and capped if applicable).
 
-    Capped at _BACK_OFF_CAP_S to defend against malformed reset epochs.
+    For estimated-class classifications (rate_limit_model / api_transient_5xx /
+    api_timeout), applies exp backoff on consecutive failures via
+    `_throttle.compute_adjusted_reset_at`. For server-authoritative
+    rate_limit_account, the original reset_at_epoch is used verbatim.
+
+    Defensive 8h cap retained as last-line defense against malformed reset
+    epochs (e.g. an external/manual event with a far-future reset_at).
     """
+    from agent_runner import _throttle
+
+    adjusted_reset_at, _consecutive_count, _capped = _throttle.compute_adjusted_reset_at(
+        classification=throttle.classification,
+        original_reset_at_epoch=throttle.reset_at_epoch,
+        agent=throttle.agent,
+        log_dir=log_dir,
+    )
+
     now = time.time()
     requested = (
-        throttle.reset_at_epoch
-        - now
-        + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
+        adjusted_reset_at - now + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
     )
     if requested > _BACK_OFF_CAP_S:
+        # Defensive: malformed reset epoch (e.g. manual event with far-future ts).
+        # Exp backoff layer caps at 30min, so legitimate flow never hits this.
         api.emit_transient_error_backoff_capped(
             log_dir,
             classification=throttle.classification,
