@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.33] - 2026-05-19
+
+### Added
+- `_5XX_STATUSES` includes 529 (Anthropic's "overloaded") — now classified as `api_transient_5xx`.
+- Exp backoff for estimated-class transient errors (`rate_limit_model` / `api_transient_5xx` / `api_timeout`): consecutive failures multiply the wait `2^N` capped at 32× and 30 minutes absolute. Server-authoritative `rate_limit_account` unchanged.
+- `transient_error_backoff_capped` event gains `original_reset_at_epoch`, `applied_reset_at_epoch`, `consecutive_count`, `capped_by_absolute_max` fields for backoff-curve observability.
+- `docs/thesis.md` names the server-authoritative vs estimated reset principle.
+
+See `docs/migrations/0.1.33.md`.
+
 ## [0.1.32] - 2026-05-18
 
 ### Added
