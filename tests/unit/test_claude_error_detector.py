@@ -613,3 +613,19 @@ def test_given_non_claude_binary_when_after_round_then_no_event(tmp_path):
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         ClaudeErrorDetector().after_round(ctx, result)
     emit.assert_not_called()
+
+
+def test_given_claude_log_with_529_overloaded_when_classified_then_api_transient_5xx(tmp_path):
+    """Anthropic's "overloaded" status (529) should classify as api_transient_5xx,
+    not fall through as unknown error. Real scar — gateway hits this during
+    sustained Anthropic capacity issues.
+    """
+    from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
+
+    log = tmp_path / "round-1.log"
+    log.write_text(
+        '{"type":"result","is_error":true,"api_error_status":529,"result":"Overloaded"}\n',
+        encoding="utf-8",
+    )
+    parsed = _parse_claude_log(log)
+    assert parsed["transient_error"]["classification"] == "api_transient_5xx"

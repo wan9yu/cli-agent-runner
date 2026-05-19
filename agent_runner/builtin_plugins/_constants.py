@@ -21,9 +21,11 @@ _BACK_OFF_DEFAULTS: dict[str, int] = {
 }
 
 # 5xx codes treated as transient (retry-worthy server errors per RFC 9110):
-# 500=unexpected, 502=bad gateway, 503=unavailable, 504=gateway timeout.
+# 500=unexpected, 502=bad gateway, 503=unavailable, 504=gateway timeout,
+# 529=overloaded (Anthropic's non-RFC code emitted during sustained capacity
+# issues; treated as transient per Anthropic SDK behavior).
 # Excluded: 501 (not implemented = permanent), 505 (HTTP version mismatch).
-_5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504})
+_5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504, 529})
 
 _CLASSIFICATIONS: frozenset[str] = frozenset(
     {
