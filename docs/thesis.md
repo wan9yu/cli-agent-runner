@@ -64,6 +64,37 @@ this subprocess behaving unusually".
 > threshold N is project-specific. A consumer can compute this from the flat
 > events file.
 
+### How we handle transient errors: server-authoritative vs estimated
+
+`transient_error_detected` events carry a `reset_at_epoch` field telling
+the supervisor when to retry. Two cases with different policies:
+
+- **Server-authoritative**: Anthropic's `rate_limit_event.resetsAt` is an
+  exact unblock time. We respect it verbatim — no backoff multipliers, no
+  caps applied. Server knows best.
+- **Estimated**: For other classifications (`rate_limit_model`,
+  `api_transient_5xx`, `api_timeout`), the plugin emits a default guess
+  (`_BACK_OFF_DEFAULTS[bucket]`). Guesses can be wrong; if a round fires
+  the same bucket again after waiting our guess, we increase the wait
+  exponentially (`2^N`, capped at 32× and 30 minutes absolute).
+
+This split keeps the policy simple: trust the server when it talks, and
+back off our own estimates when they prove insufficient. It is **not**
+N-σ novelty detection (which we reject — see the section above); it
+codifies the specific scar of "fixed-per-bucket backoff insufficient
+during sustained upstream outage."
+
+Counter reset: any round that completes without firing a new
+`transient_error_detected` event clears all bucket counters back to zero.
+
+> **Example**: Gateway 2026-05-18 reported sustained 5xx + 529 from
+> Anthropic where our previous fixed 60s wait was too short — the next
+> round hit the same error, waited 60s again, and again. Rejected: adding
+> a config knob (`[runtime] transient_backoff_strategy = "fixed" |
+> "exp"`). Instead: upgraded the default policy to exp backoff
+> transparently, since "the default was wrong" is the right framing — not
+> "the operator should pick between two strategies."
+
 ### Not an analytics database
 
 No `--select`-able query language beyond simple peek selectors. No event
