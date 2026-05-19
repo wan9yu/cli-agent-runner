@@ -1,6 +1,9 @@
 # Internal working notes (specs, plans, drafts) — not for public repo.
 docs/internal/
 
+# Local git hooks — opt-in per clone; CI lint-commits is the authoritative gate.
+.githooks/
+
 # Python
 __pycache__/
 *.py[cod]
