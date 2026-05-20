@@ -88,11 +88,28 @@ agent-runner peek
 agent-runner peek --json
 agent-runner peek --select system.disk_used_pct
 agent-runner peek --select defenses
-agent-runner peek --select events.agent_usage_recorded --window 5    # 0.1.32+: native event-kind query
-agent-runner peek --select events.transient_error_detected --window 20
 agent-runner peek --round 42 --log         # drill into round 42, include log tail
 agent-runner peek --events 50              # last 50 events
 ```
+
+### `agent-runner events --kind K[,K2,...] [--window N] [--tail]`
+
+Query or stream events.jsonl by kind. Output is always JSON Lines (one event
+JSON per line). Current-month events.jsonl scope only.
+
+```bash
+# One-shot: last 5 usage records
+agent-runner events --kind agent_usage_recorded --window 5
+
+# Multi-kind OR filter
+agent-runner events --kind round_end,hook_failed --window 20
+
+# Streaming: emit each new matching event as it fires; blocks until SIGINT
+agent-runner events --kind transient_error_backoff_capped --tail
+```
+
+`--window N` and `--tail` are mutually exclusive. Exit codes: 0 normal,
+2 invalid arguments, 1 unreadable events file.
 
 ### `agent-runner watch [--interval N] [peek-flags]`
 
