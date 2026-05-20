@@ -7,9 +7,9 @@ with computed reset_at_epoch. Supervisor consumes the event.
 Also emits agent_usage_recorded per-round with token/cost data from the
 claude result event (0.1.24+).
 
-Naming history: was `claude_rate_limit_detector` in 0.1.20 (single-purpose
-rate-limit detector). Renamed + generalized to multi-classification in 0.1.23.
-Old entry-point alias retired in 0.1.35.
+Module name is historical: the original 0.1.20 single-purpose
+rate-limit detector was generalized to multi-classification in 0.1.23
+(class + entry-point renamed to `claude_error_detector`; module path kept).
 """
 
 from __future__ import annotations

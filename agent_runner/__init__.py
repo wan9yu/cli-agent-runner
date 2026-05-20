@@ -21,7 +21,6 @@ _HOOK_GROUPS = (
 _DISABLED_PLUGIN_NAMES: list[str] = []
 
 
-
 def _load_plugins_from_group(group: str) -> None:
     """Discover and load entry_points in ``group``, isolating per-plugin failures.
 
