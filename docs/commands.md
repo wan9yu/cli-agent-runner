@@ -133,7 +133,7 @@ agent-runner monitor --json | jq -c        # pipe alerts to a downstream consume
 
 ## 中文摘要
 
-13 个动词：`init / install / uninstall / start / stop / kill / cancel / restart / status / round / serve / peek / watch / monitor`。
+16 个动词：`init / install / uninstall / start / stop / kill / cancel / restart / status / round / serve / upgrade / peek / watch / events / monitor`。
 
 观察类（peek/watch/monitor）三视角对称，全部共用 `--round / --log / --events / --select / --json` 下钻参数。
 

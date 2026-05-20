@@ -45,9 +45,10 @@ correctly (process still runs as your user, not root).
 ### Health check
 
 ```bash
-agent-runner status              # service running?
-agent-runner peek                # full state snapshot
-agent-runner peek --json | jq .defenses    # what's defended
+agent-runner status                                       # service running?
+agent-runner peek                                         # full state snapshot
+agent-runner peek --json | jq .defenses                   # what's defended
+agent-runner peek --json | jq .system.agent_process_count # orphan agent count (0.1.34+)
 journalctl --user -u agent-runner@<project> --since "1 hour ago"
 ```
 

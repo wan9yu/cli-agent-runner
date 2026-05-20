@@ -3,7 +3,7 @@
 - serve_cmd.py imports from a strict allowlist (no business logic)
 - cli command files call api.X (not direct module imports)
 - All api_types are frozen dataclasses
-- KNOWN_ALERT_KINDS in monitor.py matches the 10 builtin detectors
+- KNOWN_ALERT_KINDS in monitor.py matches the 11 builtin detectors
 """
 
 from __future__ import annotations
