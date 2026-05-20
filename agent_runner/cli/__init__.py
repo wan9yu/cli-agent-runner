@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agent_runner import __version__
 from agent_runner.cli import (
+    events_cmd,
     init_cmd,
     install_cmd,
     monitor_cmd,
@@ -63,6 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     install_cmd.add_parser(sub, parent)
     service_cmd.add_parser(sub, parent)
     peek_cmd.add_parser(sub, parent)
+    events_cmd.add_parser(sub, parent)
     monitor_cmd.add_parser(sub, parent)
     serve_cmd.add_parser(sub, parent)
     round_cmd.add_parser(sub, parent)

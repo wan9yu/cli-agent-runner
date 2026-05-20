@@ -20,6 +20,7 @@ are shared between `peek`, `watch`, and `monitor`.
 | `status` | Show current service state |
 | `peek` | peek project state with optional drill-down |
 | `watch` | watch project state with optional drill-down |
+| `events` | Query / stream events from events.jsonl by kind |
 | `monitor` | Anomaly detection, narrate/events stream, or HTTP progress page |
 | `serve` | Long-running supervisor loop |
 | `round` | Run one round and exit |
