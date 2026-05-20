@@ -1,61 +1,8 @@
-"""Tests for peek --select events.<kind> --window N selector (0.1.32+)."""
+"""Tests for peek --select (dot-path subtree selector)."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from agent_runner.cli import _build_parser
-from agent_runner.cli.peek_cmd import _run_events_select
-
-
-def _write_events_file(log_dir: Path, filename: str, lines: list[dict]) -> None:
-    f = log_dir / filename
-    f.write_text(
-        "\n".join(json.dumps(ln) for ln in lines) + "\n",
-        encoding="utf-8",
-    )
-
-
-def test_given_events_select_when_three_matching_then_returns_last_two(tmp_path, capsys):
-    """--select events.agent_usage_recorded --window 2 returns last 2 matching events."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    _write_events_file(
-        log_dir,
-        "events-2026-05.jsonl",
-        [
-            {"event": "round_start", "round_num": 1},
-            {"event": "agent_usage_recorded", "round_num": 1, "cost_usd": 0.01},
-            {"event": "agent_usage_recorded", "round_num": 2, "cost_usd": 0.02},
-            {"event": "agent_usage_recorded", "round_num": 3, "cost_usd": 0.03},
-            {"event": "round_end", "round_num": 3},
-        ],
-    )
-
-    result = _run_events_select(log_dir, kind="agent_usage_recorded", window=2, month_tag="2026-05")
-    assert len(result) == 2
-    assert result[0]["round_num"] == 2
-    assert result[1]["round_num"] == 3
-
-
-def test_given_events_select_when_kind_absent_then_returns_empty(tmp_path):
-    """--select events.<kind> matching nothing returns []."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    _write_events_file(
-        log_dir,
-        "events-2026-05.jsonl",
-        [
-            {"event": "round_start", "round_num": 1},
-            {"event": "round_end", "round_num": 1},
-        ],
-    )
-
-    result = _run_events_select(
-        log_dir, kind="agent_usage_recorded", window=10, month_tag="2026-05"
-    )
-    assert result == []
 
 
 def test_given_select_malformed_events_prefix_when_parsed_then_argparse_exits(capsys):
@@ -73,4 +20,29 @@ def test_given_window_zero_or_negative_when_parsed_then_argparse_rejects():
 
     for bad in ("0", "-1", "-5"):
         with pytest.raises(SystemExit):
-            _build_parser().parse_args(["peek", "--select", "events.foo", "--window", bad])
+            _build_parser().parse_args(["peek", "--window", bad])
+
+
+def test_peek_select_events_kind_is_removed(tmp_path, capsys):
+    """0.1.34+: peek --select events.<kind> removed (use `events --kind <kind>`).
+    Invocation should error like any other unknown selector.
+    """
+    from types import SimpleNamespace
+
+    from agent_runner.cli import peek_cmd
+
+    args = SimpleNamespace(
+        select="events.agent_usage_recorded",
+        window=10,
+        json=False,
+        round=None,
+        log=False,
+        events=None,
+        config=None,
+        work_dir=str(tmp_path),
+    )
+    # The selector is unknown — should fail, not succeed
+    rc = peek_cmd.cmd_peek(args)
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert any(s in err.lower() for s in ("unknown", "invalid", "not found", "no such"))
