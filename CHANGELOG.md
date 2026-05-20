@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-05-20
+
+### Removed
+- `claude_rate_limit_detector` entry-point alias (0.1.20-era, kept through 0.1.34 as back-compat after the 0.1.23 rename to `claude_error_detector`). Operators using `[plugins] disable = ["claude_rate_limit_detector"]` or `enable = [...]` in `agent-runner.toml` must switch to `claude_error_detector`. The underlying class is unchanged; only the entry-point key was renamed.
+
 ## [0.1.34] - 2026-05-20
 
 ### Added
