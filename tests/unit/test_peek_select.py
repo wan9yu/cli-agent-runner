@@ -14,35 +14,28 @@ def test_given_select_malformed_events_prefix_when_parsed_then_argparse_exits(ca
     assert args.select == "foo.bar"
 
 
-def test_given_window_zero_or_negative_when_parsed_then_argparse_rejects():
-    """--window must be a positive int; 0 and negatives are rejected at parse time."""
+def test_peek_select_events_kind_is_removed():
+    """0.1.34+: peek --select events.<kind> no longer special-cased.
+
+    Exercises select_path directly against a sample ProjectState-like tree so
+    we prove the selector hits generic dot-path traversal (which has no
+    ``events`` attribute) instead of the deleted ``_run_events_select`` helper.
+    """
     import pytest
 
-    for bad in ("0", "-1", "-5"):
-        with pytest.raises(SystemExit):
-            _build_parser().parse_args(["peek", "--window", bad])
+    from agent_runner.api_types import select_path
+
+    # Minimal tree mirroring ProjectState shape; no 'events' attribute.
+    tree = {"system": {"disk_used_pct": 50.0}, "plugins": {"event_kinds": []}}
+    with pytest.raises(KeyError, match="events"):
+        select_path(tree, "events.agent_usage_recorded")
 
 
-def test_peek_select_events_kind_is_removed(tmp_path, capsys):
-    """0.1.34+: peek --select events.<kind> removed (use `events --kind <kind>`).
-    Invocation should error like any other unknown selector.
+def test_peek_cmd_has_no_window_flag():
+    """0.1.34+: --window was only consumed by the removed events.* selector.
+    Verify argparse rejects --window on peek so it stays removed.
     """
-    from types import SimpleNamespace
+    import pytest
 
-    from agent_runner.cli import peek_cmd
-
-    args = SimpleNamespace(
-        select="events.agent_usage_recorded",
-        window=10,
-        json=False,
-        round=None,
-        log=False,
-        events=None,
-        config=None,
-        work_dir=str(tmp_path),
-    )
-    # The selector is unknown — should fail, not succeed
-    rc = peek_cmd.cmd_peek(args)
-    assert rc != 0
-    err = capsys.readouterr().err
-    assert any(s in err.lower() for s in ("unknown", "invalid", "not found", "no such"))
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["peek", "--window", "10"])

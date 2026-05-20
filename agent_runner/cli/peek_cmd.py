@@ -19,16 +19,6 @@ def _round_arg(s: str) -> int | str:
         raise argparse.ArgumentTypeError(f"--round expects int or 'latest', got {s!r}") from e
 
 
-def _positive_int(s: str) -> int:
-    try:
-        n = int(s)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"expects positive int, got {s!r}") from e
-    if n <= 0:
-        raise argparse.ArgumentTypeError(f"expects positive int (> 0), got {n}")
-    return n
-
-
 def add_parser(sub, parent) -> None:
     for verb, fn in (("peek", cmd_peek), ("watch", cmd_watch)):
         p = sub.add_parser(
@@ -53,13 +43,6 @@ def add_parser(sub, parent) -> None:
                 "Selector: dot-path (e.g. system.disk_used_pct) extracts a subtree from "
                 "peek state. For event-stream queries, use the dedicated `events` verb."
             ),
-        )
-        p.add_argument(
-            "--window",
-            type=_positive_int,
-            default=10,
-            metavar="N",
-            help="Max entries returned by --select dot-path queries (default 10).",
         )
         if verb == "watch":
             p.add_argument(
