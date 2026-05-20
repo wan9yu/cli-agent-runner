@@ -9,8 +9,7 @@ claude result event (0.1.24+).
 
 Naming history: was `claude_rate_limit_detector` in 0.1.20 (single-purpose
 rate-limit detector). Renamed + generalized to multi-classification in 0.1.23.
-Old plugin name `claude_rate_limit_detector` retained as entry-point alias
-via pyproject.toml.
+Old entry-point alias retired in 0.1.35.
 """
 
 from __future__ import annotations
