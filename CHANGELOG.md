@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-05-20
+
+### Added
+- New verb `agent-runner events --kind K[,K2,...] [--window N] [--tail]` for event-stream observation. One-shot or streaming mode (JSON Lines output). Verbs: 13 → 14.
+- `SystemMetrics.agent_process_count: int` — `pgrep -xc` of agent binary basename, host-wide. Surfaces orphan agent processes in peek output.
+- `docs/plugins.md` worked example for custom monitor detector with plugin-emitted exempt flag — pattern for project-specific detectors that exclude exempt-by-design rounds.
+
+### Removed
+- `peek --select events.<kind>` selector (mis-placed in state-snapshot verb). Use `events --kind <kind>` instead. 1-line `s///` migration.
+
+See `docs/migrations/0.1.34.md`.
+
 ## [0.1.33] - 2026-05-19
 
 ### Added
