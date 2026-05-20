@@ -123,3 +123,41 @@ def test_throttle_state_removed() -> None:
     """
     with pytest.raises(ImportError):
         from agent_runner.api_types import ThrottleState  # noqa: F401
+
+
+def test_metrics_collect_with_agent_binary_returns_pgrep_count(tmp_path, monkeypatch):
+    """When agent_binary is supplied, collect() runs pgrep -xc and includes count."""
+    import agent_runner.metrics as _metrics_mod
+
+    class _FakeCompleted:
+        def __init__(self, returncode: int, stdout: str):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(args, **kwargs):
+        assert args == ["pgrep", "-xc", "claude"]
+        return _FakeCompleted(returncode=0, stdout="3\n")
+
+    monkeypatch.setattr(_metrics_mod.subprocess, "run", fake_run)
+    out = _metrics_mod.collect(tmp_path, agent_binary="claude")
+    assert out["agent_process_count"] == 3
+
+
+def test_metrics_collect_without_agent_binary_omits_count(tmp_path):
+    """Backward compat: callers that don't pass agent_binary get no field."""
+    from agent_runner import metrics
+
+    out = metrics.collect(tmp_path)
+    assert "agent_process_count" not in out
+
+
+def test_metrics_collect_handles_pgrep_subprocess_error_returns_zero(tmp_path, monkeypatch):
+    """pgrep timeout / FileNotFoundError → agent_process_count = 0 (defensive)."""
+    import agent_runner.metrics as _metrics_mod
+
+    def fake_run(args, **kwargs):
+        raise FileNotFoundError("pgrep not installed")
+
+    monkeypatch.setattr(_metrics_mod.subprocess, "run", fake_run)
+    out = _metrics_mod.collect(tmp_path, agent_binary="claude")
+    assert out["agent_process_count"] == 0

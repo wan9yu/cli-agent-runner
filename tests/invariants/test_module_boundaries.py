@@ -45,6 +45,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subproc
             "vcs_state.py",
             "scaffold.py",
             "monitor.py",
+            "metrics.py",
             "api.py",
             "_substrate.py",
             "__init__.py",

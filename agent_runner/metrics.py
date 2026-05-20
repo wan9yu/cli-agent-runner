@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ import psutil
 from agent_runner.events import now_iso_ms
 
 
-def collect(disk_path: Path) -> dict[str, Any]:
+def collect(disk_path: Path, *, agent_binary: str | None = None) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     du = psutil.disk_usage(str(disk_path))
     out: dict[str, Any] = {
@@ -38,7 +39,31 @@ def collect(disk_path: Path) -> dict[str, Any]:
         out["cpu_pct"] = round(psutil.cpu_percent(interval=None), 1)
     except Exception:
         pass
+    if agent_binary:
+        out["agent_process_count"] = _count_agent_processes(agent_binary)
     return out
+
+
+def _count_agent_processes(agent_binary: str) -> int:
+    """Run `pgrep -xc <agent_binary>`; return count or 0 on error.
+
+    Host-wide intentional — catches orphan agent processes not parented
+    by us, which is the diagnostic value of this metric.
+    """
+    try:
+        result = subprocess.run(
+            ["pgrep", "-xc", agent_binary],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        # pgrep -c returns exit 1 with output "0" when no matches; exit 0
+        # with count otherwise. Both are valid; non-int output → 0.
+        if result.returncode in (0, 1):
+            return int(result.stdout.strip() or "0")
+    except (subprocess.SubprocessError, ValueError, FileNotFoundError, OSError):
+        pass
+    return 0
 
 
 def log_metrics(
@@ -47,6 +72,7 @@ def log_metrics(
     event: str = "periodic",
     round_num: int | None = None,
     phase: str | None = None,
+    agent_binary: str | None = None,
 ) -> None:
     """Append one metrics sample to metrics-YYYY-MM.jsonl (UTC).
 
@@ -59,7 +85,7 @@ def log_metrics(
     payload: dict[str, Any] = {
         "ts": now_iso_ms(),
         "event": event,
-        **collect(log_dir),
+        **collect(log_dir, agent_binary=agent_binary),
     }
     if round_num is not None:
         payload["round_num"] = round_num

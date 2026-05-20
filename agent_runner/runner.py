@@ -441,7 +441,14 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
 
     events.emit(log_dir, "round_start", round_num=round_num, phase=phase)
-    metrics.log_metrics(log_dir, event="round_start", round_num=round_num, phase=phase)
+    _agent_binary = Path(cfg.agent.command[0]).name if cfg.agent.command else None
+    metrics.log_metrics(
+        log_dir,
+        event="round_start",
+        round_num=round_num,
+        phase=phase,
+        agent_binary=_agent_binary,
+    )
 
     prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 
@@ -564,7 +571,13 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             phase_index=phase_idx,
         ),
     )
-    metrics.log_metrics(log_dir, event="round_end", round_num=round_num, phase=phase)
+    metrics.log_metrics(
+        log_dir,
+        event="round_end",
+        round_num=round_num,
+        phase=phase,
+        agent_binary=_agent_binary,
+    )
     events.emit(log_dir, "round_end", round_num=round_num)
 
     round_result = RoundResult(

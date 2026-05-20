@@ -56,6 +56,7 @@ class SystemMetrics:
     disk_free_gb: float = 0.0
     load_1m: float | None = None
     cpu_pct: float | None = None
+    agent_process_count: int = 0  # 0.1.34 — pgrep -xc <agent_binary>, host-wide
 
 
 @dataclass(frozen=True)

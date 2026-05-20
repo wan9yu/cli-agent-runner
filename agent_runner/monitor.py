@@ -515,6 +515,7 @@ def assemble_project_state(source: StateSource, *, project: str) -> ProjectState
         disk_free_gb=float(latest.get("disk_free_gb", 0.0)),
         load_1m=latest.get("load_1m"),
         cpu_pct=latest.get("cpu_pct"),
+        agent_process_count=int(latest.get("agent_process_count", 0)),
     )
     return ProjectState(
         project=project,
