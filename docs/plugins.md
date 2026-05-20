@@ -387,6 +387,119 @@ detector. Other plugin detectors and all builtins still run normally.
 }
 ```
 
+### Worked example: project-specific monitor detector with plugin-emitted exempt flag
+
+This example shows the full pattern for a project-specific monitor detector
+that filters out rounds the plugin marks as exempt by some project rule.
+Covers gateway-class needs like "stuck role detection" (count git commits per
+round) and "wall-time trend" (compare recent avg vs older avg).
+
+**The shape**: a plugin emits a custom event for exempt rounds; a custom
+monitor detector reads recent events, builds the exempt set, and applies its
+own detection logic only on non-exempt rounds.
+
+**Plugin file** (`myproject_agent_plugin/__init__.py`):
+
+```python
+"""Example project-specific plugin: detect stuck rounds, exempt short rounds."""
+
+from __future__ import annotations
+
+from agent_runner.api import emit
+from agent_runner.events import register_event_kind
+from agent_runner.hooks import HookContext, register_post_round_hook
+from agent_runner.monitor import register_custom_detector
+
+
+# Register the kinds this plugin emits (events.py invariant)
+register_event_kind("myproject_round_exempt", source="myproject_agent_plugin")
+register_event_kind("myproject_stuck_round_detected", source="myproject_agent_plugin")
+
+
+class _ExemptHook:
+    """PostRoundHook that flags short rounds as exempt from stuck detection."""
+
+    name = "myproject_exempt"
+
+    def after_round(self, ctx: HookContext, result) -> None:
+        # Project rule: rounds under 60s are exempt (e.g. nothing-to-do iters)
+        if result.duration_s < 60:
+            emit(ctx.log_dir, "myproject_round_exempt",
+                 round_num=ctx.round_num, reason="short_round")
+
+
+def _stuck_round_detector(events: list[dict]) -> dict | None:
+    """Custom detector: 3+ consecutive non-exempt rounds with no commit → stuck.
+
+    Reads recent events.jsonl tail (passed in by monitor); builds exempt set;
+    counts commits per round_num (project-specific: greps git log); flags
+    role-stuck.
+    """
+    # Build exempt round_num set
+    exempt = {
+        e["round_num"] for e in events
+        if e.get("event") == "myproject_round_exempt"
+    }
+
+    # Get last N round_end events excluding exempt
+    rounds_ended = [
+        e for e in events
+        if e.get("event") == "round_end" and e.get("round_num") not in exempt
+    ]
+    if len(rounds_ended) < 3:
+        return None
+
+    last_three = rounds_ended[-3:]
+    last_three_nums = {e["round_num"] for e in last_three}
+
+    # Project-specific: check git log for commits matching these round_nums
+    # (truncated for brevity — real plugin would shell to `git log --grep`)
+    commits_per_round = _count_commits_for_rounds(last_three_nums)
+    if sum(commits_per_round.values()) == 0:
+        # All 3 non-exempt rounds produced no commits → stuck signal
+        return {
+            "kind": "myproject_stuck_round_detected",
+            "severity": "warning",
+            "message": f"3 non-exempt rounds (round_nums={sorted(last_three_nums)}) "
+                       f"produced no commits — pipeline stuck?",
+        }
+    return None
+
+
+def _count_commits_for_rounds(round_nums: set[int]) -> dict[int, int]:
+    """Stub: real plugin would shell out to `git log` or read a sidecar file."""
+    return {n: 0 for n in round_nums}
+
+
+register_post_round_hook(_ExemptHook())
+register_custom_detector(_stuck_round_detector)
+```
+
+**Plugin registration** (`pyproject.toml`):
+
+```toml
+[project.entry-points."agent_runner.post_round_hooks"]
+myproject_exempt = "myproject_agent_plugin:_ExemptHook"
+
+[project.entry-points."agent_runner.custom_detectors"]
+myproject_stuck = "myproject_agent_plugin:_stuck_round_detector"
+```
+
+**The pattern in 3 lines**:
+
+1. PostRoundHook emits `<plugin>_round_exempt` events for exempt rounds.
+2. Custom detector reads recent events, builds exempt set, filters out exempt
+   rounds, applies its own logic.
+3. Detector returns an alert dict when the condition fires.
+
+The same shape covers other project-specific signals: count git commits per
+round (no-commit-rounds-stuck detection), avg recent vs older round
+duration (wall-time-trend detection for context bloat), etc. Project-specific
+semantics live in the plugin — agent-runner core stays agent-agnostic.
+
+(Adjust import paths, function names, and exact API surface to match what
+your codebase exposes — this is a template, not a literal must-compile snippet.)
+
 ## DetectorHelpers
 
 `agent_runner.detector_helpers` codifies three production-tested heuristic
