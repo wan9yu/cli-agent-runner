@@ -41,17 +41,22 @@ def test_each_entry_point_resolves_to_a_live_class():
 
 
 def test_canonical_entry_point_names_match_class_name_attribute():
-    """For non-alias entries, the pyproject key must equal cls.name.
-    `claude_rate_limit_detector` is a known back-compat alias and is skipped.
-    """
+    """Every pyproject entry_point key must equal the bound class's ``name``."""
     entries = _read_post_round_hook_entries()
-    aliases = {"claude_rate_limit_detector"}  # legacy alias retained intentionally
     for name, target in entries.items():
-        if name in aliases:
-            continue
         module_path, _, attr = target.partition(":")
         cls = getattr(importlib.import_module(module_path), attr)
         instance = cls()
         assert instance.name == name, (
             f"entry_point '{name}' bound to class with name '{instance.name}' — mismatch"
         )
+
+
+def test_legacy_claude_rate_limit_detector_alias_removed():
+    """`claude_rate_limit_detector` alias (0.1.20-0.1.34) hard-removed in 0.1.35.
+    Consumers using the old name in `[plugins] disable/enable` must migrate.
+    """
+    entries = _read_post_round_hook_entries()
+    assert "claude_rate_limit_detector" not in entries, (
+        "0.1.20-era alias should be gone; see docs/migrations/0.1.35.md"
+    )

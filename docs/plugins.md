@@ -266,13 +266,16 @@ agent-runner ships two built-in `post_round_hooks` plugins registered
 automatically via their own entry-points: `claude_error_detector` (below)
 and `gemini_error_detector` (0.1.24+, parallel for gemini CLI).
 
-### `claude_error_detector` (0.1.23+, formerly `claude_rate_limit_detector`)
+### `claude_error_detector` (0.1.23+)
 
 **Entry-point group:** `agent_runner.post_round_hooks`
 **Module:** `agent_runner.builtin_plugins.claude_rate_limit`
-**Old name:** `claude_rate_limit_detector` retained as an alias in
-`pyproject.toml` so `[plugins] disable = ["claude_rate_limit_detector"]`
-still works for back-compat.
+
+Renamed from `claude_rate_limit_detector` in 0.1.23 when the detector
+was generalized from single-rate-limit to multi-classification. The
+old-name alias was kept as a `pyproject.toml` entry-point through 0.1.34
+and removed in 0.1.35. Operators still using `[plugins] disable =
+["claude_rate_limit_detector"]` must switch to `claude_error_detector`.
 
 After each round, scans the last 50 lines of the round's JSONL log for
 transient errors and usage data:
