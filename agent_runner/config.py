@@ -141,6 +141,12 @@ class MonitorConfig:
     anomaly_repetitive_threshold: int = 0  # 0 = disabled
     host_health: MonitorHostHealthConfig = field(default_factory=MonitorHostHealthConfig)
     round_progress_interval_s: int = 0  # 0 = disabled; >0 = emit round_progress every N seconds
+    supervisor_stale_threshold_s: int | None = None
+    """Staleness deadline for the supervisor_stale detector (seconds).
+
+    None (unset) → derived default round_timeout_s * 1.5.
+    Positive int → explicit threshold. 0 → disable the detector.
+    """
 
 
 @dataclass(frozen=True)
@@ -466,6 +472,14 @@ def load_config(toml_path: Path) -> Config:
         round_progress_interval_s=_require_non_negative_int(
             monitor_d.get("round_progress_interval_s", 0),
             field="monitor.round_progress_interval_s",
+        ),
+        supervisor_stale_threshold_s=(
+            None
+            if monitor_d.get("supervisor_stale_threshold_s") is None
+            else _require_non_negative_int(
+                monitor_d["supervisor_stale_threshold_s"],
+                field="monitor.supervisor_stale_threshold_s",
+            )
         ),
     )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop

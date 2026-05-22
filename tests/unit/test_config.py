@@ -1554,3 +1554,26 @@ def test_given_high_disk_critical_when_disk_used_below_then_warning_still_fires(
     alert = detect_disk_warning(metrics, threshold_pct=90.0, critical_pct=98.0)
     assert alert is not None
     assert alert.detector == "disk_warning"
+
+
+def test_given_no_supervisor_stale_field_then_default_none(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        '[runtime]\nwork_dir = "."\nlog_dir = "/tmp/logs"\n'
+        '[prompt]\nfile = "p.md"\n',
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.supervisor_stale_threshold_s is None
+
+
+def test_given_supervisor_stale_threshold_set_then_loaded(tmp_path: Path) -> None:
+    toml = _write_toml(
+        tmp_path,
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        '[runtime]\nwork_dir = "."\nlog_dir = "/tmp/logs"\n'
+        '[prompt]\nfile = "p.md"\n'
+        "[monitor]\nsupervisor_stale_threshold_s = 600\n",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.supervisor_stale_threshold_s == 600

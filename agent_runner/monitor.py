@@ -429,6 +429,39 @@ def detect_anomaly_repetitive_active(
     )
 
 
+def detect_supervisor_stale(
+    events: list[dict[str, Any]],
+    *,
+    now: datetime,
+    stale_threshold_s: int,
+) -> Alert | None:
+    """Alert when the most recent event is older than ``stale_threshold_s``.
+
+    Catches supervisor "silent-death": stuck between rounds (after round_end,
+    before the next round_start) emitting no events. The event stream cannot
+    distinguish that from a normal idle gap — only a deadline check can.
+
+    ``stale_threshold_s <= 0`` disables the check (caller resolves the
+    sentinel). Empty event list → no alert: that is "never started", not
+    silent-death, and there is no baseline to measure staleness against.
+    """
+    if stale_threshold_s <= 0 or not events:
+        return None
+    last_ts_str = max((e["ts"] for e in events if "ts" in e), default=None)
+    if last_ts_str is None:
+        return None
+    age_s = (now - parse_iso_ms(last_ts_str)).total_seconds()
+    if age_s <= stale_threshold_s:
+        return None
+    return _alert(
+        "supervisor_stale",
+        "warning",
+        f"No events for {int(age_s)}s (threshold {stale_threshold_s}s) — "
+        f"supervisor may be stuck or dead. Last event: {last_ts_str}.",
+        {"age_s": int(age_s), "threshold_s": stale_threshold_s, "last_ts": last_ts_str},
+    )
+
+
 # ---------------------------------------------------------------------------
 # State-tree assembly (Task 3.2)
 # ---------------------------------------------------------------------------
