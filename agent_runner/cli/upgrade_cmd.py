@@ -20,6 +20,7 @@ from pathlib import Path
 
 import agent_runner
 from agent_runner import __version__, api, events
+from agent_runner.api_types import ServiceMode
 from agent_runner.cli.common import cfg_from_args, fail, info
 from agent_runner.config import Config
 
@@ -41,12 +42,31 @@ def add_parser(sub, parent) -> None:
         help="Pin a specific version (e.g. 0.1.13). Default: latest from PyPI. "
         "Use to roll back: `--target <previous-version>`.",
     )
+    p.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Upgrade the package + smoke only; do not stop/start the service "
+        "(you restart it yourself).",
+    )
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
-    cfg = cfg_from_args(args)
-    return _run_upgrade(cfg, target=args.target, cfg_path=args.config)
+    cfg = _try_load_cfg(args)
+    return _run_upgrade(
+        cfg,
+        target=args.target,
+        cfg_path=args.config,
+        no_restart=getattr(args, "no_restart", False),
+    )
+
+
+def _try_load_cfg(args) -> Config | None:
+    """Load the project config if present; None when absent (package-only)."""
+    try:
+        return cfg_from_args(args)
+    except FileNotFoundError:
+        return None
 
 
 def _pip_env_flags() -> list[str]:
@@ -120,18 +140,40 @@ def _smoke_peek(cfg_path: Path) -> tuple[int, str]:
     return 0, ""
 
 
-def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
-    """Orchestrate the full upgrade flow.
-
-    Returns exit code (0 success, 1 user-recoverable, 2 critical).
-    """
+def _run_upgrade(
+    cfg: Config | None,
+    *,
+    target: str | None,
+    cfg_path: Path,
+    no_restart: bool = False,
+) -> int:
+    """Dispatch: full orchestration for the systemd --user service we installed;
+    package-only everywhere else."""
     if target is not None and not target.strip():
         return fail("--target must be a non-empty version string (e.g. 0.1.13)")
+    from_version = __version__
+    if _orchestrate_capable(cfg, no_restart):
+        return _orchestrated_upgrade(
+            cfg, target=target, cfg_path=cfg_path, from_version=from_version
+        )
+    return _package_only_upgrade(cfg, target=target, from_version=from_version)
 
+
+def _orchestrate_capable(cfg: Config | None, no_restart: bool) -> bool:
+    if cfg is None or no_restart:
+        return False
+    pname = api._resolve_project(cfg.runtime.work_dir)
+    return api.detect_service_mode(pname, log_dir=cfg.runtime.log_dir) == ServiceMode.SYSTEMD_USER
+
+
+def _orchestrated_upgrade(
+    cfg: Config, *, target: str | None, cfg_path: Path, from_version: str
+) -> int:
+    """Full stop → pip → smoke(--version + peek) → start → emit service_upgraded,
+    with auto-rollback on smoke failure. Only reached for the systemd --user
+    service agent-runner installed (api.start works there)."""
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
-
-    from_version = __version__
     t0 = time.monotonic()
 
     info("stopping service...")
@@ -182,14 +224,13 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
             started_at=t0,
             cfg_path=cfg_path,
         )
-
     info(f"smoke OK (now at {to_version})")
 
     info("starting service...")
     t_start = time.monotonic()
     try:
         api.start(cfg.runtime.work_dir)
-    except Exception as e:  # noqa: BLE001 — new version installed but service stopped; no safe auto-rollback
+    except Exception as e:  # noqa: BLE001 — new version installed but service stopped
         return _rollback_failed(
             log_dir,
             to_version,
@@ -208,6 +249,65 @@ def _run_upgrade(cfg: Config, *, target: str | None, cfg_path: Path) -> int:
     )
     info(f"upgraded {from_version} → {to_version} ({elapsed:.1f}s total)")
     return 0
+
+
+def _package_only_upgrade(cfg: Config | None, *, target: str | None, from_version: str) -> int:
+    """Upgrade the on-disk package + smoke (--version), with pip-level rollback.
+    Never touches the service — the operator restarts it. Used for any deployment
+    not managed as a systemd --user service (system unit, foreground, none, no
+    config, or --no-restart)."""
+    spec = "cli-agent-runner" if target is None else f"cli-agent-runner=={target}"
+    info(f"package-only upgrade (service not managed by agent-runner); installing {spec}...")
+    pip_result = _pip_install(spec)
+    if pip_result.returncode != 0:
+        return fail(
+            f"pip install failed (rc={pip_result.returncode}): "
+            f"{pip_result.stderr.strip()[:200]}; "
+            f"package unchanged, your service keeps running the current version"
+        )
+
+    rc_v, version_or_err = _smoke_version()
+    if rc_v != 0:
+        attempted = target or "latest"
+        info(f"smoke failed at {attempted} ({version_or_err}); reinstalling {from_version}...")
+        rb = _pip_install(f"cli-agent-runner=={from_version}", force_reinstall=True)
+        if rb.returncode != 0:
+            return fail(
+                f"package smoke failed AND rollback reinstall failed (rc={rb.returncode}): "
+                f"{rb.stderr.strip()[:200]}; run: "
+                f"pip install --force-reinstall cli-agent-runner=={from_version}"
+            )
+        return fail(
+            f"package smoke failed at {attempted}; reinstalled {from_version}; service untouched"
+        )
+    to_version = version_or_err
+
+    if cfg is not None:
+        log_dir = cfg.runtime.log_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
+        events.emit(
+            log_dir,
+            events.PACKAGE_UPGRADED,
+            from_version=from_version,
+            to_version=to_version,
+            restart_deferred=True,
+        )
+    info(f"package upgraded {from_version} → {to_version}. Restart your supervisor to load it:")
+    info(_restart_hint(cfg))
+    return 0
+
+
+def _restart_hint(cfg: Config | None) -> str:
+    """Mode-correct restart command. Never suggests `agent-runner start`
+    (which would spawn a conflicting supervisor on a system-unit host)."""
+    if cfg is not None:
+        pname = api._resolve_project(cfg.runtime.work_dir)
+        if api.detect_service_mode(pname, log_dir=cfg.runtime.log_dir) == ServiceMode.SYSTEMD_USER:
+            return f"  systemctl --user restart {api.serve_unit_filename(pname)}"
+    return (
+        "  sudo systemctl restart <your-unit>   # if run by a systemd system unit\n"
+        "  (agent-runner can't know a service it didn't install; substitute your unit name)"
+    )
 
 
 def _rollback(
