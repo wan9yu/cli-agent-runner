@@ -24,7 +24,7 @@ are shared between `peek`, `watch`, and `monitor`.
 | `monitor` | Anomaly detection, narrate/events stream, or HTTP progress page |
 | `serve` | Long-running supervisor loop |
 | `round` | Run one round and exit |
-| `upgrade` | Round-boundary upgrade: stop → pip install → smoke → start (auto-rollback on smoke fail) |
+| `upgrade` | Package upgrade with service-mode gate: orchestrated stop/start for systemd --user; package-only otherwise |
 <!-- /gen:verb-table -->
 
 ## Lifecycle
@@ -75,6 +75,24 @@ can also invoke directly to debug.
 Long-running supervisor loop. Traps SIGTERM (graceful stop), SIGINT (graceful),
 SIGUSR1 (cancel — forwards SIGINT to current round). Writes `serve.pid` and
 `round.pid`. `--once` runs a single round then exits (debug).
+
+### `agent-runner upgrade [--target VERSION] [--no-restart] [--config PATH]`
+
+Upgrade the agent-runner package. Behavior depends on the detected service mode:
+
+- **systemd --user service** (installed via `agent-runner install`): full
+  orchestrated flow — stop → pip install → smoke (`--version` + `peek`) →
+  start → emit `service_upgraded`. Auto-rollback on smoke failure.
+- **Anything else** (system unit, foreground, no config): package-only —
+  PEP 668-aware pip + `--version` smoke + pip-level rollback, emits
+  `package_upgraded`, prints the restart command. Never touches your running
+  service, never runs `sudo`.
+
+`--config` is optional: when omitted (or the file is absent), `upgrade` falls
+back to package-only mode automatically.
+
+`--no-restart` forces package-only even on a systemd --user host (upgrade the
+package now, restart your service yourself).
 
 ## Observation
 

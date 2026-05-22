@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-05-22
+
+### Fixed
+- `upgrade` no longer crashes when run from a directory without `agent-runner.toml` — it upgrades the package and falls back to package-only mode.
+- `upgrade` handles PEP 668 externally-managed environments (Debian 12 etc.): retries pip with `--break-system-packages` (and `--user` for user-site installs) when not in a venv.
+
+### Changed
+- `upgrade` only stop/start-orchestrates the `systemd --user` service it installed. For a self-managed service (e.g. a systemd system unit) it does package-only upgrade + smoke and prints the restart command to run yourself — no more silent no-op, and no more `agent-runner start` suggestion (which could spawn a conflicting second supervisor).
+- New `--no-restart` flag forces package-only upgrade.
+
+### Added
+- New event `package_upgraded` (on-disk package changed; restart deferred to the operator), distinct from `service_upgraded` (the live service is now on the new version).
+
 ## [0.1.36] - 2026-05-21
 
 ### Added

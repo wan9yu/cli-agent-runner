@@ -30,8 +30,8 @@ def add_parser(sub, parent) -> None:
         "upgrade",
         parents=[parent],
         help=(
-            "Round-boundary upgrade: stop → pip install → smoke → start"
-            " (auto-rollback on smoke fail)"
+            "Package upgrade with service-mode gate: orchestrated stop/start"
+            " for systemd --user; package-only otherwise"
         ),
     )
     p.add_argument(
