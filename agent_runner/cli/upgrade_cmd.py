@@ -18,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 
+import agent_runner
 from agent_runner import __version__, api, events
 from agent_runner.cli.common import cfg_from_args, fail, info
 from agent_runner.config import Config
@@ -48,16 +49,42 @@ def cmd(args) -> int:
     return _run_upgrade(cfg, target=args.target, cfg_path=args.config)
 
 
-def _pip_install(spec: str, *, force_reinstall: bool = False) -> subprocess.CompletedProcess:
-    """Invoke pip install with the given spec. Returns CompletedProcess (rc check by caller).
+def _pip_env_flags() -> list[str]:
+    """Extra pip flags for the current install under PEP 668.
 
-    Uses ``sys.executable -m pip`` to match the smoke functions and guarantee
-    we install into the same interpreter we will smoke-test against.
+    Inside a venv: none (pip is unrestricted). Otherwise (system/user
+    interpreter on an externally-managed distro) the caller retries with these.
+    ``--user`` is added only when agent_runner lives in user-site, matching
+    where the existing install actually is.
     """
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", spec]
+    import sys
+
+    if sys.prefix != sys.base_prefix:  # inside a venv → no PEP 668
+        return []
+    import site
+
+    flags = ["--break-system-packages"]
+    user_site = site.getusersitepackages()
+    if str(Path(agent_runner.__file__)).startswith(str(Path(user_site))):
+        flags.insert(0, "--user")
+    return flags
+
+
+def _pip_install(spec: str, *, force_reinstall: bool = False) -> subprocess.CompletedProcess:
+    """pip install --upgrade <spec>, retrying once with PEP668 flags on an
+    externally-managed environment. Returns CompletedProcess (rc check by caller).
+    """
+    base = [sys.executable, "-m", "pip", "install", "--upgrade", spec]
     if force_reinstall:
-        cmd.insert(4, "--force-reinstall")
-    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+        base.insert(4, "--force-reinstall")
+    r = subprocess.run(base, capture_output=True, text=True, check=False)
+    if r.returncode == 0 or "externally-managed-environment" not in (r.stderr or ""):
+        return r
+    extra = _pip_env_flags()
+    if not extra:
+        return r
+    info(f"externally-managed env detected; retrying pip with {' '.join(extra)}")
+    return subprocess.run(base + extra, capture_output=True, text=True, check=False)
 
 
 def _smoke_version() -> tuple[int, str]:

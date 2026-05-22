@@ -530,3 +530,87 @@ def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
     if events_files:
         payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
+
+
+def test_pip_env_flags_in_venv_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    from agent_runner.cli import upgrade_cmd
+
+    monkeypatch.setattr(sys, "base_prefix", sys.prefix + "_base")  # prefix != base => venv
+    assert upgrade_cmd._pip_env_flags() == []
+
+
+def test_pip_env_flags_non_venv_user_site(monkeypatch: pytest.MonkeyPatch) -> None:
+    import site
+    import sys
+
+    import agent_runner
+    from agent_runner.cli import upgrade_cmd
+
+    monkeypatch.setattr(sys, "base_prefix", sys.prefix)  # not a venv
+    monkeypatch.setattr(site, "getusersitepackages", lambda: "/home/u/.local/lib/py/site-packages")
+    monkeypatch.setattr(
+        agent_runner, "__file__", "/home/u/.local/lib/py/site-packages/agent_runner/__init__.py"
+    )
+    assert upgrade_cmd._pip_env_flags() == ["--user", "--break-system-packages"]
+
+
+def test_pip_env_flags_non_venv_system_site(monkeypatch: pytest.MonkeyPatch) -> None:
+    import site
+    import sys
+
+    import agent_runner
+    from agent_runner.cli import upgrade_cmd
+
+    monkeypatch.setattr(sys, "base_prefix", sys.prefix)  # not a venv
+    monkeypatch.setattr(site, "getusersitepackages", lambda: "/home/u/.local/lib/py/site-packages")
+    monkeypatch.setattr(
+        agent_runner,
+        "__file__",
+        "/usr/lib/python3/dist-packages/agent_runner/__init__.py",
+    )
+    assert upgrade_cmd._pip_env_flags() == ["--break-system-packages"]
+
+
+def test_pip_install_retries_on_externally_managed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    from agent_runner.cli import upgrade_cmd
+
+    monkeypatch.setattr(upgrade_cmd, "_pip_env_flags", lambda: ["--break-system-packages"])
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if "--break-system-packages" in cmd:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stdout="", stderr="error: externally-managed-environment"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    r = upgrade_cmd._pip_install("cli-agent-runner==9.9.9")
+    assert r.returncode == 0
+    assert len(calls) == 2
+    assert "--break-system-packages" in calls[1]
+
+
+def test_pip_install_no_retry_when_not_externally_managed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    from agent_runner.cli import upgrade_cmd
+
+    monkeypatch.setattr(upgrade_cmd, "_pip_env_flags", lambda: ["--break-system-packages"])
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stdout="", stderr="ERROR: no such package"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    r = upgrade_cmd._pip_install("cli-agent-runner==9.9.9")
+    assert r.returncode == 1
+    assert len(calls) == 1  # no retry on a non-PEP668 failure
