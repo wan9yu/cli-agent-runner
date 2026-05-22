@@ -165,6 +165,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `orphan_idempotent_skip`
 - `orphan_stash_failed`
 - `orphan_stashed`
+- `package_upgraded`
 - `prompt_overwritten`
 - `round_end`
 - `round_grace_kill`

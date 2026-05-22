@@ -213,3 +213,10 @@ def test_given_agent_usage_recorded_constant_when_exported_then_matches_kind():
 
     assert AGENT_USAGE_RECORDED == "agent_usage_recorded"
     assert AGENT_USAGE_RECORDED in _BUILTIN_KINDS
+
+
+def test_given_package_upgraded_kind_when_registered_then_in_known_event_kinds() -> None:
+    from agent_runner.events import _BUILTIN_KINDS, PACKAGE_UPGRADED
+
+    assert PACKAGE_UPGRADED == "package_upgraded"
+    assert PACKAGE_UPGRADED in _BUILTIN_KINDS
