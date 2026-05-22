@@ -204,6 +204,7 @@ Unconfigured phases (and configs without `[phases]`) keep using the global
 [monitor]
 auto_stop_on = ["oauth_fail", "disk_critical"]
 round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress heartbeat events
+# supervisor_stale_threshold_s = 2700  # unset = round_timeout_s * 1.5; 0 = disable
 
 [monitor.host_health]
 mem_avail_min_mb = 200        # mem_pressure fires when mem_available_mb < this

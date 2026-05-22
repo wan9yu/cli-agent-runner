@@ -253,6 +253,29 @@ API. Power profile:
   real state change. Verify the detector logic and thresholds before enabling
   `auto_stop` on a production remote.
 
+### Liveness monitoring: run monitor from a separate machine
+
+`agent-runner monitor` detects anomalies including `supervisor_stale` — the
+supervisor stopped emitting events because it is stuck between rounds or dead.
+But a monitor running on the *same host* as the supervisor dies when that host
+dies, so it cannot report its own host's death.
+
+For true liveness coverage, run the monitor from a **separate machine**:
+
+    # On your laptop / a second host, NOT on the supervised host:
+    agent-runner monitor --host pi
+
+This catches both failure modes:
+
+- Supervisor stuck on a live host → `supervisor_stale` alert (events frozen).
+- Host itself dead / network gone → SSH poll fails → `monitor_remote_giveup`.
+
+The `supervisor_stale` threshold defaults to `round_timeout_s * 1.5`. Override
+with `[monitor] supervisor_stale_threshold_s = N` for projects whose legitimate
+cadence — very short rounds with occasional long legitimate gaps, or phase
+overrides that raise `round_timeout_s` — does not fit the derived default. Set
+to `0` to disable the detector entirely.
+
 ## Live event stream (machine-readable)
 
 For machine consumption (parity comparisons, custom dashboards, automation
