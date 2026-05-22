@@ -65,13 +65,14 @@ surfacing everywhere.
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
 
-## Monitor: 11 detectors
+## Monitor: 12 detectors
 
 Three categories by `auto_action`:
 
 **Notify only** (severity `warning`):
 `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`, `mem_pressure`,
-`smoke_fail_rate`, `network_fail`.
+`smoke_fail_rate`, `network_fail`, `rate_limit_active`,
+`anomaly_repetitive_active`, `supervisor_stale`.
 
 **Auto-stop service** (severity `critical`, `auto_action="stop_service"`):
 `oauth_fail`, `disk_critical`. Continuing in either state is harmful (burning
