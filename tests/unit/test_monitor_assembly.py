@@ -79,6 +79,7 @@ def test_given_clean_history_when_run_all_detectors_then_no_alerts(
         metrics=metrics,
         log_tails=log_tails,
         round_timeout_s=1800,
+        supervisor_stale_threshold_s=0,  # disable: seeded events use a fixed old timestamp
     )
     assert alerts == []
 

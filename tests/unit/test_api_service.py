@@ -205,3 +205,25 @@ def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_
         "phases_overrides kwarg missing from run_all_detectors call"
     )
     assert call_kwargs["phases_overrides"] == {"dev": PhaseOverride(round_timeout_s=3600)}
+
+
+def test_poll_once_forwards_supervisor_stale_threshold(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_poll_once must forward cfg.monitor.supervisor_stale_threshold_s."""
+    api.init(tmp_git_repo, force=False, commit=False)
+
+    captured: list[dict] = []
+
+    def capturing_rad(**kwargs):
+        captured.append(kwargs)
+        return []
+
+    monkeypatch.setattr("agent_runner.monitor.run_all_detectors", capturing_rad)
+
+    api._poll_once(tmp_git_repo, host=None)
+
+    assert captured, "run_all_detectors was never called"
+    call_kwargs = captured[0]
+    assert "supervisor_stale_threshold_s" in call_kwargs

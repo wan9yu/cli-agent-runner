@@ -24,7 +24,7 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> None:
+def test_given_known_alert_kinds_when_inspected_then_contains_all_twelve() -> None:
     expected = {
         "timeout_rate",
         "hung",
@@ -37,6 +37,7 @@ def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> No
         "network_fail",
         "rate_limit_active",
         "anomaly_repetitive_active",
+        "supervisor_stale",
     }
     assert expected == KNOWN_ALERT_KINDS
 
@@ -308,3 +309,37 @@ def test_given_phase_not_in_override_when_detect_hung_then_uses_global() -> None
         phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
     )
     assert out is None
+
+
+def test_given_no_stale_threshold_then_derives_from_round_timeout() -> None:
+    # round_timeout_s=1000 -> derived 1500s. Last event 1800s ago -> stale.
+    from agent_runner.monitor import run_all_detectors
+
+    events = [_ev("round_end", round_num=1)]  # ts 2026-05-12T10:00:00.000Z
+    now = datetime(2026, 5, 12, 10, 30, 0, tzinfo=UTC)  # 1800s later
+    alerts = run_all_detectors(
+        events=events,
+        metrics=[],
+        log_tails={},
+        round_timeout_s=1000,
+        now=now,
+    )
+    assert any(a.detector == "supervisor_stale" for a in alerts)
+
+
+def test_given_explicit_stale_threshold_then_used_over_derived() -> None:
+    # Explicit 3600s threshold; last event 1800s ago -> NOT stale even though
+    # derived (round_timeout 1000 * 1.5 = 1500) would have fired.
+    from agent_runner.monitor import run_all_detectors
+
+    events = [_ev("round_end", round_num=1)]
+    now = datetime(2026, 5, 12, 10, 30, 0, tzinfo=UTC)  # 1800s later
+    alerts = run_all_detectors(
+        events=events,
+        metrics=[],
+        log_tails={},
+        round_timeout_s=1000,
+        supervisor_stale_threshold_s=3600,
+        now=now,
+    )
+    assert not any(a.detector == "supervisor_stale" for a in alerts)

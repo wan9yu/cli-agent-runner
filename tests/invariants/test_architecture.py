@@ -118,7 +118,7 @@ def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
         assert cls.__dataclass_params__.frozen, f"{name} not frozen"
 
 
-def test_given_known_alert_kinds_when_inspected_then_matches_eleven_detectors() -> None:
+def test_given_known_alert_kinds_when_inspected_then_matches_twelve_detectors() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
     expected = {
@@ -133,5 +133,6 @@ def test_given_known_alert_kinds_when_inspected_then_matches_eleven_detectors() 
         "network_fail",
         "rate_limit_active",
         "anomaly_repetitive_active",
+        "supervisor_stale",
     }
     assert KNOWN_ALERT_KINDS == expected

@@ -88,6 +88,7 @@ API quota / writing to a near-full disk).
 - `orphan_chain`
 - `rate_limit_active`
 - `smoke_fail_rate`
+- `supervisor_stale`
 - `timeout_rate`
 <!-- /gen:detector-list -->
 

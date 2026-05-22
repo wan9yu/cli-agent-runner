@@ -1,6 +1,6 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
-11 built-in detectors. Two trigger ``auto_action="stop_service"``:
+12 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
@@ -54,6 +54,7 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "network_fail",
         "rate_limit_active",
         "anomaly_repetitive_active",
+        "supervisor_stale",
     }
 )
 
@@ -568,6 +569,7 @@ def run_all_detectors(
     metrics: list[dict[str, Any]],
     log_tails: dict[int, str],
     round_timeout_s: int = 1800,
+    supervisor_stale_threshold_s: int | None = None,
     now: datetime | None = None,
     auth_fail_patterns: list[str] | None = None,
     auth_fail_hint: str | None = None,
@@ -576,11 +578,16 @@ def run_all_detectors(
     disk_warning_pct: float = 90.0,
     disk_critical_pct: float = 95.0,
 ) -> list[Alert]:
-    """Run all 11 detectors; returns alerts (empty = healthy)."""
+    """Run all 12 detectors; returns alerts (empty = healthy)."""
     if now is None:
         now = datetime.now(UTC)
     compiled_auth_pats = (
         [re.compile(p, re.IGNORECASE) for p in auth_fail_patterns] if auth_fail_patterns else None
+    )
+    effective_stale_s = (
+        int(round_timeout_s * 1.5)
+        if supervisor_stale_threshold_s is None
+        else supervisor_stale_threshold_s
     )
     candidates = [
         detect_timeout_rate(events),
@@ -601,6 +608,7 @@ def run_all_detectors(
         detect_network_fail(events, log_tails),
         detect_rate_limit_active(events, now=now.timestamp()),
         detect_anomaly_repetitive_active(events),
+        detect_supervisor_stale(events, now=now, stale_threshold_s=effective_stale_s),
     ]
     return [a for a in candidates if a is not None]
 

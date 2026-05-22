@@ -107,9 +107,24 @@ def test_given_no_alerts_when_poll_once_then_returns_empty(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import dataclasses
+
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
+    # Disable supervisor_stale: seeded events use a fixed old timestamp; the
+    # detector would otherwise fire because now >> seed ts.
+    real_load = load_config
+
+    def patched_load(path):
+        cfg = real_load(path)
+        return dataclasses.replace(
+            cfg,
+            monitor=dataclasses.replace(cfg.monitor, supervisor_stale_threshold_s=0),
+        )
+
+    monkeypatch.setattr("agent_runner.api.load_config", patched_load)
     alerts = api._poll_once(tmp_git_repo, host=None)
     assert alerts == []
 
