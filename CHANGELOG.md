@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-05-21
+
+### Added
+- New monitor detector `supervisor_stale` (notify) — alerts when the supervisor stops emitting events (stuck between rounds or dead), a blind spot the event stream and `detect_hung` cannot catch. Default ON; threshold derives from `round_timeout_s * 1.5`. Detector count 11 → 12.
+- `[monitor] supervisor_stale_threshold_s` config — override the derived staleness threshold (positive = seconds; 0 = disable; unset = derived).
+
+### Changed
+- `docs/runbook.md` documents the liveness-monitoring architecture: run `monitor --host` from a separate machine to detect supervisor silent-death AND host death (a same-host monitor dies with its host).
+
 ## [0.1.35] - 2026-05-20
 
 ### Removed
