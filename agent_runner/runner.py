@@ -466,6 +466,14 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             **stats,
         )
 
+    def _grace_extended_emit(children: list[str]) -> None:
+        api.emit_round_grace_extended(
+            log_dir,
+            round_num=round_num,
+            grace_s=cfg.runtime.max_grace_after_result_s,
+            live_children=children,
+        )
+
     result = agent_runtime.run(
         command=cfg.agent.command,
         prompt_arg_template=cfg.agent.prompt_arg_template,
@@ -476,6 +484,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         max_grace_after_result_s=cfg.runtime.max_grace_after_result_s,
         progress_callback=_progress_emit,
         progress_interval_s=cfg.monitor.round_progress_interval_s,
+        on_grace_extended=_grace_extended_emit,
     )
     events.emit(
         log_dir,
@@ -549,6 +558,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             log_dir,
             round_num=round_num,
             grace_s=cfg.runtime.max_grace_after_result_s,
+            live_children=result.grace_kill_children,
         )
     elif result.timed_out:
         events.emit(

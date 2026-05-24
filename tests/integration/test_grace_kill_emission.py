@@ -77,3 +77,35 @@ def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
     # round_timeout_kill must NOT appear (grace kill is distinct)
     timeout_events = [e for e in events if e.get("event") == "round_timeout_kill"]
     assert len(timeout_events) == 0
+
+
+def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
+    """Full runner flow: subprocess emits result then backgrounds a long child;
+    round_grace_extended event fires (not round_grace_kill); wall timeout reaps."""
+    _init_git(tmp_path)
+
+    script = tmp_path / "agent.sh"
+    script.write_text(
+        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nsleep 30 &\nwait\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+    cfg = _make_grace_config(tmp_path, script, grace_s=1)
+    result = run_one_round(cfg)
+
+    assert result.killed_for_grace is False  # spared by liveness
+    assert result.timed_out is True  # wall-clock ceiling reaped it
+
+    events = read_events_for_current_month(cfg.runtime.log_dir)
+
+    # round_grace_extended must appear with live_children populated
+    extended_events = [e for e in events if e.get("event") == "round_grace_extended"]
+    assert len(extended_events) == 1
+    assert extended_events[0]["round_num"] == 1
+    assert extended_events[0]["grace_s"] == 1
+    assert any("sleep" in c for c in extended_events[0]["live_children"])
+
+    # round_grace_kill must NOT appear (round was busy, not idle)
+    grace_kill_events = [e for e in events if e.get("event") == "round_grace_kill"]
+    assert len(grace_kill_events) == 0
