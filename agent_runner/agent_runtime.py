@@ -15,8 +15,10 @@ import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import psutil
 
 REAP_GRACE_S = 5
 
@@ -28,6 +30,7 @@ class RunResult:
     timed_out: bool
     pid: int
     killed_for_grace: bool = False
+    grace_kill_children: list[str] = field(default_factory=list)
 
 
 def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str) -> list[str]:
@@ -54,6 +57,31 @@ def _kill_pgroup(proc: subprocess.Popen) -> None:
         pass
 
 
+def _live_children(proc: subprocess.Popen, *, max_n: int = 5, max_len: int = 120) -> list[str]:
+    """Cmdlines of live (non-zombie) descendant processes of ``proc``.
+
+    Empty when ``proc`` has no live workers (a stuck agent that emitted
+    type=result then hung). Non-empty when the round backgrounded work (e.g. a
+    build) still running. Bounded so the resulting event stays small.
+    """
+    try:
+        parent = psutil.Process(proc.pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return []
+    out: list[str] = []
+    for child in parent.children(recursive=True):
+        try:
+            if child.status() == psutil.STATUS_ZOMBIE:
+                continue
+            line = " ".join(child.cmdline()) or child.name()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        out.append(line[:max_len])
+        if len(out) >= max_n:
+            break
+    return out
+
+
 # Exact compact bytes — matches claude CLI's no-whitespace JSONL output.
 # A future CLI variant emitting `{"type": "result", ...}` (with space) would
 # bypass this scan; revisit if that happens.
@@ -71,14 +99,18 @@ def run(
     max_grace_after_result_s: int = 0,
     progress_callback: Callable[[dict], None] | None = None,
     progress_interval_s: int = 0,
+    on_grace_extended: Callable[[list[str]], None] | None = None,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
     Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → REAP_GRACE_S → SIGKILL.
 
     max_grace_after_result_s: when > 0, start a countdown after the first
-    type=result event is detected in the log; kill if subprocess is still
-    running after this many seconds (HUNG defense). 0 = disabled.
+    type=result event is detected in the log. After it elapses, reap the
+    process group only if the agent has no live worker processes left (a
+    genuine hang). If a worker is still running (e.g. a backgrounded build),
+    do not reap — invoke ``on_grace_extended`` once and keep waiting until the
+    round finishes or hits the wall-clock ``timeout_s`` ceiling. 0 = disabled.
 
     progress_callback: when not None and progress_interval_s > 0, called every
     progress_interval_s seconds with a dict of log stats (log_size_kb,
@@ -100,6 +132,7 @@ def run(
         start_new_session=True,
     )
     result_seen_at: float | None = None
+    grace_extended_emitted = False
     try:
         while True:
             ret = proc.poll()
@@ -114,10 +147,9 @@ def run(
                 return RunResult(
                     exit_code=exit_code, duration_s=duration, timed_out=True, pid=proc.pid
                 )
-            # Grace kill: result emitted but subprocess still running
+            # Grace kill: result emitted but subprocess still running.
             if max_grace_after_result_s > 0:
                 if result_seen_at is None:
-                    # Cheap check: byte-scan log for marker substring
                     try:
                         with log_path.open("rb") as f:
                             if _RESULT_MARKER in f.read():
@@ -125,16 +157,26 @@ def run(
                     except OSError:
                         pass  # log not flushed yet; check next tick
                 if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:
-                    _kill_pgroup(proc)
-                    duration = time.time() - start
-                    exit_code = proc.returncode if proc.returncode is not None else -1
-                    return RunResult(
-                        exit_code=exit_code,
-                        duration_s=duration,
-                        timed_out=True,
-                        pid=proc.pid,
-                        killed_for_grace=True,
-                    )
+                    children = _live_children(proc)
+                    if children:
+                        # Busy: a backgrounded worker is still running. Don't
+                        # reap — defer to the wall-clock ceiling. Signal once.
+                        if not grace_extended_emitted:
+                            if on_grace_extended is not None:
+                                on_grace_extended(children)
+                            grace_extended_emitted = True
+                    else:
+                        _kill_pgroup(proc)
+                        duration = time.time() - start
+                        exit_code = proc.returncode if proc.returncode is not None else -1
+                        return RunResult(
+                            exit_code=exit_code,
+                            duration_s=duration,
+                            timed_out=True,
+                            pid=proc.pid,
+                            killed_for_grace=True,
+                            grace_kill_children=[],
+                        )
             # Progress heartbeat: call back if interval elapsed
             if progress_callback is not None and progress_interval_s > 0:
                 if now - last_progress_at >= progress_interval_s:

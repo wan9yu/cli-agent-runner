@@ -57,7 +57,7 @@ def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
 
     script = tmp_path / "agent.sh"
     script.write_text(
-        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nsleep 10\n',
+        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nexec sleep 10\n',
         encoding="utf-8",
     )
     script.chmod(0o755)
