@@ -293,7 +293,7 @@ event with `classification` ∈ {`rate_limit_account`, `rate_limit_model`,
 
 Per round (regardless of error state), also emits `agent_usage_recorded`
 with token/cost/duration data extracted from the claude result event —
-see `docs/migrations/0.1.28.md` for the full 12-field schema. The
+see `docs/migrations/0.1.28.md` for the full payload schema. The
 supervisor reads `transient_error_detected` on the next dispatch cycle
 and applies the configured `transient_error_action` (default `back_off`;
 `rate_limit_action` retained as a deprecated alias).
@@ -309,7 +309,7 @@ to ship equivalent detectors for other agent CLIs — the bundled
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
-detectors that run alongside the 11 builtins on every monitor poll.
+detectors that run alongside the 12 builtins on every monitor poll.
 
 ### Group + Protocol
 

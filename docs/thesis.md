@@ -54,9 +54,10 @@ would produce constant false positives across diverse workloads.
 The `anomaly_repetitive_active` detector (added 0.1.32) is the live example:
 it fires when the claude plugin emits `anomaly_repetitive_tool` events
 above a fixed threshold within a window — a specific signature, not N-σ.
-`max_grace_after_result_s` (0.1.31) is another: kills the subprocess after
-a fixed grace following the `result` event — specific signature, not "is
-this subprocess behaving unusually".
+`max_grace_after_result_s` (0.1.31, refined 0.1.38) is another: a fixed
+grace after the `result` event, the subprocess is killed only if its
+process group has no live worker left — specific signature, not "is this
+subprocess behaving unusually".
 
 > **Example**: A 2026-05-18 proposal requested a "cost spike detector" that
 > fires when this round's cost is N× the rolling 7-day average. Rejected.

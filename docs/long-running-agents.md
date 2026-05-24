@@ -140,7 +140,7 @@ token breakdown + cost (where the underlying CLI exposes it).
 ```
 
 Use as input to a cost-tracking detector or external billing reconciler.
-See `docs/migrations/0.1.28.md` for the current 12-field payload schema
+See `docs/migrations/0.1.28.md` for the current payload schema
 (includes `cache_creation_tokens`, `tool_call_count`, `phase`, `success`)
 plus a consumer dispatcher sketch. Aggregation (rollups, budget warnings)
 is the consumer's responsibility — agent-runner emits raw per-round
