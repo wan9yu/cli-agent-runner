@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-05-24
+
+### Fixed
+- Grace-kill (`max_grace_after_result_s`) no longer reaps a round that emitted `type=result` while a backgrounded child process (e.g. a long build) is still running. It now reaps only when the agent's process group has no live worker processes left (a genuine hang); otherwise it waits for the round to finish or for the `round_timeout_s` ceiling.
+- Corrected `round_grace_kill`'s description: the kill is gated on the process group being idle (no live workers), not on log silence.
+
+### Added
+- New event `round_grace_extended` — emitted once when grace elapsed after `type=result` but a live worker process kept the round busy; carries the worker cmdlines.
+- `round_grace_kill` now carries `live_children` (cmdlines observed at kill time; empty for a genuine idle hang).
+
 ## [0.1.37] - 2026-05-22
 
 ### Fixed

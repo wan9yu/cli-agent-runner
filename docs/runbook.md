@@ -565,6 +565,25 @@ agent-runner kill                                    # force terminate
 ls -la ~/.agent-runner/<project>/logs/rounds/        # most recent R*.log
 ```
 
+### Grace-kill and backgrounded work (`max_grace_after_result_s`)
+
+Grace-kill is now process-group-liveness-aware. At grace expiry, agent-runner
+inspects the agent's process group for live (non-zombie) worker processes and
+takes one of three paths:
+
+- **`round_grace_extended`** — grace elapsed but a live worker is still running
+  (e.g. a backgrounded build). Round is NOT killed; agent-runner waits until the
+  round finishes or hits the `round_timeout_s` wall-clock ceiling.
+- **`round_grace_kill`** — grace elapsed and the process group is idle (genuine
+  hang). Round is reaped, same as pre-0.1.38.
+- **`round_timeout_kill`** — `round_timeout_s` wall-clock exceeded (hard ceiling,
+  fires regardless of process-group state).
+
+If you see repeated `round_grace_extended` events, the agent is backgrounding
+work past `type=result`. Check the `live_children` field in the event to identify
+the process; consider restructuring the agent to emit `type=result` only when
+truly done.
+
 ### Disk pressure
 
 **Symptom:** `[WARN] disk_warning` at >90%; `[CRIT] disk_critical` at >95% (auto-stops).
