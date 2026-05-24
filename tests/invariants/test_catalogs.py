@@ -220,3 +220,10 @@ def test_given_package_upgraded_kind_when_registered_then_in_known_event_kinds()
 
     assert PACKAGE_UPGRADED == "package_upgraded"
     assert PACKAGE_UPGRADED in _BUILTIN_KINDS
+
+
+def test_given_round_grace_extended_kind_when_registered_then_in_known_event_kinds() -> None:
+    from agent_runner.events import _BUILTIN_KINDS, ROUND_GRACE_EXTENDED
+
+    assert ROUND_GRACE_EXTENDED == "round_grace_extended"
+    assert ROUND_GRACE_EXTENDED in _BUILTIN_KINDS

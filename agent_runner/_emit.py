@@ -19,6 +19,7 @@ __all__ = [
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
     "emit_rate_limit_stop",
+    "emit_round_grace_extended",
     "emit_round_grace_kill",
     "emit_round_progress",
     "emit_round_substrate_after",
@@ -233,16 +234,44 @@ def emit_round_grace_kill(
     *,
     round_num: int,
     grace_s: int,
+    live_children: list[str] | None = None,
 ) -> None:
-    """Emit when subprocess killed because grace-after-result timer expired.
-
-    Subprocess emitted type=result in JSONL log then sat silent for longer
-    than max_grace_after_result_s seconds. Distinguishes from round_timeout_kill
-    (wall-clock exceeded without result event).
+    """Emit when the subprocess was killed because the grace-after-result timer
+    expired AND the agent's process group had no live worker processes left
+    (a genuine hang). Distinct from round_grace_extended (grace elapsed but a
+    worker was still running) and round_timeout_kill (wall-clock exceeded).
     """
     from agent_runner.events import ROUND_GRACE_KILL, emit
 
-    emit(log_dir, ROUND_GRACE_KILL, round_num=round_num, grace_s=grace_s)
+    emit(
+        log_dir,
+        ROUND_GRACE_KILL,
+        round_num=round_num,
+        grace_s=grace_s,
+        live_children=live_children or [],
+    )
+
+
+def emit_round_grace_extended(
+    log_dir: Path,
+    *,
+    round_num: int,
+    grace_s: int,
+    live_children: list[str],
+) -> None:
+    """Emit when the grace-after-result timer expired but the agent still had
+    live worker processes (e.g. a backgrounded build), so the round was NOT
+    killed; it continues until it finishes or hits round_timeout_s.
+    """
+    from agent_runner.events import ROUND_GRACE_EXTENDED, emit
+
+    emit(
+        log_dir,
+        ROUND_GRACE_EXTENDED,
+        round_num=round_num,
+        grace_s=grace_s,
+        live_children=live_children,
+    )
 
 
 def emit_anomaly_repetitive_tool(

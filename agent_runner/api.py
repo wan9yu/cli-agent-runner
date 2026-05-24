@@ -733,6 +733,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
+    emit_round_grace_extended,
     emit_round_grace_kill,
     emit_round_progress,
     emit_round_substrate_after,
