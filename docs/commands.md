@@ -34,8 +34,15 @@ are shared between `peek`, `watch`, and `monitor`.
 Scaffold a new project: writes `agent-runner.toml`, `prompts/main.md`, and
 appends `logs/` to `.gitignore`. By default also creates a git commit.
 
+Flags:
+
+- `--preset {claude,aider,gemini}` — agent CLI preset to scaffold (default: `claude`)
+- `--force` — overwrite an existing `agent-runner.toml`
+- `--no-commit` — skip the initial git commit
+
 ```bash
-agent-runner init                      # default: commit
+agent-runner init                      # default: claude preset, commit
+agent-runner init --preset aider       # aider preset
 agent-runner init --no-commit          # skip the commit
 agent-runner init --force              # overwrite an existing toml
 ```
@@ -133,7 +140,7 @@ agent-runner events --kind transient_error_backoff_capped --tail
 
 `peek` in a clear-and-refresh loop. Default 2s interval. Stop with Ctrl-C.
 
-### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--json]`
+### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--mode MODE] [--port PORT] [--json]`
 
 Anomaly-detection daemon. Runs the 12 detectors against the live state on every
 poll. Without `--host`, watches local logs at default 30s interval. With
@@ -143,15 +150,25 @@ When OAuth-fail or disk-critical detectors fire, monitor automatically issues a
 graceful stop (locally via `api.stop`; remotely via `ssh <host> 'agent-runner stop'`).
 Override with `[monitor]` config block (see configuration.md).
 
+Flags:
+
+- `--mode {anomaly,narrate,events,http}` — output mode (default: `anomaly`). `narrate`
+  streams a human-readable narrative; `events` streams raw event JSON; `http` serves
+  a local progress page.
+- `--port PORT` — HTTP port for `--mode http` (default: `8765`, local-only).
+- `--host SSH-ALIAS` — watch a remote agent-runner via ssh (anomaly mode only).
+
 ```bash
-agent-runner monitor                       # local
+agent-runner monitor                       # local anomaly mode
 agent-runner monitor --host pi             # remote
+agent-runner monitor --mode narrate        # streaming narrative
+agent-runner monitor --mode http --port 9000  # HTTP progress page on port 9000
 agent-runner monitor --json | jq -c        # pipe alerts to a downstream consumer
 ```
 
 ## 中文摘要
 
-16 个动词：`init / install / uninstall / start / stop / kill / cancel / restart / status / round / serve / upgrade / peek / watch / events / monitor`。
+16 个动词，完整列表见上方动词表（自动生成）。
 
 观察类（peek/watch/monitor）三视角对称，全部共用 `--round / --log / --events / --select / --json` 下钻参数。
 

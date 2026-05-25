@@ -170,6 +170,8 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 }
 ```
 
+(Fields emitted by the `HOOK_FAILED` path in `runner.py` + `_summarize_error` in `hooks.py`.)
+
 The round itself continues — a broken plugin must not crash the supervisor.
 
 ### What `plugin_context_enrichers()` surfaces

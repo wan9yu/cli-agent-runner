@@ -200,6 +200,10 @@ Unconfigured phases (and configs without `[phases]`) keep using the global
 
 ## `[monitor]` (optional, defaults shown)
 
+> Authoritative field-level defaults are in the generated schema table above
+> (`[monitor]` section). The snippet below shows only the fields most commonly
+> customised, with operational notes.
+
 ```toml
 [monitor]
 auto_stop_on = ["oauth_fail", "disk_critical"]
