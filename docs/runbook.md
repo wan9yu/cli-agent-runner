@@ -153,7 +153,7 @@ RestartSec=5
 
 ### Path 1 — systemd --user service (installed via `agent-runner install`)
 
-    agent-runner upgrade --target 0.1.37
+    agent-runner upgrade --target <version>
 
 Does stop → pip → smoke → start, with auto-rollback on smoke failure.
 
@@ -167,7 +167,7 @@ package-only upgrade (pip + smoke + rollback), then prints the restart command.
 It never runs `sudo` and never starts a service it didn't install. Restart your
 supervisor yourself:
 
-    python3 -m pip install --user --break-system-packages --upgrade cli-agent-runner==0.1.37
+    python3 -m pip install --user --break-system-packages --upgrade cli-agent-runner==<version>
     agent-runner --version
     sudo systemctl restart <your-unit>
 
@@ -177,7 +177,7 @@ supervisor yourself:
 Use `--no-restart` to force package-only mode even on a systemd --user host
 (upgrade the package now, restart later):
 
-    agent-runner upgrade --target 0.1.37 --no-restart
+    agent-runner upgrade --target <version> --no-restart
 
 ### Manual rollback
 

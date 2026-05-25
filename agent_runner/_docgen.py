@@ -110,11 +110,6 @@ def render_defenses_table() -> str:
     return "\n".join(lines)
 
 
-def render_alert_kinds_list() -> str:
-    """Flat bullet list of all known alert kinds, alphabetised."""
-    return "\n".join(f"- `{k}`" for k in sorted(KNOWN_ALERT_KINDS))
-
-
 def render_detector_list() -> str:
     """Bullet list of detectors; auto-stop kinds flagged inline."""
     lines: list[str] = []
@@ -155,7 +150,6 @@ def render_verb_table() -> str:
 
 RENDERERS: dict[str, Callable[[], str]] = {
     "defenses-table": render_defenses_table,
-    "alert-kinds": render_alert_kinds_list,
     "detector-list": render_detector_list,
     "event-kinds": render_event_kinds_list,
     "config-schema": render_config_schema_table,

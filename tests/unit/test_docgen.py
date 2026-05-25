@@ -104,17 +104,6 @@ def test_given_unclosed_marker_in_file_when_render_then_error_names_the_file(
         render(docs_dir=tmp_path, write=False)
 
 
-def test_given_render_alert_kinds_list_when_called_then_returns_bullet_list() -> None:
-    from agent_runner._docgen import render_alert_kinds_list
-
-    md = render_alert_kinds_list()
-    # Bullet list, alphabetised, 12 entries
-    bullets = [line for line in md.splitlines() if line.startswith("- ")]
-    assert len(bullets) == 12
-    assert any("oauth_fail" in line for line in bullets)
-    assert any("disk_critical" in line for line in bullets)
-
-
 def test_given_render_detector_list_when_called_then_marks_auto_stop_kinds() -> None:
     from agent_runner._docgen import render_detector_list
 
