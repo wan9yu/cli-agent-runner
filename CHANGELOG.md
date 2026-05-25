@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Docs: `commands.md` documents `monitor --mode/--port` and `init --preset`; the Chinese verb list and `[monitor]` default values now point to the generated tables instead of restating them; runbook upgrade examples use a version placeholder.
+
+### Internal
+- New invariant `test_doc_claims_match_ssot` gates documented counts (detectors / defenses / verbs) and config value-sets (`dirty_action` / `context_injection_mode` / transient classification) against their code SSOT — count/enum doc drift now fails CI at the introducing commit.
+- Removed the unused `alert-kinds` docgen renderer; de-duplicated redundant defense-count and alert-kind guards to one canonical tripwire each.
+
 ## [0.1.38] - 2026-05-24
 
 ### Fixed
