@@ -26,7 +26,6 @@ def test_given_defenses_catalog_when_loaded_then_each_entry_has_required_fields(
         phases=None,
     )
     cat = catalog(cfg)
-    assert len(cat) == 11
     for d in cat:
         assert d.name and isinstance(d.name, str)
         assert d.current_state in {"active", "degraded", "off"}

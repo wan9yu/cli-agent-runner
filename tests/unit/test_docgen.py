@@ -4,7 +4,24 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import defenses
 from agent_runner._docgen import render_defenses_table, replace_block
+from agent_runner.config import (
+    AgentConfig,
+    Config,
+    PromptConfig,
+    RuntimeConfig,
+    VcsConfig,
+)
+
+
+def _default_cfg() -> Config:
+    return Config(
+        agent=AgentConfig(command=["agent"], prompt_arg_template=[]),
+        runtime=RuntimeConfig(work_dir=Path("."), log_dir=Path("./logs")),
+        prompt=PromptConfig(file=Path("./prompt.md")),
+        vcs=VcsConfig(),
+    )
 
 
 def test_given_text_with_block_when_replaced_then_returns_new_content_between_markers() -> None:
@@ -34,13 +51,13 @@ def test_given_default_cfg_when_render_defenses_table_then_returns_markdown_tabl
     # Header
     assert "| Defense | Codifies | Guarded by |" in md
     assert "|---|---|---|" in md
-    # Eleven entries
+    # Row count matches catalog (guards "docgen renders every entry", no hardcoded 11)
     rows = [
         line
         for line in md.splitlines()
         if line.startswith("| ") and "Defense" not in line and "---" not in line[:5]
     ]
-    assert len(rows) == 11
+    assert len(rows) == len(defenses.catalog(_default_cfg()))
     # Spot-check one well-known defense
     assert "round_timeout_s" in md
 

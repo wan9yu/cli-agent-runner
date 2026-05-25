@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_runner import api
+from agent_runner import api, defenses
 from agent_runner.api_types import Alert, ProjectState
 from agent_runner.config import load_config
 
@@ -75,9 +75,10 @@ def test_given_seeded_logs_when_api_peek_then_returns_project_state(
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
     state = api.peek(tmp_git_repo)
     assert isinstance(state, ProjectState)
-    assert len(state.defenses) == 11
+    assert len(state.defenses) == len(defenses.catalog(cfg))
     assert state.system.mem_total_mb == 8000
 
 
