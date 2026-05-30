@@ -584,6 +584,14 @@ work past `type=result`. Check the `live_children` field in the event to identif
 the process; consider restructuring the agent to emit `type=result` only when
 truly done.
 
+**Persistent-helper exclusion (0.1.39+):** when an agent CLI keeps long-lived
+helper subprocesses alive past `type=result` (claude does this with a Bash-tool
+shell-snapshot), they would otherwise count as "live workers" and defer every
+post-result hang to `round_timeout_s`. Set `[runtime] grace_kill_ignore_patterns
+= [<regex>, ...]` to exclude them; the `claude` preset ships a default. The
+`round_grace_extended` event's `ignored_children` field shows which cmdlines
+matched a pattern.
+
 ### Disk pressure
 
 **Symptom:** `[WARN] disk_warning` at >90%; `[CRIT] disk_critical` at >95% (auto-stops).

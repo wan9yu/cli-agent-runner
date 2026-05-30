@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Grace-kill (`max_grace_after_result_s`) is no longer defeated by long-lived helper subprocesses (e.g. claude's persistent Bash-tool shell-snapshot). `[runtime] grace_kill_ignore_patterns` lists regexes for cmdlines to exclude from the liveness count; the claude preset ships a matching default.
+
+### Added
+- `[runtime] grace_kill_ignore_patterns: list[str]` — regex patterns; matching child cmdlines are excluded from the grace-kill liveness check.
+- `round_grace_extended` event payload gains `ignored_children` — cmdlines filtered by `grace_kill_ignore_patterns`.
+
 ### Changed
 - Docs: `commands.md` documents `monitor --mode/--port` and `init --preset`; the Chinese verb list and `[monitor]` default values now point to the generated tables instead of restating them; runbook upgrade examples use a version placeholder.
 
