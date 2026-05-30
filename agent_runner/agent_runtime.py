@@ -11,6 +11,7 @@ Defenses encoded here:
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import time
@@ -57,18 +58,26 @@ def _kill_pgroup(proc: subprocess.Popen) -> None:
         pass
 
 
-def _live_children(proc: subprocess.Popen, *, max_n: int = 5, max_len: int = 120) -> list[str]:
-    """Cmdlines of live (non-zombie) descendant processes of ``proc``.
-
-    Empty when ``proc`` has no live workers (a stuck agent that emitted
-    type=result then hung). Non-empty when the round backgrounded work (e.g. a
-    build) still running. Bounded so the resulting event stays small.
+def _live_children(
+    proc: subprocess.Popen,
+    *,
+    ignore_patterns: list[re.Pattern[str]] | None = None,
+    max_n: int = 5,
+    max_len: int = 120,
+) -> tuple[list[str], list[str]]:
+    """Cmdlines of live (non-zombie) descendants of ``proc``, split into
+    ``(live, ignored)``: ``live`` is what counts toward the grace-kill
+    liveness check; ``ignored`` matched an ``ignore_patterns`` entry and is
+    excluded (e.g. claude's persistent shell-snapshot helper). Both lists
+    are bounded by ``max_n``/``max_len`` to keep events small. ``ignore_patterns
+    is None`` → no filtering, ``ignored`` is empty, ``live`` matches 0.1.38.
     """
     try:
         parent = psutil.Process(proc.pid)
     except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return []
-    out: list[str] = []
+        return [], []
+    live: list[str] = []
+    ignored: list[str] = []
     for child in parent.children(recursive=True):
         try:
             if child.status() == psutil.STATUS_ZOMBIE:
@@ -76,10 +85,16 @@ def _live_children(proc: subprocess.Popen, *, max_n: int = 5, max_len: int = 120
             line = " ".join(child.cmdline()) or child.name()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        out.append(line[:max_len])
-        if len(out) >= max_n:
+        short = line[:max_len]
+        if ignore_patterns and any(p.search(line) for p in ignore_patterns):
+            if len(ignored) < max_n:
+                ignored.append(short)
+        else:
+            if len(live) < max_n:
+                live.append(short)
+        if len(live) >= max_n and len(ignored) >= max_n:
             break
-    return out
+    return live, ignored
 
 
 # Exact compact bytes — matches claude CLI's no-whitespace JSONL output.
@@ -99,7 +114,8 @@ def run(
     max_grace_after_result_s: int = 0,
     progress_callback: Callable[[dict], None] | None = None,
     progress_interval_s: int = 0,
-    on_grace_extended: Callable[[list[str]], None] | None = None,
+    on_grace_extended: Callable[[list[str], list[str]], None] | None = None,
+    grace_kill_ignore_patterns: list[re.Pattern[str]] | None = None,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
@@ -116,6 +132,10 @@ def run(
     progress_interval_s seconds with a dict of log stats (log_size_kb,
     last_write_age_s, wall_age_s). Keeps agent_runtime event-free; callers
     build the callback to emit events.
+
+    grace_kill_ignore_patterns: pre-compiled regex patterns; child cmdlines
+    matching any pattern (re.search) are excluded from the liveness count
+    (persistent helpers that aren't real workers). None = no filtering.
     """
     argv = _build_argv(command, prompt_arg_template, prompt)
     env = {**os.environ, **env_extra}
@@ -157,13 +177,13 @@ def run(
                     except OSError:
                         pass  # log not flushed yet; check next tick
                 if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:
-                    children = _live_children(proc)
-                    if children:
+                    live, ignored = _live_children(proc, ignore_patterns=grace_kill_ignore_patterns)
+                    if live:
                         # Busy: a backgrounded worker is still running. Don't
                         # reap — defer to the wall-clock ceiling. Signal once.
                         if not grace_extended_emitted:
                             if on_grace_extended is not None:
-                                on_grace_extended(children)
+                                on_grace_extended(live, ignored)
                             grace_extended_emitted = True
                     else:
                         _kill_pgroup(proc)
