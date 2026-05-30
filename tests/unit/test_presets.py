@@ -118,6 +118,26 @@ def test_given_gemini_preset_when_parsed_then_uses_stream_json_output_format() -
     )
 
 
+def test_given_claude_preset_when_parsed_then_excludes_shell_snapshot() -> None:
+    text = _preset_text("claude").replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    patterns = parsed["runtime"].get("grace_kill_ignore_patterns", [])
+    assert any("shell-snapshots/snapshot-bash-" in p for p in patterns), (
+        f"claude.toml: expected grace_kill_ignore_patterns to include the "
+        f"shell-snapshot pattern, got {patterns}"
+    )
+
+
+@pytest.mark.parametrize("name", ["aider", "gemini"])
+def test_given_other_presets_when_parsed_then_no_default_ignore_patterns(name: str) -> None:
+    text = _preset_text(name).replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    patterns = parsed.get("runtime", {}).get("grace_kill_ignore_patterns", [])
+    assert patterns == [], (
+        f"{name}.toml: should not ship grace_kill_ignore_patterns, got {patterns}"
+    )
+
+
 @pytest.mark.parametrize("name", PRESET_NAMES)
 def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_path) -> None:
     """Shipped presets must not emit DeprecationWarning on first load."""

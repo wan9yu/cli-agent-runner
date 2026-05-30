@@ -16,6 +16,7 @@ work_dir = "."
 log_dir = "~/.agent-runner/{project}/logs"
 round_timeout_s = 1800
 restart_delay_s = 3
+grace_kill_ignore_patterns = ['\.claude/shell-snapshots/snapshot-bash-']
 
 [prompt]
 file = "./prompts/main.md"
