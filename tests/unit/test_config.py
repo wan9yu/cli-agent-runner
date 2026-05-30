@@ -1577,3 +1577,48 @@ def test_given_supervisor_stale_threshold_set_then_loaded(tmp_path: Path) -> Non
     )
     cfg = load_config(toml)
     assert cfg.monitor.supervisor_stale_threshold_s == 600
+
+
+def test_grace_kill_ignore_patterns_default_empty(tmp_path: Path) -> None:
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
+        '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
+        '[prompt]\nfile="p.md"\n'
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.grace_kill_ignore_patterns == []
+
+
+def test_grace_kill_ignore_patterns_parsed(tmp_path: Path) -> None:
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    # TOML single-quoted strings are literal: '\' is one backslash.
+    toml.write_text(
+        '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
+        '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
+        "grace_kill_ignore_patterns = ['\\.claude/shell-snapshots/']\n"
+        '[prompt]\nfile="p.md"\n'
+    )
+    cfg = load_config(toml)
+    assert cfg.runtime.grace_kill_ignore_patterns == [r"\.claude/shell-snapshots/"]
+
+
+def test_grace_kill_ignore_patterns_invalid_regex_raises(tmp_path: Path) -> None:
+    import pytest
+
+    from agent_runner.config import load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
+        '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
+        'grace_kill_ignore_patterns = ["[unclosed"]\n'
+        '[prompt]\nfile="p.md"\n'
+    )
+    with pytest.raises(ValueError) as exc:
+        load_config(toml)
+    assert "grace_kill_ignore_patterns" in str(exc.value)

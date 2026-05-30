@@ -47,6 +47,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `fresh_eyes_every_n` | `int | None` | None |
 | `dry_run` | `bool` | False |
 | `max_grace_after_result_s` | `int` | 0 |
+| `grace_kill_ignore_patterns` | `list[str]` | [] |
 
 ### `[prompt]`
 

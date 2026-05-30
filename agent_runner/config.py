@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +41,12 @@ class RuntimeConfig:
     fresh_eyes_every_n: int | None = None  # None = disabled
     dry_run: bool = False
     max_grace_after_result_s: int = 0  # 0 = disabled
+    grace_kill_ignore_patterns: list[str] = field(default_factory=list)
+    """Regex patterns (re.search) tested against each child process's joined
+    cmdline. Matching children are excluded from the grace-kill liveness
+    check — for persistent helper subprocesses (e.g. claude's shell-snapshot
+    bash) that would otherwise defeat max_grace_after_result_s. Empty list
+    = no filtering (0.1.38 behavior preserved)."""
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,23 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
     return v
 
 
+def _validate_regex_list(value: Any, *, field: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field}: expected a list of regex strings, got {type(value).__name__}")
+    out: list[str] = []
+    for p in value:
+        if not isinstance(p, str):
+            raise ValueError(
+                f"{field}: each pattern must be a string, got {type(p).__name__}: {p!r}"
+            )
+        try:
+            re.compile(p)
+        except re.error as e:
+            raise ValueError(f"{field}: invalid regex {p!r}: {e}") from e
+        out.append(p)
+    return out
+
+
 _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
     {
         "round_timeout_s",
@@ -391,6 +415,10 @@ def load_config(toml_path: Path) -> Config:
         max_grace_after_result_s=_require_non_negative_int(
             runtime_d.get("max_grace_after_result_s", 0),
             field="runtime.max_grace_after_result_s",
+        ),
+        grace_kill_ignore_patterns=_validate_regex_list(
+            runtime_d.get("grace_kill_ignore_patterns", []),
+            field="runtime.grace_kill_ignore_patterns",
         ),
     )
     prompt_d = raw.get("prompt", {})
