@@ -229,6 +229,8 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
 
 
 def _validate_regex_list(value: Any, *, field: str) -> list[str]:
+    """Validate a list of regex pattern strings (each must compile). Returns the
+    raw strings unchanged; callers compile when they need ``re.Pattern`` objects."""
     if not isinstance(value, list):
         raise ValueError(f"{field}: expected a list of regex strings, got {type(value).__name__}")
     out: list[str] = []

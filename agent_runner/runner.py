@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import sys
 import time
 import traceback as tb_mod
@@ -466,9 +467,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             **stats,
         )
 
-    import re as _re
-
-    grace_kill_ignore_patterns = [_re.compile(p) for p in cfg.runtime.grace_kill_ignore_patterns]
+    grace_kill_ignore_patterns = [re.compile(p) for p in cfg.runtime.grace_kill_ignore_patterns]
 
     def _grace_extended_emit(live: list[str], ignored: list[str]) -> None:
         api.emit_round_grace_extended(
