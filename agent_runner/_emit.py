@@ -258,10 +258,16 @@ def emit_round_grace_extended(
     round_num: int,
     grace_s: int,
     live_children: list[str],
+    ignored_children: list[str] | None = None,
 ) -> None:
     """Emit when the grace-after-result timer expired but the agent still had
     live worker processes (e.g. a backgrounded build), so the round was NOT
     killed; it continues until it finishes or hits round_timeout_s.
+
+    ignored_children: cmdlines that matched a grace_kill_ignore_patterns entry
+        and were excluded from the liveness count — useful for verifying
+        patterns are firing and for noticing when an upstream CLI changes
+        its helper path.
     """
     from agent_runner.events import ROUND_GRACE_EXTENDED, emit
 
@@ -271,6 +277,7 @@ def emit_round_grace_extended(
         round_num=round_num,
         grace_s=grace_s,
         live_children=live_children,
+        ignored_children=ignored_children or [],
     )
 
 

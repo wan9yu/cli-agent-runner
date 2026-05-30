@@ -79,6 +79,28 @@ def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
     assert len(timeout_events) == 0
 
 
+def _make_grace_config_with_patterns(
+    work_dir: Path, script_path: Path, grace_s: int, patterns: list[str]
+) -> Config:
+    log_dir = work_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt = work_dir / "p.md"
+    prompt.write_text("Test prompt. " * 50)
+    return Config(
+        agent=AgentConfig(command=[str(script_path)], prompt_arg_template=[]),
+        runtime=RuntimeConfig(
+            work_dir=work_dir,
+            log_dir=log_dir,
+            round_timeout_s=10,
+            max_grace_after_result_s=grace_s,
+            grace_kill_ignore_patterns=patterns,
+        ),
+        prompt=PromptConfig(file=prompt, inject_context=False),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(),
+    )
+
+
 def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
     """Full runner flow: subprocess emits result then backgrounds a long child;
     round_grace_extended event fires (not round_grace_kill); wall timeout reaps."""
@@ -108,4 +130,45 @@ def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
 
     # round_grace_kill must NOT appear (round was busy, not idle)
     grace_kill_events = [e for e in events if e.get("event") == "round_grace_kill"]
+    assert len(grace_kill_events) == 0
+
+
+def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
+    """With grace_kill_ignore_patterns set, persistent helpers appear under
+    ignored_children, not live_children — even when a real worker is also alive."""
+    _init_git(tmp_path)
+
+    script = tmp_path / "agent.sh"
+    # Emit result, then background both a snapshot-like helper and a 'real' sleep.
+    # exec -a renames the subprocess's argv[0] so the pattern can match it.
+    script.write_text(
+        "#!/bin/bash\n"
+        'echo \'{"type":"result","is_error":false}\'\n'
+        "exec -a snapshot-bash-test sleep 30 &\n"
+        "sleep 30 &\n"
+        "wait\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+    cfg = _make_grace_config_with_patterns(
+        tmp_path, script, grace_s=1, patterns=["snapshot-bash-test"]
+    )
+    result = run_one_round(cfg)
+
+    assert result.killed_for_grace is False  # real worker kept it alive
+    assert result.timed_out is True  # wall-clock reaped it
+
+    events_list = read_events_for_current_month(cfg.runtime.log_dir)
+    extended_events = [e for e in events_list if e.get("event") == "round_grace_extended"]
+    assert len(extended_events) == 1
+    ev = extended_events[0]
+
+    # The plain sleep goes to live_children (real worker)
+    assert any("sleep" in c for c in ev["live_children"])
+    # The exec -a snapshot-bash-test process goes to ignored_children
+    assert any("snapshot-bash-test" in c for c in ev["ignored_children"])
+
+    # round_grace_kill must NOT appear (real worker still alive)
+    grace_kill_events = [e for e in events_list if e.get("event") == "round_grace_kill"]
     assert len(grace_kill_events) == 0

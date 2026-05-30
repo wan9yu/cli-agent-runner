@@ -466,12 +466,17 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             **stats,
         )
 
-    def _grace_extended_emit(children: list[str]) -> None:
+    import re as _re
+
+    grace_kill_ignore_patterns = [_re.compile(p) for p in cfg.runtime.grace_kill_ignore_patterns]
+
+    def _grace_extended_emit(live: list[str], ignored: list[str]) -> None:
         api.emit_round_grace_extended(
             log_dir,
             round_num=round_num,
             grace_s=cfg.runtime.max_grace_after_result_s,
-            live_children=children,
+            live_children=live,
+            ignored_children=ignored,
         )
 
     result = agent_runtime.run(
@@ -485,6 +490,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         progress_callback=_progress_emit,
         progress_interval_s=cfg.monitor.round_progress_interval_s,
         on_grace_extended=_grace_extended_emit,
+        grace_kill_ignore_patterns=grace_kill_ignore_patterns,
     )
     events.emit(
         log_dir,
