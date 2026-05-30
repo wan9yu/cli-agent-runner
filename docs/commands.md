@@ -101,6 +101,9 @@ back to package-only mode automatically.
 `--no-restart` forces package-only even on a systemd --user host (upgrade the
 package now, restart your service yourself).
 
+Operator walkthrough (per-deployment decision table, rollback, failure modes,
+postmortem trail): see `docs/runbook.md` § "Upgrading agent-runner".
+
 ## Observation
 
 ### `agent-runner peek [flags]`

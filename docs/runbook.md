@@ -149,7 +149,18 @@ RestartSec=5
 
 ## Upgrading agent-runner
 
-`upgrade` detects the deployment topology and takes the safe path for it:
+`upgrade` detects the deployment topology and takes the safe path for it. Pick
+by how your service runs:
+
+| Your deployment | How to upgrade | What happens |
+|---|---|---|
+| systemd `--user` (installed via `agent-runner install`) | `agent-runner upgrade [--target X.Y.Z]` | Full auto: graceful stop → pip → smoke → start, auto-rollback on smoke failure |
+| systemd **system** unit / self-managed supervisor | `agent-runner upgrade --no-restart` then restart yourself | Package-only: pip + smoke (no service touched); you run `sudo systemctl restart <unit>` |
+| container / pipx / fully hand-managed | `pip install --upgrade cli-agent-runner` then restart | Manual: you own both the install and the restart |
+
+Whichever path: a long-running supervisor only loads the new code **after it
+restarts** — that's why every non-`--user` path ends in a restart you run. The
+three paths are detailed below.
 
 ### Path 1 — systemd --user service (installed via `agent-runner install`)
 
