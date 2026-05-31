@@ -212,9 +212,10 @@ round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress hea
 # supervisor_stale_threshold_s = 2700  # unset = round_timeout_s * 1.5; 0 = disable
 
 [monitor.host_health]
-mem_avail_min_mb = 200        # mem_pressure fires when mem_available_mb < this
-disk_warning_pct = 90.0       # disk_warning fires when disk_used_pct >= this
-disk_critical_pct = 95.0      # disk_critical fires when disk_used_pct >= this
+# Thresholds for mem_pressure / disk_warning / disk_critical. Defaults are
+# authoritative in the config-schema table above — set a field here only to
+# override. (mem_avail_min_mb: mem_pressure when mem_available_mb below it;
+# disk_warning_pct / disk_critical_pct: fire when disk_used_pct at/above.)
 ```
 
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables
