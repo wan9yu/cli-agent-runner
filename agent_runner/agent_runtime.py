@@ -31,7 +31,7 @@ class RunResult:
     timed_out: bool
     pid: int
     killed_for_grace: bool = False
-    grace_kill_children: list[str] = field(default_factory=list)
+    grace_kill_children: list[dict] = field(default_factory=list)
 
 
 def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str) -> list[str]:
@@ -63,35 +63,43 @@ def _live_children(
     *,
     ignore_patterns: list[re.Pattern[str]] | None = None,
     max_n: int = 5,
-    max_len: int = 120,
-) -> tuple[list[str], list[str]]:
-    """Cmdlines of live (non-zombie) descendants of ``proc``, split into
-    ``(live, ignored)``: ``live`` is what counts toward the grace-kill
-    liveness check; ``ignored`` matched an ``ignore_patterns`` entry and is
-    excluded (e.g. claude's persistent shell-snapshot helper). Both lists
-    are bounded by ``max_n``/``max_len`` to keep events small. ``ignore_patterns
-    is None`` → no filtering, ``ignored`` is empty, ``live`` matches 0.1.38.
+) -> tuple[list[dict], list[dict]]:
+    """Live (non-zombie) descendants of ``proc``, split into ``(live, ignored)``.
+
+    Each entry is ``{"name": <executable basename>, "pid": <int>}``; an ignored
+    entry also carries ``"matched": <pattern str>``. We store only basename+pid,
+    NOT argv — process arguments are where secrets leak (PGPASSWORD=…, --api-key
+    …, redis://:pass@…) and these lists are persisted to events-*.jsonl.
+    Ignore-pattern MATCHING runs against the full cmdline (detection unchanged);
+    only what we STORE is minimized.
     """
     try:
         parent = psutil.Process(proc.pid)
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return [], []
-    live: list[str] = []
-    ignored: list[str] = []
+    live: list[dict] = []
+    ignored: list[dict] = []
     for child in parent.children(recursive=True):
         try:
             if child.status() == psutil.STATUS_ZOMBIE:
                 continue
-            line = " ".join(child.cmdline()) or child.name()
+            argv = child.cmdline()
+            full = " ".join(argv) or child.name()  # MATCHING only
+            name = (Path(argv[0]).name if argv else "") or child.name()
+            pid = child.pid
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        short = line[:max_len]
-        if ignore_patterns and any(p.search(line) for p in ignore_patterns):
+        matched = None
+        if ignore_patterns:
+            for p in ignore_patterns:
+                if p.search(full):
+                    matched = p.pattern
+                    break
+        if matched is not None:
             if len(ignored) < max_n:
-                ignored.append(short)
-        else:
-            if len(live) < max_n:
-                live.append(short)
+                ignored.append({"name": name, "pid": pid, "matched": matched})
+        elif len(live) < max_n:
+            live.append({"name": name, "pid": pid})
         if len(live) >= max_n and len(ignored) >= max_n:
             break
     return live, ignored
@@ -114,7 +122,7 @@ def run(
     max_grace_after_result_s: int = 0,
     progress_callback: Callable[[dict], None] | None = None,
     progress_interval_s: int = 0,
-    on_grace_extended: Callable[[list[str], list[str]], None] | None = None,
+    on_grace_extended: Callable[[list[dict], list[dict]], None] | None = None,
     grace_kill_ignore_patterns: list[re.Pattern[str]] | None = None,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.

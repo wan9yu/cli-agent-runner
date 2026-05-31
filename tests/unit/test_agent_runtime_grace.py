@@ -97,7 +97,7 @@ def test_live_children_lists_backgrounded_child():
     try:
         time.sleep(0.5)  # let the backgrounded child spawn
         live, ignored = _live_children(p)
-        assert any("sleep" in k for k in live)
+        assert any(c["name"] == "sleep" for c in live)
         assert ignored == []
     finally:
         os.killpg(p.pid, signal.SIGKILL)
@@ -135,7 +135,7 @@ def test_grace_extended_when_result_but_child_running(tmp_path):
     assert result.timed_out is True  # round_timeout_s backstop reaped it
     assert len(extended) == 1  # emitted once, not per-tick
     live, ignored = extended[0]
-    assert any("sleep" in k for k in live)
+    assert any(c["name"] == "sleep" for c in live)
 
 
 def test_grace_kill_after_child_exits_then_idle(tmp_path):
@@ -175,8 +175,8 @@ def test_live_children_splits_on_ignore_pattern():
         time.sleep(0.5)
         live, ignored = _live_children(p, ignore_patterns=[re.compile(r"snapshot-bash-")])
         # One child should match the ignore pattern; the plain sleep goes to live.
-        assert any("snapshot-bash-" in c or "sleep" in c for c in ignored)
-        assert any("sleep" in c for c in live)
+        assert any(c["name"] in ("snapshot-bash-xyz", "sleep") for c in ignored)
+        assert any(c["name"] == "sleep" for c in live)
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
@@ -191,7 +191,7 @@ def test_live_children_no_patterns_preserves_0138_behavior():
         time.sleep(0.5)
         live, ignored = _live_children(p)  # default None
         assert ignored == []
-        assert any("sleep" in c for c in live)
+        assert any(c["name"] == "sleep" for c in live)
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
@@ -224,3 +224,45 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path):
     assert result.killed_for_grace is True
     assert result.duration_s < 4
     assert extended == []  # no extension emitted; reaped directly
+
+
+def test_live_children_stores_no_argv_secret():
+    """A child with a secret in argv -> stored dict carries only name+pid; the
+    secret string never appears."""
+    from agent_runner.agent_runtime import _live_children
+
+    p = subprocess.Popen(
+        ["bash", "-c", "exec -a 'tool --api-key sk-ant-SECRET123 x' sleep 30"],
+        start_new_session=True,
+    )
+    try:
+        time.sleep(0.5)
+        live, ignored = _live_children(p)
+        blob = repr(live + ignored)
+        assert "sk-ant-SECRET123" not in blob and "--api-key" not in blob
+        assert all(set(c) <= {"name", "pid", "matched"} for c in live + ignored)
+    finally:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        p.wait()
+
+
+def test_live_children_matched_records_pattern_not_argv():
+    """Ignore-pattern matches on full cmdline; the stored ignored entry records
+    the matched pattern string + basename, never the full argv."""
+    from agent_runner.agent_runtime import _live_children
+
+    # Background a subshell that exec-replaces itself with the secret in argv[0].
+    # _live_children sees the child process; matching fires on its full cmdline.
+    p = subprocess.Popen(
+        ["bash", "-c", "bash -c 'exec -a sk-MATCHME sleep 30' &\nwait"],
+        start_new_session=True,
+    )
+    try:
+        time.sleep(0.5)
+        live, ignored = _live_children(p, ignore_patterns=[re.compile(r"sk-MATCHME")])
+        assert ignored and ignored[0]["matched"] == "sk-MATCHME"
+        # Only name/pid/matched stored — not the raw cmdline
+        assert all(set(c) == {"name", "pid", "matched"} for c in ignored)
+    finally:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        p.wait()

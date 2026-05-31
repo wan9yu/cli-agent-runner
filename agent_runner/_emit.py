@@ -234,12 +234,15 @@ def emit_round_grace_kill(
     *,
     round_num: int,
     grace_s: int,
-    live_children: list[str] | None = None,
+    live_children: list[dict] | None = None,
 ) -> None:
     """Emit when the subprocess was killed because the grace-after-result timer
     expired AND the agent's process group had no live worker processes left
     (a genuine hang). Distinct from round_grace_extended (grace elapsed but a
     worker was still running) and round_timeout_kill (wall-clock exceeded).
+
+    live_children: list of ``{"name": <exe basename>, "pid": <int>}`` dicts
+        (0.1.40+; previously list of cmdline strings).
     """
     from agent_runner.events import ROUND_GRACE_KILL, emit
 
@@ -257,17 +260,18 @@ def emit_round_grace_extended(
     *,
     round_num: int,
     grace_s: int,
-    live_children: list[str],
-    ignored_children: list[str] | None = None,
+    live_children: list[dict],
+    ignored_children: list[dict] | None = None,
 ) -> None:
     """Emit when the grace-after-result timer expired but the agent still had
     live worker processes (e.g. a backgrounded build), so the round was NOT
     killed; it continues until it finishes or hits round_timeout_s.
 
-    ignored_children: cmdlines that matched a grace_kill_ignore_patterns entry
-        and were excluded from the liveness count — useful for verifying
-        patterns are firing and for noticing when an upstream CLI changes
-        its helper path.
+    live_children: list of ``{"name": <exe basename>, "pid": <int>}`` dicts
+        (0.1.40+; previously list of cmdline strings).
+    ignored_children: list of ``{"name": ..., "pid": ..., "matched": <pattern>}``
+        dicts for children that matched a grace_kill_ignore_patterns entry
+        and were excluded from the liveness count (0.1.40+; previously cmdline strings).
     """
     from agent_runner.events import ROUND_GRACE_EXTENDED, emit
 

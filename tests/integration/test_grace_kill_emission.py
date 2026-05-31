@@ -126,7 +126,7 @@ def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
     assert len(extended_events) == 1
     assert extended_events[0]["round_num"] == 1
     assert extended_events[0]["grace_s"] == 1
-    assert any("sleep" in c for c in extended_events[0]["live_children"])
+    assert any(c["name"] == "sleep" for c in extended_events[0]["live_children"])
 
     # round_grace_kill must NOT appear (round was busy, not idle)
     grace_kill_events = [e for e in events if e.get("event") == "round_grace_kill"]
@@ -165,9 +165,9 @@ def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
     ev = extended_events[0]
 
     # The plain sleep goes to live_children (real worker)
-    assert any("sleep" in c for c in ev["live_children"])
+    assert any(c["name"] == "sleep" for c in ev["live_children"])
     # The exec -a snapshot-bash-test process goes to ignored_children
-    assert any("snapshot-bash-test" in c for c in ev["ignored_children"])
+    assert any(c["name"] == "snapshot-bash-test" for c in ev["ignored_children"])
 
     # round_grace_kill must NOT appear (real worker still alive)
     grace_kill_events = [e for e in events_list if e.get("event") == "round_grace_kill"]
