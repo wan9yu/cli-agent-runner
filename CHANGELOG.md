@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.40] - 2026-05-31
+
+### Security
+- Grace-kill child-process fields (`live_children` / `ignored_children` in `round_grace_extended` / `round_grace_kill`) no longer store raw command lines — only the executable basename + pid (and, for ignored children, which ignore-pattern matched). This structurally prevents secrets passed in a child's arguments from reaching `events-*.jsonl`. The field shape changed from a list of strings to a list of objects.
+- Free-text event excerpts that can carry agent output — `transient_error_detected.raw`, `hook_failed.error_message`/`traceback`, `serve_startup_hook_failed.exc_msg` — are now best-effort redacted (auth headers, tokens, credential URLs, `KEY=value` secrets, known key-prefixes, JWT, PEM).
+- Pre-0.1.40 `events-*.jsonl` may contain unredacted argv/excerpts — see `docs/migrations/0.1.40.md`.
+
+### Changed
+- Docs: `configuration.md` `[monitor.host_health]` example points to the generated schema table instead of restating default values.
+
+## [0.1.39] - 2026-05-29
 
 ### Fixed
 - Grace-kill (`max_grace_after_result_s`) is no longer defeated by long-lived helper subprocesses (e.g. claude's persistent Bash-tool shell-snapshot). `[runtime] grace_kill_ignore_patterns` lists regexes for cmdlines to exclude from the liveness count; the claude preset ships a matching default.
