@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from agent_runner import events
+from agent_runner._redact import redact_secrets
 from agent_runner._registry import ensure_unique
 
 _HEAD_BYTES = 1024
@@ -201,7 +202,7 @@ def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
             hook(cfg)
         except Exception as e:  # noqa: BLE001 — hook is plugin contract; any failure aborts serve
             exc_type = type(e).__name__
-            exc_msg = str(e)[:200]
+            exc_msg = redact_secrets(str(e))[:200]
             print(
                 f"agent-runner: serve_startup_hook {hook.name} failed: {exc_type}: {exc_msg}",
                 file=sys.stderr,
@@ -232,6 +233,6 @@ def _summarize_error(exc: BaseException, tb: str) -> dict[str, str]:
         trimmed = tb[:_HEAD_BYTES] + _TRUNC_MARKER + tb[-_TAIL_BYTES:]
     return {
         "error_type": type(exc).__name__,
-        "error_message": str(exc),
-        "traceback": trimmed,
+        "error_message": redact_secrets(str(exc)),
+        "traceback": redact_secrets(trimmed),
     }

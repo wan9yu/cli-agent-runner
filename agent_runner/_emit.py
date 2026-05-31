@@ -112,8 +112,10 @@ def emit_transient_error_detected(
     raw: str,
 ) -> None:
     """Emit detection of a transient agent error (rate limit / 5xx / timeout)."""
+    from agent_runner._redact import redact_secrets
     from agent_runner.events import TRANSIENT_ERROR_DETECTED, emit
 
+    raw = redact_secrets(raw)
     emit(
         log_dir,
         TRANSIENT_ERROR_DETECTED,

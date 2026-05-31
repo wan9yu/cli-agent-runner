@@ -629,3 +629,20 @@ def test_given_claude_log_with_529_overloaded_when_classified_then_api_transient
     )
     parsed = _parse_claude_log(log)
     assert parsed["transient_error"]["classification"] == "api_transient_5xx"
+
+
+def test_emit_transient_raw_redacted(tmp_path):
+    import json
+
+    from agent_runner._emit import emit_transient_error_detected
+
+    emit_transient_error_detected(
+        tmp_path,
+        classification="api_transient_5xx",
+        agent="claude",
+        reset_at_epoch=0,
+        round_num=1,
+        raw="boom Bearer sk-ant-LEAKvalue000111 tail",
+    )
+    payload = json.loads(sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text().splitlines()[-1])
+    assert "sk-ant-LEAKvalue000111" not in payload["raw"] and "<redacted>" in payload["raw"]

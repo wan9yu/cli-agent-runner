@@ -177,3 +177,12 @@ def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
 
     assert captured, "post_round_hook was never called"
     assert captured[0].dry_run is True
+
+
+def test_summarize_error_redacts_message_and_traceback():
+    from agent_runner.hooks import _summarize_error
+
+    exc = RuntimeError("connect failed: postgresql://svc:S3cr3tPw0rd@db:5432/app")
+    out = _summarize_error(exc, tb="trace https://x-token:ghp_aaaaaaaaaaaaaaaaaaaa@h line 1")
+    assert "S3cr3tPw0rd" not in out["error_message"]
+    assert "ghp_aaaaaaaaaaaaaaaaaaaa" not in out["traceback"]
