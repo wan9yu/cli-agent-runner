@@ -55,6 +55,12 @@ _PREFIX_RES = [
 ]
 
 _FLAG_RE = re.compile(r"(?i)(" + "|".join(re.escape(f) for f in _LONG_FLAGS) + r")(\s+|=)(\S+)")
+# Short HTTP-basic flag `-u user:pass` (curl/wget). Case-SENSITIVE so `-U`
+# (psql/pg username) is left alone; a colon is required so `sort -u file` and
+# bare `-u username` (no password) are not masked; and the value must NOT be a
+# URL (`://`) — a `-u <url>` is left for _URL_USERINFO_RE, which masks only the
+# userinfo and preserves the host (e.g. redis://<redacted>@cache:6379/0).
+_SHORT_USER_RE = re.compile(r"(?<![\w-])-u(\s+|=)(?!\S*://)(\S+:\S+)")
 _HEADER_NAME_RE = re.compile(
     r"(?im)\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie|"
     r"X-Api-Key|X-Auth-Token|X-Amz-Security-Token)(\s*:\s*)([^\r\n]+)"
@@ -86,6 +92,7 @@ def redact_secrets(text: str) -> str:
     out = _PEM_RE.sub(_MASK, text)
     out = _ENV_RE.sub(rf"\1={_MASK}", out)
     out = _FLAG_RE.sub(rf"\1\2{_MASK}", out)
+    out = _SHORT_USER_RE.sub(rf"-u\1{_MASK}", out)
     out = _HEADER_NAME_RE.sub(rf"\1\2{_MASK}", out)
     out = _SCHEME_RE.sub(rf"\1\2{_MASK}", out)
     out = _URL_USERINFO_RE.sub(rf"\1{_MASK}@", out)

@@ -106,6 +106,20 @@ def test_benign_prefix_filename():
         assert redact_secrets(s) == s
 
 
+def test_short_user_flag_basic_auth():
+    # curl/wget -u user:pass — short HTTP-basic flag.
+    assert redact_secrets("curl -u admin:S3cr3tPassw0rd https://api") == f"curl -u {R} https://api"
+    assert redact_secrets("wget -u user:pass http://x") == f"wget -u {R} http://x"
+
+
+def test_benign_short_u_not_over_redacted():
+    # -U (psql username, uppercase) must NOT be masked (case-sensitive rule).
+    assert redact_secrets("psql -U app -h db") == "psql -U app -h db"
+    # -u without a colon (sort -u file, curl -u username) is not a stored secret.
+    assert redact_secrets("sort -u file.txt") == "sort -u file.txt"
+    assert redact_secrets("curl -u username https://x") == "curl -u username https://x"
+
+
 def test_benign_auth_prose():
     assert (
         redact_secrets("Basic auth disabled; Bearer flow off")
