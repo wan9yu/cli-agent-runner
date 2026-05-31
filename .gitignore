@@ -27,3 +27,6 @@ agent_runner/_version.py
 .coverage
 coverage.xml
 htmlcov/
+
+# Personal /team-onboarding artifact — not project content
+ONBOARDING.md
