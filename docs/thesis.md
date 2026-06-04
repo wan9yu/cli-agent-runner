@@ -88,7 +88,7 @@ during sustained upstream outage."
 Counter reset: any round that completes without firing a new
 `transient_error_detected` event clears all bucket counters back to zero.
 
-> **Example**: Gateway 2026-05-18 reported sustained 5xx + 529 from
+> **Example**: A 2026-05-18 field report described sustained 5xx + 529 from
 > Anthropic where our previous fixed 60s wait was too short — the next
 > round hit the same error, waited 60s again, and again. Rejected: adding
 > a config knob (`[runtime] transient_backoff_strategy = "fixed" |
@@ -158,6 +158,31 @@ rotation pattern, or attestation scheme.
 That's prompt-engineering project policy. It varies per use case and evolves
 faster than a library version cycle. We are a runtime harness, not a usage
 methodology.
+
+### Not a remote-execution portal (agent-local, shell-remote)
+
+agent-runner assumes the agent and the supervisor run on the **same host**.
+The unattended model requires it: to survive a disconnected laptop and run
+24×7, the agent must live on the supervised host, not stream commands to it
+from elsewhere. We do not route an agent's tool calls to a remote shell (SSH,
+container, k8s pod). `monitor --host` provides remote *observation*, not remote
+*execution*.
+
+Tools like [zmx](https://zmx.sh) cover the complementary case — an
+interactive, attended agent that stays local while its shell runs remotely.
+That's a different niche (a human watching, full local MCP/skills, ephemeral
+sessions), and the two compose: a consumer can point `[agent].command` at an
+agent that itself routes through such a portal. But a portal adapter in core
+would be an anticipatory feature for a topology our model doesn't use.
+
+> **Example**: The 2026-04 zmx "ai portal" release (agent-local, shell-remote
+> via a session) prompted this entry. It validates our CLI-not-MCP stance
+> (its own prior-art notes call MCP servers a configuration pain), but adding
+> remote-execution routing to agent-runner is rejected until a consumer
+> presents a concrete unattended use case that needs it. Note for combined
+> deployments: command + output flowing through such a session is a secret
+> surface outside agent-runner's control (cf. the 0.1.40 event-log
+> containment) — the operator owns it.
 
 ---
 
