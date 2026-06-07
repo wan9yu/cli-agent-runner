@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.41] - 2026-06-07
+
+### Added
+- New `codewhale` preset — supervise Hmbown/CodeWhale (DeepSeek terminal agent) via `codewhale exec --auto --output-format stream-json`. `agent-runner init --preset codewhale`.
+- New built-in `codewhale_error_detector` plugin — emits `agent_usage_recorded` (model + token counts) from codewhale's stream-json output. Transient-error classification is best-effort (mappable buckets only); auth failures surface via the existing monitor `oauth_fail` detector.
+
 ## [0.1.40] - 2026-05-31
 
 ### Security

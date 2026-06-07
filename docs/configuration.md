@@ -103,10 +103,11 @@ working tree:
 `[agent.env]` is a flat `dict[str, str]` of environment variables injected into
 the agent subprocess **per round**. This is preset-supplied per CLI: e.g. the
 claude preset sets `DISABLE_AUTOUPDATER=1` to prevent mid-loop self-updates;
-the aider preset omits `[agent.env]` entirely. Override these values in your
-project's `agent-runner.toml` only when you need to deviate from the preset
-default. The runtime merges `[agent.env]` on top of the supervisor's own env;
-unset (empty string) does not unset an inherited variable.
+the aider and codewhale presets omit `[agent.env]` entirely (both resolve their
+API keys from the ambient environment or their own keyrings). Override these
+values in your project's `agent-runner.toml` only when you need to deviate from
+the preset default. The runtime merges `[agent.env]` on top of the supervisor's
+own env; unset (empty string) does not unset an inherited variable.
 
 ## `[monitor].auth_fail_hint` (preset-supplied)
 
@@ -117,6 +118,8 @@ guidance without authoring it themselves:
 - `--preset claude` → recommend `claude /login` / refresh `ANTHROPIC_API_KEY`.
 - `--preset aider` → verify provider env var (`OPENAI_API_KEY` /
   `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / etc.); run `aider --models`.
+- `--preset codewhale` → run `codewhale auth status` to inspect provider
+  credentials, or set `DEEPSEEK_API_KEY` on the supervisor host.
 
 Override in your `agent-runner.toml` if you ship a custom CLI.
 
