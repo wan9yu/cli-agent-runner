@@ -47,6 +47,7 @@ agent-runner = "agent_runner.cli:main"
 [project.entry-points."agent_runner.post_round_hooks"]
 claude_error_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeErrorDetector"
 gemini_error_detector = "agent_runner.builtin_plugins.gemini:GeminiErrorDetector"
+codewhale_error_detector = "agent_runner.builtin_plugins.codewhale:CodewhaleErrorDetector"
 
 [project.optional-dependencies]
 dev = [
