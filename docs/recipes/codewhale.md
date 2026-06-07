@@ -29,7 +29,7 @@ This writes:
 - `prompts/main.md` — neutral placeholder; replace with your task description.
 - `.gitignore` — adds `logs/` if missing.
 
-## CodeWhale preset (`agent_runner/presets/codewhale.toml`)
+## CodeWhale preset (excerpt of `agent_runner/presets/codewhale.toml`)
 
 ```toml
 [agent]
@@ -90,7 +90,7 @@ each round completes:
 | Symptom | Probable cause |
 |---|---|
 | `codewhale: command not found` | codewhale not on PATH — `npm i -g codewhale` |
-| Round exits in <2s with non-zero | likely auth failure; check `peek` and `~/.agent-runner/<project>/logs/rounds/R*.log` for the error record |
+| Round short-exits with non-zero exit code | likely auth failure; check `peek` and `~/.agent-runner/<project>/logs/rounds/R*.log` for the error record |
 | `oauth_fail` alert in `peek` | DeepSeek auth failure detected. Hint: "Run `codewhale auth status`…". Check key validity and re-export `DEEPSEEK_API_KEY`. |
 | No `agent_usage_recorded` events | `--output-format stream-json` may be missing from command; verify the preset was applied correctly |
 | `codewhale auth status` shows no key | Run `codewhale auth set` to save a key, or export `DEEPSEEK_API_KEY` before starting the supervisor |

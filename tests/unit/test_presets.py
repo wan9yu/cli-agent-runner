@@ -10,6 +10,21 @@ import pytest
 PRESET_NAMES = ["claude", "aider", "gemini", "codewhale"]
 
 
+def test_given_preset_names_when_compared_to_shipped_dir_then_match() -> None:
+    """Guard the test-side PRESET_NAMES against the shipped presets/*.toml.
+
+    `init_cmd._preset_names()` derives the CLI choices from the filesystem; this
+    keeps the parametrize list (needed as a collection-time literal) from
+    silently drifting when a preset .toml is added without updating tests.
+    """
+    presets = importlib.resources.files("agent_runner.presets")
+    shipped = sorted(p.name[:-5] for p in presets.iterdir() if p.name.endswith(".toml"))
+    assert sorted(PRESET_NAMES) == shipped, (
+        f"PRESET_NAMES drifted from agent_runner/presets/*.toml: "
+        f"hardcoded={sorted(PRESET_NAMES)} shipped={shipped}"
+    )
+
+
 def _preset_text(name: str) -> str:
     return (importlib.resources.files("agent_runner.presets") / f"{name}.toml").read_text(
         encoding="utf-8"

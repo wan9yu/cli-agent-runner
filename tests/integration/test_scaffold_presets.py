@@ -1,4 +1,4 @@
-"""End-to-end: `agent-runner init --preset {claude,aider,gemini}` produces valid scaffolds."""
+"""End-to-end: `agent-runner init --preset <name>` produces valid scaffolds (all presets)."""
 
 from __future__ import annotations
 

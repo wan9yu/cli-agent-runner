@@ -92,6 +92,17 @@ def test_doc_value_sets_match_ssot() -> None:
     if cls_doc != cls_ssot:
         failures.append(f"classification doc {cls_doc} != SSOT {cls_ssot}")
 
+    # --preset choices: commands.md "--preset {a,b,c}" must equal the derived SSOT.
+    # init_cmd derives choices from presets/*.toml; the hand-written doc list must track it.
+    from agent_runner.cli.init_cmd import _preset_names
+
+    preset_ssot = set(_preset_names())
+    cmds_text = (REPO / "docs/commands.md").read_text(encoding="utf-8")
+    pm = re.search(r"--preset \{([^}]+)\}", cmds_text)
+    preset_doc = set(pm.group(1).split(",")) if pm else set()
+    if preset_doc != preset_ssot:
+        failures.append(f"--preset doc {preset_doc} != SSOT {preset_ssot}")
+
     assert not failures, "doc value-set drift:\n" + "\n".join(failures)
 
 
