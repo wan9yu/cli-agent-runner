@@ -93,11 +93,8 @@ def _parse_codewhale_log(log_path: Path) -> dict[str, Any]:
             "input_tokens": int(metadata.get("input_tokens", 0)),
             "output_tokens": int(metadata.get("output_tokens", 0)),
             "cached_tokens": 0,  # codewhale exec stdout exposes no cache counts
-            "cache_creation_tokens": 0,
             "cost_usd": None,  # codewhale exec stdout exposes no USD
             "duration_ms": 0,  # not in exec metadata
-            "models_breakdown": None,
-            "tool_call_count": 0,
         }
 
     if error_event is not None:

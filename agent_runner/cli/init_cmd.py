@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import importlib.resources
+
 from agent_runner import api
 from agent_runner.cli.common import emit, fail, work_dir_from_args
+
+
+def _preset_names() -> list[str]:
+    """Discover scaffold presets from the shipped ``agent_runner/presets/*.toml``.
+
+    Derived (not hardcoded) so adding a preset is a single new .toml file — the
+    ``--preset`` choices and validation track the filesystem automatically.
+    """
+    presets = importlib.resources.files("agent_runner.presets")
+    return sorted(p.name[:-5] for p in presets.iterdir() if p.name.endswith(".toml"))
 
 
 def add_parser(sub, parent) -> None:
     p = sub.add_parser("init", parents=[parent], help="Scaffold agent-runner project files")
     p.add_argument(
         "--preset",
-        choices=["claude", "aider", "gemini", "codewhale"],
+        choices=_preset_names(),
         default="claude",
         help="Which agent CLI preset to scaffold (default: claude)",
     )

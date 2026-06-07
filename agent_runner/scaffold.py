@@ -5,8 +5,8 @@ Writes three files into a git repo:
   prompts/main.md        — neutral 8-line placeholder
   .gitignore             — append "logs/" if missing
 
-Available presets ship as package data in `agent_runner/presets/*.toml`.
-Currently: `claude`, `aider`, `gemini`, `codewhale`.
+Available presets ship as package data in `agent_runner/presets/*.toml`;
+`agent-runner init --preset <name>` discovers them from that directory.
 
 Optionally commits in one step (default true via the CLI).
 """
