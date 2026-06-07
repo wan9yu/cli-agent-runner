@@ -133,3 +133,23 @@ def test_given_non_json_lines_when_after_round_then_tolerated(tmp_path):
         )
     usage_emit.assert_called_once()
     assert usage_emit.call_args.kwargs["input_tokens"] == 5
+
+
+def test_classify_codewhale_error_maps_only_known_buckets():
+    """Lock the dormant forward-path: numeric status codes map to existing
+    buckets; everything else (incl. the captured free-text auth error) → None.
+    Guards against silent regression when a real rate-limit sample is wired in.
+    """
+    from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
+    from agent_runner.builtin_plugins.codewhale import _classify_codewhale_error
+
+    assert _classify_codewhale_error({"code": 429}) == "rate_limit_model"
+    assert _classify_codewhale_error({"status_code": 503}) == "api_transient_5xx"
+    assert _classify_codewhale_error({"code": 408}) == "api_timeout"
+    # free-text auth error (the only real captured shape) does not map
+    assert _classify_codewhale_error({"error": "Authentication failed: ..."}) is None
+    assert _classify_codewhale_error({"code": 418}) is None
+    # every non-None result must be a real classification bucket (SSOT)
+    for ev in ({"code": 429}, {"status_code": 500}, {"code": 408}):
+        cls = _classify_codewhale_error(ev)
+        assert cls in _BACK_OFF_DEFAULTS
