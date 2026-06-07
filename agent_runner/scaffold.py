@@ -6,7 +6,7 @@ Writes three files into a git repo:
   .gitignore             — append "logs/" if missing
 
 Available presets ship as package data in `agent_runner/presets/*.toml`.
-Currently: `claude`, `aider`, `gemini`.
+Currently: `claude`, `aider`, `gemini`, `codewhale`.
 
 Optionally commits in one step (default true via the CLI).
 """

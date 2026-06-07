@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("preset_name", ["claude", "aider", "gemini"])
+@pytest.mark.parametrize("preset_name", ["claude", "aider", "gemini", "codewhale"])
 def test_given_preset_when_init_then_toml_is_loadable(tmp_git_repo: Path, preset_name: str) -> None:
     from agent_runner.api import init
     from agent_runner.config import load_config

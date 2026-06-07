@@ -7,7 +7,7 @@ import tomllib
 
 import pytest
 
-PRESET_NAMES = ["claude", "aider", "gemini"]
+PRESET_NAMES = ["claude", "aider", "gemini", "codewhale"]
 
 
 def _preset_text(name: str) -> str:
@@ -128,7 +128,7 @@ def test_given_claude_preset_when_parsed_then_excludes_shell_snapshot() -> None:
     )
 
 
-@pytest.mark.parametrize("name", ["aider", "gemini"])
+@pytest.mark.parametrize("name", ["aider", "gemini", "codewhale"])
 def test_given_other_presets_when_parsed_then_no_default_ignore_patterns(name: str) -> None:
     text = _preset_text(name).replace("{project}", "test-project")
     parsed = tomllib.loads(text)
@@ -154,3 +154,16 @@ def test_given_preset_when_loaded_then_no_deprecation_warnings(name: str, tmp_pa
     deps = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     msgs = [str(w.message) for w in deps]
     assert not deps, f"preset {name}.toml emitted {len(deps)} DeprecationWarning(s): {msgs}"
+
+
+def test_given_codewhale_preset_when_parsed_then_uses_exec_stream_json() -> None:
+    text = _preset_text("codewhale").replace("{project}", "test-project")
+    cmd = tomllib.loads(text)["agent"]["command"]
+    assert cmd[0] == "codewhale" and cmd[1] == "exec"
+    assert "--auto" in cmd
+    assert "--output-format" in cmd and cmd[cmd.index("--output-format") + 1] == "stream-json"
+
+
+def test_given_codewhale_preset_when_parsed_then_no_agent_env_block() -> None:
+    text = _preset_text("codewhale").replace("{project}", "test-project")
+    assert "env" not in tomllib.loads(text)["agent"]
