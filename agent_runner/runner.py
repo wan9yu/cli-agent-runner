@@ -546,7 +546,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             # Leave tree dirty for next round; dirty_detected already emitted
             pass
         elif action == "auto_commit":
-            err = vcs_state.try_auto_commit(cfg.runtime.work_dir, round_num, phase)
+            err = vcs_state.try_auto_commit(
+                cfg.runtime.work_dir, round_num, phase, log_dir=cfg.runtime.log_dir
+            )
             if err is not None:
                 events.emit(
                     log_dir,

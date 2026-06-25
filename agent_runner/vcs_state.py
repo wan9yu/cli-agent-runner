@@ -287,21 +287,47 @@ def pop_stash(repo: Path, sha: str) -> bool:
     return _git(repo, "stash", "pop", sel).returncode == 0
 
 
-def try_auto_commit(work_dir: Path, round_num: int, phase: str | None) -> str | None:
+def try_auto_commit(
+    work_dir: Path,
+    round_num: int,
+    phase: str | None,
+    *,
+    log_dir: Path | None = None,
+) -> str | None:
     """Auto-commit dirty tree with hardcoded subject. Return None on success, error on failure.
 
     Subject: ``agent-runner auto-commit: R<N> <phase>`` (phase part omitted if None).
     Uses ``git -c commit.gpgsign=false`` to skip GPG; honors pre-commit hooks
     (no ``--no-verify``). DOES NOT push — local commit only.
 
+    ``log_dir`` (when under ``work_dir``) is excluded from the add so a zero-work
+    round that only churned the runner's own bookkeeping (lock/pid/event logs)
+    does not advance ``git_head``. The agent's work and ``.evolving/`` live
+    outside ``log_dir`` and are still committed. If nothing remains staged after
+    the exclusion, this is a no-op (returns None, leaves HEAD untouched).
+
     Callers (runner.py) emit ``dirty_commit_failed`` event when return value is not None.
     """
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
-    add_result = _git(work_dir, "add", "-A")
+    add_args = ["add", "-A"]
+    if log_dir is not None:
+        try:
+            rel = log_dir.resolve().relative_to(work_dir.resolve())
+        except ValueError:
+            pass  # log_dir outside work_dir → nothing to exclude
+        else:
+            add_args += ["--", ".", f":(exclude){rel.as_posix()}"]
+
+    add_result = _git(work_dir, *add_args)
     if add_result.returncode != 0:
         return (add_result.stderr or "git add failed")[:200]
+
+    # Nothing staged after scoping (only excluded bookkeeping churned) → no-op,
+    # so a zero-work round never produces a phantom commit / git_head bump.
+    if _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
+        return None
 
     commit_result = _git(
         work_dir,

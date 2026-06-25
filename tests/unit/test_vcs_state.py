@@ -15,6 +15,7 @@ from agent_runner.vcs_state import (
     pop_stash,
     set_diff_vs_head,
     stash_orphan,
+    try_auto_commit,
 )
 from tests._test_helpers import isolating
 
@@ -199,3 +200,45 @@ def test_given_multiple_patterns_when_match_then_any_matches() -> None:
     assert _matches_owned_path("proposals/x.md")
     assert _matches_owned_path("reports/y.md")
     assert not _matches_owned_path("other/z.md")
+
+
+def _head(repo: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_given_only_log_dir_churn_when_auto_commit_then_git_head_unchanged(
+    tmp_git_repo: Path,
+) -> None:
+    # b9: a zero-work round that only churned the runner's own bookkeeping
+    # (lock/pid under log_dir) must NOT advance git_head.
+    log_dir = tmp_git_repo / "logs"
+    log_dir.mkdir()
+    (log_dir / "agent-runner.lock").write_text("holder: pid 123\n")
+    before = _head(tmp_git_repo)
+    err = try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir)
+    assert err is None
+    assert _head(tmp_git_repo) == before
+
+
+def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
+    tmp_git_repo: Path,
+) -> None:
+    # b9: real work (.evolving, outside log_dir) still commits; the log_dir
+    # bookkeeping churned alongside it is NOT committed.
+    log_dir = tmp_git_repo / "logs"
+    log_dir.mkdir()
+    (log_dir / "agent-runner.lock").write_text("holder: pid 123\n")
+    ev = tmp_git_repo / ".evolving" / "ticks"
+    ev.mkdir(parents=True)
+    (ev / "abc123def456").write_text('{"decision":"x"}\n')
+    before = _head(tmp_git_repo)
+    err = try_auto_commit(tmp_git_repo, 2, None, log_dir=log_dir)
+    assert err is None
+    assert _head(tmp_git_repo) != before
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=tmp_git_repo, capture_output=True, text=True
+    ).stdout
+    assert ".evolving/ticks/abc123def456" in tracked
+    assert "logs/agent-runner.lock" not in tracked
