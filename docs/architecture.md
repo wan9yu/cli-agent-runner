@@ -34,7 +34,7 @@ All three accept the same drill-down flags: `--round N`, `--log`, `--events N`,
 
 ## Defenses-as-data
 
-`agent_runner.defenses.catalog(cfg)` returns 11 structured `Defense` entries.
+`agent_runner.defenses.catalog(cfg)` returns 12 structured `Defense` entries.
 Each entry carries:
 
 - `name` — stable identifier
@@ -60,6 +60,7 @@ surfacing everywhere.
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
 | `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `—` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; now halts serve (config_broken) instead of respawning a broken config | `tests/unit/test_serve_config_broken.py` |
+| `crash_loop_breaker` | Run 6 — crashing agent respawned ~100 empty rounds at a fixed 2x delay | `tests/unit/test_serve_crash_loop.py` |
 | `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `—` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
@@ -151,6 +152,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `agent_usage_recorded`
 - `anomaly_repetitive_tool`
 - `config_broken`
+- `crash_loop`
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`
@@ -192,4 +194,4 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 
 三层架构：Round（一轮 agent）/ Loop（serve 薄壳）/ Witness（monitor）。
 三视角对称：peek（快照）/ watch（快照循环）/ monitor（异常检测），共用下钻参数。
-防御以结构化目录形式存在（11 条），每条防御自描述「防的是哪条历史教训、被哪个 invariant test 守、当前状态」。
+防御以结构化目录形式存在（12 条），每条防御自描述「防的是哪条历史教训、被哪个 invariant test 守、当前状态」。

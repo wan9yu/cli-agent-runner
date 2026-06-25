@@ -22,15 +22,16 @@ from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
 from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
-    PERMANENT_CONFIG_EXIT,
     check_self_terminated_sentinel,
     emit_config_broken,
+    emit_crash_loop,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_stop_file_detected,
+    post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
@@ -137,6 +138,7 @@ def cmd(args) -> int:
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     work_dir = cfg.runtime.work_dir
     rounds_completed = 0
+    consecutive_crashes = 0  # b12: consecutive UNKNOWN short crashes (crash-loop breaker)
 
     try:
         pid_file.write(os.getpid())
@@ -199,6 +201,7 @@ def cmd(args) -> int:
                     every_n=cfg.runtime.fresh_eyes_every_n,
                 )
             round_log_path = log_dir / f"round-{round_num}.log"
+            round_started = time.monotonic()
             with round_log_path.open("w") as f:
                 r = subprocess.run(
                     [
@@ -213,6 +216,7 @@ def cmd(args) -> int:
                     stdout=f,
                     stderr=subprocess.STDOUT,
                 )
+            round_duration_s = time.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             git_head_after = compute_git_head(work_dir)
             paths_hash_after = compute_paths_hash(work_dir, cfg.runtime.substrate_fingerprint_paths)
@@ -223,19 +227,28 @@ def cmd(args) -> int:
                 paths_hash=paths_hash_after,
             )
             rounds_completed += 1
-            if r.returncode == PERMANENT_CONFIG_EXIT:
-                # Broken config doesn't self-heal between rounds — stop, don't
-                # respawn forever. The specific cause is in the round's
-                # smoke_check_failed event.
+            # Restart policy (config_broken / crash_loop / continue) lives in the
+            # tested api.post_round_decision helper so this loop stays thin.
+            action, delay, consecutive_crashes = post_round_decision(
+                returncode=r.returncode,
+                duration_s=round_duration_s,
+                throttle_active=_check_throttle_state(log_dir) is not None,
+                consecutive=consecutive_crashes,
+                restart_delay_s=cfg.runtime.restart_delay_s,
+            )
+            if action == "config_broken":
                 emit_config_broken(log_dir, reason="startup battery permanent failure")
+                break
+            if action == "crash_loop":
+                emit_crash_loop(
+                    log_dir,
+                    consecutive=consecutive_crashes,
+                    exit_code=r.returncode,
+                    log_path=round_log_path,
+                )
                 break
             if args.once or stop["requested"]:
                 break
-            delay = (
-                cfg.runtime.restart_delay_s
-                if r.returncode == 0
-                else cfg.runtime.restart_delay_s * 2
-            )
             time.sleep(delay)
     finally:
         pid_file.unlink()

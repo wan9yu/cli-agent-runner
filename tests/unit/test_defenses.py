@@ -32,9 +32,9 @@ def test_given_defense_when_inspected_then_is_frozen_dataclass() -> None:
     assert Defense.__dataclass_params__.frozen
 
 
-def test_given_catalog_when_called_then_returns_eleven_entries(tmp_path: Path) -> None:
+def test_given_catalog_when_called_then_returns_twelve_entries(tmp_path: Path) -> None:
     cat = catalog(_cfg(tmp_path))
-    assert len(cat) == 11
+    assert len(cat) == 12
 
 
 def test_given_catalog_when_called_then_each_has_required_fields(tmp_path: Path) -> None:

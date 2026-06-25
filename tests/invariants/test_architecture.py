@@ -29,15 +29,16 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.api",
         {
-            "PERMANENT_CONFIG_EXIT",
             "check_self_terminated_sentinel",
             "emit_config_broken",
+            "emit_crash_loop",
             "emit_max_rounds_reached",
             "emit_rate_limit_stop",
             "emit_stop_file_detected",
             "emit_round_substrate_before",
             "emit_round_substrate_after",
             "emit_fresh_eyes_round_triggered",
+            "post_round_decision",
         },
     ),
     ("agent_runner.cli.common", {"cfg_from_args"}),

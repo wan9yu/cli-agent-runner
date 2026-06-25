@@ -91,6 +91,13 @@ def catalog(cfg: Config) -> list[Defense]:
             current_state="active",
         ),
         Defense(
+            name="crash_loop_breaker",
+            value="stop after 5 consecutive short crashes; exp-escalating delay",
+            codifies="Run 6 — crashing agent respawned ~100 empty rounds at a fixed 2x delay",
+            guarded_by=Path("tests/unit/test_serve_crash_loop.py"),
+            current_state="active",
+        ),
+        Defense(
             name="flock_concurrency",
             value="agent-runner.lock",
             codifies="Architectural — prevent concurrent supervisors corrupting state",

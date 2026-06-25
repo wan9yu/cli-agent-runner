@@ -52,6 +52,23 @@ def emit_config_broken(log_dir: Path, *, reason: str) -> None:
     emit(log_dir, CONFIG_BROKEN, reason=reason)
 
 
+def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path) -> None:
+    """Emit crash_loop (serve stopped after consecutive unknown short crashes).
+
+    Captures the failure reason — a redacted tail of the round log — so a
+    recurring unknown crash can later be classified into a transient bucket.
+    """
+    from agent_runner._redact import redact_secrets
+    from agent_runner.events import CRASH_LOOP, emit
+
+    reason = ""
+    try:
+        reason = redact_secrets(log_path.read_text(errors="replace")[-2000:])
+    except OSError:
+        pass
+    emit(log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
+
+
 def emit_stop_file_detected(
     log_dir: Path, *, stop_file: Path, content: str, rounds_completed: int
 ) -> None:
