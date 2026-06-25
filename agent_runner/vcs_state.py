@@ -312,6 +312,7 @@ def try_auto_commit(
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
     add_args = ["add", "-A"]
+    excluded = False
     if log_dir is not None:
         try:
             rel = log_dir.resolve().relative_to(work_dir.resolve())
@@ -319,14 +320,16 @@ def try_auto_commit(
             pass  # log_dir outside work_dir → nothing to exclude
         else:
             add_args += ["--", ".", f":(exclude){rel.as_posix()}"]
+            excluded = True
 
     add_result = _git(work_dir, *add_args)
     if add_result.returncode != 0:
         return (add_result.stderr or "git add failed")[:200]
 
-    # Nothing staged after scoping (only excluded bookkeeping churned) → no-op,
-    # so a zero-work round never produces a phantom commit / git_head bump.
-    if _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
+    # Only the exclusion can leave nothing staged (a zero-work round that churned
+    # only log_dir); without it the tree was dirty so there is always something to
+    # commit. Skip the extra git call on the common (no-exclusion) path.
+    if excluded and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
         return None
 
     commit_result = _git(
