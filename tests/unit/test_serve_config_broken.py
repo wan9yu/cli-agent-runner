@@ -3,23 +3,13 @@ of respawning a broken config forever."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from agent_runner.api import PERMANENT_CONFIG_EXIT
-from tests._test_helpers import FakeArgs, make_toml
-
-
-def _event_kinds(log_dir: Path) -> list[str]:
-    kinds: list[str] = []
-    for f in log_dir.glob("events-*.jsonl"):
-        for line in f.read_text().splitlines():
-            if line.strip():
-                kinds.append(json.loads(line).get("event"))
-    return kinds
+from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
 def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_stops(
@@ -39,4 +29,5 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     # serve broke the loop (returned) rather than respawning the broken config,
     # and recorded why.
     assert rc == 0
-    assert "config_broken" in _event_kinds(log_dir)
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "config_broken" in kinds

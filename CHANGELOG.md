@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.42] - 2026-06-25
+
+### Added
+- `crash_loop` defense — serve stops after 5 consecutive *unknown* short crashes (non-zero exit, <60s, no classified transient), escalating the restart delay and recording the failure reason. Ends the respawn-forever crash loop; recoverable-slow failures (rate-limit / quota / 5xx / timeout) still ride the transient-error backoff unchanged.
+- `config_broken` defense — a permanent startup-battery failure now halts serve (distinct no-retry exit code `78`) instead of respawning a broken config every round.
+
+### Fixed
+- `vcs.dirty_action = "auto_commit"` no longer commits the runner's own `log_dir` bookkeeping when `log_dir` is inside `work_dir`; a zero-work round no longer advances `git_head` (`.evolving/` and agent work still commit).
+
+### Removed
+- The inert `smoke_fail_rate` monitor alert (could never fire — superseded by the always-on `config_broken` stop). Monitor now ships 11 detectors.
+
+### Docs
+- `thesis.md`: the stuck-loop defense is described honestly as a notify-level, opt-in-to-auto-stop monitor detector (`anomaly_repetitive_active`), not a default hard-stop; fixed the `stuck_loop_detected` naming drift.
+
 ## [0.1.41] - 2026-06-07
 
 ### Added

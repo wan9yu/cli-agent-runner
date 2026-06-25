@@ -18,7 +18,7 @@ import sysconfig
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent_runner import events, lifecycle
 from agent_runner.api_types import (
@@ -70,7 +70,7 @@ def post_round_decision(
     throttle_active: bool,
     consecutive: int,
     restart_delay_s: int,
-) -> tuple[str, int, int]:
+) -> tuple[Literal["config_broken", "crash_loop", "continue"], int, int]:
     """Restart policy after one round — keeps the serve loop a thin dispatcher.
 
     Returns ``(action, delay_s, consecutive)`` where action is:
@@ -96,6 +96,7 @@ def post_round_decision(
         return ("continue", delay, consecutive)
     delay = restart_delay_s if returncode == 0 else restart_delay_s * 2
     return ("continue", delay, 0)
+
 
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 

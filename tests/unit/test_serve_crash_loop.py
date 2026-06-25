@@ -3,7 +3,6 @@ short crashes; a clean round resets the run."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 import time
 from pathlib import Path
@@ -11,16 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent_runner.api import CRASH_LOOP_THRESHOLD, PERMANENT_CONFIG_EXIT, post_round_decision
-from tests._test_helpers import FakeArgs, make_toml
-
-
-def _events(log_dir: Path) -> list[dict]:
-    out: list[dict] = []
-    for f in log_dir.glob("events-*.jsonl"):
-        for line in f.read_text().splitlines():
-            if line.strip():
-                out.append(json.loads(line))
-    return out
+from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
 def _fake_run(round_returncodes: list[int]):
@@ -54,7 +44,7 @@ def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
     assert rc == 0
-    crash = [e for e in _events(log_dir) if e.get("event") == "crash_loop"]
+    crash = [e for e in read_events_for_current_month(log_dir) if e.get("event") == "crash_loop"]
     assert len(crash) == 1
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
 
@@ -71,7 +61,7 @@ def test_given_clean_rounds_when_serve_then_no_crash_loop(
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=4))
 
-    kinds = [e.get("event") for e in _events(log_dir)]
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
     assert "crash_loop" not in kinds
     assert "max_rounds_reached" in kinds
 
@@ -89,7 +79,7 @@ def test_given_success_between_crashes_when_serve_then_counter_resets(
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
-    crash = [e for e in _events(log_dir) if e.get("event") == "crash_loop"]
+    crash = [e for e in read_events_for_current_month(log_dir) if e.get("event") == "crash_loop"]
     assert len(crash) == 1
     # 5 (post-reset run), not 8 (total crashes) — proves the success reset it.
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
