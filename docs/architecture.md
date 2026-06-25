@@ -72,8 +72,8 @@ Three categories by `auto_action`:
 
 **Notify only** (severity `warning`):
 `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`, `mem_pressure`,
-`smoke_fail_rate`, `network_fail`, `rate_limit_active`,
-`anomaly_repetitive_active`, `supervisor_stale`.
+`network_fail`, `rate_limit_active`, `anomaly_repetitive_active`,
+`supervisor_stale`.
 
 **Auto-stop service** (severity `critical`, `auto_action="stop_service"`):
 `oauth_fail`, `disk_critical`. Continuing in either state is harmful (burning

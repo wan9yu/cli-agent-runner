@@ -474,6 +474,27 @@ systemctl --user enable agent-runner@<project>  # restart on Pi reboot
 
 ## Troubleshooting
 
+### Serve stopped on its own (`crash_loop` / `config_broken`)
+
+**Symptom:** `serve` exited cleanly (code 0) but did little or no work. Two
+always-on defenses stop the loop rather than respawn a doomed round forever — so
+systemd `Restart=on-failure` does **not** bring it back; intervention is needed.
+
+| Event | Trigger | Fix |
+|---|---|---|
+| `config_broken` | Startup battery failed permanently — broken config (missing/short prompt, non-git `work_dir`, agent CLI not on PATH). The round exits `78`. | Read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. |
+| `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
+
+Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
+as transient errors and ride the back-off instead — they never trip `crash_loop`.
+
+**Diagnose:**
+
+```bash
+agent-runner peek --round latest --log | tail -40
+grep -E '"event": "(crash_loop|config_broken)"' <log_dir>/events-*.jsonl
+```
+
 ### OAuth / auth failures (agent rejects requests)
 
 **Symptom:** `monitor` reports `[CRIT] oauth_fail — N/10 recent rounds short-exited`.

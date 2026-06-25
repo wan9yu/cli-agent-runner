@@ -72,7 +72,7 @@ Full list and rationale: [`docs/architecture.md`](docs/architecture.md).
 ## Monitor: 11 detectors
 
 Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
-`mem_pressure`, `smoke_fail_rate`, `network_fail`, `rate_limit_active`,
+`mem_pressure`, `network_fail`, `rate_limit_active`,
 `anomaly_repetitive_active`, `supervisor_stale`.
 
 **Auto-stop the service** (continuing is harmful):
