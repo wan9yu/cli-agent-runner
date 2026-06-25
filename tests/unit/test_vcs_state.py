@@ -242,3 +242,29 @@ def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
     ).stdout
     assert ".evolving/ticks/abc123def456" in tracked
     assert "logs/agent-runner.lock" not in tracked
+
+
+def test_given_log_dir_under_work_dir_when_stash_orphan_then_log_dir_preserved(
+    tmp_git_repo: Path,
+) -> None:
+    # b9 (stash): git stash push -u must not sweep the runner's own log_dir.
+    log_dir = tmp_git_repo / "logs"
+    log_dir.mkdir()
+    (log_dir / "agent-runner.lock").write_text("holder: pid 1\n")
+    (tmp_git_repo / "work.py").write_text("x = 1\n")  # agent work (untracked)
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
+    assert ref is not None  # the agent's work WAS stashed
+    assert not (tmp_git_repo / "work.py").exists()  # stashed away
+    assert (log_dir / "agent-runner.lock").exists()  # NOT swept by stash -u
+
+
+def test_given_only_log_dir_dirty_when_stash_orphan_then_noop_and_preserved(
+    tmp_git_repo: Path,
+) -> None:
+    # A zero-work round that only churned log_dir: nothing to stash, logs survive.
+    log_dir = tmp_git_repo / "logs"
+    log_dir.mkdir()
+    (log_dir / "events.jsonl").write_text("{}\n")
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
+    assert ref is None
+    assert (log_dir / "events.jsonl").exists()

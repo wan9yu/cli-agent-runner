@@ -223,12 +223,18 @@ def stash_orphan(
     round_num: int,
     phase: str | None,
     idempotency_s: int = 5,
+    log_dir: Path | None = None,
 ) -> StashRef | None:
     """Stash dirty tree as ORPHAN entry, SHA-locked.
 
     Returns existing ref if a matching ORPHAN was created within ``idempotency_s``
     (R820 lesson — same-second multiple calls would otherwise pile up duplicate
     stashes). Returns None if tree is clean.
+
+    ``log_dir`` (when under ``repo``) is excluded from the stash so ``git stash
+    push -u`` does not sweep the runner's own bookkeeping (lock / pid / event
+    logs) out of the work tree. If only ``log_dir`` churned, nothing is stashed
+    and this returns None.
     """
     if not detect_dirty_files(repo):
         return None
@@ -238,7 +244,8 @@ def stash_orphan(
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
-    push = _git(repo, "stash", "push", "-u", "-m", msg, timeout=30)
+    exclude = _log_dir_exclude_pathspec(repo, log_dir)
+    push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
     if push.returncode != 0:
         return None
     listing = _git(repo, "stash", "list", "-1", "--format=%H %s")
@@ -287,6 +294,28 @@ def pop_stash(repo: Path, sha: str) -> bool:
     return _git(repo, "stash", "pop", sel).returncode == 0
 
 
+def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
+    """Git pathspec args excluding the runner's own ``log_dir`` from an add/stash,
+    applied only when it lives inside the work tree AND is not already gitignored.
+    Empty otherwise: an outside or gitignored log_dir is skipped by git's own
+    handling, and folding an ignored path into a stash pathspec breaks untracked
+    capture (git refuses the ignored path).
+
+    Keeps supervisor bookkeeping (lock / pid / event logs) out of the agent's
+    dirty-tree handling: without it a zero-work round's log churn lands in a
+    commit (``git_head`` lies) or a ``git stash push -u`` (the logs vanish).
+    """
+    if log_dir is None:
+        return []
+    try:
+        rel = log_dir.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return []  # log_dir outside work_dir → nothing to exclude
+    if _git(root, "check-ignore", "-q", rel).returncode == 0:
+        return []  # already gitignored → git skips it; pathspec would misfire
+    return ["--", f":(exclude){rel}"]
+
+
 def try_auto_commit(
     work_dir: Path,
     round_num: int,
@@ -311,25 +340,15 @@ def try_auto_commit(
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
-    add_args = ["add", "-A"]
-    excluded = False
-    if log_dir is not None:
-        try:
-            rel = log_dir.resolve().relative_to(work_dir.resolve())
-        except ValueError:
-            pass  # log_dir outside work_dir → nothing to exclude
-        else:
-            add_args += ["--", ".", f":(exclude){rel.as_posix()}"]
-            excluded = True
-
-    add_result = _git(work_dir, *add_args)
+    exclude = _log_dir_exclude_pathspec(work_dir, log_dir)
+    add_result = _git(work_dir, "add", "-A", *exclude)
     if add_result.returncode != 0:
         return (add_result.stderr or "git add failed")[:200]
 
     # Only the exclusion can leave nothing staged (a zero-work round that churned
     # only log_dir); without it the tree was dirty so there is always something to
     # commit. Skip the extra git call on the common (no-exclusion) path.
-    if excluded and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
+    if exclude and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
         return None
 
     commit_result = _git(

@@ -521,6 +521,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
                 round_num=round_num,
                 phase=phase,
                 idempotency_s=cfg.vcs.stash_idempotency_s,
+                log_dir=cfg.runtime.log_dir,
             )
             if ref is not None:
                 context_store.write_orphan_state(

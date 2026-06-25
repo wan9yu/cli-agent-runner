@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `config_broken` defense — a permanent startup-battery failure now halts serve (distinct no-retry exit code `78`) instead of respawning a broken config every round.
 
 ### Fixed
-- `vcs.dirty_action = "auto_commit"` no longer commits the runner's own `log_dir` bookkeeping when `log_dir` is inside `work_dir`; a zero-work round no longer advances `git_head` (`.evolving/` and agent work still commit).
+- `vcs.dirty_action` no longer sweeps the runner's own `log_dir` bookkeeping when `log_dir` is inside `work_dir`: `auto_commit` excludes it from the commit (no more phantom `git_head` advance on a zero-work round) and `stash` excludes it from `git stash push -u` (logs no longer vanish). `.evolving/` and agent work are unaffected.
 
 ### Removed
 - The inert `smoke_fail_rate` monitor alert (could never fire — superseded by the always-on `config_broken` stop). Monitor now ships 11 detectors.
