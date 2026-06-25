@@ -145,7 +145,7 @@ agent-runner events --kind transient_error_backoff_capped --tail
 
 ### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--mode MODE] [--port PORT] [--json]`
 
-Anomaly-detection daemon. Runs the 12 detectors against the live state on every
+Anomaly-detection daemon. Runs the 11 detectors against the live state on every
 poll. Without `--host`, watches local logs at default 30s interval. With
 `--host`, watches a remote agent-runner over plain ssh at default 60s interval.
 

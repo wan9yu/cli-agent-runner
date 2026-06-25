@@ -8,7 +8,12 @@ from tests._test_helpers import make_toml_with_sections, read_events_for_current
 
 
 def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: Path):
-    cfg_path = make_toml_with_sections(tmp_path, runtime_extra="restart_delay_s = 1\n")
+    cfg_path = make_toml_with_sections(
+        tmp_path,
+        runtime_extra="restart_delay_s = 1\n",
+        vcs_block='[vcs]\ndirty_action = "ignore"\n',
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     log_dir = tmp_path / "logs"
     proc = subprocess.run(
         [
@@ -66,8 +71,11 @@ def test_given_stop_file_touched_when_serve_runs_then_exits_with_event(tmp_path:
 def test_given_cli_max_rounds_overrides_config_value(tmp_path: Path):
     """CLI --max-rounds 2 overrides [runtime] max_rounds = 5."""
     cfg_path = make_toml_with_sections(
-        tmp_path, runtime_extra="restart_delay_s = 1\nmax_rounds = 5\n"
+        tmp_path,
+        runtime_extra="restart_delay_s = 1\nmax_rounds = 5\n",
+        vcs_block='[vcs]\ndirty_action = "ignore"\n',
     )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     log_dir = tmp_path / "logs"
     proc = subprocess.run(
         [

@@ -90,7 +90,11 @@ def test_given_git_repo_when_round_runs_then_git_head_populated(tmp_path: Path):
         cwd=tmp_path,
         check=True,
     )
-    cfg_path = make_toml_with_sections(tmp_path, runtime_extra="restart_delay_s = 1\n")
+    cfg_path = make_toml_with_sections(
+        tmp_path,
+        runtime_extra="restart_delay_s = 1\n",
+        vcs_block='[vcs]\ndirty_action = "ignore"\n',
+    )
     log_dir = tmp_path / "logs"
     proc = subprocess.run(
         [

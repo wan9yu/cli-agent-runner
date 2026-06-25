@@ -15,7 +15,6 @@ from agent_runner.monitor import (
     detect_network_fail,
     detect_oauth_fail,
     detect_orphan_chain,
-    detect_smoke_fail_rate,
     detect_timeout_rate,
 )
 
@@ -24,7 +23,7 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_given_known_alert_kinds_when_inspected_then_contains_all_twelve() -> None:
+def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> None:
     expected = {
         "timeout_rate",
         "hung",
@@ -32,7 +31,6 @@ def test_given_known_alert_kinds_when_inspected_then_contains_all_twelve() -> No
         "disk_warning",
         "disk_critical",
         "mem_pressure",
-        "smoke_fail_rate",
         "oauth_fail",
         "network_fail",
         "rate_limit_active",
@@ -121,21 +119,6 @@ def test_given_mem_available_below_threshold_when_detect_then_returns_alert() ->
     a = detect_mem_pressure(metrics, threshold_mb=200)
     assert a is not None
     assert a.detector == "mem_pressure"
-
-
-def test_given_no_smoke_fails_when_detect_then_no_alert() -> None:
-    events = [_ev("round_end", round_num=i) for i in range(10)]
-    assert detect_smoke_fail_rate(events, window=10, threshold=0.1) is None
-
-
-def test_given_two_of_ten_smoke_failed_when_detect_then_returns_alert() -> None:
-    events = []
-    for i in range(10):
-        if i < 2:
-            events.append(_ev("smoke_check_failed", round_num=i, reason="x"))
-        events.append(_ev("round_end", round_num=i))
-    a = detect_smoke_fail_rate(events, window=10, threshold=0.1)
-    assert a is not None
 
 
 def test_given_short_exit_with_oauth_pattern_when_detect_then_returns_auto_stop_alert() -> None:

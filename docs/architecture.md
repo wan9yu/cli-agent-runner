@@ -59,13 +59,13 @@ surfacing everywhere.
 | `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
 | `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `—` |
-| `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn | `—` |
+| `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; now halts serve (config_broken) instead of respawning a broken config | `tests/unit/test_serve_config_broken.py` |
 | `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `—` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
 
-## Monitor: 12 detectors
+## Monitor: 11 detectors
 
 Three categories by `auto_action`:
 
@@ -88,7 +88,6 @@ API quota / writing to a near-full disk).
 - `oauth_fail` — **auto-stop**
 - `orphan_chain`
 - `rate_limit_active`
-- `smoke_fail_rate`
 - `supervisor_stale`
 - `timeout_rate`
 <!-- /gen:detector-list -->
@@ -151,6 +150,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `agent_spawn`
 - `agent_usage_recorded`
 - `anomaly_repetitive_tool`
+- `config_broken`
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`

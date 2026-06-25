@@ -15,7 +15,9 @@ def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted
     cfg_path = make_toml_with_sections(
         tmp_path,
         runtime_extra=("restart_delay_s = 1\nfresh_eyes_every_n = 2\n"),
+        vcs_block='[vcs]\ndirty_action = "ignore"\n',
     )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     log_dir = tmp_path / "logs"
     proc = subprocess.run(
         [

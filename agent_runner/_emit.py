@@ -45,6 +45,13 @@ def emit_max_rounds_reached(log_dir: Path, *, rounds_completed: int, max_rounds:
     emit(log_dir, MAX_ROUNDS_REACHED, rounds_completed=rounds_completed, max_rounds=max_rounds)
 
 
+def emit_config_broken(log_dir: Path, *, reason: str) -> None:
+    """Emit config_broken (serve stopped on a permanent startup-battery failure)."""
+    from agent_runner.events import CONFIG_BROKEN, emit
+
+    emit(log_dir, CONFIG_BROKEN, reason=reason)
+
+
 def emit_stop_file_detected(
     log_dir: Path, *, stop_file: Path, content: str, rounds_completed: int
 ) -> None:

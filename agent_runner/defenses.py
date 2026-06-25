@@ -83,8 +83,11 @@ def catalog(cfg: Config) -> list[Defense]:
         Defense(
             name="startup_smoke_check",
             value="6 checks (config / log_dir / agent_cli / git / prompt_file / prompt_smoke)",
-            codifies="R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn",
-            guarded_by=None,
+            codifies=(
+                "R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; "
+                "now halts serve (config_broken) instead of respawning a broken config"
+            ),
+            guarded_by=Path("tests/unit/test_serve_config_broken.py"),
             current_state="active",
         ),
         Defense(

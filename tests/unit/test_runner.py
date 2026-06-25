@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent_runner.agent_runtime import RunResult
-from agent_runner.api import resolve_runtime_for_phase
+from agent_runner.api import PERMANENT_CONFIG_EXIT, resolve_runtime_for_phase
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -141,7 +141,7 @@ def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_a
     cfg.prompt.file.unlink()  # break prompt — startup smoke fails
     with pytest.raises(SystemExit) as exc:
         run_one_round(cfg)
-    assert exc.value.code == 1
+    assert exc.value.code == PERMANENT_CONFIG_EXIT
 
 
 def _unit_cfg(

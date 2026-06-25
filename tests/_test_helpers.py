@@ -13,6 +13,10 @@ from typing import Any
 
 import pytest
 
+# A prompt that passes the startup smoke check (>= 500 bytes); a 1-byte stub
+# would fail prompt_smoke_passes and (post-0.1.42) stop serve via config_broken.
+_VALID_PROMPT = "placeholder agent task prompt line. " * 20
+
 
 class FakeArgs:
     """Test stub mimicking argparse.Namespace for serve/monitor CLI tests."""
@@ -45,7 +49,7 @@ def make_toml(tmp_path: Path) -> Path:
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
     prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
+    prompt_file.write_text(_VALID_PROMPT)
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
         "[agent]\n"
@@ -66,6 +70,7 @@ def make_toml_with_sections(
     prompt_block: str | None = None,
     runtime_extra: str = "",
     phases_block: str = "",
+    vcs_block: str = "",
 ) -> Path:
     """Like make_toml but with customizable sections.
 
@@ -83,7 +88,7 @@ def make_toml_with_sections(
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
     prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("p")
+    prompt_file.write_text(_VALID_PROMPT)
     toml = tmp_path / "agent-runner.toml"
     if prompt_block is None:
         prompt_block = f'file = "{prompt_file}"'
@@ -94,7 +99,7 @@ def make_toml_with_sections(
         "[runtime]\n"
         f'work_dir = "{tmp_path}"\n'
         f'log_dir = "{log_dir}"\n' + runtime_extra + "[prompt]\n"
-        f"{prompt_block}\n" + phases_block
+        f"{prompt_block}\n" + phases_block + vcs_block
     )
     return toml
 

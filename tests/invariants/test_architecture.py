@@ -29,7 +29,9 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.api",
         {
+            "PERMANENT_CONFIG_EXIT",
             "check_self_terminated_sentinel",
+            "emit_config_broken",
             "emit_max_rounds_reached",
             "emit_rate_limit_stop",
             "emit_stop_file_detected",
@@ -121,5 +123,5 @@ def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
 def test_given_known_alert_kinds_when_inspected_then_well_formed() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
-    assert len(KNOWN_ALERT_KINDS) == 12
+    assert len(KNOWN_ALERT_KINDS) == 11
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", k) for k in KNOWN_ALERT_KINDS)

@@ -49,7 +49,6 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "disk_warning",
         "disk_critical",
         "mem_pressure",
-        "smoke_fail_rate",
         "oauth_fail",
         "network_fail",
         "rate_limit_active",
@@ -262,29 +261,6 @@ def detect_mem_pressure(metrics: list[dict[str, Any]], *, threshold_mb: int = 20
             "threshold": threshold_mb,
             "hint": "Investigate memory leak or move to a larger host",
         },
-    )
-
-
-def detect_smoke_fail_rate(
-    events: list[dict[str, Any]], *, window: int = 10, threshold: float = 0.1
-) -> Alert | None:
-    ends = [e for e in events if e.get("event") == "round_end"]
-    if len(ends) < window:
-        return None
-    recent_round_nums = [e.get("round_num") for e in ends[-window:]]
-    fails = sum(
-        1
-        for e in events
-        if e.get("event") == "smoke_check_failed" and e.get("round_num") in recent_round_nums
-    )
-    rate = fails / window
-    if rate < threshold:
-        return None
-    return _alert(
-        "smoke_fail_rate",
-        "warning",
-        f"{fails}/{window} recent rounds had smoke_check_failed",
-        {"rate": rate, "threshold": threshold, "hint": "Inspect events.jsonl for failure reasons"},
     )
 
 
@@ -603,7 +579,6 @@ def run_all_detectors(
         ),
         detect_disk_critical(metrics, threshold_pct=disk_critical_pct),
         detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb),
-        detect_smoke_fail_rate(events),
         detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
         detect_network_fail(events, log_tails),
         detect_rate_limit_active(events, now=now.timestamp()),

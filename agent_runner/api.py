@@ -45,6 +45,13 @@ from agent_runner.service_unit import (
     serve_unit_filename,
 )
 
+# Exit code for a permanent (no-retry) startup-battery failure. A broken config
+# does not self-heal between rounds, so serve STOPS rather than respawning it
+# forever. 78 = EX_CONFIG (sysexits) — avoids argparse's 2 and the generic 1.
+# Lives here (not runner.py) so serve_cmd can import it from the sanctioned api
+# facade without coupling to runner (runner imports api, not the reverse).
+PERMANENT_CONFIG_EXIT = 78
+
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 _LINGER_HINT = (
@@ -730,6 +737,7 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
 from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-export
     emit_agent_usage_recorded,
     emit_anomaly_repetitive_tool,
+    emit_config_broken,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,

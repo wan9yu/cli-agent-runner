@@ -22,7 +22,9 @@ from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
 from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
+    PERMANENT_CONFIG_EXIT,
     check_self_terminated_sentinel,
+    emit_config_broken,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
@@ -221,6 +223,12 @@ def cmd(args) -> int:
                 paths_hash=paths_hash_after,
             )
             rounds_completed += 1
+            if r.returncode == PERMANENT_CONFIG_EXIT:
+                # Broken config doesn't self-heal between rounds — stop, don't
+                # respawn forever. The specific cause is in the round's
+                # smoke_check_failed event.
+                emit_config_broken(log_dir, reason="startup battery permanent failure")
+                break
             if args.once or stop["requested"]:
                 break
             delay = (
