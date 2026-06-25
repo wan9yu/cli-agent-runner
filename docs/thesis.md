@@ -15,9 +15,11 @@ gemini, or any command-line tool). It:
 
 1. Launches the agent subprocess in a loop.
 2. Records structured events to a flat JSONL file (`events-YYYY-MM.jsonl`).
-3. Provides **defenses** — hard stops for known-harmful states (rate limit
-   floods, disk full, OAuth expiry, stuck loops). Each defense codifies a
-   specific observed failure mode with a concrete trigger signature.
+3. Provides **defenses** — hard stops for known-harmful states (rate-limit
+   floods, disk full, OAuth expiry) plus notify-level detectors (e.g. stuck
+   loops, surfaced via the opt-in `monitor`) the operator can promote to
+   auto-stop. Each defense codifies a specific observed failure mode with a
+   concrete trigger signature.
 4. Exposes **plugin hooks** (`PreRoundHook`, `PostRoundHook`, `ContextEnricher`,
    `ServeStartupHook`) for extension without modifying core.
 
@@ -52,8 +54,11 @@ token usage and round duration is large enough that rolling-baseline alerting
 would produce constant false positives across diverse workloads.
 
 The `anomaly_repetitive_active` detector (added 0.1.32) is the live example:
-it fires when the claude plugin emits `anomaly_repetitive_tool` events
-above a fixed threshold within a window — a specific signature, not N-σ.
+it raises a **notify-level** alert when the claude plugin emits
+`anomaly_repetitive_tool` events above a fixed threshold within a window — a
+specific signature, not N-σ. It runs under the opt-in `monitor` and is
+promotable to an auto-stop via `monitor.auto_stop_on`; it is not a default
+hard-stop.
 `max_grace_after_result_s` (0.1.31, refined 0.1.38) is another: a fixed
 grace after the `result` event, the subprocess is killed only if its
 process group has no live worker left — specific signature, not "is this
@@ -215,8 +220,8 @@ change. The bar for "in-scope" must be high.
 
 ### Accepted: stuck-loop detection
 
-**Proposal**: emit `stuck_loop_detected` when the same tool call appears ≥ 8×
-in one round.
+**Proposal**: emit `anomaly_repetitive_tool` when the same tool call appears
+≥ 8× in a window (surfaced as the `anomaly_repetitive_active` monitor alert).
 
 **Evaluation**: specific trigger signature (8× repetition), generic across
 agents, no wrong-default knob, not BI. Codifies a concrete scar observed in
