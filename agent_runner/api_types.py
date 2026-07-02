@@ -29,6 +29,18 @@ class ServiceMode(StrEnum):
 
 
 @dataclass(frozen=True)
+class DirtyOutcome:
+    """What a dirty tree resolved to, reported on RoundResult and via events.
+
+    ``ref`` is the stash SHA (kind="stashed") or commit SHA (kind="committed");
+    None for "ignored".
+    """
+
+    kind: Literal["stashed", "committed", "ignored"]
+    ref: str | None = None
+
+
+@dataclass(frozen=True)
 class RateLimitState:
     """Public: surfaced via peek --json when supervisor is currently throttled."""
 
@@ -158,6 +170,7 @@ class RoundResult:
     log_path: Path
     dirty_files: list[str]
     stashed: bool
+    dirty_outcome: DirtyOutcome | None = None
     killed_for_grace: bool = False
 
 

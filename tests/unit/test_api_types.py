@@ -7,9 +7,11 @@ import pytest
 
 from agent_runner.api_types import (
     Alert,
+    DirtyOutcome,
     InitResult,
     InstallResult,
     ProjectState,
+    RoundResult,
     RoundView,
     ServiceMode,
     ServiceStatus,
@@ -161,3 +163,27 @@ def test_metrics_collect_handles_pgrep_subprocess_error_returns_zero(tmp_path, m
     monkeypatch.setattr(_metrics_mod.subprocess, "run", fake_run)
     out = _metrics_mod.collect(tmp_path, agent_binary="claude")
     assert out["agent_process_count"] == 0
+
+
+def test_dirty_outcome_holds_kind_and_ref():
+    o = DirtyOutcome(kind="committed", ref="abc123")
+    assert o.kind == "committed"
+    assert o.ref == "abc123"
+
+
+def test_round_result_dirty_outcome_defaults_none_and_is_settable():
+    base = {
+        "round_num": 1,
+        "phase": None,
+        "started_at": "t",
+        "ended_at": "t",
+        "exit_code": 0,
+        "duration_s": 1.0,
+        "timed_out": False,
+        "log_path": Path("x"),
+        "dirty_files": [],
+        "stashed": False,
+    }
+    assert RoundResult(**base).dirty_outcome is None
+    r = RoundResult(**base, dirty_outcome=DirtyOutcome(kind="stashed", ref="sha"))
+    assert r.dirty_outcome.kind == "stashed" and r.stashed is False
