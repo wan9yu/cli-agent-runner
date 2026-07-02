@@ -142,6 +142,29 @@ Setting `inject_context = false` does NOT disable PreRoundHooks. Setting
 If you want neither injection: set both. If you want to disable a specific plugin
 hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"]`.
 
+## Dirty-handler seam (0.2.0+)
+
+After a round exits cleanly with a dirty working tree, the runner dispatches a
+priority-ordered chain of registered `DirtyHandler` plugins. The first to return
+a non-`None` `DirtyOutcome` wins; remaining handlers are skipped.
+
+This makes dirty-tree policy fully pluggable. The `default_dirty_handler` plugin
+(bundled, default-on, priority 1000) implements the `stash` / `ignore` /
+`auto_commit` policy from `[vcs] dirty_action` — so the external behavior is
+identical to pre-0.2.0 unless a consumer plugin intervenes first.
+
+**Lifecycle-hook family** (4 groups, run in this order per round):
+
+1. `serve_startup_hooks` — once at `agent-runner serve` boot, before the loop
+2. `pre_round_hooks` — after lock acquire, before context is written
+3. `post_round_hooks` (+ `context_enrichers`) — after agent exits, before `round_end`
+4. `dirty_handler_hooks` — after post_round, if the tree is dirty on a clean exit
+
+The stash *mechanism* (SHA lock, idempotency guard, `stash_orphan` /
+`try_auto_commit` primitives) stays in core. The stash *policy* is plugin-provided.
+
+See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
+
 ## Known event kinds
 
 <!-- gen:event-kinds -->

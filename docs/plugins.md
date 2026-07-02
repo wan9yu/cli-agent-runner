@@ -35,6 +35,8 @@ auto-stop.
 | `agent_runner.context_enrichers` | Inject namespaced fields into round-context | 0.1.4+ |
 | `agent_runner.post_round_hooks` | Run logic after each agent round | 0.1.4+ |
 | `agent_runner.detectors` | Ship custom monitor detectors | 0.1.5+ |
+| `agent_runner.serve_startup_hooks` | Run once per serve boot, before the round loop | 0.1.14+ |
+| `agent_runner.dirty_handler_hooks` | Own the dirty-tree policy after a clean-exit round | 0.2.0+ |
 
 Plugin-owned VCS paths (the `register_plugin_owned_paths()` API added in
 0.1.8) are not an entry-point group — see [Declaring plugin-owned paths](#declaring-plugin-owned-paths-018) below.
@@ -579,6 +581,126 @@ class NoCommitsDetector:
 **Codifies the lesson:** "0 commits in N rounds" detectors mis-fire on
 retrospective/reflection phases that intentionally produce zero commits.
 Pass the set of phase names where the detector should NOT run.
+
+## DirtyHandler — custom dirty-tree policy (0.2.0+)
+
+0.2.0 adds a fourth lifecycle-hook extension point: `DirtyHandler`. Plugins
+that register on this group take over what happens when a round exits cleanly
+but leaves the working tree dirty.
+
+The bundled `default_dirty_handler` plugin ships enabled (priority 1000) and
+implements the existing `stash` / `ignore` / `auto_commit` behavior driven by
+`[vcs] dirty_action`. Operators who want a different policy disable the default
+and register their own handler.
+
+### Protocol
+
+```python
+from typing import Protocol, runtime_checkable
+
+@runtime_checkable
+class DirtyHandler(Protocol):
+    name: str
+    priority: int  # ascending; lower runs first; bundled default = 1000
+
+    def handle_dirty(
+        self,
+        ctx: HookContext,
+        dirty_files: list[str],
+        result,               # api_types.RoundResult (or None if not yet built)
+    ) -> "DirtyOutcome | None": ...
+```
+
+Handlers are invoked in ascending `priority` order (ties: registration order).
+The first to return a non-`None` `DirtyOutcome` wins; dispatch stops. A handler
+that raises is isolated via `hook_failed` (`hook_kind="dirty_handler"`) and
+treated as `None` (pass to the next handler).
+
+### `DirtyOutcome`
+
+```python
+from agent_runner.api_types import DirtyOutcome
+
+DirtyOutcome(kind="ignored")                    # left dirty intentionally
+DirtyOutcome(kind="stashed", ref="<stash-sha>")
+DirtyOutcome(kind="committed", ref="<commit-sha>")
+```
+
+### Minimal override recipe
+
+**1. Disable the bundled default:**
+
+```toml
+# agent-runner.toml
+[plugins]
+disable = ["default_dirty_handler"]
+```
+
+**2. Declare the entry point:**
+
+```toml
+# your_plugin/pyproject.toml
+[project.entry-points."agent_runner.dirty_handler_hooks"]
+my_dirty_handler = "your_plugin.dirty:MyDirtyHandler"
+```
+
+**3. Implement and register:**
+
+```python
+# your_plugin/dirty.py
+from agent_runner.api_types import DirtyOutcome
+from agent_runner.hooks import HookContext, register_dirty_handler
+
+
+class MyDirtyHandler:
+    name = "my_dirty_handler"
+    priority = 10  # ascending; only matters when multiple handlers coexist
+
+    def handle_dirty(self, ctx: HookContext, dirty_files, result) -> DirtyOutcome | None:
+        # Return None to pass to the next handler.
+        # Return a DirtyOutcome to claim the result and stop dispatch.
+        return DirtyOutcome(kind="ignored")
+
+
+# Module-top side effect — fires at entry_point load time.
+register_dirty_handler(MyDirtyHandler())
+```
+
+### Using core git primitives
+
+Handlers may call the public `api` primitives:
+
+```python
+from agent_runner import api
+
+# Stash — returns a StashRef (with .sha) or None if nothing to stash
+ref = api.stash_orphan(
+    ctx.work_dir,
+    round_num=ctx.round_num,
+    phase=ctx.phase,
+    idempotency_s=ctx.vcs.stash_idempotency_s if ctx.vcs else 5,
+    log_dir=ctx.log_dir,
+)
+outcome = DirtyOutcome(kind="ignored") if ref is None else DirtyOutcome(kind="stashed", ref=ref.sha)
+
+# Auto-commit — returns commit SHA or "" (nothing staged); raises AutoCommitError on failure
+sha = api.try_auto_commit(ctx.work_dir, ctx.round_num, ctx.phase, log_dir=ctx.log_dir)
+```
+
+`ctx.vcs` exposes `dirty_action` and `stash_idempotency_s` from `[vcs]` config
+(populated by the runner when dispatching dirty handlers; `None` in other contexts).
+
+### `DirtyOutcome` on `RoundResult`
+
+`RoundResult.dirty_outcome: DirtyOutcome | None` (0.2.0+) carries whatever the
+winning handler returned. `PostRoundHook` authors can read it:
+
+```python
+def after_round(self, ctx, result):
+    if result.dirty_outcome and result.dirty_outcome.kind == "committed":
+        # A handler auto-committed. result.dirty_outcome.ref is the SHA.
+        ...
+```
 
 ## Declaring plugin-owned paths (0.1.8+)
 

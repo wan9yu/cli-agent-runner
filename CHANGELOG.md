@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-02
+
+### Changed
+- Dirty-tree handling is now pluggable. The clean-exit-dirty policy moved out of core into a `dirty_handler` hook; `stash` / `ignore` / `auto_commit` now ship as the bundled, default-on `default_dirty_handler` plugin. **No behavior or config change for existing users** — `[vcs] dirty_action` works exactly as before.
+
+### Added
+- `dirty_handler` plugin seam (4th lifecycle hook) + `DirtyOutcome` on `RoundResult`; `stash_orphan` / `try_auto_commit` are now public `api` primitives. Consumers can fully own dirty-tree policy — see `docs/migrations/0.2.0.md`.
+- `dirty_auto_committed` event (emitted when a handler auto-commits).
+
 ## [0.1.42] - 2026-06-25
 
 ### Added
@@ -866,7 +875,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.42...v0.2.0
 [0.1.26]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.23...v0.1.24
