@@ -275,9 +275,7 @@ def test_try_auto_commit_returns_sha_on_success(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "work.py").write_text("x = 1\n")
     sha = try_auto_commit(tmp_git_repo, 1, None)
     assert sha and len(sha) >= 7
-    import subprocess as _sp
-
-    head = _sp.run(
+    head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tmp_git_repo, capture_output=True, text=True
     ).stdout.strip()
     assert head.startswith(sha) or sha == head

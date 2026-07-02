@@ -23,6 +23,7 @@ from agent_runner.api_types import (
 def test_given_all_api_types_when_inspected_then_are_frozen_dataclasses() -> None:
     classes = (
         Alert,
+        DirtyOutcome,
         InitResult,
         InstallResult,
         ProjectState,

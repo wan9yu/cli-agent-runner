@@ -96,8 +96,9 @@ class HookContext:
     Populated from ``[monitor] anomaly_repetitive_threshold`` (0.1.31+).
     """
     vcs: VcsHookView | None = None
-    """Narrowed vcs config slice for dirty handlers (0.2.0+).
-    None when not inside a dirty-handling dispatch (e.g. regular hook calls).
+    """Narrowed vcs config slice populated by the runner for all per-round hooks
+    (pre-round, enrichers, post-round, dirty-handler) (0.2.0+).
+    May be None only when a HookContext is constructed without it (e.g. tests).
     """
 
 
