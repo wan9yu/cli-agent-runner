@@ -115,8 +115,10 @@ def read_events_for_current_month(log_dir: Path) -> list[dict]:
 
 
 def make_hook_context(
-    tmp_path: Path,
+    tmp_path: Path | None = None,
     *,
+    work_dir: Path | None = None,
+    log_dir: Path | None = None,
     agent_name: str = "claude",
     agent_binary: str | None = None,
     round_num: int = 1,
@@ -125,26 +127,36 @@ def make_hook_context(
     dry_run: bool = False,
     anomaly_repetitive_window: int = 0,
     anomaly_repetitive_threshold: int = 0,
+    vcs: Any = None,
 ):
     """Build a minimal HookContext for plugin testing.
 
-    agent_log_path defaults to ``tmp_path/rounds/R{round_num}-test.log`` to
+    ``tmp_path`` (positional) is the traditional shorthand that sets both
+    ``work_dir`` and ``log_dir`` to the same directory.  ``work_dir`` /
+    ``log_dir`` kwargs override it individually.
+
+    agent_log_path defaults to ``work_dir/rounds/R{round_num}-test.log`` to
     match where runner.py writes the agent JSONL at runtime. Pair with
     ``write_round_log`` which writes to the same path.
 
     agent_binary: if not specified, defaults to agent_name so existing tests
     that only pass agent_name continue to exercise plugin guards correctly
     (e.g. agent_name="claude" also seeds agent_binary="claude").
+
+    vcs: optional VcsHookView passed through to HookContext (defaults to None).
     """
     from agent_runner.hooks import HookContext
 
+    _work_dir: Path = work_dir if work_dir is not None else tmp_path  # type: ignore[assignment]
+    _log_dir: Path = log_dir if log_dir is not None else tmp_path  # type: ignore[assignment]
+
     if agent_log_path is None:
-        rounds_dir = tmp_path / "rounds"
+        rounds_dir = _work_dir / "rounds"
         rounds_dir.mkdir(exist_ok=True)
         agent_log_path = rounds_dir / f"R{round_num}-test.log"
     return HookContext(
-        work_dir=tmp_path,
-        log_dir=tmp_path,
+        work_dir=_work_dir,
+        log_dir=_log_dir,
         project="testproj",
         round_num=round_num,
         phase=phase,
@@ -154,6 +166,7 @@ def make_hook_context(
         dry_run=dry_run,
         anomaly_repetitive_window=anomaly_repetitive_window,
         anomaly_repetitive_threshold=anomaly_repetitive_threshold,
+        vcs=vcs,
     )
 
 

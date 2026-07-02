@@ -14,6 +14,7 @@ _HOOK_GROUPS = (
     "agent_runner.context_enrichers",
     "agent_runner.post_round_hooks",
     "agent_runner.serve_startup_hooks",
+    "agent_runner.dirty_handler_hooks",
 )
 
 # Tracks the names passed to the most recent ``apply_plugin_disable`` call.
@@ -110,6 +111,9 @@ def apply_plugin_disable(names: list[str]) -> None:
 
     # Serve-startup hooks
     _prune_by_name(hooks._SERVE_STARTUP_HOOKS, desired, found)
+
+    # Dirty handlers
+    _prune_by_name(hooks._DIRTY_HANDLERS, desired, found)
 
     # Plugin event kinds
     for name in list(events._PLUGIN_KINDS):

@@ -30,6 +30,7 @@ Public API:
 from __future__ import annotations
 
 import sys
+import traceback as tb_mod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -41,6 +42,14 @@ from agent_runner._registry import ensure_unique
 _HEAD_BYTES = 1024
 _TAIL_BYTES = 1024
 _TRUNC_MARKER = "\n... [truncated] ...\n"
+
+
+@dataclass(frozen=True)
+class VcsHookView:
+    """Minimal vcs config a dirty handler needs (keeps HookContext narrow)."""
+
+    dirty_action: str
+    stash_idempotency_s: int
 
 
 @dataclass(frozen=True)
@@ -86,6 +95,26 @@ class HookContext:
     """Count threshold for repetitive-tool anomaly (0 = disabled).
     Populated from ``[monitor] anomaly_repetitive_threshold`` (0.1.31+).
     """
+    vcs: VcsHookView | None = None
+    """Narrowed vcs config slice for dirty handlers (0.2.0+).
+    None when not inside a dirty-handling dispatch (e.g. regular hook calls).
+    """
+
+
+@runtime_checkable
+class DirtyHandler(Protocol):
+    """Resolves a clean-exit dirty tree. Runs ascending by ``priority``; the
+    first to return a DirtyOutcome wins. Return None to pass to the next."""
+
+    name: str
+    priority: int
+
+    def handle_dirty(
+        self,
+        ctx: HookContext,
+        dirty_files: list[str],
+        result: Any,
+    ) -> Any | None: ...
 
 
 @runtime_checkable
@@ -148,6 +177,7 @@ _PRE_ROUND_HOOKS: list[PreRoundHook] = []
 _CONTEXT_ENRICHERS: list[ContextEnricher] = []
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
 _SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
+_DIRTY_HANDLERS: list[DirtyHandler] = []
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -189,6 +219,44 @@ def serve_startup_hooks() -> list[ServeStartupHook]:
 def plugin_context_enrichers() -> list[str]:
     """Sorted list of registered enricher names — used by peek --json."""
     return sorted(e.name for e in _CONTEXT_ENRICHERS)
+
+
+def register_dirty_handler(handler: DirtyHandler) -> None:
+    ensure_unique(handler.name, _DIRTY_HANDLERS, "dirty_handler")
+    _DIRTY_HANDLERS.append(handler)
+
+
+def dirty_handlers() -> list[DirtyHandler]:
+    return list(_DIRTY_HANDLERS)
+
+
+def dispatch_dirty(
+    ctx: HookContext,
+    dirty_files: list[str],
+    result: Any,
+    log_dir: Path,
+) -> Any | None:
+    """Run registered DirtyHandlers ascending by priority; first non-None wins.
+
+    A handler that raises is isolated — emits ``hook_failed`` with
+    ``hook_kind="dirty_handler"`` and treated as pass (continue to next).
+    """
+    ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
+    for h in ordered:
+        try:
+            outcome = h.handle_dirty(ctx, dirty_files, result)
+        except Exception as exc:  # noqa: BLE001 — isolate; fall through to next
+            events.emit(
+                log_dir,
+                events.HOOK_FAILED,
+                hook_name=getattr(h, "name", "?"),
+                hook_kind="dirty_handler",
+                **_summarize_error(exc, tb=tb_mod.format_exc()),
+            )
+            continue
+        if outcome is not None:
+            return outcome
+    return None
 
 
 def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
