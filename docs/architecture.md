@@ -153,6 +153,7 @@ hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"
 - `anomaly_repetitive_tool`
 - `config_broken`
 - `crash_loop`
+- `dirty_auto_committed`
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`
