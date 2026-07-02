@@ -423,6 +423,10 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         dry_run=cfg.runtime.dry_run,
         anomaly_repetitive_window=cfg.monitor.anomaly_repetitive_window,
         anomaly_repetitive_threshold=cfg.monitor.anomaly_repetitive_threshold,
+        vcs=hooks.VcsHookView(
+            dirty_action=cfg.vcs.dirty_action,
+            stash_idempotency_s=cfg.vcs.stash_idempotency_s,
+        ),
     )
     _run_pre_round_hooks(
         hook_ctx,
@@ -512,55 +516,12 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     if dirty:
         events.emit(log_dir, "dirty_detected", round_num=round_num, files=dirty[:20])
 
-    stashed = False
-    action = cfg.vcs.dirty_action
+    dirty_outcome = None
     if dirty and not result.timed_out and result.exit_code == 0:
-        if action == "stash":
-            ref = vcs_state.stash_orphan(
-                cfg.runtime.work_dir,
-                round_num=round_num,
-                phase=phase,
-                idempotency_s=cfg.vcs.stash_idempotency_s,
-                log_dir=cfg.runtime.log_dir,
-            )
-            if ref is not None:
-                context_store.write_orphan_state(
-                    log_dir,
-                    context_store.OrphanState(
-                        round_num=round_num,
-                        files=dirty,
-                        stashed_ref=ref.sha,
-                        stash_message=ref.message,
-                        timestamp=now_iso_ms(),
-                        phase=phase,
-                    ),
-                )
-                events.emit(
-                    log_dir,
-                    "orphan_stashed",
-                    round_num=round_num,
-                    ref=ref.sha,
-                    reason="clean_exit_with_dirty_tree",
-                )
-                stashed = True
-        elif action == "ignore":
-            # Leave tree dirty for next round; dirty_detected already emitted
-            pass
-        elif action == "auto_commit":
-            try:
-                vcs_state.try_auto_commit(
-                    cfg.runtime.work_dir, round_num, phase, log_dir=cfg.runtime.log_dir
-                )
-            except vcs_state.AutoCommitError as exc:
-                events.emit(
-                    log_dir,
-                    events.DIRTY_COMMIT_FAILED,
-                    round_num=round_num,
-                    phase=phase,
-                    reason=str(exc),
-                )
+        dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, result=None, log_dir=log_dir)
     elif not dirty:
         context_store.clear_orphan_state(log_dir)
+    stashed = bool(dirty_outcome and dirty_outcome.kind == "stashed")
 
     if result.killed_for_grace:
         api.emit_round_grace_kill(
@@ -610,6 +571,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         log_path=log_path,
         dirty_files=dirty,
         stashed=stashed,
+        dirty_outcome=dirty_outcome,
         killed_for_grace=result.killed_for_grace,
     )
     _run_post_round_hooks(hook_ctx, round_result, log_dir)
