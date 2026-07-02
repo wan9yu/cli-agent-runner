@@ -7,6 +7,7 @@ import pytest
 
 from agent_runner.vcs_state import (
     _PLUGIN_OWNED_PATHS,
+    AutoCommitError,
     StashRef,
     detect_dirty_files,
     drop_stash,
@@ -217,8 +218,8 @@ def test_given_only_log_dir_churn_when_auto_commit_then_git_head_unchanged(
     log_dir.mkdir()
     (log_dir / "agent-runner.lock").write_text("holder: pid 123\n")
     before = _head(tmp_git_repo)
-    err = try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir)
-    assert err is None
+    result = try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir)
+    assert result == ""  # no-op: nothing staged after log_dir exclusion
     assert _head(tmp_git_repo) == before
 
 
@@ -234,8 +235,8 @@ def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
     ev.mkdir(parents=True)
     (ev / "abc123def456").write_text('{"decision":"x"}\n')
     before = _head(tmp_git_repo)
-    err = try_auto_commit(tmp_git_repo, 2, None, log_dir=log_dir)
-    assert err is None
+    sha = try_auto_commit(tmp_git_repo, 2, None, log_dir=log_dir)
+    assert sha and len(sha) >= 7  # commit SHA returned on success
     assert _head(tmp_git_repo) != before
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=tmp_git_repo, capture_output=True, text=True
@@ -268,3 +269,27 @@ def test_given_only_log_dir_dirty_when_stash_orphan_then_noop_and_preserved(
     ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
     assert ref is None
     assert (log_dir / "events.jsonl").exists()
+
+
+def test_try_auto_commit_returns_sha_on_success(tmp_git_repo: Path) -> None:
+    (tmp_git_repo / "work.py").write_text("x = 1\n")
+    sha = try_auto_commit(tmp_git_repo, 1, None)
+    assert sha and len(sha) >= 7
+    import subprocess as _sp
+
+    head = _sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_git_repo, capture_output=True, text=True
+    ).stdout.strip()
+    assert head.startswith(sha) or sha == head
+
+
+def test_try_auto_commit_returns_empty_when_nothing_staged(tmp_git_repo: Path) -> None:
+    log_dir = tmp_git_repo / "logs"
+    log_dir.mkdir()
+    (log_dir / "x.log").write_text("noise\n")  # only excluded bookkeeping
+    assert try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir) == ""
+
+
+def test_try_auto_commit_raises_on_git_failure(tmp_path: Path) -> None:
+    with pytest.raises(AutoCommitError):
+        try_auto_commit(tmp_path, 1, None)  # not a git repo

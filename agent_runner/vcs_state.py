@@ -72,6 +72,10 @@ def _matches_owned_path(path: str) -> bool:
     return False
 
 
+class AutoCommitError(RuntimeError):
+    """git add/commit failed during try_auto_commit (reason capped at 200 chars)."""
+
+
 @dataclass(frozen=True)
 class StashRef:
     sha: str  # full commit SHA — IMMUTABLE under concurrent stash
@@ -322,20 +326,13 @@ def try_auto_commit(
     phase: str | None,
     *,
     log_dir: Path | None = None,
-) -> str | None:
-    """Auto-commit dirty tree with hardcoded subject. Return None on success, error on failure.
+) -> str:
+    """Auto-commit the dirty tree with a hardcoded subject; return the commit SHA.
 
-    Subject: ``agent-runner auto-commit: R<N> <phase>`` (phase part omitted if None).
-    Uses ``git -c commit.gpgsign=false`` to skip GPG; honors pre-commit hooks
-    (no ``--no-verify``). DOES NOT push — local commit only.
-
-    ``log_dir`` (when under ``work_dir``) is excluded from the add so a zero-work
-    round that only churned the runner's own bookkeeping (lock/pid/event logs)
-    does not advance ``git_head``. The agent's work and ``.evolving/`` live
-    outside ``log_dir`` and are still committed. If nothing remains staged after
-    the exclusion, this is a no-op (returns None, leaves HEAD untouched).
-
-    Callers (runner.py) emit ``dirty_commit_failed`` event when return value is not None.
+    Returns "" when nothing remained staged after excluding log_dir (no-op;
+    HEAD untouched). Raises AutoCommitError on git failure. DOES NOT push.
+    Subject: ``agent-runner auto-commit: R<N> <phase>``. Uses
+    ``git -c commit.gpgsign=false``; honors pre-commit hooks (no --no-verify).
     """
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
@@ -343,13 +340,13 @@ def try_auto_commit(
     exclude = _log_dir_exclude_pathspec(work_dir, log_dir)
     add_result = _git(work_dir, "add", "-A", *exclude)
     if add_result.returncode != 0:
-        return (add_result.stderr or "git add failed")[:200]
+        raise AutoCommitError((add_result.stderr or "git add failed")[:200])
 
     # Only the exclusion can leave nothing staged (a zero-work round that churned
     # only log_dir); without it the tree was dirty so there is always something to
     # commit. Skip the extra git call on the common (no-exclusion) path.
     if exclude and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
-        return None
+        return ""
 
     commit_result = _git(
         work_dir,
@@ -359,6 +356,7 @@ def try_auto_commit(
         pre_flags=("-c", "commit.gpgsign=false"),
     )
     if commit_result.returncode != 0:
-        return (commit_result.stderr or "git commit failed")[:200]
+        raise AutoCommitError((commit_result.stderr or "git commit failed")[:200])
 
-    return None
+    head = _git(work_dir, "rev-parse", "HEAD")
+    return head.stdout.strip()

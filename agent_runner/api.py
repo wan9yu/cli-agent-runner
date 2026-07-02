@@ -799,6 +799,12 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_transient_error_recovered,
 )
 
+# Re-export git primitives so external callers can reach them via the api facade.
+from agent_runner.vcs_state import (  # noqa: E402,F401 — public primitives
+    stash_orphan,
+    try_auto_commit,
+)
+
 
 def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[str]:
     """Tail events-*.jsonl files in log_dir, yielding one formatted line per event.
