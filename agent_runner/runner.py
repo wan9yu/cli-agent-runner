@@ -518,7 +518,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     dirty_outcome = None
     if dirty and not result.timed_out and result.exit_code == 0:
-        dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, result=None, log_dir=log_dir)
+        dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, log_dir=log_dir)
     elif not dirty:
         context_store.clear_orphan_state(log_dir)
     stashed = bool(dirty_outcome and dirty_outcome.kind == "stashed")

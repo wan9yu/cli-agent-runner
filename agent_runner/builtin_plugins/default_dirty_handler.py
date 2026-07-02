@@ -15,7 +15,7 @@ class DefaultDirtyHandler:
     name = "default_dirty_handler"
     priority = 1000  # last-resort fallback
 
-    def handle_dirty(self, ctx: HookContext, dirty_files, _result) -> DirtyOutcome | None:
+    def handle_dirty(self, ctx: HookContext, dirty_files) -> DirtyOutcome | None:
         action = ctx.vcs.dirty_action if ctx.vcs else "stash"
         if action == "ignore":
             return DirtyOutcome(kind="ignored")
@@ -72,7 +72,7 @@ class DefaultDirtyHandler:
         )
         events.emit(
             ctx.log_dir,
-            "orphan_stashed",
+            events.ORPHAN_STASHED,
             round_num=ctx.round_num,
             ref=ref.sha,
             reason="clean_exit_with_dirty_tree",

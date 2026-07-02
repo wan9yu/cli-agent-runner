@@ -114,7 +114,6 @@ class DirtyHandler(Protocol):
         self,
         ctx: HookContext,
         dirty_files: list[str],
-        result: Any,
     ) -> Any | None: ...
 
 
@@ -234,7 +233,6 @@ def dirty_handlers() -> list[DirtyHandler]:
 def dispatch_dirty(
     ctx: HookContext,
     dirty_files: list[str],
-    result: Any,
     log_dir: Path,
 ) -> Any | None:
     """Run registered DirtyHandlers ascending by priority; first non-None wins.
@@ -245,12 +243,12 @@ def dispatch_dirty(
     ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
     for h in ordered:
         try:
-            outcome = h.handle_dirty(ctx, dirty_files, result)
+            outcome = h.handle_dirty(ctx, dirty_files)
         except Exception as exc:  # noqa: BLE001 — isolate; fall through to next
             events.emit(
                 log_dir,
                 events.HOOK_FAILED,
-                hook_name=getattr(h, "name", "?"),
+                hook_name=h.name,
                 hook_kind="dirty_handler",
                 **_summarize_error(exc, tb=tb_mod.format_exc()),
             )
