@@ -113,6 +113,8 @@ def _format_toml_value(v: Any) -> str:
         return "[" + ", ".join(_format_toml_value(x) for x in v) + "]"
     if isinstance(v, str):
         return json.dumps(v)  # TOML basic-string quoting matches JSON's
+    if isinstance(v, bool):  # must precede the int check: bool is an int subclass
+        return "true" if v else "false"
     return str(v)
 
 

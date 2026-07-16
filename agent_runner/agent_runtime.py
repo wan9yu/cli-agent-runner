@@ -14,6 +14,7 @@ import os
 import re
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -162,13 +163,21 @@ def run(
     matching any pattern (re.search) are excluded from the liveness count
     (persistent helpers that aren't real workers). None = no filtering.
     """
-    argv = _build_argv(command, prompt_arg_template, prompt)
+    stdin_mode = prompt_delivery == "stdin"
+    # Defense-in-depth: config validation already rejects {prompt} in the
+    # template for stdin mode, but run() must be safe even if called
+    # directly with a mismatched template. In stdin mode, never substitute
+    # {prompt} into argv — build it verbatim so the prompt cannot reach argv.
+    argv = (
+        list(command) + list(prompt_arg_template)
+        if stdin_mode
+        else _build_argv(command, prompt_arg_template, prompt)
+    )
     env = {**os.environ, **env_extra}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
     start = time.time()
     last_progress_at = start
-    stdin_mode = prompt_delivery == "stdin"
     proc = subprocess.Popen(
         argv,
         env=env,
@@ -178,11 +187,20 @@ def run(
         start_new_session=True,
     )
     if stdin_mode and proc.stdin is not None:
-        try:
-            proc.stdin.write(prompt.encode("utf-8"))
-            proc.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass  # agent exited before reading stdin; the poll loop handles exit
+        # Write+close on a daemon thread so the wall-clock timeout loop below
+        # is never blocked by a write >64KB (OS pipe buffer) to an agent that
+        # doesn't drain stdin (R1128: no unbounded-hang path).
+        stdin_pipe = proc.stdin
+        stdin_data = prompt.encode("utf-8")
+
+        def _write_stdin():
+            try:
+                stdin_pipe.write(stdin_data)
+                stdin_pipe.close()
+            except (BrokenPipeError, OSError):
+                pass  # agent exited before reading stdin; the poll loop handles exit
+
+        threading.Thread(target=_write_stdin, daemon=True).start()
     result_seen_at: float | None = None
     grace_extended_emitted = False
     try:

@@ -54,3 +54,50 @@ def test_argv_mode_unchanged(tmp_path):
     )
     argv_line = next(line for line in log_path.read_text().splitlines() if line.startswith("ARGV:"))
     assert marker in argv_line  # default argv behavior intact
+
+
+def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
+    # Prompt exceeds the OS pipe buffer (~64KB); if the write were still
+    # blocking on the main thread before the poll loop, an agent that reads
+    # stdin only after some delay (or a full-pipe write) could hang run()
+    # with no timeout_s protection. The write now happens on a daemon
+    # thread, so run() reaches the poll loop immediately regardless.
+    fake = _fake_agent(tmp_path)
+    log_path = tmp_path / "round.log"
+    marker = "LARGE_PROMPT_MARKER"
+    big_prompt = "x" * 100_000 + marker
+    res = agent_runtime.run(
+        command=[sys.executable, str(fake)],
+        prompt_arg_template=["-p"],
+        prompt=big_prompt,
+        prompt_delivery="stdin",
+        timeout_s=15,
+        log_path=log_path,
+        env_extra={},
+    )
+    assert res.exit_code == 0
+    assert not res.timed_out
+    stdin_line = next(
+        line for line in log_path.read_text().splitlines() if line.startswith("STDIN:")
+    )
+    assert marker in stdin_line  # fully delivered despite exceeding pipe buffer
+
+
+def test_stdin_mode_guards_against_prompt_in_argv_template(tmp_path):
+    # Config validation already rejects {prompt} in the template for stdin
+    # mode, but run() itself must never substitute {prompt} into argv in
+    # stdin mode, even if called directly with a mismatched template.
+    fake = _fake_agent(tmp_path)
+    log_path = tmp_path / "round.log"
+    marker = "SECRET_MARKER"
+    agent_runtime.run(
+        command=[sys.executable, str(fake)],
+        prompt_arg_template=["-p", "{prompt}"],
+        prompt=marker,
+        prompt_delivery="stdin",
+        timeout_s=15,
+        log_path=log_path,
+        env_extra={},
+    )
+    argv_line = next(line for line in log_path.read_text().splitlines() if line.startswith("ARGV:"))
+    assert marker not in argv_line  # runtime guard holds even with a bad template
