@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-16
+
+### Added
+- `[agent] prompt_delivery = "argv" | "stdin"` (default `argv`). `stdin` pipes the prompt to the agent's stdin instead of placing it in argv, closing a `pkill -f <token>` self-kill footgun (a background worker matching on a token from the prompt could match the agent's own argv). The `claude` preset now defaults to `stdin`; existing configs are unaffected.
+- `agent_exit` gains `exit_cause` (`clean` / `error` / `signal:<NAME>` / `timeout`) so monitors can distinguish a clean exit from a signal-kill without a heuristic.
+
+### Fixed
+- A signal-killed round is no longer misclassified as `agent_network_blip` when its log happens to contain a network-error string; signal deaths are terminations, not network blips.
+
+See `docs/migrations/0.2.1.md`.
+
 ## [0.2.0] - 2026-07-02
 
 ### Changed

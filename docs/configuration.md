@@ -85,6 +85,20 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `supervisor_stale_threshold_s` | `int | None` | None |
 <!-- /gen:config-schema -->
 
+### `agent.prompt_delivery`
+
+Type: string, one of `"argv"`, `"stdin"`
+Default: `"argv"`
+
+Controls how the assembled prompt reaches the agent subprocess. `"argv"`
+(default, unchanged behavior) substitutes the prompt into
+`prompt_arg_template` and passes it as a command-line argument. `"stdin"`
+writes the prompt to the subprocess's stdin instead — it never appears in
+argv, which avoids a `pkill -f <token>` self-kill if the agent's own cleanup
+commands happen to match a token drawn from its prompt. The `claude` preset
+defaults to `"stdin"`; existing configs are unchanged. See
+`docs/migrations/0.2.1.md` to adopt on an existing config.
+
 ### `vcs.dirty_action`
 
 Type: string, one of `"stash"`, `"ignore"`, `"auto_commit"`

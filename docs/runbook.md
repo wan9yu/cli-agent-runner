@@ -624,6 +624,12 @@ post-result hang to `round_timeout_s`. Set `[runtime] grace_kill_ignore_patterns
 `round_grace_extended` event's `ignored_children` field shows which cmdlines
 matched a pattern.
 
+**Reaping background workers:** if an agent needs to clean up its own
+backgrounded helper processes, use process-group-aware means (its own
+`bg`/job-control tooling, or killing by recorded PID/pgid) — not
+`pkill -f <pattern>`, which matches on command-line substrings and can
+self-match the agent's own process or hit unrelated siblings.
+
 ### Disk pressure
 
 **Symptom:** `[WARN] disk_warning` at >90%; `[CRIT] disk_critical` at >95% (auto-stops).
