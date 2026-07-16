@@ -28,6 +28,7 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner.agent_runtime import signal_name
 from agent_runner.api import _primary_prompt_file, resolve_runtime_for_phase
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult, TransientErrorState
@@ -217,6 +218,20 @@ def _round_context_for_prompt(
     return ctx
 
 
+def _exit_cause(result: agent_runtime.RunResult) -> str:
+    """Classify a round's exit for the ``agent_exit`` event.
+
+    Precedence: timeout > signal:<NAME> > clean > error. Timeout wins even
+    when agent-runner signal-killed the process to enforce the timeout.
+    """
+    if result.timed_out:
+        return "timeout"
+    s = signal_name(result.exit_code)
+    if s is not None:
+        return f"signal:{s}"
+    return "clean" if result.exit_code == 0 else "error"
+
+
 def _scan_round_log_for_network_blip(
     *,
     log_dir: Path,
@@ -233,6 +248,8 @@ def _scan_round_log_for_network_blip(
     # Skip the I/O on the success path.
     if result.exit_code == 0 and not result.timed_out:
         return
+    if signal_name(result.exit_code) is not None:
+        return  # signal death is a termination, not a network blip
     try:
         text = log_path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
@@ -502,6 +519,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         exit_code=result.exit_code,
         duration_s=result.duration_s,
         timed_out=result.timed_out,
+        exit_cause=_exit_cause(result),
     )
 
     _scan_round_log_for_network_blip(
