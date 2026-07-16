@@ -4,7 +4,8 @@
 command = ["claude", "--model", "claude-opus-4-7",
            "--dangerously-skip-permissions",
            "--verbose", "--output-format", "stream-json"]
-prompt_arg_template = ["-p", "{prompt}"]
+prompt_arg_template = ["-p"]
+prompt_delivery = "stdin"
 name = "claude"
 
 [agent.env]

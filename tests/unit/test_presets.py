@@ -48,12 +48,28 @@ def test_given_preset_when_substituted_and_parsed_then_valid_toml(name: str) -> 
 
 @pytest.mark.parametrize("name", PRESET_NAMES)
 def test_given_preset_when_parsed_then_prompt_arg_template_contains_prompt(name: str) -> None:
+    """argv-delivery presets must place {prompt} in the template; stdin-delivery
+    presets (e.g. claude) deliberately omit it — the prompt travels on stdin
+    instead, so it never lands in process argv."""
     text = _preset_text(name).replace("{project}", "test-project")
     parsed = tomllib.loads(text)
     template = parsed["agent"]["prompt_arg_template"]
-    assert any("{prompt}" in arg for arg in template), (
-        f"{name}.toml: prompt_arg_template lacks {{prompt}}"
-    )
+    if parsed["agent"].get("prompt_delivery", "argv") == "stdin":
+        assert not any("{prompt}" in arg for arg in template), (
+            f"{name}.toml: stdin delivery but prompt_arg_template still has {{prompt}}"
+        )
+    else:
+        assert any("{prompt}" in arg for arg in template), (
+            f"{name}.toml: prompt_arg_template lacks {{prompt}}"
+        )
+
+
+def test_given_claude_preset_when_parsed_then_uses_stdin_delivery() -> None:
+    """claude preset opts into stdin prompt delivery: -p with no {prompt} arg."""
+    text = _preset_text("claude").replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    assert parsed["agent"]["prompt_arg_template"] == ["-p"]
+    assert parsed["agent"]["prompt_delivery"] == "stdin"
 
 
 def test_given_claude_preset_when_parsed_then_includes_disable_autoupdater() -> None:

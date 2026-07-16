@@ -132,6 +132,7 @@ def run(
     command: list[str],
     prompt_arg_template: list[str],
     prompt: str,
+    prompt_delivery: str = "argv",
     timeout_s: int,
     log_path: Path,
     env_extra: dict[str, str],
@@ -167,14 +168,21 @@ def run(
     log_file = log_path.open("w", encoding="utf-8")
     start = time.time()
     last_progress_at = start
+    stdin_mode = prompt_delivery == "stdin"
     proc = subprocess.Popen(
         argv,
         env=env,
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if stdin_mode else subprocess.DEVNULL,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    if stdin_mode and proc.stdin is not None:
+        try:
+            proc.stdin.write(prompt.encode("utf-8"))
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass  # agent exited before reading stdin; the poll loop handles exit
     result_seen_at: float | None = None
     grace_extended_emitted = False
     try:

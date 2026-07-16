@@ -503,6 +503,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         command=cfg.agent.command,
         prompt_arg_template=cfg.agent.prompt_arg_template,
         prompt=prompt,
+        prompt_delivery=cfg.agent.prompt_delivery,
         timeout_s=timeout_s,
         log_path=log_path,
         env_extra={**framework_env, **dict(cfg.agent.env)},
