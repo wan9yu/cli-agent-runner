@@ -11,6 +11,7 @@ from typing import Any, Literal
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
 _VALID_TRANSIENT_ERROR_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
+_VALID_PROMPT_DELIVERY: frozenset[str] = frozenset({"argv", "stdin"})
 
 
 class ConfigError(ValueError):
@@ -23,7 +24,7 @@ class AgentConfig:
     prompt_arg_template: list[str]
     name: str | None = None
     env: dict[str, str] = field(default_factory=dict)
-    prompt_delivery: str = "argv"
+    prompt_delivery: Literal["argv", "stdin"] = "argv"
 
 
 @dataclass(frozen=True)
@@ -341,12 +342,12 @@ def load_config(toml_path: Path) -> Config:
     agent_d = raw.get("agent", {})
     prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
     prompt_arg_template = list(_require(agent_d, "prompt_arg_template"))
-    if prompt_delivery not in {"argv", "stdin"}:
-        raise ConfigError(
+    if prompt_delivery not in _VALID_PROMPT_DELIVERY:
+        raise ValueError(
             f'invalid [agent] prompt_delivery {prompt_delivery!r}: use "argv" or "stdin"'
         )
     if prompt_delivery == "stdin" and any("{prompt}" in a for a in prompt_arg_template):
-        raise ConfigError(
+        raise ValueError(
             "stdin delivery: remove {prompt} from [agent] prompt_arg_template "
             "(the prompt is piped to stdin, not placed in argv)"
         )

@@ -32,8 +32,11 @@ def signal_name(exit_code: int) -> str | None:
     form (``143``). Returns None for a non-signal exit — including a legitimate
     ``> 128`` code (e.g. 200) that is not a valid signal number.
     """
-    n = -exit_code if exit_code < 0 else (exit_code - 128 if exit_code > 128 else None)
-    if n is None:
+    if exit_code < 0:
+        n = -exit_code
+    elif exit_code > 128:
+        n = exit_code - 128
+    else:
         return None
     try:
         return signal.Signals(n).name

@@ -1,6 +1,6 @@
 import pytest
 
-from agent_runner.config import ConfigError, load_config
+from agent_runner.config import load_config
 from tests._test_helpers import write_min_config
 
 
@@ -19,7 +19,7 @@ def test_stdin_accepted_when_template_has_no_prompt(tmp_path):
 
 
 def test_stdin_with_prompt_token_rejected(tmp_path):
-    with pytest.raises(ConfigError, match="stdin"):
+    with pytest.raises(ValueError, match="stdin"):
         load_config(
             _cfg(
                 tmp_path,
@@ -29,5 +29,5 @@ def test_stdin_with_prompt_token_rejected(tmp_path):
 
 
 def test_invalid_value_rejected(tmp_path):
-    with pytest.raises(ConfigError):
+    with pytest.raises(ValueError):
         load_config(_cfg(tmp_path, 'prompt_delivery = "file"\n'))
