@@ -8,6 +8,8 @@ the test suite. After: one factory.
 
 from __future__ import annotations
 
+import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +102,48 @@ def make_toml_with_sections(
         f'work_dir = "{tmp_path}"\n'
         f'log_dir = "{log_dir}"\n' + runtime_extra + "[prompt]\n"
         f"{prompt_block}\n" + phases_block + vcs_block
+    )
+    return toml
+
+
+def _format_toml_value(v: Any) -> str:
+    """Serialize a Python scalar/list back to a TOML literal (str/list only;
+    sufficient for the [agent] overrides write_min_config supports)."""
+    if isinstance(v, list):
+        return "[" + ", ".join(_format_toml_value(x) for x in v) + "]"
+    if isinstance(v, str):
+        return json.dumps(v)  # TOML basic-string quoting matches JSON's
+    return str(v)
+
+
+def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
+    """Write a minimal agent-runner.toml, letting callers override [agent] fields.
+
+    agent_extra: raw TOML lines parsed as a fragment and merged into the
+    default [agent] table (``command = ["true"]``, ``prompt_arg_template =
+    ["{prompt}"]``) — keys in agent_extra replace the corresponding default
+    (avoids emitting duplicate TOML keys, which tomllib rejects). e.g.
+    ``'prompt_delivery = "stdin"\\nprompt_arg_template = ["-p"]\\n'``.
+    """
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text(_VALID_PROMPT)
+
+    agent: dict[str, Any] = {"command": ["true"], "prompt_arg_template": ["{prompt}"]}
+    if agent_extra:
+        agent.update(tomllib.loads(agent_extra))
+
+    agent_lines = "\n".join(f"{k} = {_format_toml_value(v)}" for k, v in agent.items())
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        f"{agent_lines}\n"
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "[prompt]\n"
+        f'file = "{prompt_file}"\n'
     )
     return toml
 

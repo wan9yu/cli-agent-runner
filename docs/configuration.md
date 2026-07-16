@@ -28,6 +28,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `prompt_arg_template` | `list[str]` | — |
 | `name` | `str | None` | None |
 | `env` | `dict[str, str]` | {} |
+| `prompt_delivery` | `str` | 'argv' |
 
 ### `[runtime]`
 
