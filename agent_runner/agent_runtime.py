@@ -24,6 +24,22 @@ import psutil
 REAP_GRACE_S = 5
 
 
+def signal_name(exit_code: int) -> str | None:
+    """Signal name for a signal death, else None.
+
+    Handles both the Python-negative form (``-15``) and the shell ``128+N``
+    form (``143``). Returns None for a non-signal exit — including a legitimate
+    ``> 128`` code (e.g. 200) that is not a valid signal number.
+    """
+    n = -exit_code if exit_code < 0 else (exit_code - 128 if exit_code > 128 else None)
+    if n is None:
+        return None
+    try:
+        return signal.Signals(n).name
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class RunResult:
     exit_code: int
