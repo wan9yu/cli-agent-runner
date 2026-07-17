@@ -42,7 +42,7 @@ ALLOWED_SERVE_FROM = [
         },
     ),
     ("agent_runner.cli.common", {"cfg_from_args"}),
-    ("agent_runner.lifecycle", {"PIDFile", "send_signal_to_pid"}),
+    ("agent_runner.lifecycle", {"PIDFile"}),
     (
         "agent_runner.round_log",
         {"ROUND_CURRENT_LINK", "atomic_relink", "next_round_num", "prune_old_round_logs"},
