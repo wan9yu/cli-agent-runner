@@ -52,16 +52,16 @@ surfacing everywhere.
 <!-- gen:defenses-table -->
 | Defense | Codifies | Guarded by |
 |---|---|---|
-| `round_timeout_s` | R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger | `—` |
+| `round_timeout_s` | R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger | `tests/unit/test_agent_runtime.py` |
 | `process_group_isolation` | #307 — process group reaping for descendant cleanup | `tests/unit/test_agent_runtime.py` |
 | `sigterm_reaper` | R725 — SIGTERM-during-round dual-claude race | `—` |
-| `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `—` |
+| `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `tests/unit/test_vcs_state.py` |
 | `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
-| `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `—` |
+| `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `tests/unit/test_agent_runtime.py` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; now halts serve (config_broken) instead of respawning a broken config | `tests/unit/test_serve_config_broken.py` |
 | `crash_loop_breaker` | Run 6 — crashing agent respawned ~100 empty rounds at a fixed 2x delay | `tests/unit/test_serve_crash_loop.py` |
-| `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `—` |
+| `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `tests/unit/test_runner.py` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->

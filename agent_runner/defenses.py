@@ -32,7 +32,7 @@ def catalog(cfg: Config) -> list[Defense]:
             name="round_timeout_s",
             value=cfg.runtime.round_timeout_s,
             codifies="R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger",
-            guarded_by=None,
+            guarded_by=Path("tests/unit/test_agent_runtime.py"),
             current_state="active",
         ),
         Defense(
@@ -53,7 +53,7 @@ def catalog(cfg: Config) -> list[Defense]:
             name="orphan_stash_idempotency_s",
             value=cfg.vcs.stash_idempotency_s,
             codifies="R820 — same-second 3 phantom stashes",
-            guarded_by=None,
+            guarded_by=Path("tests/unit/test_vcs_state.py"),
             current_state="active",
         ),
         Defense(
@@ -77,7 +77,7 @@ def catalog(cfg: Config) -> list[Defense]:
                 "Env injection via [agent.env] block — preset-supplied per CLI "
                 "(e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates)"
             ),
-            guarded_by=None,
+            guarded_by=Path("tests/unit/test_agent_runtime.py"),
             current_state="active" if cfg.agent.env else "off",
         ),
         Defense(
@@ -101,7 +101,7 @@ def catalog(cfg: Config) -> list[Defense]:
             name="flock_concurrency",
             value="agent-runner.lock",
             codifies="Architectural — prevent concurrent supervisors corrupting state",
-            guarded_by=None,
+            guarded_by=Path("tests/unit/test_runner.py"),
             current_state="active",
         ),
         Defense(

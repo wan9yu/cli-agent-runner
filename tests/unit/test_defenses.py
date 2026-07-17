@@ -91,3 +91,19 @@ def test_given_cfg_with_empty_agent_env_when_catalog_then_critical_envs_off(
     row = next(d for d in cat if d.name == "critical_envs_injection")
     assert row.value == []
     assert row.current_state == "off"
+
+
+# Defenses whose mechanism has a production caller AND a test that drives it.
+# Transitional: superseded once every catalog entry is required to name a guard.
+_WIRED_DEFENSES = (
+    "round_timeout_s",
+    "orphan_stash_idempotency_s",
+    "critical_envs_injection",
+    "flock_concurrency",
+)
+
+
+def test_given_wired_defenses_when_catalog_then_guarded_by_set(tmp_path: Path) -> None:
+    cat = {d.name: d for d in catalog(_cfg(tmp_path))}
+    unlinked = [n for n in _WIRED_DEFENSES if cat[n].guarded_by is None]
+    assert unlinked == [], f"defenses with a real guard but no guarded_by: {unlinked}"
