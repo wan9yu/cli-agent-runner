@@ -69,16 +69,26 @@ def kind_literals(arg: ast.expr) -> list[ast.Constant]:
 
 
 def kind_constant_names(arg: ast.expr) -> set[str]:
-    """Every constant name referenced inside a kind argument expression.
+    """Constant names that a kind argument can EVALUATE TO.
 
-    Walks the expression: default_dirty_handler picks its kind with a ternary
+    default_dirty_handler picks its kind with a ternary
     (``events.ORPHAN_IDEMPOTENT_SKIP if ref.reused else events.ORPHAN_STASHED``),
-    so a root-only isinstance resolves neither branch.
+    so this descends into value positions — the branches of an ``if``/``or`` — and
+    returns each branch's constant name. It must NOT descend into a condition
+    (``IfExp.test``) or comparison operands: a kind named only in
+    ``A if state == events.ROUND_START else B`` is the *selector*, not an emitted
+    value, and counting it would let a genuinely-unemitted kind masquerade as
+    emitted — the exact false-negative this keystone invariant exists to forbid.
     """
-    names: set[str] = set()
-    for node in ast.walk(arg):
-        if isinstance(node, ast.Name):
-            names.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            names.add(node.attr)
-    return names
+    if isinstance(arg, ast.IfExp):
+        return kind_constant_names(arg.body) | kind_constant_names(arg.orelse)
+    if isinstance(arg, ast.BoolOp):
+        names: set[str] = set()
+        for value in arg.values:
+            names |= kind_constant_names(value)
+        return names
+    if isinstance(arg, ast.Name):
+        return {arg.id}
+    if isinstance(arg, ast.Attribute):
+        return {arg.attr}
+    return set()

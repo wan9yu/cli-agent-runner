@@ -52,10 +52,12 @@ def test_every_builtin_kind_has_a_constant():
 
 
 def test_given_builtin_kinds_when_scanned_then_each_has_a_constant_emit_site() -> None:
-    """Every declared built-in kind is emitted by core through its constant.
+    """Every declared built-in kind appears as the value of some core emit call.
 
     Closes the "declared but never happens" hole structurally: a kind with no
-    emitter is a promise to consumers that the supervisor never keeps.
+    emitter is a promise to consumers that the supervisor never keeps. Resolves
+    each emit's kind argument to the constant(s) it can evaluate to (see
+    ``kind_constant_names`` — value positions only, not selector conditions).
     Scoped to _BUILTIN_KINDS — plugin kinds are emitted from plugin code.
     """
     from agent_runner import events
