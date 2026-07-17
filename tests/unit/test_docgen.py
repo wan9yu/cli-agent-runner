@@ -191,9 +191,11 @@ def test_given_content_with_regex_escapes_when_replaced_then_inserted_verbatim()
     """re.sub's string replacement is a TEMPLATE — a callable repl inserts literally.
 
     Round-trips the three expansion classes at once: \\n (escape), \\\\b (backslash
-    survival), \\1 (group reference). Any of them expanding corrupts a generated doc
-    silently, because a deterministic corruption is a fixed point of render() and
-    `git diff --exit-code docs/` stays green on it.
+    survival), \\1 (group reference). The first two corrupt a generated doc SILENTLY
+    — a deterministic corruption is a fixed point of render(), so the generator's
+    output equals the corrupted file and `git diff --exit-code docs/` stays green on
+    it. That is why this test, not the docs gate, is the guard. \\1 instead crashes
+    outright (a backreference into a groupless pattern).
     """
     body = r"a\n\\b\1c"
     text = "intro\n<!-- gen:x -->\nOLD\n<!-- /gen:x -->\noutro\n"

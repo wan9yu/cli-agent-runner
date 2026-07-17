@@ -82,8 +82,8 @@ def replace_block(text: str, name: str, new_content: str) -> str:
     )
     replacement = f"{open_tag}\n{new_content}\n{close_tag}"
     # A string repl is a TEMPLATE (expands \n, \t, \1, \g<...>); a callable repl
-    # is inserted literally. Config defaults contain backslashes — see
-    # config.py concat_separator ("\n\n") and _DEFAULT_AUTH_PATTERNS (r"\b...").
+    # is inserted literally. new_content carries rendered config defaults, which
+    # may contain backslashes.
     return pattern.sub(lambda _m: replacement, text)
 
 
