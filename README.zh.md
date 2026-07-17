@@ -23,7 +23,7 @@ CLI 命令是 `agent-runner`（PyPI 包名加 `cli-` 前缀只是为了规避命
 
 ## 完整文档
 
-文档以英文为准，中文只保留这一页入口：
+文档以英文为准。下面 `docs/` 各页末尾都附有中文摘要，完整细节见英文正文：
 
 - [`docs/quickstart.md`](docs/quickstart.md) —— 5 步装好并跑通第一轮
 - [`README.md`](README.md) —— 定位、动词表、内置防御、Monitor 检测器
