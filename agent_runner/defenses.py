@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent_runner import events
 from agent_runner.config import Config
 
 
@@ -26,7 +27,7 @@ class Defense:
 
 
 def catalog(cfg: Config) -> list[Defense]:
-    """Return the 11-entry defense catalog parameterised by current config."""
+    """Return the defense catalog parameterised by current config."""
     return [
         Defense(
             name="round_timeout_s",
@@ -117,7 +118,12 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="event_kind_registry",
-            value="KNOWN_EVENT_KINDS registry view (14 built-in kinds + plugin-extensible)",
+            # Read through the module, not `from ... import _BUILTIN_KINDS` — the
+            # count must be resolved at call time, not frozen at import.
+            value=(
+                f"KNOWN_EVENT_KINDS registry view "
+                f"({len(events._BUILTIN_KINDS)} built-in kinds + plugin-extensible)"
+            ),
             codifies="Prevent events.emit() typos / unregistered kinds slipping past CI",
             guarded_by=Path("tests/invariants/test_event_kind_registry.py"),
             current_state="active",

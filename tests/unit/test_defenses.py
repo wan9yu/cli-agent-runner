@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
+import pytest
+
+from agent_runner import events
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -126,3 +130,20 @@ def test_given_set_diff_defense_when_inspected_then_names_the_prohibition(
     row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "set_diff_classification")
     assert "set_diff_vs_head" not in row.value
     assert row.guarded_by == Path("tests/invariants/test_set_diff_for_auto_tool_classification.py")
+
+
+def test_given_catalog_docstring_when_read_then_states_no_count() -> None:
+    """The catalog literal is the SSOT; a count restated in prose only drifts."""
+    assert catalog.__doc__ is not None
+    assert not re.search(r"\d", catalog.__doc__), (
+        f"catalog docstring hardcodes a number: {catalog.__doc__!r}"
+    )
+
+
+def test_given_builtin_kinds_registry_when_shrunk_then_defense_value_tracks_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves the count is computed, not re-hardcoded — a literal would not move."""
+    monkeypatch.setattr(events, "_BUILTIN_KINDS", frozenset({"a", "b", "c"}))
+    row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "event_kind_registry")
+    assert "3 built-in kinds" in row.value
