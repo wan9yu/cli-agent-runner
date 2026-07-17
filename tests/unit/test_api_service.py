@@ -92,21 +92,6 @@ def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
         assert signal.SIGTERM in sent
 
 
-def test_given_pid_file_when_api_cancel_then_sends_sigusr1(
-    tmp_git_repo: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("HOME", str(tmp_git_repo))
-    api.init(tmp_git_repo, force=False, commit=False)
-    cfg = load_config(tmp_git_repo / "agent-runner.toml")
-    log_dir = cfg.runtime.log_dir
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "serve.pid").write_text("12345")
-    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
-        api.cancel(tmp_git_repo)
-        send.assert_called_with(12345, signal.SIGUSR1)
-
-
 def test_given_install_with_no_systemctl_when_called_then_returns_install_result(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

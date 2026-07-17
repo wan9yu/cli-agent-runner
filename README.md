@@ -43,12 +43,12 @@ agent-runner monitor              # live anomaly detection
 
 Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 
-## 16 verbs
+## 15 verbs
 
 | Lifecycle | Observation |
 |---|---|
 | `init` / `install` / `uninstall` | `peek` — state snapshot |
-| `start` / `stop` / `kill` / `cancel` | `watch` — peek in a refresh loop |
+| `start` / `stop` / `kill` | `watch` — peek in a refresh loop |
 | `restart` / `status` | `monitor` — 11 detectors, alerts, auto-stop |
 | `round` / `serve` / `upgrade` | `events` — query / stream events.jsonl |
 

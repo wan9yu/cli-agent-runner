@@ -99,7 +99,6 @@ To stop:
 ```bash
 agent-runner stop          # graceful (waits for current round)
 agent-runner kill          # force (5s grace then SIGKILL)
-agent-runner cancel        # SIGINT to the agent process (best-effort wrap-up)
 ```
 <!-- skip-test -->
 
@@ -108,6 +107,6 @@ agent-runner cancel        # SIGINT to the agent process (best-effort wrap-up)
 5 步搭通：`pip install cli-agent-runner` 装包（命令名仍是 `agent-runner`）→
 `agent-runner init` 在你的 git repo 里生成 `agent-runner.toml` → `agent-runner round`
 跑通一轮 → `agent-runner install --monitor` 装 systemd 服务（含 monitor 副服务）
-→ `agent-runner peek / watch / monitor` 观察。停服三种语义：`stop`（优雅，
-等当前轮）/ `kill`（强制）/ `cancel`（向 agent 进程发 SIGINT 提示收尾）。
+→ `agent-runner peek / watch / monitor` 观察。停服两种语义：`stop`（优雅，
+等当前轮）/ `kill`（强制）。
 要换用 aider：`agent-runner init --preset aider`，详见 [docs/recipes/aider.md](recipes/aider.md)。

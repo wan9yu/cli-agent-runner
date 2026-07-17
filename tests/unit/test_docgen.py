@@ -156,7 +156,6 @@ def test_given_render_verb_table_when_called_then_lists_all_subcommands() -> Non
         "start",
         "stop",
         "kill",
-        "cancel",
         "restart",
         "status",
         "round",

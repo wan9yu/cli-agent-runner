@@ -4,7 +4,7 @@ THIN dispatcher: orchestrates the supervisor loop, delegates all helpers to
 ``agent_runner.round_log`` (round-log file ops) and ``agent_runner.api``
 (sentinel + round counter).
 
-Trap signals, write/cleanup PID files, run `round` subprocess in a loop.
+Trap signals, write/cleanup the serve PID file, run `round` subprocess in a loop.
 All real work delegated to `agent-runner round` (fresh import per round).
 """
 
@@ -35,7 +35,7 @@ from agent_runner.api import (
 )
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.hooks import run_serve_startup_hooks
-from agent_runner.lifecycle import PIDFile, send_signal_to_pid
+from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
     ROUND_CURRENT_LINK,
     atomic_relink,
@@ -108,23 +108,15 @@ def cmd(args) -> int:
 
     pid_file = PIDFile(log_dir / "serve.pid")
     stop = {"requested": False}
-    round_pid_file = PIDFile(log_dir / "round.pid")
 
     def graceful(_sig, _frame):
         stop["requested"] = True
-
-    def cancel(_sig, _frame):
-        stop["requested"] = True
-        rp = round_pid_file.read()
-        if rp is not None:
-            send_signal_to_pid(-rp, signal.SIGINT)
 
     # Arm signals before any pre-loop cleanup — a SIGTERM arriving during
     # sentinel removal or log pruning will set stop["requested"] and the
     # loop will not start rather than killing with the default handler.
     signal.signal(signal.SIGTERM, graceful)
     signal.signal(signal.SIGINT, graceful)
-    signal.signal(signal.SIGUSR1, cancel)
 
     # Pre-loop cleanup: remove stale sentinel, prune old round logs.
     (log_dir / ".agent-done").unlink(missing_ok=True)

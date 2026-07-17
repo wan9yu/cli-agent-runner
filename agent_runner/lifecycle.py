@@ -1,7 +1,7 @@
 """Service-lifecycle primitives: PID files, signal sending, service-mode detection.
 
 Used by ``cli/serve_cmd.py`` (writes serve.pid) and ``cli/service_cmd.py``
-(reads PID + signals it for stop/kill/cancel). Also tells callers whether the
+(reads PID + signals it for stop/kill). Also tells callers whether the
 project is managed by systemd-user or a plain serve process.
 """
 

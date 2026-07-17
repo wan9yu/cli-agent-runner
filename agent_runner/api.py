@@ -285,7 +285,7 @@ def uninstall(work_dir: Path | None = None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Lifecycle: start / stop / kill / cancel / restart / status
+# Lifecycle: start / stop / kill / restart / status
 
 
 def start(project: str | Path) -> ServiceStatus:
@@ -331,19 +331,6 @@ def kill(project: str | Path) -> ServiceStatus:
     if alive:
         send_signal_to_pid(pid, signal.SIGKILL)
     return ServiceStatus(mode=ServiceMode.PID_FILE, active=alive, pid=pid)
-
-
-def cancel(project: str | Path) -> bool:
-    pname = _resolve_project(project)
-    log_dir = _log_dir_for_project(project)
-    mode = detect_service_mode(pname, log_dir=log_dir)
-    if mode == ServiceMode.SYSTEMD_USER:
-        _systemctl_user("kill", "--signal=SIGUSR1", serve_unit_filename(pname))
-        return True
-    pid = PIDFile(log_dir / "serve.pid").read()
-    if pid is None:
-        return False
-    return send_signal_to_pid(pid, signal.SIGUSR1)
 
 
 def restart(project: str | Path, *, force: bool = False) -> ServiceStatus:

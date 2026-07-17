@@ -1,4 +1,4 @@
-"""service subcommands — start / stop / kill / cancel / restart / status."""
+"""service subcommands — start / stop / kill / restart / status."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ def add_parser(sub, parent) -> None:
         ("start", cmd_start, "Start the service"),
         ("stop", cmd_stop, "Graceful stop (waits for current round)"),
         ("kill", cmd_kill, "Force terminate (5s grace then SIGKILL)"),
-        ("cancel", cmd_cancel, "Best-effort: SIGINT to claude (commit-and-exit hint)"),
         ("restart", cmd_restart, "stop + start (use --force for kill semantics)"),
         ("status", cmd_status, "Show current service state"),
     ):
@@ -43,11 +42,6 @@ def cmd_stop(args) -> int:
 
 def cmd_kill(args) -> int:
     emit(api.kill(work_dir_from_args(args)), json_mode=getattr(args, "json", False))
-    return 0
-
-
-def cmd_cancel(args) -> int:
-    api.cancel(work_dir_from_args(args))
     return 0
 
 

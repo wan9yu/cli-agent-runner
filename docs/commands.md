@@ -15,7 +15,6 @@ are shared between `peek`, `watch`, and `monitor`.
 | `start` | Start the service |
 | `stop` | Graceful stop (waits for current round) |
 | `kill` | Force terminate (5s grace then SIGKILL) |
-| `cancel` | Best-effort: SIGINT to claude (commit-and-exit hint) |
 | `restart` | stop + start (use --force for kill semantics) |
 | `status` | Show current service state |
 | `peek` | peek project state with optional drill-down |
@@ -61,14 +60,13 @@ After writing, runs `systemctl --user daemon-reload`, `enable`, `start`.
 
 Stops and disables both units, then deletes the unit files and reloads systemd.
 
-### `agent-runner start | stop | kill | cancel | restart | status`
+### `agent-runner start | stop | kill | restart | status`
 
 | Verb | Semantics | Notes |
 |---|---|---|
 | `start` | systemctl start (or spawn `serve` if no unit) | idempotent |
 | `stop` | **graceful** (default): SIGTERM → wait for current round → exit | up to ROUND_TIMEOUT |
 | `kill` | **force**: SIGTERM → 5s grace → SIGKILL | use only when stuck |
-| `cancel` | SIGINT to current claude (best-effort commit-and-exit) | needs claude to respond |
 | `restart [--force]` | stop + start (`--force` uses kill semantics) | |
 | `status [--json]` | service mode, active state, pid, uptime | |
 
@@ -79,9 +77,8 @@ can also invoke directly to debug.
 
 ### `agent-runner serve [--once]`
 
-Long-running supervisor loop. Traps SIGTERM (graceful stop), SIGINT (graceful),
-SIGUSR1 (cancel — forwards SIGINT to current round). Writes `serve.pid` and
-`round.pid`. `--once` runs a single round then exits (debug).
+Long-running supervisor loop. Traps SIGTERM (graceful stop) and SIGINT
+(graceful). Writes `serve.pid`. `--once` runs a single round then exits (debug).
 
 ### `agent-runner upgrade [--target VERSION] [--no-restart] [--config PATH]`
 
@@ -171,10 +168,10 @@ agent-runner monitor --json | jq -c        # pipe alerts to a downstream consume
 
 ## 中文摘要
 
-16 个动词，完整列表见上方动词表（自动生成）。
+15 个动词，完整列表见上方动词表（自动生成）。
 
 观察类（peek/watch/monitor）三视角对称，全部共用 `--round / --log / --events / --select / --json` 下钻参数。
 
-服务停止三动词：`stop` 优雅、`kill` 强制、`cancel` 给 claude 发信号请求收尾。
+服务停止两动词：`stop` 优雅、`kill` 强制。
 
 `monitor` 检测到 OAuth 失败或磁盘超 95% 时**自动优雅停服**，避免烧 quota / 写满磁盘。

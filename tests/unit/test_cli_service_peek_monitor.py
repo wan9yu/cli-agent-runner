@@ -55,16 +55,6 @@ def test_given_kill_subcommand_when_invoked_then_calls_api_kill(
         k.assert_called_once()
 
 
-def test_given_cancel_subcommand_when_invoked_then_calls_api_cancel(
-    tmp_git_repo: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _init(tmp_git_repo)
-    with patch("agent_runner.api.cancel", return_value=True) as c:
-        main(["cancel"])
-        c.assert_called_once()
-
-
 def test_given_peek_with_select_when_invoked_then_passes_select_arg(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

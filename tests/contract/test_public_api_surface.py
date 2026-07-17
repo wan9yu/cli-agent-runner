@@ -135,6 +135,25 @@ def test_given_agent_runtime_when_imported_then_claude_specific_symbols_absent()
     )
 
 
+def test_given_cancel_removed_when_public_surface_inspected_then_absent() -> None:
+    """0.2.2 deletes `cancel`: CLI verb, api.cancel(), and the SIGUSR1 machinery.
+
+    It never delivered the interrupt semantics it documented -- nothing ever
+    wrote round.pid, so the SIGINT forward was unreachable. `stop` replaces it.
+    """
+    import inspect
+
+    from agent_runner import api
+    from agent_runner.cli import _build_parser, serve_cmd
+
+    assert not hasattr(api, "cancel")
+    sub = next(a for a in _build_parser()._actions if a.__class__.__name__ == "_SubParsersAction")
+    assert "cancel" not in sub.choices
+    src = inspect.getsource(serve_cmd)
+    assert "round.pid" not in src
+    assert "SIGUSR1" not in src
+
+
 def test_given_vcs_state_module_when_imported_then_plugin_owned_paths_api_present() -> None:
     """0.1.8: register_plugin_owned_paths + plugin_owned_paths are the new
     plugin-author public surface. Lock them in so a future refactor can't
