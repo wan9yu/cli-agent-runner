@@ -66,3 +66,19 @@ def kind_literals(arg: ast.expr) -> list[ast.Constant]:
         for node in ast.walk(arg)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     ]
+
+
+def kind_constant_names(arg: ast.expr) -> set[str]:
+    """Every constant name referenced inside a kind argument expression.
+
+    Walks the expression: default_dirty_handler picks its kind with a ternary
+    (``events.ORPHAN_IDEMPOTENT_SKIP if ref.reused else events.ORPHAN_STASHED``),
+    so a root-only isinstance resolves neither branch.
+    """
+    names: set[str] = set()
+    for node in ast.walk(arg):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+    return names

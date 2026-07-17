@@ -11,13 +11,11 @@ Two guarantees:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 import pytest
 
 from agent_runner import events
-
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests.invariants._event_scan import PKG, emit_kind_args, kind_literals, package_modules
 
 
 @pytest.fixture(autouse=True)
@@ -32,28 +30,22 @@ def _reset_plugin_kinds():
 
 def test_given_emit_calls_in_core_when_scanned_then_kinds_are_builtin() -> None:
     """Core code only emits built-in kinds. Plugins emit plugin kinds from their own
-    callsites (not in this package)."""
+    callsites (not in this package).
+
+    Scans via the shared helper: rglob (cli/ and builtin_plugins/ hold real emit
+    sites) and alias-aware (monitor.py's emit_event, _emit.py's bare emit). A
+    private copy of this scan is what let both blind spots survive.
+    """
     bad_calls: list[tuple[str, int, str]] = []
-    for f in PKG.glob("*.py"):
-        if f.name == "events.py":
-            continue
-        text = f.read_text()
-        tree = ast.parse(text)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            target = node.func
-            if (
-                isinstance(target, ast.Attribute)
-                and target.attr == "emit"
-                and isinstance(target.value, ast.Name)
-                and target.value.id == "events"
-            ):
-                if len(node.args) >= 2:
-                    second = node.args[1]
-                    if isinstance(second, ast.Constant) and isinstance(second.value, str):
-                        if second.value not in events._BUILTIN_KINDS:
-                            bad_calls.append((f.name, node.lineno, second.value))
+    for path in package_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        rel = path.relative_to(PKG.parent).as_posix()
+        for arg in emit_kind_args(tree):
+            bad_calls.extend(
+                (rel, lit.lineno, lit.value)
+                for lit in kind_literals(arg)
+                if lit.value not in events._BUILTIN_KINDS
+            )
     assert bad_calls == [], f"events.emit() with non-builtin kinds: {bad_calls}"
 
 

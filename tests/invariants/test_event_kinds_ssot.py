@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import ast
 
-from tests.invariants._event_scan import PKG, emit_kind_args, kind_literals, package_modules
+from tests.invariants._event_scan import (
+    PKG,
+    emit_kind_args,
+    kind_constant_names,
+    kind_literals,
+    package_modules,
+)
 
 
 def test_every_string_constant_is_a_builtin_kind():
@@ -45,16 +51,29 @@ def test_every_builtin_kind_has_a_constant():
     assert not orphans, f"_BUILTIN_KINDS members without constants: {orphans}"
 
 
-def test_given_retired_sigterm_kind_when_looked_up_then_not_registered() -> None:
-    """0.2.2 retires sigterm_received: nothing ever emitted it, and serve's
-    graceful-stop handler — not a signal-handler emit — is the real mechanism.
+def test_given_builtin_kinds_when_scanned_then_each_has_a_constant_emit_site() -> None:
+    """Every declared built-in kind is emitted by core through its constant.
 
-    Transitional guard: superseded by the declared-then-emitted invariant, which
-    makes re-adding an unemitted kind structurally impossible.
+    Closes the "declared but never happens" hole structurally: a kind with no
+    emitter is a promise to consumers that the supervisor never keeps.
+    Scoped to _BUILTIN_KINDS — plugin kinds are emitted from plugin code.
     """
     from agent_runner import events
 
-    assert "sigterm_received" not in events._BUILTIN_KINDS
+    value_by_name = {
+        name: value
+        for name, value in vars(events).items()
+        if name.isupper() and isinstance(value, str) and value in events._BUILTIN_KINDS
+    }
+    emitted: set[str] = set()
+    for path in package_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for arg in emit_kind_args(tree):
+            for name in kind_constant_names(arg):
+                if name in value_by_name:
+                    emitted.add(value_by_name[name])
+    never = sorted(events._BUILTIN_KINDS - emitted)
+    assert never == [], f"declared but never emitted: {never}"
 
 
 def test_given_emit_alias_import_when_scanned_then_kind_arg_resolved() -> None:
