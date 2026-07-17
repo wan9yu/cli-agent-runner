@@ -54,7 +54,7 @@ surfacing everywhere.
 |---|---|---|
 | `round_timeout_s` | R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger | `tests/unit/test_agent_runtime.py` |
 | `process_group_isolation` | #307 — process group reaping for descendant cleanup | `tests/unit/test_agent_runtime.py` |
-| `sigterm_reaper` | R725 — SIGTERM-during-round dual-claude race | `—` |
+| `sigterm_reaper` | R725 — SIGTERM-during-round dual-claude race | `tests/integration/test_serve_loop.py` |
 | `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `tests/unit/test_vcs_state.py` |
 | `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
 | `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |

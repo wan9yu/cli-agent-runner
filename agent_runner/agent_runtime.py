@@ -1,7 +1,6 @@
 """Agent subprocess management — spawns the configured agent CLI process.
 
 Defenses encoded here:
-- R725: SIGTERM handler reaps process group before runner exits
 - R1128: ROUND_TIMEOUT is wall-clock hard wall (no activity-based extension)
 - #307: start_new_session=True isolates subprocess in its own pgrp
 - env injection: per-CLI envs come from AgentConfig.env (preset-supplied);
@@ -271,21 +270,3 @@ def run(
             time.sleep(0.2)
     finally:
         log_file.close()
-
-
-def install_sigterm_reaper(reaper: Callable[[], None]) -> object:
-    """Install a SIGTERM handler that calls ``reaper()`` first.
-
-    R725 defense: when the supervisor receives SIGTERM (e.g. systemctl stop,
-    manual kill), the bash wrapper would otherwise respawn a fresh runner
-    while the old agent keeps running → two agent processes race on the same
-    git tree, the second commit can swallow the first commit's chat-room
-    entry. Reaper terminates pgroup first.
-
-    Returns the previous SIGTERM handler so caller can restore it.
-    """
-
-    def _handler(_signum: int, _frame: object) -> None:
-        reaper()
-
-    return signal.signal(signal.SIGTERM, _handler)

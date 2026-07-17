@@ -44,9 +44,13 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="sigterm_reaper",
-            value="install_sigterm_reaper",
+            value=(
+                "serve exits only after the current round completes; systemd "
+                "KillSignal=SIGTERM + default KillMode=control-group reaches the "
+                "whole cgroup, TimeoutStopSec=max(round_timeout)+60"
+            ),
             codifies="R725 — SIGTERM-during-round dual-claude race",
-            guarded_by=None,
+            guarded_by=Path("tests/integration/test_serve_loop.py"),
             current_state="active",
         ),
         Defense(

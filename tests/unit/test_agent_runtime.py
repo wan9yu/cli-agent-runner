@@ -6,11 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.agent_runtime import (
-    RunResult,
-    install_sigterm_reaper,
-    run,
-)
+from agent_runner.agent_runtime import RunResult, run
 
 
 def _bash_script(tmp_path: Path, body: str) -> Path:
@@ -172,11 +168,3 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
     text = log.read_text()
     assert "AUTOUPDATER=unset" in text
     assert "EFFORT=unset" in text
-
-
-def test_given_install_sigterm_reaper_when_called_then_returns_previous_handler() -> None:
-    import signal as _sig
-
-    prev = install_sigterm_reaper(lambda: None)
-    assert prev is not None
-    _sig.signal(_sig.SIGTERM, prev)  # restore

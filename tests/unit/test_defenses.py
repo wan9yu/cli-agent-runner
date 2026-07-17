@@ -107,3 +107,12 @@ def test_given_wired_defenses_when_catalog_then_guarded_by_set(tmp_path: Path) -
     cat = {d.name: d for d in catalog(_cfg(tmp_path))}
     unlinked = [n for n in _WIRED_DEFENSES if cat[n].guarded_by is None]
     assert unlinked == [], f"defenses with a real guard but no guarded_by: {unlinked}"
+
+
+def test_given_sigterm_reaper_defense_when_inspected_then_names_graceful_stop(
+    tmp_path: Path,
+) -> None:
+    """R725 is delivered by serve's graceful-stop contract, not by a signal handler."""
+    row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "sigterm_reaper")
+    assert "install_sigterm_reaper" not in row.value
+    assert row.guarded_by == Path("tests/integration/test_serve_loop.py")
