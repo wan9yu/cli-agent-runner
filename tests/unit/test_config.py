@@ -1701,3 +1701,19 @@ def test_given_quoted_inject_context_when_loaded_then_raises(tmp_path: Path) -> 
 def test_given_real_bool_inject_context_when_loaded_then_accepted(tmp_path: Path) -> None:
     toml = _write_toml(tmp_path, _INJECT_CONTEXT_BASE + "inject_context = false\n")
     assert load_config(toml).prompt.inject_context is False
+
+
+def test_given_invalid_auth_fail_pattern_when_loaded_then_raises(tmp_path: Path) -> None:
+    """Mirrors runtime.grace_kill_ignore_patterns: an invalid regex must fail at
+    load, not at first use inside the monitor."""
+    toml = _write_toml(
+        tmp_path,
+        '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
+        '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
+        '[prompt]\nfile="p.md"\n'
+        '[monitor]\nauth_fail_patterns = ["[unclosed"]\n',
+    )
+    with pytest.raises(ValueError) as exc:
+        load_config(toml)
+    assert "monitor.auth_fail_patterns" in str(exc.value)
+    assert "invalid regex" in str(exc.value)

@@ -518,7 +518,10 @@ def load_config(toml_path: Path) -> Config:
         ),
     )
     monitor = MonitorConfig(
-        auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),
+        auth_fail_patterns=_validate_regex_list(
+            monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS),
+            field="monitor.auth_fail_patterns",
+        ),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
         auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
         remote_failure_tolerance_s=_validate_remote_failure_tolerance(
