@@ -298,9 +298,19 @@ def stash_orphan(
     pile up duplicate stashes); callers distinguish reuse from a fresh stash via
     that flag rather than re-emitting ``orphan_stashed``.
 
-    Returns None in exactly two cases: the tree holds no supervisor-owned dirty
-    file, or the push stashed nothing because the pathspec excluded everything
-    dirty (a round that churned only ``log_dir`` / plugin-owned paths).
+    Returns None on three distinct meanings. The first two are true no-ops:
+
+    - the tree holds no supervisor-owned dirty file;
+    - the push stashed nothing because the pathspec excluded everything dirty (a
+      round that churned only ``log_dir`` / plugin-owned paths) — whether the stash
+      stack is empty or an older unrelated stash sits on top;
+    - KNOWN GAP: the push succeeded but the follow-up ``git stash list`` failed, so
+      the WIP *is* stashed and only its ref was lost — callers still read "nothing
+      stashed" and report the tree as ignored. No event kind carries that meaning
+      (``orphan_stash_failed`` would be wrong: the stash exists), and naming it is a
+      design decision rather than cleanup. Left as-is: a listing that fails
+      microseconds after a push that just succeeded in the same repo is effectively
+      unreachable.
 
     Raises StashError when ``git stash push`` itself fails — e.g. intent-to-add
     index entries ("Entry '<f>' not uptodate. Cannot merge."). Callers must not
