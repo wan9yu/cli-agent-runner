@@ -259,6 +259,35 @@ def test_given_log_dir_under_work_dir_when_stash_orphan_then_log_dir_preserved(
     assert (log_dir / "agent-runner.lock").exists()  # NOT swept by stash -u
 
 
+def test_given_dash_prefixed_gitignored_log_dir_when_stash_orphan_then_defense_runs(
+    tmp_git_repo: Path,
+) -> None:
+    # The ignore gate must read a leading-dash log_dir as a pathname, not a switch.
+    # Without a "--" separator git exits 129, which reads here as "not ignored", so
+    # the ignored dir is named in the stash pathspec, `git stash push -u` is refused
+    # rc=1, and stash_orphan returns None -- the orphan defense silently does not run
+    # and the agent's work is left dirty for the next round to trip over.
+    # Contents stay untracked: check-ignore honors the index, so a tracked file inside
+    # would report "not ignored" with or without the separator and prove nothing.
+    (tmp_git_repo / ".gitignore").write_text("-out/\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_git_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "ignore -out"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+    log_dir = tmp_git_repo / "-out"
+    log_dir.mkdir()
+    (log_dir / "agent-runner.lock").write_text("holder: pid 1\n")
+    (tmp_git_repo / "work.py").write_text("x = 1\n")  # agent work (untracked)
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
+
+    assert ref is not None  # push was not refused: the defense ran
+    assert not (tmp_git_repo / "work.py").exists()  # agent work stashed away
+    assert (log_dir / "agent-runner.lock").exists()  # bookkeeping NOT swept
+
+
 def test_given_only_log_dir_dirty_when_stash_orphan_then_noop_and_preserved(
     tmp_git_repo: Path,
 ) -> None:
