@@ -63,9 +63,26 @@ def test_given_catalog_when_inspected_then_codified_incidents_present(tmp_path: 
 def test_given_catalog_invariant_paths_when_resolved_then_all_exist(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parent.parent.parent
     for d in catalog(_cfg(tmp_path)):
-        if d.guarded_by is not None:
-            full = repo_root / d.guarded_by
-            assert full.exists(), f"defense {d.name} references missing test {d.guarded_by}"
+        assert d.guarded_by is not None, f"defense {d.name} names no test that guards it"
+        full = repo_root / d.guarded_by
+        assert full.exists(), f"defense {d.name} references missing test {d.guarded_by}"
+
+
+def test_given_active_defense_when_inspected_then_has_guarded_by(tmp_path: Path) -> None:
+    """A defense claiming "active" with nothing behind it is an unverified claim.
+
+    Deliberately not folded into the unconditional check above: guarded_by stays
+    ``Path | None`` for plugin-supplied entries, so that check may one day have to
+    weaken. This is the floor that must survive it. Both env variants are walked
+    because critical_envs_injection is the one entry whose state depends on config —
+    it reads "off" under the default empty ``[agent.env]``.
+    """
+    for cfg in (_cfg(tmp_path), _cfg(tmp_path, env={"DISABLE_AUTOUPDATER": "1"})):
+        for d in catalog(cfg):
+            if d.current_state == "active":
+                assert d.guarded_by is not None, (
+                    f"defense {d.name} claims active but names no test that guards it"
+                )
 
 
 def test_given_defense_names_when_collected_then_unique(tmp_path: Path) -> None:
@@ -91,22 +108,6 @@ def test_given_cfg_with_empty_agent_env_when_catalog_then_critical_envs_off(
     row = next(d for d in cat if d.name == "critical_envs_injection")
     assert row.value == []
     assert row.current_state == "off"
-
-
-# Defenses whose mechanism has a production caller AND a test that drives it.
-# Transitional: superseded once every catalog entry is required to name a guard.
-_WIRED_DEFENSES = (
-    "round_timeout_s",
-    "orphan_stash_idempotency_s",
-    "critical_envs_injection",
-    "flock_concurrency",
-)
-
-
-def test_given_wired_defenses_when_catalog_then_guarded_by_set(tmp_path: Path) -> None:
-    cat = {d.name: d for d in catalog(_cfg(tmp_path))}
-    unlinked = [n for n in _WIRED_DEFENSES if cat[n].guarded_by is None]
-    assert unlinked == [], f"defenses with a real guard but no guarded_by: {unlinked}"
 
 
 def test_given_sigterm_reaper_defense_when_inspected_then_names_graceful_stop(
