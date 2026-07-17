@@ -1637,6 +1637,7 @@ file = "p.md"
 """
 
 
+@pytest.mark.parametrize("field", ["disk_warning_pct", "disk_critical_pct"])
 @pytest.mark.parametrize(
     "literal",
     [
@@ -1644,31 +1645,37 @@ file = "p.md"
         '"95"',
         "500.0",
         "-5.0",
+        "nan",
+        "inf",
     ],
 )
-def test_given_invalid_disk_critical_pct_when_loaded_then_raises(
-    tmp_path: Path, literal: str
+def test_given_invalid_pct_when_loaded_then_raises(
+    tmp_path: Path, field: str, literal: str
 ) -> None:
-    """A percent threshold outside [0, 100] silently disables the disk_critical
-    defense, which carries auto_action='stop_service'."""
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"disk_critical_pct = {literal}\n")
+    """A percent threshold outside [0, 100] silently disables its detector —
+    disk_critical carries auto_action='stop_service'. Both fields are parametrised:
+    guarding only one lets the other's validation be deleted with the suite green."""
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
     with pytest.raises(ValueError) as exc:
         load_config(toml)
-    assert "monitor.host_health.disk_critical_pct" in str(exc.value)
+    assert f"monitor.host_health.{field}" in str(exc.value)
 
 
+@pytest.mark.parametrize("field", ["disk_warning_pct", "disk_critical_pct"])
 @pytest.mark.parametrize(
     ("literal", "expected"),
     [
         ("95.0", 95.0),
         ("90", 90.0),  # TOML parses a bare int; docs/migrations/0.1.32.md recommends these
+        ("0", 0.0),
+        ("100", 100.0),
     ],
 )
-def test_given_valid_disk_critical_pct_when_loaded_then_accepted(
-    tmp_path: Path, literal: str, expected: float
+def test_given_valid_pct_when_loaded_then_accepted(
+    tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"disk_critical_pct = {literal}\n")
-    assert load_config(toml).monitor.host_health.disk_critical_pct == expected
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
+    assert getattr(load_config(toml).monitor.host_health, field) == expected
 
 
 def test_given_no_host_health_section_when_loaded_then_defaults_accepted(tmp_path: Path) -> None:

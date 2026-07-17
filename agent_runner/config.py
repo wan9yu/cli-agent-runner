@@ -229,6 +229,8 @@ def _require_pct(value: Any, *, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
     v = float(value)
+    # Keep the chained form: `v < 0 or v > 100` looks equivalent but admits nan,
+    # which then disables the detector as silently as an out-of-range literal.
     if not 0.0 <= v <= 100.0:
         raise ValueError(f"{field}: must be between 0 and 100, got {v}")
     return v
