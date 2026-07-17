@@ -83,6 +83,12 @@ def compute_adjusted_reset_at(
     the original reset epoch verbatim, never increments the counter, and
     never emits an adjustment event. Anthropic's resetsAt is authoritative.
 
+    For any classification absent from ``_BACK_OFF_DEFAULTS`` — i.e. one a
+    third-party plugin defined itself, which ``api_types.py`` types
+    ``classification`` as ``str`` to permit — the same verbatim path applies:
+    core has no base duration for it, so the emitter's reset_at_epoch is the
+    only non-invented answer.
+
     For estimated classifications (``rate_limit_model``, ``api_transient_5xx``,
     ``api_timeout``): increments the counter for this bucket, computes
     duration = base × 2^min(n, _EXP_CAP), caps at _ABSOLUTE_CAP_S, emits
@@ -95,8 +101,10 @@ def compute_adjusted_reset_at(
         _EXP_CAP,
     )
 
-    if classification == "rate_limit_account":
-        # Server-authoritative: respect resetsAt verbatim, no counter touch.
+    if classification == "rate_limit_account" or classification not in _BACK_OFF_DEFAULTS:
+        # Server-authoritative, or a plugin's own classification (api_types.py types
+        # `classification` as str precisely so plugins can add their own): the emitter
+        # supplied reset_at_epoch, so respect it verbatim and never touch the counter.
         return (original_reset_at_epoch, 0, False)
 
     # Estimated class: apply exp backoff.
