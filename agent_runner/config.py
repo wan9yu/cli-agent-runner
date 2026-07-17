@@ -222,6 +222,18 @@ def _require_non_negative_int(value: Any, *, field: str) -> int:
     return value
 
 
+def _require_pct(value: Any, *, field: str) -> float:
+    """Validate a TOML value is a percent in [0, 100]. Accepts int and float —
+    TOML parses ``90`` as int and the shipped tuning tables recommend bare ints.
+    Rejects bool (subclass of int, would silently coerce ``true`` -> 1.0)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
+    v = float(value)
+    if not 0.0 <= v <= 100.0:
+        raise ValueError(f"{field}: must be between 0 and 100, got {v}")
+    return v
+
+
 def _validate_remote_failure_tolerance(value: Any) -> int:
     """Validate monitor.remote_failure_tolerance_s: int in [0, 3600]."""
     v = _require_non_negative_int(value, field="monitor.remote_failure_tolerance_s")
@@ -494,8 +506,14 @@ def load_config(toml_path: Path) -> Config:
             hh_d.get("mem_avail_min_mb", 200),
             field="monitor.host_health.mem_avail_min_mb",
         ),
-        disk_warning_pct=float(hh_d.get("disk_warning_pct", 90.0)),
-        disk_critical_pct=float(hh_d.get("disk_critical_pct", 95.0)),
+        disk_warning_pct=_require_pct(
+            hh_d.get("disk_warning_pct", 90.0),
+            field="monitor.host_health.disk_warning_pct",
+        ),
+        disk_critical_pct=_require_pct(
+            hh_d.get("disk_critical_pct", 95.0),
+            field="monitor.host_health.disk_critical_pct",
+        ),
     )
     monitor = MonitorConfig(
         auth_fail_patterns=list(monitor_d.get("auth_fail_patterns", _DEFAULT_AUTH_PATTERNS)),

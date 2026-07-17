@@ -1622,3 +1622,57 @@ def test_grace_kill_ignore_patterns_invalid_regex_raises(tmp_path: Path) -> None
     with pytest.raises(ValueError) as exc:
         load_config(toml)
     assert "grace_kill_ignore_patterns" in str(exc.value)
+
+
+_HOST_HEALTH_BASE = """\
+[agent]
+command = ["true"]
+prompt_arg_template = ["-p", "{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "logs"
+[prompt]
+file = "p.md"
+[monitor.host_health]
+"""
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "true",  # bool is an int subclass — must be rejected before the numeric check
+        '"95"',
+        "500.0",
+        "-5.0",
+    ],
+)
+def test_given_invalid_disk_critical_pct_when_loaded_then_raises(
+    tmp_path: Path, literal: str
+) -> None:
+    """A percent threshold outside [0, 100] silently disables the disk_critical
+    defense, which carries auto_action='stop_service'."""
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"disk_critical_pct = {literal}\n")
+    with pytest.raises(ValueError) as exc:
+        load_config(toml)
+    assert "monitor.host_health.disk_critical_pct" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        ("95.0", 95.0),
+        ("90", 90.0),  # TOML parses a bare int; docs/migrations/0.1.32.md recommends these
+    ],
+)
+def test_given_valid_disk_critical_pct_when_loaded_then_accepted(
+    tmp_path: Path, literal: str, expected: float
+) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"disk_critical_pct = {literal}\n")
+    assert load_config(toml).monitor.host_health.disk_critical_pct == expected
+
+
+def test_given_no_host_health_section_when_loaded_then_defaults_accepted(tmp_path: Path) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE)
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.disk_warning_pct == 90.0
+    assert cfg.monitor.host_health.disk_critical_pct == 95.0
