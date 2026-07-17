@@ -179,7 +179,9 @@ def _tail_events(log_dir: Path, kind_set: set[str]) -> int:
                                 continue
                             if evt.get("event") in kind_set:
                                 print(line, flush=True)
-                    last_size = size
+                        # True EOF, not the size sampled above: a writer may have
+                        # appended during the loop and those lines were printed.
+                        last_size = f.tell()
                 elif size < last_size:
                     # File truncated / rotated underneath us; reset
                     last_size = 0
