@@ -1676,3 +1676,28 @@ def test_given_no_host_health_section_when_loaded_then_defaults_accepted(tmp_pat
     cfg = load_config(toml)
     assert cfg.monitor.host_health.disk_warning_pct == 90.0
     assert cfg.monitor.host_health.disk_critical_pct == 95.0
+
+
+_INJECT_CONTEXT_BASE = """\
+[agent]
+command = ["true"]
+prompt_arg_template = ["-p", "{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "logs"
+[prompt]
+file = "p.md"
+"""
+
+
+def test_given_quoted_inject_context_when_loaded_then_raises(tmp_path: Path) -> None:
+    """bool("false") is True — the operator gets the exact opposite of the request."""
+    toml = _write_toml(tmp_path, _INJECT_CONTEXT_BASE + 'inject_context = "false"\n')
+    with pytest.raises(ValueError) as exc:
+        load_config(toml)
+    assert "prompt.inject_context" in str(exc.value)
+
+
+def test_given_real_bool_inject_context_when_loaded_then_accepted(tmp_path: Path) -> None:
+    toml = _write_toml(tmp_path, _INJECT_CONTEXT_BASE + "inject_context = false\n")
+    assert load_config(toml).prompt.inject_context is False

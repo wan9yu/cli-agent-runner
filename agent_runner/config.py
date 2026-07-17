@@ -473,7 +473,9 @@ def load_config(toml_path: Path) -> Config:
     prompt = PromptConfig(
         file=prompt_file,
         files=prompt_files,
-        inject_context=bool(prompt_d.get("inject_context", True)),
+        inject_context=_require_bool(
+            prompt_d.get("inject_context", True), field="prompt.inject_context"
+        ),
         context_injection_mode=mode,  # type: ignore[arg-type]  # narrowed by validation above
         concat_separator=str(prompt_d.get("concat_separator", "\n\n")),
         strip_yaml_frontmatter=_require_bool(
