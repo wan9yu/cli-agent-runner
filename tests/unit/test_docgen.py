@@ -185,3 +185,17 @@ def test_given_render_config_schema_table_when_called_then_lists_sections() -> N
     # Defaults are shown for fields that have them
     assert "1800" in md
     assert "stash" in md  # vcs.dirty_action default
+
+
+def test_given_content_with_regex_escapes_when_replaced_then_inserted_verbatim() -> None:
+    """re.sub's string replacement is a TEMPLATE — a callable repl inserts literally.
+
+    Round-trips the three expansion classes at once: \\n (escape), \\\\b (backslash
+    survival), \\1 (group reference). Any of them expanding corrupts a generated doc
+    silently, because a deterministic corruption is a fixed point of render() and
+    `git diff --exit-code docs/` stays green on it.
+    """
+    body = r"a\n\\b\1c"
+    text = "intro\n<!-- gen:x -->\nOLD\n<!-- /gen:x -->\noutro\n"
+    got = replace_block(text, "x", body)
+    assert got == f"intro\n<!-- gen:x -->\n{body}\n<!-- /gen:x -->\noutro\n"

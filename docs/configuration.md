@@ -58,9 +58,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `files` | `list[Path]` | [] |
 | `inject_context` | `bool` | True |
 | `context_injection_mode` | `Literal['prepend', 'file', 'none']` | 'prepend' |
-| `concat_separator` | `str` | '
-
-' |
+| `concat_separator` | `str` | '\n\n' |
 | `strip_yaml_frontmatter` | `bool` | True |
 
 ### `[vcs]`
@@ -74,7 +72,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `auth_fail_patterns` | `list[str]` | ['\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\b'] |
+| `auth_fail_patterns` | `list[str]` | ['\\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\\b'] |
 | `auth_fail_hint` | `str` | '' |
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
 | `remote_failure_tolerance_s` | `int` | 90 |

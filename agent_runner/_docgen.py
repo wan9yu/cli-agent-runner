@@ -80,7 +80,11 @@ def replace_block(text: str, name: str, new_content: str) -> str:
         re.escape(open_tag) + r".*?" + re.escape(close_tag),
         re.DOTALL,
     )
-    return pattern.sub(f"{open_tag}\n{new_content}\n{close_tag}", text)
+    replacement = f"{open_tag}\n{new_content}\n{close_tag}"
+    # A string repl is a TEMPLATE (expands \n, \t, \1, \g<...>); a callable repl
+    # is inserted literally. Config defaults contain backslashes — see
+    # config.py concat_separator ("\n\n") and _DEFAULT_AUTH_PATTERNS (r"\b...").
+    return pattern.sub(lambda _m: replacement, text)
 
 
 def _default_cfg() -> Config:
