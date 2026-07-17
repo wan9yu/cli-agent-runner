@@ -17,7 +17,7 @@ from __future__ import annotations
 import fnmatch
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
@@ -77,10 +77,15 @@ class AutoCommitError(RuntimeError):
     """git add/commit failed during try_auto_commit (reason capped at 200 chars)."""
 
 
+class StashError(RuntimeError):
+    """git stash push failed during stash_orphan (reason capped at 200 chars)."""
+
+
 @dataclass(frozen=True)
 class StashRef:
     sha: str  # full commit SHA — IMMUTABLE under concurrent stash
     message: str  # human-readable label set at creation
+    reused: bool = False  # True only when stash_orphan returned an idempotency-window hit
 
 
 def _git(
@@ -288,20 +293,28 @@ def stash_orphan(
 ) -> StashRef | None:
     """Stash dirty tree as ORPHAN entry, SHA-locked.
 
-    Returns existing ref if a matching ORPHAN was created within ``idempotency_s``
-    (R820 lesson — same-second multiple calls would otherwise pile up duplicate
-    stashes). Returns None if tree is clean.
+    Returns a ref with ``reused=True`` when a matching ORPHAN was created within
+    ``idempotency_s`` (R820 lesson — same-second multiple calls would otherwise
+    pile up duplicate stashes); callers distinguish reuse from a fresh stash via
+    that flag rather than re-emitting ``orphan_stashed``.
 
-    ``log_dir`` (when under ``repo``) is excluded from the stash so ``git stash
-    push -u`` does not sweep the runner's own bookkeeping (lock / pid / event
-    logs) out of the work tree. If only ``log_dir`` churned, nothing is stashed
-    and this returns None.
+    Returns None in exactly two cases: the tree holds no supervisor-owned dirty
+    file, or the push stashed nothing because the pathspec excluded everything
+    dirty (a round that churned only ``log_dir`` / plugin-owned paths).
+
+    Raises StashError when ``git stash push`` itself fails — e.g. intent-to-add
+    index entries ("Entry '<f>' not uptodate. Cannot merge."). Callers must not
+    read that as a clean tree: the WIP is still on disk.
+
+    ``log_dir`` (when under ``repo``) and every dirty plugin-owned path are
+    excluded so ``git stash push -u`` sweeps neither the runner's own bookkeeping
+    (lock / pid / event logs) nor the plugin's deliverables out of the work tree.
     """
     if not detect_dirty_files(repo):
         return None
     existing = _recent_orphan_for_round(repo, round_num, idempotency_s)
     if existing is not None:
-        return existing
+        return replace(existing, reused=True)
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
@@ -312,13 +325,15 @@ def stash_orphan(
         exclude = [*exclude, *owned] if exclude else ["--", *owned]
     push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
     if push.returncode != 0:
-        return None
+        raise StashError((push.stderr or "git stash push failed")[:200])
     listing = _git(repo, "stash", "list", "-1", "--format=%H %s")
     if listing.returncode != 0 or not listing.stdout.strip():
         return None
     sha, _, raw_subj = listing.stdout.strip().partition(" ")
     if msg not in raw_subj:
-        return None  # tree was clean — nothing to stash
+        # The push stashed nothing (the pathspec excluded everything dirty) and the
+        # -1 listing is some older stash — never hand that back as this round's.
+        return None
     return StashRef(sha=sha, message=msg)
 
 

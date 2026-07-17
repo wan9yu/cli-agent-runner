@@ -8,7 +8,7 @@ from agent_runner import api, context_store, events, vcs_state
 from agent_runner.api_types import DirtyOutcome
 from agent_runner.events import now_iso_ms  # match the helper runner.py uses
 from agent_runner.hooks import HookContext, register_dirty_handler
-from agent_runner.vcs_state import AutoCommitError
+from agent_runner.vcs_state import AutoCommitError, StashError
 
 
 class DefaultDirtyHandler:
@@ -50,13 +50,23 @@ class DefaultDirtyHandler:
     def _stash(self, ctx: HookContext, dirty_files) -> DirtyOutcome:
         # via vcs_state (not api): test_runner.py monkeypatches vcs_state.stash_orphan;
         # the api re-export is a separate binding a patch wouldn't intercept.
-        ref = vcs_state.stash_orphan(
-            ctx.work_dir,
-            round_num=ctx.round_num,
-            phase=ctx.phase,
-            idempotency_s=ctx.vcs.stash_idempotency_s if ctx.vcs else 5,
-            log_dir=ctx.log_dir,
-        )
+        try:
+            ref = vcs_state.stash_orphan(
+                ctx.work_dir,
+                round_num=ctx.round_num,
+                phase=ctx.phase,
+                idempotency_s=ctx.vcs.stash_idempotency_s if ctx.vcs else 5,
+                log_dir=ctx.log_dir,
+            )
+        except StashError as exc:
+            events.emit(
+                ctx.log_dir,
+                events.ORPHAN_STASH_FAILED,
+                round_num=ctx.round_num,
+                phase=ctx.phase,
+                reason=str(exc),
+            )
+            return DirtyOutcome(kind="ignored")
         if ref is None:
             return DirtyOutcome(kind="ignored")
         context_store.write_orphan_state(
@@ -72,7 +82,7 @@ class DefaultDirtyHandler:
         )
         events.emit(
             ctx.log_dir,
-            events.ORPHAN_STASHED,
+            events.ORPHAN_IDEMPOTENT_SKIP if ref.reused else events.ORPHAN_STASHED,
             round_num=ctx.round_num,
             ref=ref.sha,
             reason="clean_exit_with_dirty_tree",
