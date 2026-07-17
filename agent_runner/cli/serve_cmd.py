@@ -220,7 +220,8 @@ def cmd(args) -> int:
             )
             rounds_completed += 1
             # Restart policy (config_broken / crash_loop / continue) lives in the
-            # tested api.post_round_decision helper so this loop stays thin.
+            # tested api.post_round_decision helper so this loop stays thin. Those
+            # strings are that enum, not events.py kinds — do not normalize them.
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r.returncode,
                 duration_s=round_duration_s,

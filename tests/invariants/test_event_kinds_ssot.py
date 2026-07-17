@@ -97,3 +97,72 @@ def test_given_emit_calls_when_scanned_then_kind_is_a_constant_not_a_literal() -
     assert sorted(offenders) == [], (
         f"events.emit() called with a raw kind literal: {sorted(offenders)}"
     )
+
+
+# Namespaces that legitimately spell a string the same way an event kind is
+# spelled. Keyed by (module path, enclosing function).
+_ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
+    # Restart-action enum: Literal["config_broken", "crash_loop", "continue"].
+    # "continue" has no constant, and a constant cannot sit inside Literal[...].
+    ("agent_runner/api.py", "post_round_decision"): "restart-action enum",
+    # Compares the post_round_decision restart-action enum, not event kinds.
+    ("agent_runner/cli/serve_cmd.py", "cmd"): "restart-action enum",
+}
+
+
+def _enclosing_function(tree: ast.Module) -> dict[int, str]:
+    """Map id(node) -> outermost enclosing function name (ast.walk is breadth-first,
+    so setdefault records the outermost, which is what the allow-list keys on).
+    """
+    out: dict[int, str] = {}
+    for func in ast.walk(tree):
+        if isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            for node in ast.walk(func):
+                out.setdefault(id(node), func.name)
+    return out
+
+
+def _metrics_event_literal_ids(tree: ast.Module) -> set[int]:
+    """id() of every literal passed as metrics.log_metrics(event=...).
+
+    The metrics stream has its own event namespace in metrics.jsonl; it merely
+    spells round_start / round_end the same way events.py does.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "log_metrics":
+            for kw in node.keywords:
+                if kw.arg == "event" and isinstance(kw.value, ast.Constant):
+                    ids.add(id(kw.value))
+    return ids
+
+
+def test_given_agent_runner_source_when_scanned_then_no_raw_builtin_kind_literals() -> None:
+    """Built-in kinds are referenced through events.py constants, so a kind has
+    exactly one spelling in the tree and find-references reaches its readers.
+
+    Scoped to _BUILTIN_KINDS, not KNOWN_EVENT_KINDS: plugin kinds are registered
+    at runtime from external packages and are defined out of tree.
+    """
+    from agent_runner import events
+
+    offenders: list[tuple[str, int, str]] = []
+    for path in package_modules():
+        rel = path.relative_to(PKG.parent).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        allowed_ids = _metrics_event_literal_ids(tree)
+        enclosing = _enclosing_function(tree)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+                continue
+            if node.value not in events._BUILTIN_KINDS:
+                continue
+            if id(node) in allowed_ids:
+                continue
+            if (rel, enclosing.get(id(node), "")) in _ALLOWED_KIND_SPELLINGS:
+                continue
+            offenders.append((rel, node.lineno, node.value))
+    assert sorted(offenders) == [], f"raw event-kind literals: {sorted(offenders)}"

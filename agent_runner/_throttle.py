@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import TransientErrorState
+from agent_runner.events import TRANSIENT_ERROR_DETECTED, TRANSIENT_ERROR_RECOVERED
 
 
 def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
@@ -41,9 +42,9 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
     latest_detected: dict[str, Any] | None = None
     for ev in reversed(events):
         kind = ev.get("event")
-        if kind == "transient_error_recovered":
+        if kind == TRANSIENT_ERROR_RECOVERED:
             return None
-        if kind == "transient_error_detected":
+        if kind == TRANSIENT_ERROR_DETECTED:
             latest_detected = ev
             break
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import RoundView
+from agent_runner.events import AGENT_EXIT, ROUND_START
 
 
 def resolve_round_arg(arg: int | str | None, log_dir: Path) -> int | None:
@@ -59,10 +60,10 @@ def build_round_view(
         if e.get("round_num") != round_num:
             continue
         kind = e.get("event")
-        if kind == "round_start":
+        if kind == ROUND_START:
             started_at = e.get("ts", "")
             phase = e.get("phase")
-        elif kind == "agent_exit":
+        elif kind == AGENT_EXIT:
             duration = e.get("duration_s")
             exit_code = e.get("exit_code")
             timed_out = e.get("timed_out")

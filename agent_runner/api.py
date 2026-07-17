@@ -63,6 +63,8 @@ CRASH_LOOP_SHORT_EXIT_S = 60  # mirrors monitor.SHORT_EXIT_THRESHOLD_S
 CRASH_LOOP_MAX_DELAY_S = 1800  # cap the escalating restart delay (30 min)
 
 
+# The action strings below are the restart-action enum, not events.py kinds:
+# "continue" has no constant, and a constant cannot sit inside Literal[...].
 def post_round_decision(
     *,
     returncode: int,

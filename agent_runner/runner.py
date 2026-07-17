@@ -464,6 +464,8 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
     _agent_binary = Path(cfg.agent.command[0]).name if cfg.agent.command else None
+    # metrics.jsonl has its own event namespace; it merely spells round_start /
+    # round_end the same way events.py does. Not an events.py kind.
     metrics.log_metrics(
         log_dir,
         event="round_start",
@@ -570,6 +572,8 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             phase_index=phase_idx,
         ),
     )
+    # metrics.jsonl has its own event namespace; it merely spells round_start /
+    # round_end the same way events.py does. Not an events.py kind.
     metrics.log_metrics(
         log_dir,
         event="round_end",

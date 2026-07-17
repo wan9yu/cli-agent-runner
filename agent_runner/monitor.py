@@ -32,9 +32,14 @@ from agent_runner.api_types import (
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
+    AGENT_EXIT,
+    ANOMALY_REPETITIVE_TOOL,
     MONITOR_ALERT_EMITTED,
     MONITOR_AUTO_STOP_FAILED,
     MONITOR_AUTO_STOP_TRIGGERED,
+    ORPHAN_STASHED,
+    ROUND_END,
+    ROUND_START,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     now_iso_ms,
@@ -109,7 +114,7 @@ def _alert(
 
 
 def _last_n_round_exits(events: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
-    exits = [e for e in events if e.get("event") == "agent_exit"]
+    exits = [e for e in events if e.get("event") == AGENT_EXIT]
     return exits[-n:]
 
 
@@ -162,9 +167,9 @@ def detect_hung(
     for e in events:
         kind = e.get("event")
         rn = e.get("round_num")
-        if kind == "round_start" and rn is not None:
+        if kind == ROUND_START and rn is not None:
             open_rounds[rn] = (e["ts"], e.get("phase"))
-        elif kind == "round_end" and rn in open_rounds:
+        elif kind == ROUND_END and rn in open_rounds:
             del open_rounds[rn]
     for rn, (started_ts, phase) in open_rounds.items():
         started = parse_iso_ms(started_ts)
@@ -182,17 +187,17 @@ def detect_hung(
 
 
 def detect_orphan_chain(events: list[dict[str, Any]], *, threshold: int = 3) -> Alert | None:
-    rounds_in_order = [e for e in events if e.get("event") in ("round_end", "orphan_stashed")]
+    rounds_in_order = [e for e in events if e.get("event") in (ROUND_END, ORPHAN_STASHED)]
     streak = 0
     last_round_with_orphan: int | None = None
     for e in rounds_in_order:
-        if e.get("event") == "orphan_stashed":
+        if e.get("event") == ORPHAN_STASHED:
             streak += 1
             last_round_with_orphan = e.get("round_num")
-        elif e.get("event") == "round_end":
+        elif e.get("event") == ROUND_END:
             rn = e.get("round_num")
             has_orphan_for_round = any(
-                o.get("event") == "orphan_stashed" and o.get("round_num") == rn
+                o.get("event") == ORPHAN_STASHED and o.get("round_num") == rn
                 for o in rounds_in_order
             )
             if not has_orphan_for_round:
@@ -386,7 +391,7 @@ def detect_anomaly_repetitive_active(
     anomalies = [
         e
         for e in events
-        if e.get("event") == "anomaly_repetitive_tool" and e.get("round_num", 0) >= window_start
+        if e.get("event") == ANOMALY_REPETITIVE_TOOL and e.get("round_num", 0) >= window_start
     ]
     if len(anomalies) < threshold:
         return None
