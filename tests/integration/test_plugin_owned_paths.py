@@ -1,4 +1,4 @@
-"""End-to-end: plugin-owned paths are filtered out of detect_dirty_files."""
+"""End-to-end: plugin-owned paths are honored by detect_dirty_files and stash_orphan."""
 
 from __future__ import annotations
 
@@ -86,3 +86,67 @@ def test_given_recursive_glob_registered_when_dirty_files_then_deep_paths_filter
     dirty = detect_dirty_files(tmp_git_repo)
     assert "logs/plugins/argus/state.json" not in dirty
     assert "logs/other.log" in dirty
+
+
+def _stash_contents(repo: Path) -> list[str]:
+    """Paths captured in stash@{0}, including untracked ones."""
+    r = subprocess.run(
+        ["git", "stash", "show", "--include-untracked", "--name-only", "stash@{0}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return r.stdout.split()
+
+
+def test_given_owned_and_non_owned_dirty_when_stash_orphan_then_owned_file_survives(
+    tmp_git_repo: Path,
+) -> None:
+    """The registry must bind at the git boundary, not only the report boundary.
+
+    Deliberately no ``_intent_to_add`` here: intent-to-add entries make
+    ``git stash push -u`` fail rc=1, which would green this test for the wrong reason.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, stash_orphan
+
+    register_plugin_owned_paths(["proposals/"])
+    (tmp_git_repo / "proposals").mkdir()
+    (tmp_git_repo / "proposals" / "memo.md").write_text("deliverable\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
+    assert ref is not None
+    assert (tmp_git_repo / "proposals" / "memo.md").read_text() == "deliverable\n"
+    assert "proposals/memo.md" not in _stash_contents(tmp_git_repo)
+    assert "src.py" in _stash_contents(tmp_git_repo)
+
+
+def test_given_gitignored_owned_path_when_stash_orphan_then_push_is_not_refused(
+    tmp_git_repo: Path,
+) -> None:
+    """An ignore-matched owned path must stay out of the pathspec.
+
+    0.1.42 lesson: naming an ignore-matched path in a stash pathspec makes git
+    return rc=1 on the whole push. Guards the gate, so it holds before and after
+    the fix and fails only on an ungated one.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, stash_orphan
+
+    (tmp_git_repo / ".gitignore").write_text("proposals/\n")
+    (tmp_git_repo / "proposals").mkdir()
+    (tmp_git_repo / "proposals" / "memo.md").write_text("v1\n")
+    subprocess.run(
+        ["git", "add", "-f", "proposals/memo.md", ".gitignore"], cwd=tmp_git_repo, check=True
+    )
+    _commit(tmp_git_repo, "track a file inside an ignored dir")
+
+    register_plugin_owned_paths(["proposals/"])
+    (tmp_git_repo / "proposals" / "memo.md").write_text("v2 deliverable\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
+    assert ref is not None  # push was not refused
+    assert "src.py" in _stash_contents(tmp_git_repo)

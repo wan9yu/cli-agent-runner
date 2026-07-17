@@ -7,9 +7,9 @@ Stash safety rules (R820 + §9 IMMUTABLE):
   design means external concurrent ``git stash push`` is not a defended scenario.
 - "Auto-tool change vs human change" detection uses set-based diff vs HEAD,
   not unified-diff +/-line parsing (R2110 lesson).
-- Also hosts the plugin-owned-paths registry consumed by
-  ``detect_dirty_files()`` so plugins can opt files/dirs out of the
-  orphan-stash defense.
+- Also hosts the plugin-owned-paths registry, honored by ``detect_dirty_files()``
+  (not reported as orphan WIP) and by ``stash_orphan()`` (excluded from the
+  stash pathspec) so plugins can opt files/dirs out of the orphan-stash defense.
 """
 
 from __future__ import annotations
@@ -21,8 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
-# detect_dirty_files() filters its return through this list, so plugin-declared
-# paths are not flagged as orphan WIP and not stashed by the supervisor.
+# Two consumers keep the report and git boundaries in agreement: detect_dirty_files()
+# filters its return (not flagged as orphan WIP) and _owned_exclude_specs() feeds
+# stash_orphan()'s pathspec (not swept off disk by ``git stash push -u``).
 _PLUGIN_OWNED_PATHS: list[str] = []
 
 
@@ -111,8 +112,8 @@ def is_git_repo(path: Path) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
-def detect_dirty_files(repo: Path) -> list[str]:
-    """Return list of files with any uncommitted change (modified / untracked / renamed).
+def _porcelain_paths(repo: Path) -> list[str]:
+    """Every path with an uncommitted change, before owned-path filtering.
 
     Uses ``git status --porcelain -z`` (NUL-separated, rename pairs split into
     two records). Returns the new-path side of any rename; old paths are skipped.
@@ -140,9 +141,42 @@ def detect_dirty_files(repo: Path) -> list[str]:
         else:
             out.append(path)
             i += 1
+    return out
+
+
+def detect_dirty_files(repo: Path) -> list[str]:
+    """Files with any uncommitted change, minus paths claimed by the owned-paths registry."""
+    out = _porcelain_paths(repo)
     # Early-out preserves zero behavior change when no plugin has registered.
     if _PLUGIN_OWNED_PATHS:
         out = [p for p in out if not _matches_owned_path(p)]
+    return out
+
+
+def _owned_exclude_specs(repo: Path) -> list[str]:
+    """``:(exclude)`` pathspecs for every dirty path the owned-paths registry claims.
+
+    Built from concrete dirty paths run through ``_matches_owned_path`` rather than by
+    translating registered patterns into pathspec syntax: bare-glob patterns match via
+    ``PurePath.match``, which is right-anchored (``"reports/*.md"`` also matches
+    ``sub/reports/dev.md``) while git pathspecs anchor at the repo root, so no faithful
+    translation exists. Reusing the matcher keeps the git boundary in exact agreement
+    with the report boundary -- the invariant whose absence caused the sweep.
+
+    Ignore-matched paths are skipped: naming one in a stash pathspec makes
+    ``git stash push -u`` return rc=1 (the 0.1.42 lesson). ``--no-index`` so a
+    tracked file under an ignored directory is caught too -- plain ``check-ignore``
+    reports rc=1 (not ignored) for that shape yet the push still trips.
+    """
+    if not _PLUGIN_OWNED_PATHS:
+        return []
+    out: list[str] = []
+    for p in _porcelain_paths(repo):
+        if not _matches_owned_path(p):
+            continue
+        if _git(repo, "check-ignore", "-q", "--no-index", p).returncode == 0:
+            continue
+        out.append(f":(exclude){p}")
     return out
 
 
@@ -249,6 +283,10 @@ def stash_orphan(
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
     exclude = _log_dir_exclude_pathspec(repo, log_dir)
+    owned = _owned_exclude_specs(repo)
+    if owned:
+        # _log_dir_exclude_pathspec already opens the pathspec with "--" when non-empty.
+        exclude = [*exclude, *owned] if exclude else ["--", *owned]
     push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
     if push.returncode != 0:
         return None
