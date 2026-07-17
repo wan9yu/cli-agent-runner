@@ -57,7 +57,7 @@ surfacing everywhere.
 | `sigterm_reaper` | R725 — SIGTERM-during-round dual-claude race | `tests/integration/test_serve_loop.py` |
 | `orphan_stash_idempotency_s` | R820 — same-second 3 phantom stashes | `tests/unit/test_vcs_state.py` |
 | `sha_locked_stash` | §9 IMMUTABLE — batch drop by index breaks under concurrent stash | `tests/invariants/test_stash_uses_sha_not_index.py` |
-| `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `—` |
+| `set_diff_classification` | R2110 — rotation-only diff via +-line scan misclassifies | `tests/invariants/test_set_diff_for_auto_tool_classification.py` |
 | `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `tests/unit/test_agent_runtime.py` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; now halts serve (config_broken) instead of respawning a broken config | `tests/unit/test_serve_config_broken.py` |
 | `crash_loop_breaker` | Run 6 — crashing agent respawned ~100 empty rounds at a fixed 2x delay | `tests/unit/test_serve_crash_loop.py` |

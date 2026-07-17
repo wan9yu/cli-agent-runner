@@ -116,3 +116,12 @@ def test_given_sigterm_reaper_defense_when_inspected_then_names_graceful_stop(
     row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "sigterm_reaper")
     assert "install_sigterm_reaper" not in row.value
     assert row.guarded_by == Path("tests/integration/test_serve_loop.py")
+
+
+def test_given_set_diff_defense_when_inspected_then_names_the_prohibition(
+    tmp_path: Path,
+) -> None:
+    """R2110 is a rule about what production code must NOT do, not a helper."""
+    row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "set_diff_classification")
+    assert "set_diff_vs_head" not in row.value
+    assert row.guarded_by == Path("tests/invariants/test_set_diff_for_auto_tool_classification.py")

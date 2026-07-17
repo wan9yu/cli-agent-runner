@@ -69,9 +69,9 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="set_diff_classification",
-            value="set_diff_vs_head",
+            value="no unified-diff +/- line parsing anywhere in agent_runner/",
             codifies="R2110 — rotation-only diff via +-line scan misclassifies",
-            guarded_by=None,
+            guarded_by=Path("tests/invariants/test_set_diff_for_auto_tool_classification.py"),
             current_state="active",
         ),
         Defense(

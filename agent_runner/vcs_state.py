@@ -5,8 +5,10 @@ Stash safety rules (R820 + §9 IMMUTABLE):
   Internal drop/pop translate SHA -> current selector immediately before each
   git call. Safe against caller-side index drift; single-supervisor-per-repo
   design means external concurrent ``git stash push`` is not a defended scenario.
-- "Auto-tool change vs human change" detection uses set-based diff vs HEAD,
-  not unified-diff +/-line parsing (R2110 lesson).
+- Unified-diff +/-line parsing is forbidden (R2110 lesson): git's diff aligner
+  emits cosmetic +/- markers on moved sections, so a +/-scan misclassifies both
+  ways. Any auto-tool-vs-human classification must compare line sets vs HEAD.
+  Enforced by tests/invariants/test_set_diff_for_auto_tool_classification.py.
 - Also hosts the plugin-owned-paths registry, honored by ``detect_dirty_files()``
   (not reported as orphan WIP) and by ``stash_orphan()`` (excluded from the
   stash pathspec) so plugins can opt files/dirs out of the orphan-stash defense.
@@ -206,29 +208,6 @@ def _owned_exclude_specs(repo: Path) -> list[str]:
             continue
         out.append(f":(exclude){p}")
     return out
-
-
-def set_diff_vs_head(repo: Path, path: Path) -> set[str]:
-    """Lines present in working-tree path but absent from HEAD:path.
-
-    Uses set comparison, NOT unified-diff +/-line parsing. R2110 lesson:
-    git's diff aligner emits cosmetic +/- markers when sections move, so
-    +/-line scanning produces both false positives (mis-classifies real
-    edits as automated) and false negatives (mis-classifies repeated
-    headings as user edits). Set comparison ignores all alignment noise.
-
-    :param path: file path relative to ``repo`` root (joined as ``repo / path``).
-    """
-    head = _git(repo, "show", f"HEAD:{path}")
-    if head.returncode != 0:
-        return set()
-    try:
-        wt_text = (repo / path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return set()
-    head_lines = set(head.stdout.splitlines())
-    wt_lines = set(wt_text.splitlines())
-    return wt_lines - head_lines
 
 
 def _parse_stash_line(line: str) -> tuple[str, int, str] | None:
