@@ -73,7 +73,6 @@ def test_given_event_kinds_set_when_inspected_then_contains_all_lifecycle_events
         "orphan_idempotent_skip",
         "orphan_stash_failed",
         "round_timeout_kill",
-        "sigterm_received",
         "status_recovered",
         "smoke_check_failed",
         "round_end",

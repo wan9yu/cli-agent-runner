@@ -39,3 +39,15 @@ def test_every_builtin_kind_has_a_constant():
     }
     orphans = ev._BUILTIN_KINDS - constant_values
     assert not orphans, f"_BUILTIN_KINDS members without constants: {orphans}"
+
+
+def test_given_retired_sigterm_kind_when_looked_up_then_not_registered() -> None:
+    """0.2.2 retires sigterm_received: nothing ever emitted it, and serve's
+    graceful-stop handler — not a signal-handler emit — is the real mechanism.
+
+    Transitional guard: superseded by the declared-then-emitted invariant, which
+    makes re-adding an unemitted kind structurally impossible.
+    """
+    from agent_runner import events
+
+    assert "sigterm_received" not in events._BUILTIN_KINDS
