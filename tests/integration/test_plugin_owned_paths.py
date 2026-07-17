@@ -150,3 +150,61 @@ def test_given_gitignored_owned_path_when_stash_orphan_then_push_is_not_refused(
 
     assert ref is not None  # push was not refused
     assert "src.py" in _stash_contents(tmp_git_repo)
+
+
+def test_given_glob_owned_path_in_fresh_untracked_dir_when_stash_orphan_then_survives(
+    tmp_git_repo: Path,
+) -> None:
+    """A glob-form owned path inside a wholly-untracked dir must survive the stash.
+
+    ``git status --porcelain`` collapses a fresh untracked directory to ``reports/``,
+    which ``reports/*.md`` does not match -- so the exclude scan has to look at
+    concrete files (``-uall``) or the deliverable is swept exactly as before the fix.
+    This is the first-round shape, and the registration the original incident used.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, stash_orphan
+
+    register_plugin_owned_paths(["reports/*.md"])
+    (tmp_git_repo / "reports").mkdir()
+    (tmp_git_repo / "reports" / "dev.md").write_text("deliverable\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
+    assert ref is not None
+    assert (tmp_git_repo / "reports" / "dev.md").read_text() == "deliverable\n"
+    assert "reports/dev.md" not in _stash_contents(tmp_git_repo)
+    assert "src.py" in _stash_contents(tmp_git_repo)
+
+
+def test_given_dash_prefixed_ignored_owned_path_when_stash_orphan_then_push_not_refused(
+    tmp_git_repo: Path,
+) -> None:
+    """A leading-dash owned path must not turn the ignore gate into an error.
+
+    Without a ``--`` separator git parses ``-out/memo.md`` as a switch and exits 129.
+    ``rc != 0`` reads as "not ignored", so the ignore-matched path enters the pathspec,
+    ``git stash push -u`` is refused rc=1, and the orphan defense silently does not run.
+
+    The dash must lead the *porcelain* path for git to misparse it, and the ignored
+    entry must be a directory for the refusal to trigger -- hence a tracked file
+    inside a dash-prefixed ignored dir.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, stash_orphan
+
+    (tmp_git_repo / ".gitignore").write_text("-out/\n")
+    (tmp_git_repo / "-out").mkdir()
+    (tmp_git_repo / "-out" / "memo.md").write_text("v1\n")
+    subprocess.run(
+        ["git", "add", "-f", "--", "-out/memo.md", ".gitignore"], cwd=tmp_git_repo, check=True
+    )
+    _commit(tmp_git_repo, "track a file inside a dash-prefixed ignored dir")
+
+    register_plugin_owned_paths(["-out/"])
+    (tmp_git_repo / "-out" / "memo.md").write_text("v2 deliverable\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
+    assert ref is not None  # push was not refused
+    assert "src.py" in _stash_contents(tmp_git_repo)

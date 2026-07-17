@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
-# Two consumers keep the report and git boundaries in agreement: detect_dirty_files()
-# filters its return (not flagged as orphan WIP) and _owned_exclude_specs() feeds
-# stash_orphan()'s pathspec (not swept off disk by ``git stash push -u``).
+# Two consumers honor it: detect_dirty_files() filters its return (not flagged as
+# orphan WIP) and _owned_exclude_specs() feeds stash_orphan()'s pathspec (not swept
+# off disk by ``git stash push -u``). They scan differently -- see _owned_exclude_specs.
 _PLUGIN_OWNED_PATHS: list[str] = []
 
 
@@ -112,13 +112,22 @@ def is_git_repo(path: Path) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
-def _porcelain_paths(repo: Path) -> list[str]:
+def _porcelain_paths(repo: Path, *, untracked_all: bool = False) -> list[str]:
     """Every path with an uncommitted change, before owned-path filtering.
 
     Uses ``git status --porcelain -z`` (NUL-separated, rename pairs split into
     two records). Returns the new-path side of any rename; old paths are skipped.
+
+    ``untracked_all`` adds ``-uall`` so a wholly-untracked directory is listed as
+    its individual files rather than collapsed to a single ``dir/`` entry. Only
+    ``_owned_exclude_specs`` needs that; ``detect_dirty_files`` keeps the default
+    ``-unormal`` because its output is user-visible (the ``orphan_stashed`` event
+    and ``orphan-state.json``) and must not change shape for existing users.
     """
-    r = _git(repo, "status", "--porcelain", "-z")
+    args = ["status", "--porcelain", "-z"]
+    if untracked_all:
+        args.append("-uall")
+    r = _git(repo, *args)
     if r.returncode != 0:
         return []
     out: list[str] = []
@@ -160,21 +169,35 @@ def _owned_exclude_specs(repo: Path) -> list[str]:
     translating registered patterns into pathspec syntax: bare-glob patterns match via
     ``PurePath.match``, which is right-anchored (``"reports/*.md"`` also matches
     ``sub/reports/dev.md``) while git pathspecs anchor at the repo root, so no faithful
-    translation exists. Reusing the matcher keeps the git boundary in exact agreement
-    with the report boundary -- the invariant whose absence caused the sweep.
+    translation exists. Reusing the matcher is what keeps the git boundary honoring the
+    same claims as the report boundary -- the invariant whose absence caused the sweep.
+
+    Scans with ``-uall``: ``-unormal`` collapses a wholly-untracked directory to a
+    single ``reports/`` entry, which the glob and ``**`` forms do not match, so a
+    first-round deliverable would be swept despite being registered. Only the prefix
+    form (``"proposals/"``) survives a collapsed entry.
+
+    Consequence, accepted: the two boundaries no longer emit identical path *lists* --
+    a report may name ``reports/`` where the excludes name ``reports/dev.md``. They
+    agree on what actually reaches the stash, which is the guarantee that matters. The
+    residue is that ``orphan_stashed`` can still name a collapsed dir whose owned
+    contents were not in fact stashed; that is the pre-existing reporting imprecision
+    of collapsed entries, not something this scan introduced.
 
     Ignore-matched paths are skipped: naming one in a stash pathspec makes
     ``git stash push -u`` return rc=1 (the 0.1.42 lesson). ``--no-index`` so a
     tracked file under an ignored directory is caught too -- plain ``check-ignore``
-    reports rc=1 (not ignored) for that shape yet the push still trips.
+    reports rc=1 (not ignored) for that shape yet the push still trips. ``--`` so a
+    leading-dash path (``-out/memo.md``) is read as a pathname, not a switch: git
+    would exit 129, which reads as "not ignored" and lands the path in the pathspec.
     """
     if not _PLUGIN_OWNED_PATHS:
         return []
     out: list[str] = []
-    for p in _porcelain_paths(repo):
+    for p in _porcelain_paths(repo, untracked_all=True):
         if not _matches_owned_path(p):
             continue
-        if _git(repo, "check-ignore", "-q", "--no-index", p).returncode == 0:
+        if _git(repo, "check-ignore", "-q", "--no-index", "--", p).returncode == 0:
             continue
         out.append(f":(exclude){p}")
     return out
@@ -346,6 +369,9 @@ def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
     Keeps supervisor bookkeeping (lock / pid / event logs) out of the agent's
     dirty-tree handling: without it a zero-work round's log churn lands in a
     commit (``git_head`` lies) or a ``git stash push -u`` (the logs vanish).
+
+    ``--`` so a leading-dash log_dir is read as a pathname rather than a switch;
+    without it git exits 129, which reads here as "not ignored".
     """
     if log_dir is None:
         return []
@@ -353,7 +379,7 @@ def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
         rel = log_dir.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return []  # log_dir outside work_dir → nothing to exclude
-    if _git(root, "check-ignore", "-q", rel).returncode == 0:
+    if _git(root, "check-ignore", "-q", "--", rel).returncode == 0:
         return []  # already gitignored → git skips it; pathspec would misfire
     return ["--", f":(exclude){rel}"]
 
