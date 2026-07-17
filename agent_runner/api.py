@@ -383,6 +383,7 @@ from agent_runner.events import (  # noqa: E402
     HOOK_FAILED,
     MONITOR_REMOTE_BLIP,
     MONITOR_REMOTE_GIVEUP,
+    MONITOR_STARTED,
 )
 
 _RECENT_HOOK_FAILURES_LIMIT = 10
@@ -537,7 +538,7 @@ def monitor_loop(
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
     events.emit(
         cfg.runtime.log_dir,
-        "monitor_started",
+        MONITOR_STARTED,
         host=host,
         interval_s=interval_s,
         log_dir=str(cfg.runtime.log_dir),

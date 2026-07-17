@@ -385,7 +385,7 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
                 f"STARTUP FAIL: {r.name}: {r.reason} | how-to-fix: {r.how_to_fix}",
                 file=sys.stderr,
             )
-            events.emit(log_dir, "smoke_check_failed", reason=f"{r.name}: {r.reason}")
+            events.emit(log_dir, events.SMOKE_CHECK_FAILED, reason=f"{r.name}: {r.reason}")
         sys.exit(api.PERMANENT_CONFIG_EXIT)
 
     # Concurrency lock (per-project)
@@ -403,7 +403,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     prev_status = context_store.read_status(log_dir)
     if (log_dir / "status.json").exists() and prev_status is None:
-        events.emit(log_dir, "status_recovered", reason="status.json could not be parsed")
+        events.emit(log_dir, events.STATUS_RECOVERED, reason="status.json could not be parsed")
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
@@ -462,7 +462,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     # Write the FULL enriched context to round-context.json
     context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
 
-    events.emit(log_dir, "round_start", round_num=round_num, phase=phase)
+    events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
     _agent_binary = Path(cfg.agent.command[0]).name if cfg.agent.command else None
     metrics.log_metrics(
         log_dir,
@@ -474,7 +474,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
 
-    events.emit(log_dir, "agent_spawn", round_num=round_num, timeout_s=timeout_s)
+    events.emit(log_dir, events.AGENT_SPAWN, round_num=round_num, timeout_s=timeout_s)
     framework_env = {
         "AGENT_RUNNER_LOG_DIR": str(log_dir),
         "AGENT_RUNNER_ROUND_NUM": str(round_num),
@@ -515,7 +515,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     )
     events.emit(
         log_dir,
-        "agent_exit",
+        events.AGENT_EXIT,
         round_num=round_num,
         exit_code=result.exit_code,
         duration_s=result.duration_s,
@@ -533,7 +533,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     dirty = vcs_state.detect_dirty_files(cfg.runtime.work_dir)
     if dirty:
-        events.emit(log_dir, "dirty_detected", round_num=round_num, files=dirty[:20])
+        events.emit(log_dir, events.DIRTY_DETECTED, round_num=round_num, files=dirty[:20])
 
     dirty_outcome = None
     if dirty and not result.timed_out and result.exit_code == 0:
@@ -552,7 +552,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     elif result.timed_out:
         events.emit(
             log_dir,
-            "round_timeout_kill",
+            events.ROUND_TIMEOUT_KILL,
             round_num=round_num,
             reason=f"exceeded round_timeout_s={timeout_s}",
         )
@@ -577,7 +577,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         phase=phase,
         agent_binary=_agent_binary,
     )
-    events.emit(log_dir, "round_end", round_num=round_num)
+    events.emit(log_dir, events.ROUND_END, round_num=round_num)
 
     round_result = RoundResult(
         round_num=round_num,

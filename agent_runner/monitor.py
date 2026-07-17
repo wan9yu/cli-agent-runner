@@ -32,6 +32,9 @@ from agent_runner.api_types import (
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
+    MONITOR_ALERT_EMITTED,
+    MONITOR_AUTO_STOP_FAILED,
+    MONITOR_AUTO_STOP_TRIGGERED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     now_iso_ms,
@@ -721,7 +724,7 @@ def on_alert(
     if log_dir.is_dir():
         emit_event(
             log_dir,
-            "monitor_alert_emitted",
+            MONITOR_ALERT_EMITTED,
             detector=alert.detector,
             severity=alert.severity,
             message=alert.message,
@@ -734,7 +737,7 @@ def on_alert(
     if log_dir.is_dir():
         emit_event(
             log_dir,
-            "monitor_auto_stop_triggered",
+            MONITOR_AUTO_STOP_TRIGGERED,
             detector=alert.detector,
             host=host,
         )
@@ -751,7 +754,7 @@ def on_alert(
             if log_dir.is_dir():
                 emit_event(
                     log_dir,
-                    "monitor_auto_stop_failed",
+                    MONITOR_AUTO_STOP_FAILED,
                     detector=alert.detector,
                     host=host,
                     error=e.stderr,
