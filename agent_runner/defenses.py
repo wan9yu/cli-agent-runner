@@ -63,7 +63,7 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="sha_locked_stash",
-            value="drop/pop accept SHA only",
+            value="no stash@{N} index references",
             codifies="§9 IMMUTABLE — batch drop by index breaks under concurrent stash",
             guarded_by=Path("tests/invariants/test_stash_uses_sha_not_index.py"),
             current_state="active",

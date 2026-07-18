@@ -10,10 +10,7 @@ from agent_runner.vcs_state import (
     AutoCommitError,
     StashRef,
     detect_dirty_files,
-    drop_stash,
     is_git_repo,
-    list_recent_stashes,
-    pop_stash,
     stash_orphan,
     try_auto_commit,
 )
@@ -93,23 +90,6 @@ def test_given_phase_when_stash_orphan_then_message_includes_phase(tmp_git_repo:
     ref = stash_orphan(tmp_git_repo, round_num=7, phase="diverge")
     assert ref is not None
     assert "phase=diverge" in ref.message
-
-
-def test_given_stash_when_dropped_by_sha_then_no_longer_listed(tmp_git_repo: Path) -> None:
-    _make_dirty(tmp_git_repo)
-    ref = stash_orphan(tmp_git_repo, round_num=42, phase=None)
-    assert ref is not None
-    drop_stash(tmp_git_repo, ref.sha)
-    assert ref.sha not in [s.sha for s in list_recent_stashes(tmp_git_repo)]
-
-
-def test_given_stash_when_popped_by_sha_then_changes_restored(tmp_git_repo: Path) -> None:
-    (tmp_git_repo / "to-restore.txt").write_text("data\n")
-    ref = stash_orphan(tmp_git_repo, round_num=42, phase=None)
-    assert ref is not None
-    assert not (tmp_git_repo / "to-restore.txt").exists()
-    pop_stash(tmp_git_repo, ref.sha)
-    assert (tmp_git_repo / "to-restore.txt").read_text() == "data\n"
 
 
 def test_given_no_registration_when_plugin_owned_paths_then_empty_list() -> None:

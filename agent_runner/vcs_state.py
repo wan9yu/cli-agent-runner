@@ -1,10 +1,8 @@
 """Git operations — ONLY module that calls git CLI.
 
 Stash safety rules (R820 + §9 IMMUTABLE):
-- API is SHA-locked: callers pass and store SHA only, never stash@{N} index.
-  Internal drop/pop translate SHA -> current selector immediately before each
-  git call. Safe against caller-side index drift; single-supervisor-per-repo
-  design means external concurrent ``git stash push`` is not a defended scenario.
+- API is SHA-locked: a stash is identified by the SHA in ``StashRef``, never
+  by a stash@{N} index — an index shifts when any stash is pushed or dropped.
 - Unified-diff +/-line parsing is forbidden (R2110 lesson): git's diff aligner
   emits cosmetic +/- markers on moved sections, so a +/-scan misclassifies both
   ways. Any auto-tool-vs-human classification must compare line sets vs HEAD.
@@ -324,43 +322,6 @@ def stash_orphan(
         # -1 listing is some older stash — never hand that back as this round's.
         return None
     return StashRef(sha=sha, message=msg)
-
-
-def _resolve_stash_selector(repo: Path, sha: str) -> str | None:
-    """Resolve a stash commit SHA to its current reflog selector.
-
-    Looked up immediately before each operation — callers never cache the
-    selector (that would defeat the SHA-lock invariant under concurrent
-    auto-stash).
-    """
-    r = _git(repo, "stash", "list", "--format=%gd %H")
-    if r.returncode != 0:
-        return None
-    for line in r.stdout.splitlines():
-        sel, _, line_sha = line.partition(" ")
-        if line_sha == sha:
-            return sel
-    return None
-
-
-def drop_stash(repo: Path, sha: str) -> bool:
-    """Drop stash by SHA — IMMUTABLE under concurrent stash (§9 lesson).
-
-    SHA is resolved to its current reflog selector at call time; callers
-    never persist or pass index references.
-    """
-    sel = _resolve_stash_selector(repo, sha)
-    if sel is None:
-        return False
-    return _git(repo, "stash", "drop", sel).returncode == 0
-
-
-def pop_stash(repo: Path, sha: str) -> bool:
-    """Pop stash by SHA. Same SHA-lock rule as drop_stash."""
-    sel = _resolve_stash_selector(repo, sha)
-    if sel is None:
-        return False
-    return _git(repo, "stash", "pop", sel).returncode == 0
 
 
 def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
