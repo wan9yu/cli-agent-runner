@@ -659,11 +659,8 @@ The built-in `claude_error_detector` classifies transient errors into
   is server-provided.
 - `rate_limit_model` — claude.ai infrastructure 429 (no 5h-type hint).
   60s default back-off.
-- `api_transient_5xx` — server outage (500/502/503/504). 60s default.
+- `api_transient_5xx` — server outage (500/502/503/504/529). 60s default.
 - `api_timeout` — 408 timeout. 30s default.
-
-For `rate_limit_account` only, a legacy `rate_limit_rejected` event is
-also dual-emitted for pre-0.1.23 consumers.
 
 **Default behavior (`transient_error_action = "back_off"`):**
 
@@ -677,7 +674,6 @@ operator action needed during back-off.
 # agent-runner.toml
 [runtime]
 transient_error_action = "stop"   # 0.1.23+ canonical name
-# rate_limit_action = "stop"      # deprecated alias, still accepted
 ```
 
 This causes the supervisor to emit `agent_self_terminated` with

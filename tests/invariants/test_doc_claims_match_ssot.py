@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from agent_runner import defenses
+from agent_runner.builtin_plugins._constants import _5XX_STATUSES
 from agent_runner.cli import _build_parser
 from agent_runner.config import _VALID_DIRTY_ACTIONS, _VALID_INJECTION_MODES, load_config
 from agent_runner.monitor import KNOWN_ALERT_KINDS
@@ -87,6 +88,19 @@ def test_doc_value_sets_match_ssot() -> None:
     cls_ssot = _classification_ssot()
     if cls_doc != cls_ssot:
         failures.append(f"classification doc {cls_doc} != SSOT {cls_ssot}")
+
+    # 5xx transient statuses: runbook "server outage (500/502/...)" + plugins.md
+    # "api_error_status in {429, ..., 408}" (the 5xx set plus 429 and 408).
+    rb_text = (REPO / "docs/runbook.md").read_text(encoding="utf-8")
+    rb = re.search(r"`api_transient_5xx` — server outage \(([\d/]+)\)", rb_text)
+    rb_doc = {int(s) for s in rb.group(1).split("/")} if rb else set()
+    if rb_doc != set(_5XX_STATUSES):
+        failures.append(f"runbook 5xx doc {rb_doc} != SSOT {set(_5XX_STATUSES)}")
+
+    p5 = re.search(r"`api_error_status` in\s*\{([\d,\s]+)\}", plug_text)
+    p5_doc = {int(s) for s in p5.group(1).split(",")} if p5 else set()
+    if p5_doc != set(_5XX_STATUSES) | {429, 408}:
+        failures.append(f"plugins.md status doc {p5_doc} != SSOT {set(_5XX_STATUSES) | {429, 408}}")
 
     # --preset choices: commands.md "--preset {a,b,c}" must equal the derived SSOT.
     # init_cmd derives choices from presets/*.toml; the hand-written doc list must track it.

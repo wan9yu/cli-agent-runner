@@ -287,20 +287,18 @@ transient errors and usage data:
 - A `rate_limit_event` message with `status: "rejected"` and
   `rateLimitType: "five_hour"` (account 5h quota), or
 - A result with `is_error: true` and `api_error_status` in
-  {429, 500, 502, 503, 504, 408}.
+  {429, 500, 502, 503, 504, 529, 408}.
 
 When a transient error is detected, emits a `transient_error_detected`
 event with `classification` ∈ {`rate_limit_account`, `rate_limit_model`,
 `api_transient_5xx`, `api_timeout`}, plus `agent`, `reset_at_epoch`,
-`round_num`, `raw` (≤200 chars). For `rate_limit_account` only, a legacy
-`rate_limit_rejected` event is also dual-emitted for pre-0.1.23 consumers.
+`round_num`, `raw` (≤200 chars).
 
 Per round (regardless of error state), also emits `agent_usage_recorded`
 with token/cost/duration data extracted from the claude result event —
 see `docs/migrations/0.1.28.md` for the full payload schema. The
 supervisor reads `transient_error_detected` on the next dispatch cycle
-and applies the configured `transient_error_action` (default `back_off`;
-`rate_limit_action` retained as a deprecated alias).
+and applies the configured `transient_error_action` (default `back_off`).
 
 No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.
