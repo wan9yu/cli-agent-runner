@@ -200,3 +200,53 @@ def test_given_content_with_regex_escapes_when_replaced_then_inserted_verbatim()
     text = "intro\n<!-- gen:x -->\nOLD\n<!-- /gen:x -->\noutro\n"
     got = replace_block(text, "x", body)
     assert got == f"intro\n<!-- gen:x -->\n{body}\n<!-- /gen:x -->\noutro\n"
+
+
+def test_given_config_when_schema_rendered_then_phases_and_plugins_sections_present() -> None:
+    """_SECTIONS must cover all 7 Config fields — [plugins] disable was undocumented."""
+    from agent_runner._docgen import render_config_schema_table
+
+    md = render_config_schema_table()
+    assert "### `[phases]`" in md
+    assert "### `[plugins]`" in md
+    assert "| `overrides` | `dict[str, PhaseOverride]` | {} |" in md
+    assert "| `disable` | `list[str]` | [] |" in md
+    assert "| `raw` | `dict[str, Any]` | {} |" in md
+
+
+def test_given_prompt_section_when_rendered_then_concat_separator_row_is_one_line() -> None:
+    """Pins the row shape through the _cell/_field_table refactor.
+
+    render_config_schema_table() already emits this as one line today — the
+    3-line shattering in docs/configuration.md happens at WRITE time, in
+    replace_block. This test guards the renderer half of that pair.
+    """
+    from agent_runner._docgen import render_config_schema_table
+
+    md = render_config_schema_table()
+    assert r"| `concat_separator` | `str` | '\n\n' |" in md.splitlines()
+
+
+def test_given_monitor_section_when_rendered_then_host_health_subsection_lists_fields() -> None:
+    """[monitor.host_health] is a real TOML sub-table; the parent row is an opaque repr."""
+    from agent_runner._docgen import render_config_schema_table
+
+    md = render_config_schema_table()
+    assert "#### `[monitor.host_health]`" in md
+    assert "| `mem_avail_min_mb` | `int` | 200 |" in md
+    assert "| `disk_warning_pct` | `float` | 90.0 |" in md
+    assert "| `disk_critical_pct` | `float` | 95.0 |" in md
+
+
+def test_given_generated_rows_when_rendered_then_pipes_are_escaped() -> None:
+    """`X | None` types and the auth_fail_patterns default both contain `|`."""
+    from agent_runner._docgen import render_config_schema_table
+
+    md = render_config_schema_table()
+    assert r"| `list` | `list[str] \| None` | None |" in md.splitlines()
+    assert r"['\\b(oauth\|unauthorized\|401\|" in md
+    for line in md.splitlines():
+        if not line.startswith("| "):
+            continue
+        unescaped = line.replace(r"\|", "").count("|")
+        assert unescaped == 4, f"row has {unescaped} unescaped pipes, want 4: {line}"

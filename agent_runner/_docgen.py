@@ -17,6 +17,9 @@ from agent_runner.config import (
     AgentConfig,
     Config,
     MonitorConfig,
+    MonitorHostHealthConfig,
+    PhasesConfig,
+    PluginsConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -25,41 +28,60 @@ from agent_runner.defenses import catalog
 from agent_runner.events import KNOWN_EVENT_KINDS
 from agent_runner.monitor import AUTO_STOP_ALERTS, KNOWN_ALERT_KINDS
 
-_SECTIONS = [
-    ("agent", AgentConfig),
-    ("runtime", RuntimeConfig),
-    ("prompt", PromptConfig),
-    ("vcs", VcsConfig),
-    ("monitor", MonitorConfig),
+# (toml_section_name, dataclass, nested_sub_sections). Nesting is an EXPLICIT
+# registry, not reflection, on two counts:
+#   - field name != TOML key: PhaseOverride.prompt_files is written as
+#     [phases.<name>.prompt] files=[...], and PluginsConfig.raw is a catch-all
+#     for unknown keys. Recursing generically would document TOML keys that do
+#     not exist.
+#   - typing.get_type_hints() raises TypeError on PhasesConfig — its `list`
+#     field shadows the builtin, so `list[str] | None` resolves against
+#     None. Do not reach for it here.
+_SECTIONS: list[tuple[str, type, list[tuple[str, type]]]] = [
+    ("agent", AgentConfig, []),
+    ("runtime", RuntimeConfig, []),
+    ("prompt", PromptConfig, []),
+    ("vcs", VcsConfig, []),
+    ("monitor", MonitorConfig, [("monitor.host_health", MonitorHostHealthConfig)]),
+    ("phases", PhasesConfig, []),
+    ("plugins", PluginsConfig, []),
 ]
+
+
+def _cell(s: str) -> str:
+    # A bare `|` ends the markdown cell. Live sources: `X | None` annotations
+    # and the auth_fail_patterns regex default.
+    return s.replace("|", "\\|")
 
 
 def _type_label(t: typing.Any) -> str:
     # dataclasses.fields exposes `.type` as a string (PEP 563), so we render
     # the raw annotation. Strip ``Path`` / ``Path | None`` wrappers cosmetically.
-    s = str(t).replace("pathlib.", "")
-    return s
+    return _cell(str(t).replace("pathlib.", ""))
 
 
 def _default_label(field: dataclasses.Field) -> str:
     if field.default is not dataclasses.MISSING:
-        return repr(field.default)
+        return _cell(repr(field.default))
     if field.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
-        return repr(field.default_factory())
+        return _cell(repr(field.default_factory()))
     return "—"
+
+
+def _field_table(dc: type) -> list[str]:
+    rows = ["| Field | Type | Default |", "|---|---|---|"]
+    for f in dataclasses.fields(dc):
+        rows.append(f"| `{f.name}` | `{_type_label(f.type)}` | {_default_label(f)} |")
+    return rows
 
 
 def render_config_schema_table() -> str:
     """Markdown sub-sections per Config dataclass with field/type/default."""
     parts: list[str] = []
-    for name, dc in _SECTIONS:
-        parts.append(f"### `[{name}]`")
-        parts.append("")
-        parts.append("| Field | Type | Default |")
-        parts.append("|---|---|---|")
-        for f in dataclasses.fields(dc):
-            parts.append(f"| `{f.name}` | `{_type_label(f.type)}` | {_default_label(f)} |")
-        parts.append("")
+    for name, dc, nested in _SECTIONS:
+        parts += [f"### `[{name}]`", "", *_field_table(dc), ""]
+        for sub_name, sub_dc in nested:
+            parts += [f"#### `[{sub_name}]`", "", *_field_table(sub_dc), ""]
     return "\n".join(parts).rstrip()
 
 

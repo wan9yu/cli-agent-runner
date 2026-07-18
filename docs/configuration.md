@@ -26,7 +26,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 |---|---|---|
 | `command` | `list[str]` | — |
 | `prompt_arg_template` | `list[str]` | — |
-| `name` | `str | None` | None |
+| `name` | `str \| None` | None |
 | `env` | `dict[str, str]` | {} |
 | `prompt_delivery` | `Literal['argv', 'stdin']` | 'argv' |
 
@@ -40,12 +40,12 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `restart_delay_s` | `int` | 3 |
 | `disable_pre_round_hooks` | `bool` | False |
 | `round_log_retention` | `int` | 100 |
-| `narrative_file` | `Path | None` | None |
+| `narrative_file` | `Path \| None` | None |
 | `transient_error_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
-| `max_rounds` | `int | None` | None |
-| `stop_file` | `Path | None` | None |
+| `max_rounds` | `int \| None` | None |
+| `stop_file` | `Path \| None` | None |
 | `substrate_fingerprint_paths` | `list[str]` | [] |
-| `fresh_eyes_every_n` | `int | None` | None |
+| `fresh_eyes_every_n` | `int \| None` | None |
 | `dry_run` | `bool` | False |
 | `max_grace_after_result_s` | `int` | 0 |
 | `grace_kill_ignore_patterns` | `list[str]` | [] |
@@ -54,7 +54,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `file` | `Path | None` | None |
+| `file` | `Path \| None` | None |
 | `files` | `list[Path]` | [] |
 | `inject_context` | `bool` | True |
 | `context_injection_mode` | `Literal['prepend', 'file', 'none']` | 'prepend' |
@@ -72,7 +72,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `auth_fail_patterns` | `list[str]` | ['\\b(oauth|unauthorized|401|api[_ ]key|auth(entication)?[_ -]?(failed|error|expired)|session.*expired)\\b'] |
+| `auth_fail_patterns` | `list[str]` | ['\\b(oauth\|unauthorized\|401\|api[_ ]key\|auth(entication)?[_ -]?(failed\|error\|expired)\|session.*expired)\\b'] |
 | `auth_fail_hint` | `str` | '' |
 | `auto_stop_on` | `list[str]` | ['oauth_fail', 'disk_critical'] |
 | `remote_failure_tolerance_s` | `int` | 90 |
@@ -80,7 +80,29 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `anomaly_repetitive_threshold` | `int` | 0 |
 | `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(mem_avail_min_mb=200, disk_warning_pct=90.0, disk_critical_pct=95.0) |
 | `round_progress_interval_s` | `int` | 0 |
-| `supervisor_stale_threshold_s` | `int | None` | None |
+| `supervisor_stale_threshold_s` | `int \| None` | None |
+
+#### `[monitor.host_health]`
+
+| Field | Type | Default |
+|---|---|---|
+| `mem_avail_min_mb` | `int` | 200 |
+| `disk_warning_pct` | `float` | 90.0 |
+| `disk_critical_pct` | `float` | 95.0 |
+
+### `[phases]`
+
+| Field | Type | Default |
+|---|---|---|
+| `list` | `list[str] \| None` | None |
+| `overrides` | `dict[str, PhaseOverride]` | {} |
+
+### `[plugins]`
+
+| Field | Type | Default |
+|---|---|---|
+| `disable` | `list[str]` | [] |
+| `raw` | `dict[str, Any]` | {} |
 <!-- /gen:config-schema -->
 
 ### `agent.prompt_delivery`
@@ -162,9 +184,10 @@ Paths are resolved against `runtime.work_dir` (consistent with existing path res
 
 ## `[phases]` (optional)
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `list` | list[str] | (none → no phase rotation) | round N gets `phases[(N-1) % len(phases)]` |
+Field-level types and defaults are in the generated schema table above
+(`[phases]` section). Rotation is a pure function of the 1-based round
+counter: round N runs `phases.list[(N - 1) % len(phases.list)]`. Unset
+`list` means no rotation.
 
 > **Manual override**: pass `--phase NAME` to `agent-runner round` to bypass
 > the rotation counter (audit, debug, multi-script orchestration). The internal
