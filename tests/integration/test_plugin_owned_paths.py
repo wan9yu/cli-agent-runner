@@ -88,6 +88,75 @@ def test_given_recursive_glob_registered_when_dirty_files_then_deep_paths_filter
     assert "logs/other.log" in dirty
 
 
+def test_given_double_star_glob_when_direct_child_file_then_filtered(
+    tmp_git_repo: Path,
+) -> None:
+    """``<dir>/**/*`` must exclude a file sitting DIRECTLY in ``<dir>``, not only
+    nested ones. This is docs/plugins.md's own registration example
+    (``logs/plugins/my_plugin/**/*``); before the globstar fix ``**/`` demanded an
+    intervening directory segment, so ``.../my_plugin/state.json`` was swept.
+    """
+    from agent_runner.vcs_state import detect_dirty_files, register_plugin_owned_paths
+
+    register_plugin_owned_paths(["logs/plugins/my_plugin/**/*"])
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin").mkdir(parents=True)
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin" / "state.json").write_text("{}\n")
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin" / "sub").mkdir()
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin" / "sub" / "deep.json").write_text("{}\n")
+    (tmp_git_repo / "logs" / "other.log").write_text("x\n")
+    _intent_to_add(tmp_git_repo)
+
+    dirty = detect_dirty_files(tmp_git_repo)
+    assert "logs/plugins/my_plugin/state.json" not in dirty  # direct child
+    assert "logs/plugins/my_plugin/sub/deep.json" not in dirty  # nested
+    assert "logs/other.log" in dirty
+
+
+def test_given_double_star_ext_glob_when_direct_child_then_filtered(
+    tmp_git_repo: Path,
+) -> None:
+    """docs/plugins.md's table promises ``reports/**/*.md`` matches BOTH
+    ``reports/dev.md`` and ``reports/sub/qa.md``. The direct-child row was false
+    under fnmatch; the globstar matcher honors the published table."""
+    from agent_runner.vcs_state import detect_dirty_files, register_plugin_owned_paths
+
+    register_plugin_owned_paths(["reports/**/*.md"])
+    (tmp_git_repo / "reports" / "sub").mkdir(parents=True)
+    (tmp_git_repo / "reports" / "dev.md").write_text("d\n")
+    (tmp_git_repo / "reports" / "sub" / "qa.md").write_text("q\n")
+    (tmp_git_repo / "reports" / "notes.txt").write_text("keep me dirty\n")
+    _intent_to_add(tmp_git_repo)
+
+    dirty = detect_dirty_files(tmp_git_repo)
+    assert "reports/dev.md" not in dirty  # direct child, .md
+    assert "reports/sub/qa.md" not in dirty  # nested, .md
+    assert "reports/notes.txt" in dirty  # not .md → still dirty
+
+
+def test_given_double_star_direct_child_when_stash_orphan_then_survives(
+    tmp_git_repo: Path,
+) -> None:
+    """End-to-end footgun proof: a file directly in the ``**`` dir must survive
+    the orphan stash. Before the globstar fix it did not (swept off disk),
+    silently costing a plugin author their state file.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, stash_orphan
+
+    register_plugin_owned_paths(["logs/plugins/my_plugin/**/*"])
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin").mkdir(parents=True)
+    (tmp_git_repo / "logs" / "plugins" / "my_plugin" / "state.json").write_text("plugin state\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    ref = stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
+    assert ref is not None
+    assert (tmp_git_repo / "logs" / "plugins" / "my_plugin" / "state.json").read_text() == (
+        "plugin state\n"
+    )
+    assert "logs/plugins/my_plugin/state.json" not in _stash_contents(tmp_git_repo)
+    assert "src.py" in _stash_contents(tmp_git_repo)
+
+
 def _stash_contents(repo: Path) -> list[str]:
     """Paths captured in stash@{0}, including untracked ones."""
     r = subprocess.run(

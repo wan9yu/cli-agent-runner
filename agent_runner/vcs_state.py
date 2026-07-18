@@ -14,7 +14,7 @@ Stash safety rules (R820 + §9 IMMUTABLE):
 
 from __future__ import annotations
 
-import fnmatch
+import re
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 import time
 from dataclasses import dataclass, replace
@@ -36,10 +36,13 @@ def register_plugin_owned_paths(paths: list[str]) -> None:
         ``"proposals/dev-round1.md"`` and the bare directory name).
       - Anything else without ``**`` → ``pathlib.PurePath.match`` glob
         (e.g. ``"reports/*.md"``). Single ``*`` does not cross slashes.
-      - Patterns containing ``**`` → ``fnmatch.fnmatch`` (e.g.
-        ``"logs/plugins/**/*"``). ``**`` matches recursive directory
-        segments. (``PurePath.full_match`` would handle this natively
-        but requires Python 3.13+; this project's minimum is 3.11.)
+      - Patterns containing ``**`` → globstar match (e.g.
+        ``"logs/plugins/**/*"``). ``**/`` matches **zero or more** directory
+        segments, so ``"logs/plugins/**/*"`` matches a file directly in
+        ``logs/plugins`` as well as one nested below it, and
+        ``"reports/**/*.md"`` matches both ``reports/dev.md`` and
+        ``reports/sub/qa.md``. (``PurePath.full_match`` would handle this
+        natively but requires Python 3.13+; this project's minimum is 3.11.)
 
     Plugins call this at module import time (entry_point side-effect) so the
     paths are known before the first round runs.
@@ -57,6 +60,44 @@ def plugin_owned_paths() -> list[str]:
     return list(_PLUGIN_OWNED_PATHS)
 
 
+def _globstar_to_regex(pattern: str) -> str:
+    """Translate a glob containing ``**`` into an anchored regex.
+
+    Globstar semantics (matching git / bash ``globstar``): ``**/`` matches zero
+    or more directory segments, a single ``*`` matches within one segment, and
+    ``?`` matches one non-slash character. Because ``**/`` collapses to nothing,
+    ``"<dir>/**/*"`` matches a file sitting directly in ``<dir>`` as well as one
+    nested below it -- which ``fnmatch`` did not (``**/`` compiled to a regex
+    demanding an intervening ``/``, so a direct child never matched). Character
+    classes are not supported in ``**`` patterns.
+    """
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            j = i
+            while j < n and pattern[j] == "*":
+                j += 1
+            if j - i >= 2:  # ``**`` (or more)
+                if j < n and pattern[j] == "/":
+                    out.append("(?:[^/]+/)*")  # zero or more directory segments
+                    i = j + 1
+                else:
+                    out.append(".*")
+                    i = j
+            else:  # single ``*`` -- does not cross a slash
+                out.append("[^/]*")
+                i = j
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return "".join(out)
+
+
 def _matches_owned_path(path: str) -> bool:
     """True if `path` matches any registered plugin-owned pattern."""
     for pattern in _PLUGIN_OWNED_PATHS:
@@ -65,8 +106,9 @@ def _matches_owned_path(path: str) -> bool:
             if path == stripped or path.startswith(pattern):
                 return True
         elif "**" in pattern:
-            # fnmatch handles ** recursively; PurePath.match (3.11) does not.
-            if fnmatch.fnmatch(path, pattern):
+            # Globstar, not fnmatch: ``**/`` matches zero+ segments (PurePath.match
+            # can't cross slashes on 3.11; fnmatch's ``**/`` demanded an intervening one).
+            if re.fullmatch(_globstar_to_regex(pattern), path):
                 return True
         elif PurePath(path).match(pattern):
             return True
