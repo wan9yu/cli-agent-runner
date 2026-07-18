@@ -305,9 +305,10 @@ under your plugin's name — the dict is shared across every installed plugin.
 
 ## Built-in post_round_hooks
 
-agent-runner ships two built-in `post_round_hooks` plugins registered
-automatically via their own entry-points: `claude_error_detector` (below)
-and `gemini_error_detector` (0.1.24+, parallel for gemini CLI).
+agent-runner ships 3 built-in `post_round_hooks` plugins registered
+automatically via their own entry-points: `claude_error_detector` (below),
+`gemini_error_detector` (0.1.24+, parallel for gemini CLI), and
+`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI).
 
 ### `claude_error_detector` (0.1.23+)
 
@@ -345,7 +346,19 @@ project using claude as the agent CLI.
 Non-claude agents: the detector returns early when `ctx.agent_binary != "claude"`.
 Third-party plugin authors may use the same `register_post_round_hook` API
 to ship equivalent detectors for other agent CLIs — the bundled
-`gemini_error_detector` is a working reference.
+`gemini_error_detector` and `codewhale_error_detector` are working references.
+
+### `codewhale_error_detector` (0.1.41+)
+
+**Entry-point group:** `agent_runner.post_round_hooks`
+**Module:** `agent_runner.builtin_plugins.codewhale`
+
+Parallel to `claude_error_detector` for the codewhale CLI. Returns early when
+`ctx.agent_binary != "codewhale"`, so it costs nothing on other projects.
+Scans the round's JSONL log tail for transient errors and emits
+`transient_error_detected` with the same 4-bucket `classification` contract.
+
+Disable with `[plugins] disable = ["codewhale_error_detector"]`.
 
 ## Custom monitor detectors (§3.3)
 
