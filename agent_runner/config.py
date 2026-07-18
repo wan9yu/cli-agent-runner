@@ -15,7 +15,12 @@ _VALID_PROMPT_DELIVERY: frozenset[str] = frozenset({"argv", "stdin"})
 
 
 class ConfigError(ValueError):
-    """Raised when a config TOML contains a removed or invalid field."""
+    """Raised when a config TOML contains a removed or invalid field.
+
+    Subclasses ValueError: pre-0.2.2 callers catching ValueError from
+    load_config keep working. tests/invariants/test_config_error_consistency.py
+    pins both the subclass relationship and the absence of bare ValueError here.
+    """
 
 
 @dataclass(frozen=True)
@@ -177,7 +182,7 @@ def _require(d: dict, *path: str) -> object:
     cur: object = d
     for p in path:
         if not isinstance(cur, dict) or p not in cur:
-            raise ValueError(f"missing required field: {'.'.join(path)}")
+            raise ConfigError(f"missing required field: {'.'.join(path)}")
         cur = cur[p]
     return cur
 
@@ -202,16 +207,16 @@ def _require_positive_int(value: Any, *, field: str) -> int:
     """Validate a TOML value is a positive int. Rejects bool (subclass of int
     in Python, would silently coerce e.g. ``true`` → 1) and any non-int."""
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
+        raise ConfigError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
     if value <= 0:
-        raise ValueError(f"{field}: must be positive, got {value}")
+        raise ConfigError(f"{field}: must be positive, got {value}")
     return value
 
 
 def _require_bool(value: Any, *, field: str) -> bool:
     """Validate a TOML value is a bool. Distinct from int (in TOML, bool ≠ int)."""
     if not isinstance(value, bool):
-        raise ValueError(f"{field}: must be a bool, got {type(value).__name__} ({value!r})")
+        raise ConfigError(f"{field}: must be a bool, got {type(value).__name__} ({value!r})")
     return value
 
 
@@ -220,9 +225,9 @@ def _require_non_negative_int(value: Any, *, field: str) -> int:
     and any non-int. Sibling of _require_positive_int where 0 has meaning
     (e.g. opt-out / disable)."""
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
+        raise ConfigError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
     if value < 0:
-        raise ValueError(f"{field}: must be >= 0, got {value}")
+        raise ConfigError(f"{field}: must be >= 0, got {value}")
     return value
 
 
@@ -231,12 +236,12 @@ def _require_pct(value: Any, *, field: str) -> float:
     TOML parses ``90`` as int and the shipped tuning tables recommend bare ints.
     Rejects bool (subclass of int, would silently coerce ``true`` -> 1.0)."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
+        raise ConfigError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
     v = float(value)
     # Keep the chained form: `v < 0 or v > 100` looks equivalent but admits nan,
     # which then disables the detector as silently as an out-of-range literal.
     if not 0.0 <= v <= 100.0:
-        raise ValueError(f"{field}: must be between 0 and 100, got {v}")
+        raise ConfigError(f"{field}: must be between 0 and 100, got {v}")
     return v
 
 
@@ -244,7 +249,7 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
     """Validate monitor.remote_failure_tolerance_s: int in [0, 3600]."""
     v = _require_non_negative_int(value, field="monitor.remote_failure_tolerance_s")
     if v > 3600:
-        raise ValueError(f"monitor.remote_failure_tolerance_s: must be <= 3600, got {v}")
+        raise ConfigError(f"monitor.remote_failure_tolerance_s: must be <= 3600, got {v}")
     return v
 
 
@@ -252,17 +257,17 @@ def _validate_regex_list(value: Any, *, field: str) -> list[str]:
     """Validate a list of regex pattern strings (each must compile). Returns the
     raw strings unchanged; callers compile when they need ``re.Pattern`` objects."""
     if not isinstance(value, list):
-        raise ValueError(f"{field}: expected a list of regex strings, got {type(value).__name__}")
+        raise ConfigError(f"{field}: expected a list of regex strings, got {type(value).__name__}")
     out: list[str] = []
     for p in value:
         if not isinstance(p, str):
-            raise ValueError(
+            raise ConfigError(
                 f"{field}: each pattern must be a string, got {type(p).__name__}: {p!r}"
             )
         try:
             re.compile(p)
         except re.error as e:
-            raise ValueError(f"{field}: invalid regex {p!r}: {e}") from e
+            raise ConfigError(f"{field}: invalid regex {p!r}: {e}") from e
         out.append(p)
     return out
 
@@ -296,13 +301,13 @@ def _parse_phase_overrides(
             continue
         phase_name = key
         if phases_list is None or phase_name not in phases_list:
-            raise ValueError(
+            raise ConfigError(
                 f"[phases.{phase_name}] declared but {phase_name!r} not in phases.list "
                 f"({phases_list})"
             )
         unknown = set(value.keys()) - _PHASE_OVERRIDE_ALLOWED_FIELDS
         if unknown:
-            raise ValueError(
+            raise ConfigError(
                 f"unknown per-phase field(s) under [phases.{phase_name}]: {sorted(unknown)}; "
                 f"allowed: round_timeout_s, disable_pre_round_hooks, prompt.files"
             )
@@ -325,7 +330,7 @@ def _parse_phase_overrides(
         if "prompt" in value:
             prompt_sub = value["prompt"]
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
-                raise ValueError(f"[phases.{phase_name}].prompt must have a 'files' list")
+                raise ConfigError(f"[phases.{phase_name}].prompt must have a 'files' list")
             prompt_files = [
                 _expand_and_resolve(str(p), project_name, work_dir) for p in prompt_sub["files"]
             ]
@@ -340,7 +345,7 @@ def _parse_phase_overrides(
 def _parse_substrate_fingerprint_paths(runtime_d: dict) -> list[str]:
     raw = runtime_d.get("substrate_fingerprint_paths", [])
     if not isinstance(raw, list):
-        raise ValueError("runtime.substrate_fingerprint_paths: must be list of glob strings")
+        raise ConfigError("runtime.substrate_fingerprint_paths: must be list of glob strings")
     return [str(p) for p in raw]
 
 
@@ -361,11 +366,11 @@ def load_config(toml_path: Path) -> Config:
     prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
     prompt_arg_template = list(_require(agent_d, "prompt_arg_template"))
     if prompt_delivery not in _VALID_PROMPT_DELIVERY:
-        raise ValueError(
+        raise ConfigError(
             f'invalid [agent] prompt_delivery {prompt_delivery!r}: use "argv" or "stdin"'
         )
     if prompt_delivery == "stdin" and any("{prompt}" in a for a in prompt_arg_template):
-        raise ValueError(
+        raise ConfigError(
             "stdin delivery: remove {prompt} from [agent] prompt_arg_template "
             "(the prompt is piped to stdin, not placed in argv)"
         )
@@ -390,7 +395,7 @@ def load_config(toml_path: Path) -> Config:
 
     runtime_d = raw.get("runtime", {})
     if "round_timeout_per_phase" in runtime_d:
-        raise ValueError(
+        raise ConfigError(
             "runtime.round_timeout_per_phase removed in 0.1.16; "
             "use [phases.<name>] round_timeout_s = X — see docs/migrations/0.1.16.md"
         )
@@ -407,7 +412,7 @@ def load_config(toml_path: Path) -> Config:
         transient_error_action_raw if transient_error_action_raw is not None else "back_off"
     )
     if transient_error_action not in _VALID_TRANSIENT_ERROR_ACTIONS:
-        raise ValueError(
+        raise ConfigError(
             f"runtime.transient_error_action: {transient_error_action!r} not in allowed values "
             f"{sorted(_VALID_TRANSIENT_ERROR_ACTIONS)}"
         )
@@ -458,16 +463,16 @@ def load_config(toml_path: Path) -> Config:
     prompt_d = raw.get("prompt", {})
     mode = prompt_d.get("context_injection_mode", "prepend")
     if mode not in _VALID_INJECTION_MODES:
-        raise ValueError(
+        raise ConfigError(
             f"prompt.context_injection_mode must be one of {sorted(_VALID_INJECTION_MODES)}, "
             f"got {mode!r}"
         )
     has_file = "file" in prompt_d
     has_files = "files" in prompt_d
     if has_file and has_files:
-        raise ValueError("set either prompt.file or prompt.files, not both")
+        raise ConfigError("set either prompt.file or prompt.files, not both")
     if not has_file and not has_files:
-        raise ValueError("missing required field: prompt.file or prompt.files")
+        raise ConfigError("missing required field: prompt.file or prompt.files")
     prompt_file = (
         _expand_and_resolve(str(prompt_d["file"]), project_name, work_dir) if has_file else None
     )
@@ -491,13 +496,13 @@ def load_config(toml_path: Path) -> Config:
     )
     vcs_d = raw.get("vcs", {})
     if "orphan_action" in vcs_d:
-        raise ValueError(
+        raise ConfigError(
             "vcs.orphan_action removed in 0.1.18; use vcs.dirty_action — "
             "see docs/migrations/0.1.17.md"
         )
     dirty_action = str(vcs_d.get("dirty_action", "stash"))
     if dirty_action not in _VALID_DIRTY_ACTIONS:
-        raise ValueError(
+        raise ConfigError(
             f"vcs.dirty_action: {dirty_action!r} not in allowed values "
             f"{{'stash', 'ignore', 'auto_commit'}}"
         )
