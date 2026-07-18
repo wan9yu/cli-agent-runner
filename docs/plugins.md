@@ -448,7 +448,7 @@ detector. Other plugin detectors and all builtins still run normally.
 
 This example shows the full pattern for a project-specific monitor detector
 that filters out rounds the plugin marks as exempt by some project rule.
-Covers gateway-class needs like "stuck role detection" (count git commits per
+Covers supervisory needs like "stuck role detection" (count git commits per
 round) and "wall-time trend" (compare recent avg vs older avg).
 
 **The shape**: a plugin emits a custom event for exempt rounds; a custom
@@ -697,7 +697,7 @@ register_plugin_owned_paths([
 | `"proposals"` (no slash) | `proposals` exactly | Single-segment literal. |
 | `"reports/*.md"` | `reports/dev.md` | `*` does not cross slashes. |
 | `"reports/**/*.md"` | `reports/dev.md`, `reports/sub/qa.md` | `**` matches across directory separators. |
-| `"logs/plugins/**/*"` | `logs/plugins/argus/state.json` | Same — `**` covers intermediate dirs. |
+| `"logs/plugins/**/*"` | `logs/plugins/acme/state.json` | Same — `**` covers intermediate dirs. |
 
 ### Caveat — this is NOT a "make work_dir messy" license
 

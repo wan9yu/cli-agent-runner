@@ -386,7 +386,7 @@ See `docs/migrations/0.1.17.md`.
 
 ### Acknowledgements
 
-Argus Gateway's post-Q1-audit feedback (2026-05-14) surfaced the per-phase sub-table need (S3) and the multi-file prompt pattern (S1). Their R721 frontmatter-strip lesson informed making the (already-shipping) strip behavior an explicit opt-out config flag rather than hardcoded.
+A downstream integrator's post-Q1-audit feedback (2026-05-14) surfaced the per-phase sub-table need (S3) and the multi-file prompt pattern (S1). Their R721 frontmatter-strip lesson informed making the (already-shipping) strip behavior an explicit opt-out config flag rather than hardcoded.
 
 ## [0.1.15] - 2026-05-14
 
@@ -418,10 +418,10 @@ independent components bundled into one release because both serve the same
 
 ### Acknowledgements
 
-Two of six nice-to-have items surfaced in Argus Gateway's v0.1.12
+Two of six nice-to-have items surfaced in a downstream integrator's v0.1.12
 production-evaluation report (2026-05-14). An earlier scope also included
 per-phase runtime override; spec review caught that `runtime.round_timeout_per_phase`
-already covers Argus's stated need, so that component was deferred to a future
+already covers the integrator's stated need, so that component was deferred to a future
 release where a second per-phase field surfaces. Other items in the report
 (detector helper, hot-reload, replay) remain intentionally out of scope.
 
@@ -440,7 +440,7 @@ release where a second per-phase field surfaces. Other items in the report
 
 ### Acknowledgements
 
-Thanks to the Argus Gateway team — this release answers their imminent
+Thanks to our downstream integrators — this release answers their imminent
 production-deployment requirement for upgrade-without-disruption. After
 confirming round duration (10-40 min) fits within graceful-stop tolerance,
 this release scopes to round-boundary upgrade UX (Level 1). Mid-round
@@ -465,7 +465,7 @@ real production need.
 
 ### Acknowledgements
 
-Thanks to the Argus Gateway team for the deep v0.1.10 audit-session feedback
+Thanks to our downstream integrators for the deep v0.1.10 audit-session feedback
 (6 items, 3-round real-run testing on ARMv8 Pi). This release reframes those
 items into a coherent "Plugin & Operator Transparency" theme across three
 layers: transparency (see what plugins do), operator override (escape hatches
@@ -489,14 +489,14 @@ for audit/debug), and diagnostic quality (errors point at the next debug step).
 
 - `Config.plugins` type change is breaking for any caller reading the field as a dict (`cfg.plugins.get("foo")`). Plugin authors using `[plugins.argus_*]`-style keys: read them from `cfg.plugins.raw.get("argus_*")` instead.
 - `LockHeldError` message format changed (now includes holder info: `"another agent-runner is holding /path (held by PID N, age Ns, cmd: ...)"` or stale/missing variants). Operators grepping the exact format string need to update.
-- For Argus's P5 confusion: see new `docs/architecture.md` section "Plugin injection: two paths" — `inject_context` and `disable_pre_round_hooks` are INDEPENDENT flags. Setting one does not affect the other.
+- For the integrator's P5 confusion: see new `docs/architecture.md` section "Plugin injection: two paths" — `inject_context` and `disable_pre_round_hooks` are INDEPENDENT flags. Setting one does not affect the other.
 - **Known limitation**: `[plugins] disable` removes named plugins from the hook / context-enricher / detector / event-kind registries, but does NOT remove a disabled plugin's owned VCS paths (the `register_plugin_owned_paths` registry has no name attribution today). Mostly inert. If this becomes a real issue, file a GitHub issue.
 
 ## [0.1.11] - 2026-05-13
 
 ### Acknowledgements
 
-Thanks again to the Argus Gateway team — this release closes the
+Thanks again to our downstream integrators — this release closes the
 network-resilience gap that 0.1.10's `MonitorRemoteError` propagation
 exposed, plus adds per-occurrence agent network blip observability requested
 during 0.1.10 handover review.
@@ -525,7 +525,7 @@ For network-related failures, the events index points at the diagnostic body:
 
 ### Acknowledgements
 
-Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback that drove every change in this release. Six audit memos across 50 minutes of validated runtime surfaced four specific gaps; this release closes them.
+Thanks to our downstream integrators for the Phase 4 second-pass production feedback that drove every change in this release. Six audit memos across 50 minutes of validated runtime surfaced four specific gaps; this release closes them.
 
 ### Added
 
@@ -553,7 +553,7 @@ Thanks to the Argus Gateway team for the Phase 4 second-pass production feedback
 
 ### Acknowledgements
 
-Thanks to the argus-gateway team for the dev/qa/product wall-time data
+Thanks to our downstream integrators for the dev/qa/product wall-time data
 (Phase 4 feedback §3.1) that drove this API shape. Their three-role
 distribution made the case for per-phase overrides concrete.
 
@@ -579,7 +579,7 @@ documented plugin-author public surface.
 
 ### Acknowledgements
 
-Thanks to the argus-gateway team for Phase 4 dogfooding feedback that drove
+Thanks to our downstream integrators for Phase 4 dogfooding feedback that drove
 every item in this release. 3 audit memos (~90KB) silently swept into an
 orphan stash is a real-world failure mode; this release closes that loop.
 
@@ -608,7 +608,7 @@ orphan stash is a real-world failure mode; this release closes that loop.
 
 - Plugin outputs in plugin-declared paths (e.g. `proposals/`,
   `logs/plugins/my_plugin/`) no longer silently swept into orphan stashes
-  by `process_orphan_wip`. Previously: 90KB Argus audit memos invisible
+  by `process_orphan_wip`. Previously: 90KB audit memos invisible
   after Phase 4 round; required stash archaeology to recover.
 
 ### Migration
@@ -651,7 +651,7 @@ Or regenerate cleanly:
 agent-runner init --preset claude --force
 ```
 
-Plugin authors (Argus Gateway, etc.): no public API was renamed or removed
+Plugin authors (downstream integrators, etc.): no public API was renamed or removed
 from your import surface. The deleted symbols (`agent_runner.agent_runtime.CRITICAL_ENV_DEFAULTS`,
 `agent_runner.agent_runtime.merge_critical_envs`) were internal — not part of
 the documented plugin API. A new public-API contract test
