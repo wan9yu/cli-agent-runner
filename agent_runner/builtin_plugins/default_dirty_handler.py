@@ -4,7 +4,7 @@ Ships enabled; disable via [plugins] disable = ["default_dirty_handler"]."""
 
 from __future__ import annotations
 
-from agent_runner import api, context_store, events, vcs_state
+from agent_runner import api, context_store, events
 from agent_runner.api_types import DirtyOutcome
 from agent_runner.events import now_iso_ms  # match the helper runner.py uses
 from agent_runner.hooks import HookContext, register_dirty_handler
@@ -48,10 +48,8 @@ class DefaultDirtyHandler:
         return self._stash(ctx, dirty_files)
 
     def _stash(self, ctx: HookContext, dirty_files) -> DirtyOutcome:
-        # via vcs_state (not api): test_runner.py monkeypatches vcs_state.stash_orphan;
-        # the api re-export is a separate binding a patch wouldn't intercept.
         try:
-            ref = vcs_state.stash_orphan(
+            ref = api.stash_orphan(
                 ctx.work_dir,
                 round_num=ctx.round_num,
                 phase=ctx.phase,

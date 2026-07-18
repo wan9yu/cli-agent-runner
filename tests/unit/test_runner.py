@@ -639,7 +639,7 @@ def test_given_dirty_action_stash_when_dirty_post_round_then_stash_orphan_called
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """dirty_action='stash' (default): stash_orphan called, orphan_stashed event."""
-    from agent_runner import runner, vcs_state
+    from agent_runner import api, runner, vcs_state
     from agent_runner.agent_runtime import RunResult
     from agent_runner.config import (
         AgentConfig,
@@ -671,7 +671,7 @@ def test_given_dirty_action_stash_when_dirty_post_round_then_stash_orphan_called
 
         return StashRef(sha="fake_sha", message="ORPHAN R1")
 
-    monkeypatch.setattr(vcs_state, "stash_orphan", fake_stash)
+    monkeypatch.setattr(api, "stash_orphan", fake_stash)
     monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
 
     cfg = Config(
@@ -694,7 +694,7 @@ def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
     """dirty_action='ignore': stash NOT called, dirty_detected still fires."""
     import json
 
-    from agent_runner import runner, vcs_state
+    from agent_runner import api, runner, vcs_state
     from agent_runner.agent_runtime import RunResult
     from agent_runner.config import (
         AgentConfig,
@@ -717,7 +717,7 @@ def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
     monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
 
     stash_calls = []
-    monkeypatch.setattr(vcs_state, "stash_orphan", lambda *a, **k: stash_calls.append(k))
+    monkeypatch.setattr(api, "stash_orphan", lambda *a, **k: stash_calls.append(k))
     monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
 
     cfg = Config(
