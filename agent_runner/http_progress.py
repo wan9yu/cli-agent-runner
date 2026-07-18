@@ -55,7 +55,7 @@ def build_server(log_dir: Path, narrative_file: Path | None, *, port: int) -> Th
             else:
                 self.send_error(404, "not found")
 
-        def log_message(self, format, *args):  # noqa: A002 — stdlib signature
+        def log_message(self, _format, *args):  # stdlib override; params unused
             # Suppress default access-log spam to stderr
             return
 

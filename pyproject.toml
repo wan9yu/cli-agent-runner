@@ -75,7 +75,10 @@ version-file = "agent_runner/_version.py"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["agent_runner/_version.py"]
+# _version.py is hatch-vcs-generated; .vulture-whitelist.py is a generated
+# vulture whitelist of bare names (B018/F821 by design) — both are tooling
+# artifacts, not hand-edited source.
+extend-exclude = ["agent_runner/_version.py", ".vulture-whitelist.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
@@ -102,10 +105,21 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
 [tool.vulture]
-paths = ["agent_runner"]
-min_confidence = 80
-exclude = ["tests/"]
-ignore_decorators = ["@pytest.fixture"]
+# .vulture-whitelist.py is GENERATED from every @dataclass field (its SSOT) by
+# tests/generate_vulture_whitelist.py; the diff-clean invariant keeps it honest.
+paths = ["agent_runner", ".vulture-whitelist.py"]
+min_confidence = 60
+ignore_names = [
+    # SSOT: plugin-extension naming convention. Every register_* is invoked by
+    # external plugins via entry_points, invisible to static analysis.
+    "register_*",
+    # SSOT: http.server dispatch convention. BaseHTTPRequestHandler calls
+    # do_<VERB> (do_GET) by name; never from project code.
+    "do_*",
+    # SSOT: stdlib BaseHTTPRequestHandler.log_message override; called by the
+    # framework's request-logging path, not from project code.
+    "log_message",
+]
 
 [tool.coverage.run]
 branch = true

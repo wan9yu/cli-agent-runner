@@ -87,6 +87,10 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
+      - name: vulture (dead-code scan)
+        # Config in [tool.vulture]; exits nonzero on any finding. No pipe — a
+        # `| tail` would swallow the exit code and let dead code through.
+        run: vulture
       - name: tests with coverage
         run: pytest -q --ignore=tests/e2e --ignore=tests/literate --cov --cov-report=xml --cov-report=term
       - name: docs CI gate

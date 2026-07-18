@@ -23,8 +23,18 @@ case "${1:-help}" in
   lint)
     "$PY" -m ruff check . && "$PY" -m ruff format --check .
     ;;
+  vulture)
+    # Dead-code scan. Config in [tool.vulture]; exits nonzero on any finding.
+    # No pipe here — a `| tail`/`| head` would swallow that nonzero exit code
+    # and silently let dead code through the gate.
+    "$PY" -m vulture
+    ;;
+  vulture-whitelist)
+    "$PY" -m tests.generate_vulture_whitelist
+    ;;
   check)
     "$0" lint
+    "$0" vulture
     "$0" test
     "$0" literate
     "$0" docs            # NOTE: must run before git diff --exit-code below
@@ -41,7 +51,9 @@ Usage: $0 <task>
   literate  Run quickstart.md as a test (bash blocks executed in sequence).
   test      Unit + integration suite.
   lint      ruff check + ruff format --check.
-  check     Full local-CI sweep: lint + test + literate + docs (gate).
+  vulture   Dead-code scan ([tool.vulture]); fails on any finding.
+  vulture-whitelist  Regenerate .vulture-whitelist.py from @dataclass fields.
+  check     Full local-CI sweep: lint + vulture + test + literate + docs (gate).
   coverage  Run unit + integration tests with coverage (HTML + terminal).
   e2e       Pi e2e suite (needs ssh alias 'pi' and AGENT_RUNNER_E2E_PI=1).
 HELP
