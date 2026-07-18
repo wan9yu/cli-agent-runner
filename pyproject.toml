@@ -61,7 +61,6 @@ dev = [
 ]
 e2e = [
     "pytest>=8",
-    "fabric>=3",
 ]
 
 [tool.hatch.build.targets.wheel]

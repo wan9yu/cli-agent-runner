@@ -32,6 +32,7 @@ EXPECTED_API_TYPES = {
     "Alert",
     "AutoAction",
     "Detector",
+    "DirtyOutcome",
     "InitResult",
     "InstallResult",
     "ProjectState",
@@ -56,14 +57,19 @@ EXPECTED_EVENTS_API = {
 EXPECTED_HOOKS_API = {
     "HookContext",
     "ContextEnricher",
+    "DirtyHandler",
     "PreRoundHook",
     "PostRoundHook",
+    "ServeStartupHook",
     "register_context_enricher",
+    "register_dirty_handler",
     "register_post_round_hook",
     "register_pre_round_hook",
+    "register_serve_startup_hook",
     "context_enrichers",
     "post_round_hooks",
     "pre_round_hooks",
+    "serve_startup_hooks",
     "plugin_context_enrichers",
 }
 

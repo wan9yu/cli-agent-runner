@@ -29,7 +29,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
-from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
+from agent_runner.config import _DEFAULT_AUTH_PATTERNS, _DEFAULT_AUTO_STOP_ON, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
     AGENT_EXIT,
@@ -67,10 +67,12 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
 
 # Built-in detectors whose ``auto_action="stop_service"`` is honored by default
 # (continuing in either state actively harms the host: burning API quota / writing
-# to a near-full disk). Runtime gating reads ``cfg.monitor.auto_stop_on`` — this
-# frozenset is the legacy fallback used by ``on_alert`` when no allow-list is
-# supplied, and is surfaced by ``_docgen`` to document the default policy.
-AUTO_STOP_ALERTS: frozenset[str] = frozenset({"oauth_fail", "disk_critical"})
+# to a near-full disk). Runtime gating reads ``cfg.monitor.auto_stop_on``; this is
+# ``on_alert``'s fallback when no allow-list is supplied, and is what ``_docgen``
+# renders as the default policy in docs/architecture.md. Derived from config's
+# SSOT so the doc cannot publish a policy the loader does not apply --
+# tests/invariants/test_auto_stop_policy_ssot.py pins it.
+AUTO_STOP_ALERTS: frozenset[str] = frozenset(_DEFAULT_AUTO_STOP_ON)
 
 _PLUGIN_DETECTORS: list[Detector] = []
 
