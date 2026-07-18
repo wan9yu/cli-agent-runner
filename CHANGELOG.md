@@ -24,9 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Defense-catalog honesty (every advertised defense now names a real guarding test) and ~31 false claims across README, docs, and docstrings.
 
 ### Added
-- The build gate runs `vulture` (dead-code scan) with a whitelist auto-generated from `@dataclass` fields.
-- `AGENT_RUNNER_FRESH_EYES` is documented and tested as a stable round-subprocess env-var contract.
-- `SECURITY.md` gains a threat model: agent-runner is a supervisor, not a sandbox.
+- Housekeeping: the build gate runs `vulture` (dead-code scan, whitelist auto-generated from `@dataclass` fields); `AGENT_RUNNER_FRESH_EYES` is now a documented, tested round-subprocess env-var contract; `SECURITY.md` gains a threat model (agent-runner is a supervisor, not a sandbox).
 
 See `docs/migrations/0.2.2.md`.
 
