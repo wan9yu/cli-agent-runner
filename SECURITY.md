@@ -20,6 +20,23 @@ Please **do not** open a public issue for security problems.
 - An initial assessment within 7 business days.
 - A fix and coordinated disclosure timeline once the scope is understood.
 
+## Threat model
+
+agent-runner is a **supervisor**, not a sandbox. It provides observability
+(structured events, peek/watch/monitor) and lifecycle safety (round timeouts,
+process-group reaping, orphan stashing, auto-stop on critical alerts). It does
+**not** confine the agent process: the agent runs with the invoking user's full
+privileges and can read, write, and execute anything that user can.
+
+Prompt injection from untrusted repository content is unsolved and out of the
+supervisor's reach — a malicious file in the work tree can steer the agent, and
+no defense in this project prevents that.
+
+Operators supervising untrusted input should run the agent as a dedicated
+unprivileged user, inside a container or VM, without passwordless sudo, and
+with egress limits. The supervisor's defenses bound the blast radius of a
+*misbehaving* agent, not a *hostile* one.
+
 ## Scope
 
 In scope: the `agent_runner` Python package, its CLI, its bundled systemd

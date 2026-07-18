@@ -4,9 +4,10 @@
 
 # agent-runner
 
-A restart-on-exit supervisor for autonomous coding CLIs. Tested with Claude
-Code and aider out of the box; any prompt-arg CLI via custom config. Spawn
-the agent round-after-round under defenses that prevent the failure modes
+A restart-on-exit supervisor for autonomous coding CLIs. Ships presets for
+Claude Code, aider, gemini and codewhale; any prompt-arg CLI via custom
+config. Spawn the agent round-after-round under defenses that prevent the
+failure modes
 that bite in production: stuck rounds, orphan commits, OAuth burn loops,
 full disks, runaway memory.
 
