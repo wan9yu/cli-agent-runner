@@ -245,14 +245,18 @@ cycle. Check for existing state before seeding.
 
 ### Round subprocess env contract
 
-`agent-runner serve` injects three environment variables into the round
-subprocess (which then propagates to the agent CLI):
+Four environment variables reach the agent CLI, injected in two stages:
+`agent-runner serve` sets `AGENT_RUNNER_LOG_DIR` and `AGENT_RUNNER_FRESH_EYES`
+on the round subprocess; the round process then sets `AGENT_RUNNER_LOG_DIR`,
+`AGENT_RUNNER_ROUND_NUM` and `AGENT_RUNNER_PHASE` on the agent CLI. All four are
+visible to the agent and to any hook running inside the round.
 
 | Variable | Value |
 |---|---|
 | `AGENT_RUNNER_LOG_DIR` | Absolute path to `runtime.log_dir`. Use to construct paths to `events-*.jsonl`, `narrative.md`, `.agent-done` sentinel, etc. |
-| `AGENT_RUNNER_ROUND_NUM` | Current round number as string (matches `round_num` field in events.jsonl). |
+| `AGENT_RUNNER_ROUND_NUM` | Current round number as string (matches `round_num` field in `events-*.jsonl`). |
 | `AGENT_RUNNER_PHASE` | Current phase name from rotation, or `""` (empty string) when no `[phases]` section is configured. |
+| `AGENT_RUNNER_FRESH_EYES` | `"1"` on a fresh-eyes round (`round_num` a positive multiple of `[runtime] fresh_eyes_every_n`), `"0"` otherwise. Always defined. |
 
 Example (bash):
 
