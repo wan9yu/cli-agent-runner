@@ -121,6 +121,10 @@ class PluginsConfig:
     typed dataclass. Known keys are first-class fields; unknown keys land in
     ``.raw`` for forward-compatibility with plugin-author-defined `[plugins.*]`
     sub-keys (e.g. plugin packages may read their own config from `cfg.plugins.raw`).
+
+    Neither field is read by core, so both will read as dead to a reader grepping
+    for uses. They are published contracts (CHANGELOG 0.1.12) and are deliberately
+    kept — guarded by tests/invariants/test_plugins_config_stable.py.
     """
 
     disable: list[str] = field(default_factory=list)

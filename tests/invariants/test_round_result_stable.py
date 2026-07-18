@@ -27,6 +27,7 @@ REQUIRED_FIELDS: set[str] = {
     "log_path",
     "dirty_files",
     "stashed",
+    "dirty_outcome",
 }
 
 
