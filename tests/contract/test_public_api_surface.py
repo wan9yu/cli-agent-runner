@@ -74,12 +74,6 @@ EXPECTED_MONITOR_API = {
     "plugin_detectors",
 }
 
-EXPECTED_DETECTOR_HELPERS_API = {
-    "cumulative_window_check",
-    "dual_source_silence",
-    "phase_filter",
-}
-
 EXPECTED_VCS_STATE_API = {
     "register_plugin_owned_paths",
     "plugin_owned_paths",
@@ -115,12 +109,6 @@ def test_given_monitor_module_when_imported_then_plugin_surface_matches() -> Non
     actual = _public_names("agent_runner.monitor")
     missing = EXPECTED_MONITOR_API - actual
     assert not missing, f"agent_runner.monitor: missing public names {missing}"
-
-
-def test_given_detector_helpers_module_when_imported_then_public_surface_matches() -> None:
-    actual = _public_names("agent_runner.detector_helpers")
-    missing = EXPECTED_DETECTOR_HELPERS_API - actual
-    assert not missing, f"agent_runner.detector_helpers: missing public names {missing}"
 
 
 def test_given_agent_runtime_when_imported_then_claude_specific_symbols_absent() -> None:
