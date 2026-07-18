@@ -1,14 +1,16 @@
 """Plugin hook surface for agent-runner.
 
-Four Protocol-typed extension points loaded via setuptools entry_points at
+Five Protocol-typed extension points loaded via setuptools entry_points at
 package import:
   * PreRoundHook    — runs after lock acquired, before context is written
   * ContextEnricher — returns a per-plugin slice merged into round-context.json
                       under base_context[enricher.name] (namespacing prevents
                       collisions structurally)
-  * PostRoundHook   — runs after agent exits, before round_end event
+  * PostRoundHook   — runs after agent exits, after the round_end event
   * ServeStartupHook — fires once per ``agent-runner serve`` boot, before the
                        round loop; receives the loaded Config
+  * DirtyHandler    — resolves a clean-exit dirty tree; runs ascending by
+                      ``priority``, first non-None DirtyOutcome wins
 
 Each hook's failure is contained: runner wraps every call in try/except and
 emits a built-in ``hook_failed`` event with truncated traceback. A broken
@@ -16,11 +18,14 @@ plugin must never crash the supervisor.
 
 Public API:
   * HookContext                — narrowed runtime context passed to all hooks
-  * PreRoundHook / ContextEnricher / PostRoundHook / ServeStartupHook — Protocols
+  * PreRoundHook / ContextEnricher / PostRoundHook / ServeStartupHook /
+    DirtyHandler                — Protocols
   * register_pre_round_hook / register_context_enricher / register_post_round_hook
-    / register_serve_startup_hook
+    / register_serve_startup_hook / register_dirty_handler
   * pre_round_hooks() / context_enrichers() / post_round_hooks()
     / serve_startup_hooks()
+  * dispatch_dirty()            — runs DirtyHandlers in priority order; first
+                                  non-None outcome wins
   * run_serve_startup_hooks()   — orchestrates serve-startup hook execution with
                                   structured stderr + best-effort event emission
   * plugin_context_enrichers()  — sorted list of registered enricher names
@@ -146,7 +151,7 @@ class ContextEnricher(Protocol):
 
 @runtime_checkable
 class PostRoundHook(Protocol):
-    """Runs after agent exits, before ``round_end`` event is emitted."""
+    """Runs after agent exits, after the ``round_end`` event is emitted."""
 
     name: str
 

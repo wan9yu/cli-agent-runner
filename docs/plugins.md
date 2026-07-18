@@ -85,7 +85,7 @@ the supervisor logs a `UserWarning` and continues. A broken plugin must never cr
 |---|---|---|
 | `agent_runner.pre_round_hooks` | `PreRoundHook` | after lock acquired, before round-context written |
 | `agent_runner.context_enrichers` | `ContextEnricher` | between base context assembly and prompt write |
-| `agent_runner.post_round_hooks` | `PostRoundHook` | after agent exits, before `round_end` event |
+| `agent_runner.post_round_hooks` | `PostRoundHook` | after agent exits, after `round_end` event |
 
 All three receive a `HookContext`:
 
@@ -165,7 +165,7 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 {
   "event": "hook_failed",
   "hook_name": "<plugin's name attribute>",
-  "hook_kind": "pre_round | context_enricher | post_round",
+  "hook_kind": "pre_round | context_enricher | post_round | dirty_handler",
   "error_type": "<exception class>",
   "error_message": "<str(exc)>",
   "traceback": "<head 1KB + ... [truncated] ... + tail 1KB>"

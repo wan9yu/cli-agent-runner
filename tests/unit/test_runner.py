@@ -979,3 +979,60 @@ def test_given_phases_when_round_runs_then_env_phase_matches_rotation(
 
     # round_num = 1 (no prior status), phase_for(1, ["diverge","converge"]) = "diverge"
     assert captured_env.get("AGENT_RUNNER_PHASE") == "diverge"
+
+
+def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """PostRoundHook runs AFTER round_end is emitted, not before.
+
+    Four docs stated the opposite for the life of the hook. Pin the real order:
+    the hook observes round_end already on disk.
+    """
+    from agent_runner import hooks, runner
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+    from tests._test_helpers import read_events_for_current_month
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    seen: list[list[str]] = []
+
+    class _Probe:
+        name = "order_probe"
+
+        def after_round(self, ctx, result) -> None:
+            seen.append([e["event"] for e in read_events_for_current_month(log_dir)])
+
+    def fake_run(**_kwargs):
+        from agent_runner.agent_runtime import RunResult
+
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
+    monkeypatch.setattr(runner.vcs_state, "detect_dirty_files", lambda _w: [])
+    monkeypatch.setattr(hooks, "_POST_ROUND_HOOKS", [_Probe()])
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(),
+    )
+
+    runner._run_one_round_inner(cfg)
+
+    assert seen, "post_round hook never fired"
+    assert "round_end" in seen[-1], (
+        "PostRoundHook ran before round_end was emitted — hooks.py:149's claim"
+    )

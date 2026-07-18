@@ -153,12 +153,13 @@ This makes dirty-tree policy fully pluggable. The `default_dirty_handler` plugin
 `auto_commit` policy from `[vcs] dirty_action` — so the external behavior is
 identical to pre-0.2.0 unless a consumer plugin intervenes first.
 
-**Lifecycle-hook family** (4 groups, run in this order per round):
+**Lifecycle-hook family** (5 groups, run in this order per round):
 
 1. `serve_startup_hooks` — once at `agent-runner serve` boot, before the loop
 2. `pre_round_hooks` — after lock acquire, before context is written
-3. `post_round_hooks` (+ `context_enrichers`) — after agent exits, before `round_end`
-4. `dirty_handler_hooks` — after post_round, if the tree is dirty on a clean exit
+3. `context_enrichers` — pre-round, their slices merged into round-context.json
+4. `dirty_handler_hooks` — after the agent exits, if the tree is dirty on a clean exit
+5. `post_round_hooks` — last, after the `round_end` event is emitted
 
 The stash *mechanism* (SHA lock, idempotency guard, `stash_orphan` /
 `try_auto_commit` primitives) stays in core. The stash *policy* is plugin-provided.
