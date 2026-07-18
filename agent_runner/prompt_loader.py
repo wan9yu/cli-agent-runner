@@ -14,13 +14,6 @@ from typing import Any, Literal
 _log = logging.getLogger(__name__)
 
 
-def load_prompt(prompt_file: Path) -> str:
-    try:
-        return prompt_file.read_text(encoding="utf-8")
-    except FileNotFoundError as e:
-        raise FileNotFoundError(f"prompt file not found: {prompt_file}") from e
-
-
 def strip_yaml_frontmatter(text: str) -> str:
     if not text.startswith("---\n"):
         return text

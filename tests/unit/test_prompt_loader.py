@@ -6,20 +6,8 @@ import pytest
 
 from agent_runner.prompt_loader import (
     assemble_prompt,
-    load_prompt,
     strip_yaml_frontmatter,
 )
-
-
-def test_given_prompt_md_when_load_then_returns_text(tmp_path: Path) -> None:
-    p = tmp_path / "p.md"
-    p.write_text("Hello, agent.")
-    assert load_prompt(p) == "Hello, agent."
-
-
-def test_given_missing_prompt_when_load_then_raises_filenotfound(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        load_prompt(tmp_path / "nope.md")
 
 
 def test_given_text_with_yaml_frontmatter_when_stripped_then_frontmatter_removed() -> None:
