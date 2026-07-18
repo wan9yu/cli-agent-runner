@@ -10,13 +10,11 @@ All real work delegated to `agent-runner round` (fresh import per round).
 
 from __future__ import annotations
 
-import argparse
 import os
 import signal
 import subprocess  # noqa: TID251
 import sys
 import time
-from pathlib import Path
 
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
@@ -77,18 +75,6 @@ def _add_max_rounds_arg(parser) -> None:
         metavar="N",
         help="Stop after N round completions (overrides [runtime] max_rounds in config)",
     )
-
-
-def _build_serve_parser() -> argparse.ArgumentParser:
-    """Return a standalone argument parser for the serve subcommand.
-
-    Used for unit testing; production wiring goes through add_parser().
-    """
-    p = argparse.ArgumentParser(prog="agent-runner serve")
-    p.add_argument("--config", type=Path, default=Path("./agent-runner.toml"))
-    p.add_argument("--once", action="store_true", help="Run a single round then exit (debug)")
-    _add_max_rounds_arg(p)
-    return p
 
 
 def add_parser(sub, parent) -> None:

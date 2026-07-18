@@ -49,8 +49,7 @@ def test_given_invalid_cli_max_rounds_when_resolved_then_raises(invalid: int):
 
 def test_given_argparse_when_max_rounds_passed_then_parsed_as_int():
     """argparse type=int parses --max-rounds correctly."""
-    from agent_runner.cli.serve_cmd import _build_serve_parser
+    from agent_runner.cli import _build_parser
 
-    parser = _build_serve_parser()
-    args = parser.parse_args(["--config", "/tmp/x.toml", "--max-rounds", "5"])
+    args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml", "--max-rounds", "5"])
     assert args.max_rounds == 5
