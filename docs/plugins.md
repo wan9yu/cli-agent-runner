@@ -412,15 +412,14 @@ own detection logic only on non-exempt rounds.
 
 from __future__ import annotations
 
-from agent_runner.api import emit
-from agent_runner.events import register_event_kind
+from agent_runner.api_types import Alert, ProjectState
+from agent_runner.events import emit, now_iso_ms, register_event_kind
 from agent_runner.hooks import HookContext, register_post_round_hook
-from agent_runner.monitor import register_custom_detector
+from agent_runner.monitor import register_detector
 
-
-# Register the kinds this plugin emits (events.py invariant)
+# Register the kind this plugin emits (events.py invariant). The stuck signal is
+# an Alert, not an event — detectors return Alerts and register no kind.
 register_event_kind("myproject_round_exempt", source="myproject_agent_plugin")
-register_event_kind("myproject_stuck_round_detected", source="myproject_agent_plugin")
 
 
 class _ExemptHook:
@@ -435,51 +434,46 @@ class _ExemptHook:
                  round_num=ctx.round_num, reason="short_round")
 
 
-def _stuck_round_detector(events: list[dict]) -> dict | None:
-    """Custom detector: 3+ consecutive non-exempt rounds with no commit → stuck.
+class _StuckRoundDetector:
+    """3+ consecutive non-exempt rounds with no commit -> stuck."""
 
-    Reads recent events.jsonl tail (passed in by monitor); builds exempt set;
-    counts commits per round_num (project-specific: greps git log); flags
-    role-stuck.
-    """
-    # Build exempt round_num set
-    exempt = {
-        e["round_num"] for e in events
-        if e.get("event") == "myproject_round_exempt"
-    }
+    name = "myproject_stuck_round"
+    severity = "warning"
+    auto_action = "none"
 
-    # Get last N round_end events excluding exempt
-    rounds_ended = [
-        e for e in events
-        if e.get("event") == "round_end" and e.get("round_num") not in exempt
-    ]
-    if len(rounds_ended) < 3:
-        return None
-
-    last_three = rounds_ended[-3:]
-    last_three_nums = {e["round_num"] for e in last_three}
-
-    # Project-specific: check git log for commits matching these round_nums
-    # (truncated for brevity — real plugin would shell to `git log --grep`)
-    commits_per_round = _count_commits_for_rounds(last_three_nums)
-    if sum(commits_per_round.values()) == 0:
-        # All 3 non-exempt rounds produced no commits → stuck signal
-        return {
-            "kind": "myproject_stuck_round_detected",
-            "severity": "warning",
-            "message": f"3 non-exempt rounds (round_nums={sorted(last_three_nums)}) "
-                       f"produced no commits — pipeline stuck?",
+    def detect(self, state: ProjectState) -> Alert | None:
+        exempt = {
+            e["round_num"] for e in state.recent_events
+            if e.get("event") == "myproject_round_exempt"
         }
-    return None
+        rounds_ended = [
+            e for e in state.recent_events
+            if e.get("event") == "round_end" and e.get("round_num") not in exempt
+        ]
+        if len(rounds_ended) < 3:
+            return None
+        nums = sorted({e["round_num"] for e in rounds_ended[-3:]})
+
+        # Project-specific: real plugin would shell to `git log --grep`
+        if sum(_count_commits_for_rounds(nums).values()) > 0:
+            return None
+        return Alert(
+            severity=self.severity,
+            detector=self.name,
+            message=f"3 non-exempt rounds (round_nums={nums}) produced no commits",
+            context={"round_nums": nums},
+            ts=now_iso_ms(),
+            auto_action=self.auto_action,
+        )
 
 
-def _count_commits_for_rounds(round_nums: set[int]) -> dict[int, int]:
+def _count_commits_for_rounds(round_nums: list[int]) -> dict[int, int]:
     """Stub: real plugin would shell out to `git log` or read a sidecar file."""
     return {n: 0 for n in round_nums}
 
 
 register_post_round_hook(_ExemptHook())
-register_custom_detector(_stuck_round_detector)
+register_detector(_StuckRoundDetector())
 ```
 
 **Plugin registration** (`pyproject.toml`):
@@ -488,16 +482,16 @@ register_custom_detector(_stuck_round_detector)
 [project.entry-points."agent_runner.post_round_hooks"]
 myproject_exempt = "myproject_agent_plugin:_ExemptHook"
 
-[project.entry-points."agent_runner.custom_detectors"]
-myproject_stuck = "myproject_agent_plugin:_stuck_round_detector"
+[project.entry-points."agent_runner.detectors"]
+myproject_stuck = "myproject_agent_plugin:_StuckRoundDetector"
 ```
 
 **The pattern in 3 lines**:
 
 1. PostRoundHook emits `<plugin>_round_exempt` events for exempt rounds.
-2. Custom detector reads recent events, builds exempt set, filters out exempt
-   rounds, applies its own logic.
-3. Detector returns an alert dict when the condition fires.
+2. A `Detector` reads `state.recent_events`, builds the exempt set, filters out
+   exempt rounds, applies its own logic.
+3. `detect(state)` returns an `Alert` when the condition fires, else `None`.
 
 The same shape covers other project-specific signals: count git commits per
 round (no-commit-rounds-stuck detection), avg recent vs older round
@@ -532,7 +526,6 @@ class DirtyHandler(Protocol):
         self,
         ctx: HookContext,
         dirty_files: list[str],
-        result,               # api_types.RoundResult (or None if not yet built)
     ) -> "DirtyOutcome | None": ...
 ```
 
@@ -581,7 +574,7 @@ class MyDirtyHandler:
     name = "my_dirty_handler"
     priority = 10  # ascending; only matters when multiple handlers coexist
 
-    def handle_dirty(self, ctx: HookContext, dirty_files, result) -> DirtyOutcome | None:
+    def handle_dirty(self, ctx: HookContext, dirty_files) -> DirtyOutcome | None:
         # Return None to pass to the next handler.
         # Return a DirtyOutcome to claim the result and stop dispatch.
         return DirtyOutcome(kind="ignored")

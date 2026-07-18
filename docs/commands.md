@@ -52,7 +52,10 @@ Generate and install systemd user unit(s):
 
 - Always: `~/.config/systemd/user/agent-runner@<project>.service`
 - With `--monitor`: also `agent-runner-monitor@<project>.service`
-- `--system`: not yet implemented (raises `NotImplementedError`)
+- `--system`: write `/etc/systemd/system/agent-runner@<project>.service` instead;
+  requires root (`sudo -E agent-runner install --system` — `-E` preserves
+  `SUDO_USER`, which becomes the unit's `User=`). Enables but does **not** start:
+  finish with `systemctl start agent-runner@<project>`.
 
 After writing, runs `systemctl --user daemon-reload`, `enable`, `start`.
 

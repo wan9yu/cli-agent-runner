@@ -467,7 +467,7 @@ ssh -L 8765:127.0.0.1:8765 <pi-host>
 ### Going truly 24×7 (systemd)
 
 ```bash
-agent-runner install --user --config <toml>
+agent-runner install --config <toml>
 systemctl --user start agent-runner@<project>
 systemctl --user enable agent-runner@<project>  # restart on Pi reboot
 ```
