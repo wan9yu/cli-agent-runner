@@ -30,3 +30,8 @@ htmlcov/
 
 # Personal /team-onboarding artifact — not project content
 ONBOARDING.md
+
+# Local tooling scratch directories — never project content, never published.
+# Defense in depth only: releases build from a fresh CI checkout, and every
+# sdist 0.1.1–0.2.1 was checked clean. This only guards a local `python -m build`.
+.superpowers/
