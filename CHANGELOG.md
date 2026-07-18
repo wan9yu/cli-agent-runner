@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-07-18
+
+### Removed
+- `agent_runner.detector_helpers` and its three helpers (`cumulative_window_check`, `dual_source_silence`, `phase_filter`) — **breaking** for any out-of-tree detector that imported them; vendor the ~115 LOC.
+- `agent-runner cancel` and `api.cancel()` — **breaking**; they never delivered the documented SIGINT-to-round semantics (nothing ever wrote the `round.pid` they read), so `cancel` was only a slower alias for `stop`. Use `stop`; `serve` no longer traps `SIGUSR1`.
+- `events.SIGTERM_RECEIVED` (the `sigterm_received` kind) — declared but never emitted, so nothing could ever observe it.
+
+### Changed
+- Paths registered with `register_plugin_owned_paths` are no longer swept into the orphan stash: all three documented pattern forms (trailing-slash prefix, glob, `**/*`) are now honored at the git boundary, not only the report boundary, so a deliverable is no longer silently stashed — and possibly lost — when the agent also touches a non-owned file. `**/*` patterns now also match files directly in the registered directory, changing which paths `detect_dirty_files` filters. **Check `git stash list` if you register owned paths.**
+- Config-load rejections now raise `ConfigError` (a subclass of `ValueError`) consistently; fully backward compatible — any `except ValueError` still catches them.
+- `[monitor.host_health]` percent thresholds, `[prompt] inject_context`, and `[monitor] auth_fail_patterns` are validated at load, so configs that were previously accepted-but-silently-broken now fail loudly at startup.
+
+### Fixed
+- `agent-runner events --tail` no longer re-emits events appended while a poll's read loop was in flight.
+- The orphan-stash defense now signals push failure (`orphan_stash_failed`) and idempotent reuse (`orphan_idempotent_skip`) — both kinds were declared but never emitted — instead of degrading silently; `stash_orphan` raises `StashError` (import it from `agent_runner.vcs_state`) on push failure.
+- Plugin-supplied transient-error classifications no longer crash the supervisor with `KeyError`.
+- Defense-catalog honesty (every advertised defense now names a real guarding test) and ~31 false claims across README, docs, and docstrings.
+
+### Added
+- The build gate runs `vulture` (dead-code scan) with a whitelist auto-generated from `@dataclass` fields.
+- `AGENT_RUNNER_FRESH_EYES` is documented and tested as a stable round-subprocess env-var contract.
+- `SECURITY.md` gains a threat model: agent-runner is a supervisor, not a sandbox.
+
+See `docs/migrations/0.2.2.md`.
+
 ## [0.2.1] - 2026-07-16
 
 ### Added
