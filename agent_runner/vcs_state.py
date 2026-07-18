@@ -226,23 +226,6 @@ def _parse_stash_line(line: str) -> tuple[str, int, str] | None:
     return sha, ct, msg
 
 
-def list_recent_stashes(repo: Path, limit: int | None = None) -> list[StashRef]:
-    args = ["stash", "list", "--format=%H %ct %s"]
-    if limit is not None:
-        args.insert(2, f"-{limit}")
-    r = _git(repo, *args)
-    if r.returncode != 0:
-        return []
-    out: list[StashRef] = []
-    for line in r.stdout.strip().splitlines():
-        parsed = _parse_stash_line(line)
-        if parsed is None:
-            continue
-        sha, _ct, msg = parsed
-        out.append(StashRef(sha=sha, message=msg))
-    return out
-
-
 def _recent_orphan_for_round(repo: Path, round_num: int, window_s: int) -> StashRef | None:
     # Only the top stash matters for idempotency; -1 caps git's work as the
     # reflog grows over the project's lifetime.
