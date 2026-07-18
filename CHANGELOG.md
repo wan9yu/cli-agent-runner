@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `agent-runner events --tail` no longer re-emits events appended while a poll's read loop was in flight.
-- The orphan-stash defense now signals push failure (`orphan_stash_failed`) and idempotent reuse (`orphan_idempotent_skip`) — both kinds were declared but never emitted — instead of degrading silently; `stash_orphan` raises `StashError` (import it from `agent_runner.vcs_state`) on push failure.
+- The orphan-stash defense now signals push failure (`orphan_stash_failed`) and idempotent reuse (`orphan_idempotent_skip`) — both kinds were declared but never emitted — instead of degrading silently; `stash_orphan` raises `StashError` (re-exported from `agent_runner.api`) on push failure.
 - Plugin-supplied transient-error classifications no longer crash the supervisor with `KeyError`.
 - Defense-catalog honesty (every advertised defense now names a real guarding test) and ~31 false claims across README, docs, and docstrings.
 

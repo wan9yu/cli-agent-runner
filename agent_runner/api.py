@@ -790,7 +790,11 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
 )
 
 # Re-export git primitives so external callers can reach them via the api facade.
+# The exception types travel with their functions: a caller catching what
+# stash_orphan / try_auto_commit raise imports it from the same place.
 from agent_runner.vcs_state import (  # noqa: E402,F401 — public primitives
+    AutoCommitError,
+    StashError,
     stash_orphan,
     try_auto_commit,
 )
