@@ -620,7 +620,7 @@ def _tail_events_jsonl(
     events are skipped (machine-consumption use case). If False, yield from
     byte 0 of every file present at start (human-narrate use case).
 
-    Follows file rotation transparently — when a new events-YYYY-MM-DD.jsonl
+    Follows file rotation transparently — when a new events-YYYY-MM.jsonl
     appears, it is picked up from byte 0.
     """
     import json as _json
@@ -814,7 +814,7 @@ def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.1) -> Itera
 
     Subscription begins at "now": events present in the file before the iterator
     starts are NOT yielded. Follows file rotation transparently (when a new
-    events-YYYY-MM-DD.jsonl appears, the iterator picks it up from byte 0).
+    events-YYYY-MM.jsonl appears, the iterator picks it up from byte 0).
 
     Default poll_interval_s of 0.1 reflects machine-consumption latency
     expectations (vs ``narrate_events`` which uses 0.5 for human pacing).

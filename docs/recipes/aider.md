@@ -93,9 +93,11 @@ command = ["aider", "--model", "deepseek/deepseek-coder", "--yes-always", "--no-
 ## Known limitations
 
 - **Large diffs in stdout** — aider's `--no-stream` is line-buffered but still
-  prints the full diff per turn. Per-round log files can grow to ~MB for
-  large refactors. Log rotation is not yet configurable; clean up
-  `~/.agent-runner/<project>/logs/rounds/` periodically.
+  prints the full diff per turn. The per-round agent transcript
+  (`~/.agent-runner/<project>/logs/rounds/R<N>-*.log`) can grow to ~MB for large
+  refactors and is **not** auto-pruned — clean it up periodically. The separate
+  serve-wrapper logs (`log_dir/round-*.log`) *are* capped by `[runtime]
+  round_log_retention` (default 100), pruned once at serve startup.
 - **Auto-commit messages** — aider writes its own commit messages
   ("aider: <subject>"). agent-runner does not control this; if you need a
   uniform commit style, configure `aiderrc.yml` separately.

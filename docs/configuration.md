@@ -196,12 +196,12 @@ counter: round N runs `phases.list[(N - 1) % len(phases.list)]`. Unset
 > counter is unaffected — subsequent default rounds resume rotation. The name
 > must match one of the entries in `[phases].list`.
 
-> **Phase rotation indexing**: `phase = phases.list[round_num % len(phases.list)]`.
-> When `round_num` doesn't start at 0 (e.g. resuming after a restart with an
-> existing round counter, or continuing into round 477), rotation appears to
-> "start" at `phases.list[round_num % len]`, not `phases.list[0]`. This is by
-> design (rotation is deterministic on round_num). If you need a specific
-> starting phase, ensure the starting `round_num` matches.
+> **Phase rotation indexing**: `phase = phases.list[(round_num - 1) % len(phases.list)]`.
+> `round_num` is 1-based, so round 1 gets `phases.list[0]`. Resuming after a
+> restart continues from the persisted counter rather than restarting the
+> rotation — round N always maps to the same phase regardless of when it ran.
+> This is by design (rotation is deterministic on `round_num`). If you need a
+> specific starting phase, ensure the starting `round_num` matches.
 
 ## `[phases.<name>]` per-phase sub-tables (0.1.16+)
 

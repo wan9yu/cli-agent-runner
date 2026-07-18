@@ -23,7 +23,7 @@ _WINDOW_DEFAULT_SENTINEL = -1
 
 
 def _positive_int(s: str) -> int:
-    """Parse positive integer (duplicate of peek_cmd._positive_int; KISS)."""
+    """Parse positive integer for the --window arg."""
     try:
         n = int(s)
     except ValueError as e:

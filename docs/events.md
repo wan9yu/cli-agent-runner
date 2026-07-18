@@ -1,6 +1,6 @@
 # Event schema versioning contract
 
-`agent-runner` writes structured JSONL events to `log_dir/events-YYYY-MM-DD.jsonl`.
+`agent-runner` writes structured JSONL events to `log_dir/events-YYYY-MM.jsonl`.
 Downstream consumers (operators, plugins, monitoring tools) parse these events
 and depend on stable field semantics.
 

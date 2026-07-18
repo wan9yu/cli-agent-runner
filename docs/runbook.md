@@ -306,7 +306,7 @@ agent-runner monitor --mode events --config /path/to/agent-runner.toml
 
 Stdout emits one event per line as JSON. Subscription begins at process-start;
 historical events are not replayed (use `cat events-*.jsonl | jq .` for that).
-The mode follows daily file rotation transparently.
+The mode follows monthly file rotation transparently.
 
 Local-only (no `--host` support). For remote monitoring use `--mode anomaly`.
 

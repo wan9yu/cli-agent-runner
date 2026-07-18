@@ -29,8 +29,10 @@ CLI and the same Round / Loop / Witness layers apply.
 | Snapshot × time | "facts about now (auto-refresh)" | `watch` |
 | Anomalies × time | "what changed, what's not normal" | `monitor` |
 
-All three accept the same drill-down flags: `--round N`, `--log`, `--events N`,
-`--json`, `--select PATH`. Operator learns one mental model, three lenses.
+`peek` and `watch` accept the same drill-down flags: `--round N`, `--log`,
+`--events N`, `--select PATH`. `monitor` is the anomaly lens and takes its own
+flags (`--mode`, `--host`, `--interval`, `--port`); `--config` and `--json` are
+common to all three. Operator learns one mental model, three lenses.
 
 ## Defenses-as-data
 

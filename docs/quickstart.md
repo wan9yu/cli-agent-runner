@@ -84,7 +84,7 @@ disk-full conditions.
 ## 5. Observe
 
 ```bash
-agent-runner status                     # service state JSON
+agent-runner status                     # service state (pretty text; add --json for JSON)
 agent-runner peek                       # current snapshot
 agent-runner peek --select system       # drill into mem/disk/load
 agent-runner watch                      # auto-refresh peek

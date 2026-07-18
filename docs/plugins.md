@@ -663,8 +663,9 @@ the orphan-stash defense to sweep it.
 
 ### Visibility
 
-`agent-runner peek --select plugins.owned_paths` shows the currently
-registered list (peek schema v1.5+).
+`agent-runner peek --json | jq .plugins.owned_paths` shows the currently
+registered list (peek schema v1.5+). The `plugins` namespace is part of the
+JSON surface only — it is not reachable via `--select`.
 
 ## Plugin tests + consumer pytest collision
 
