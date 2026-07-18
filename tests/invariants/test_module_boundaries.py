@@ -37,22 +37,45 @@ def _string_literals_in(file: Path) -> list[str]:
     return out
 
 
+def _pkg_modules() -> list[Path]:
+    """Every module in the package, subpackages included.
+
+    Recursive by contract: a non-recursive glob saw 28 of 47 modules, leaving
+    all of cli/, builtin_plugins/ and presets/ outside every invariant here.
+    """
+    return sorted(PKG.rglob("*.py"))
+
+
+def test_given_boundary_scans_when_collecting_modules_then_reach_subpackages() -> None:
+    scanned = {f.relative_to(PKG).as_posix() for f in _pkg_modules()}
+    top_level = {f.name for f in PKG.glob("*.py")}
+    assert len(scanned) > len(top_level), "scan is not recursing into subpackages"
+    for rel in ("cli/upgrade_cmd.py", "builtin_plugins/__init__.py", "presets/__init__.py"):
+        assert rel in scanned, f"{rel} not scanned"
+
+
 def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subprocess() -> None:
+    # Sanctioned by repo-relative path, not basename: rglob sees 4 __init__.py.
+    # Mirrors pyproject.toml's "subprocess".msg and per-file-ignores.
+    sanctioned = {
+        "_substrate.py",
+        "agent_runtime.py",
+        "api.py",
+        "cli/install_cmd.py",
+        "cli/serve_cmd.py",
+        "cli/upgrade_cmd.py",
+        "metrics.py",
+        "monitor.py",
+        "scaffold.py",
+        "vcs_state.py",
+    }
     offenders: list[str] = []
-    for f in PKG.glob("*.py"):
-        if f.name in (
-            "agent_runtime.py",
-            "vcs_state.py",
-            "scaffold.py",
-            "monitor.py",
-            "metrics.py",
-            "api.py",
-            "_substrate.py",
-            "__init__.py",
-        ):
+    for f in _pkg_modules():
+        rel = f.relative_to(PKG).as_posix()
+        if rel in sanctioned:
             continue
         if "subprocess" in _imports_in(f):
-            offenders.append(f.name)
+            offenders.append(rel)
     assert offenders == [], f"subprocess imported in non-sanctioned modules: {offenders}"
 
 
@@ -63,15 +86,16 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_call_git_cli()
     `git commit` sequence for the optional initial commit during `agent-runner init`.
     """
     offenders: list[tuple[str, int]] = []
-    for f in PKG.glob("*.py"):
-        if f.name in ("vcs_state.py", "scaffold.py", "_substrate.py", "__init__.py"):
+    for f in _pkg_modules():
+        rel = f.relative_to(PKG).as_posix()
+        if rel in ("vcs_state.py", "scaffold.py", "_substrate.py"):
             continue
         tree = ast.parse(f.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.List) and node.elts:
                 first = node.elts[0]
                 if isinstance(first, ast.Constant) and first.value == "git":
-                    offenders.append((f.name, node.lineno))
+                    offenders.append((rel, node.lineno))
     assert offenders == [], f"git CLI call outside sanctioned modules: {offenders}"
 
 

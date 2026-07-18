@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import sys
-from subprocess import (  # noqa: TID251 — exception class only, no subprocess calls here
-    CalledProcessError,
-)
+from subprocess import CalledProcessError
 
 from agent_runner import api
 from agent_runner.cli.common import emit, fail, work_dir_from_args

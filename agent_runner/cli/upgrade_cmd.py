@@ -13,7 +13,7 @@ use `agent-runner upgrade` from the installation venv).
 from __future__ import annotations
 
 import re
-import subprocess  # noqa: TID251 — orchestration uses pip + smoke subprocess
+import subprocess
 import sys
 import time
 from pathlib import Path
