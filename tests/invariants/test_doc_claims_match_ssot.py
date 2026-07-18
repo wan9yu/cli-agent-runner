@@ -13,7 +13,12 @@ from pathlib import Path
 from agent_runner import defenses
 from agent_runner.builtin_plugins._constants import _5XX_STATUSES
 from agent_runner.cli import _build_parser
-from agent_runner.config import _VALID_DIRTY_ACTIONS, _VALID_INJECTION_MODES, load_config
+from agent_runner.config import (
+    _VALID_DIRTY_ACTIONS,
+    _VALID_INJECTION_MODES,
+    _VALID_PROMPT_DELIVERY,
+    load_config,
+)
 from agent_runner.monitor import KNOWN_ALERT_KINDS
 from tests._test_helpers import make_toml
 
@@ -42,6 +47,7 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/architecture.md", r"（(\d+) 条）", defs),
         ("docs/commands.md", r"Runs the (\d+) detectors", detectors),
         ("docs/commands.md", r"(\d+) 个动词", verbs),
+        ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),
     ]
 
     failures: list[str] = []
@@ -112,6 +118,19 @@ def test_doc_value_sets_match_ssot() -> None:
     preset_doc = set(pm.group(1).split(",")) if pm else set()
     if preset_doc != preset_ssot:
         failures.append(f"--preset doc {preset_doc} != SSOT {preset_ssot}")
+
+    # prompt_delivery: configuration.md line "Type: string, one of `"argv"`, `"stdin"`"
+    deliv_line = next((ln for ln in cfg_text.splitlines() if "one of" in ln and "argv" in ln), "")
+    deliv_doc = _backtick_quoted_tokens(deliv_line)
+    if deliv_doc != set(_VALID_PROMPT_DELIVERY):
+        failures.append(f"prompt_delivery doc {deliv_doc} != SSOT {set(_VALID_PROMPT_DELIVERY)}")
+
+    # auth_fail_hint presets: configuration.md enumerates them by hand as
+    # "- `--preset <name>` → ..." bullets; init_cmd derives the real list.
+    hint_section = cfg_text.split("`[monitor].auth_fail_hint`", 1)[-1].split("\n## ", 1)[0]
+    hint_doc = set(re.findall(r"^- `--preset (\w+)`", hint_section, re.MULTILINE))
+    if hint_doc != preset_ssot:
+        failures.append(f"auth_fail_hint preset doc {hint_doc} != SSOT {preset_ssot}")
 
     assert not failures, "doc value-set drift:\n" + "\n".join(failures)
 

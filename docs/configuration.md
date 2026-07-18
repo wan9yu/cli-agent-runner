@@ -159,6 +159,8 @@ guidance without authoring it themselves:
   `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / etc.); run `aider --models`.
 - `--preset codewhale` → run `codewhale auth status` to inspect provider
   credentials, or set `DEEPSEEK_API_KEY` on the supervisor host.
+- `--preset gemini` → verify your API key or check your authentication status
+  for Gemini CLI.
 
 Override in your `agent-runner.toml` if you ship a custom CLI.
 

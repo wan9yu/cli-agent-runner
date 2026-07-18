@@ -1,6 +1,6 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
-12 built-in detectors. Two trigger ``auto_action="stop_service"``:
+11 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
@@ -562,7 +562,7 @@ def run_all_detectors(
     disk_warning_pct: float = 90.0,
     disk_critical_pct: float = 95.0,
 ) -> list[Alert]:
-    """Run all 12 detectors; returns alerts (empty = healthy)."""
+    """Run all 11 detectors; returns alerts (empty = healthy)."""
     if now is None:
         now = datetime.now(UTC)
     compiled_auth_pats = (

@@ -311,7 +311,7 @@ to ship equivalent detectors for other agent CLIs — the bundled
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
-detectors that run alongside the 12 builtins on every monitor poll.
+detectors that run alongside the 11 builtins on every monitor poll.
 
 ### Group + Protocol
 
