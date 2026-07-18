@@ -88,13 +88,3 @@ just succeeded in the same repo).
 Deferred because closing it is a naming decision, not cleanup: no event kind
 carries the meaning "stashed but ref lost" (`orphan_stash_failed` would be wrong
 — the stash exists). Left as-is until that kind is designed.
-
-## Test monkeypatch target asymmetry
-
-Tests patch the auto-commit and stash entry points at different bindings:
-`tests/unit/test_default_dirty_handler.py` patches
-`agent_runner.api.try_auto_commit` (the re-export the plugin actually calls),
-while `tests/unit/test_runner.py` patches `agent_runner.vcs_state.stash_orphan`
-(the source). Both are correct for their caller, but the convention is
-inconsistent — a refactor that moves or renames either binding breaks one style
-silently. Pick one patch-target rule before the next test touches these seams.
