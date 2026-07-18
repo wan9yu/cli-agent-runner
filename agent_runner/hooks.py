@@ -226,10 +226,6 @@ def register_dirty_handler(handler: DirtyHandler) -> None:
     _DIRTY_HANDLERS.append(handler)
 
 
-def dirty_handlers() -> list[DirtyHandler]:
-    return list(_DIRTY_HANDLERS)
-
-
 def dispatch_dirty(
     ctx: HookContext,
     dirty_files: list[str],
