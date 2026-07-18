@@ -76,29 +76,6 @@ def read_status(log_dir: Path) -> Status | None:
         return None
 
 
-def write_round_context(
-    log_dir: Path,
-    *,
-    round_num: int,
-    started_at: str,
-    phase: str | None = None,
-    previous: dict[str, Any] | None = None,
-    orphan_stash: dict[str, Any] | None = None,
-) -> None:
-    ctx: dict[str, Any] = {"round_num": round_num, "started_at": started_at}
-    if phase is not None:
-        ctx["phase"] = phase
-    if previous is not None:
-        ctx["previous"] = previous
-    if orphan_stash is not None:
-        ctx["orphan_stash"] = orphan_stash
-    atomic_write_json(log_dir / CONTEXT_FILE, ctx)
-
-
-def read_round_context(log_dir: Path) -> dict[str, Any] | None:
-    return read_json(log_dir / CONTEXT_FILE)
-
-
 def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
     atomic_write_json(log_dir / ORPHAN_FILE, asdict(state))
 
