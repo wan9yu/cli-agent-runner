@@ -32,10 +32,13 @@ def _verb_count() -> int:
 
 
 def test_doc_counts_match_ssot(tmp_path) -> None:
+    from agent_runner.cli.init_cmd import _preset_names
+
     cfg = load_config(make_toml(tmp_path))
     detectors = len(KNOWN_ALERT_KINDS)
     defs = len(defenses.catalog(cfg))
     verbs = _verb_count()
+    presets = len(_preset_names())
 
     # (file, regex with ONE int capture group, expected value)
     registry = [
@@ -45,6 +48,7 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/architecture.md", r"Monitor: (\d+) detectors", detectors),
         ("docs/architecture.md", r"returns (\d+) structured", defs),
         ("docs/architecture.md", r"（(\d+) 条）", defs),
+        ("docs/architecture.md", r"(\d+) presets ship", presets),
         ("docs/commands.md", r"Runs the (\d+) detectors", detectors),
         ("docs/commands.md", r"(\d+) 个动词", verbs),
         ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),

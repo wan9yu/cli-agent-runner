@@ -19,6 +19,13 @@ import pytest
 # would fail prompt_smoke_passes and (post-0.1.42) stop serve via config_broken.
 _VALID_PROMPT = "placeholder agent task prompt line. " * 20
 
+# Single source for the collection-time preset list that pytest.mark.parametrize
+# needs as a literal (it cannot derive it from a runtime call). test_presets.py
+# owns the drift-guard that asserts this matches the shipped presets/*.toml; both
+# test_presets and test_scaffold_presets import from here so a new preset is added
+# in exactly one place.
+PRESET_NAMES = ["claude", "aider", "gemini", "codewhale", "kimi"]
+
 
 class FakeArgs:
     """Test stub mimicking argparse.Namespace for serve/monitor CLI tests."""
