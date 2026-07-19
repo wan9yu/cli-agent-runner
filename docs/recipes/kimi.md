@@ -17,14 +17,25 @@ skills.
   brew install kimi-code          # or: npm i -g @moonshot-ai/kimi-code
   ```
   (or the install script at <https://code.kimi.com>)
-- Model access on the supervisor host, via **either**:
-  - `KIMI_API_KEY` set in the environment (a Moonshot AI Open Platform key from
-    <https://platform.kimi.ai/console/api-keys>), **or**
-  - a one-time `kimi login` on the host (device-code OAuth; credentials cache at
-    `~/.kimi-code/credentials/`).
+- Model access on the supervisor host. The cleanest unattended option is a
+  self-contained model spec in the environment — no interactive login, no
+  `config.toml`. `kimi -p` reads these four variables:
+  ```bash
+  export KIMI_MODEL_NAME=kimi-k2.7-code          # or another Moonshot model id, e.g. kimi-k3[1m]
+  export KIMI_MODEL_API_KEY="$YOUR_MOONSHOT_KEY"
+  export KIMI_MODEL_BASE_URL=https://api.moonshot.ai/v1   # China key: https://api.moonshot.cn/v1
+  export KIMI_MODEL_PROVIDER_TYPE=openai         # must be one of kimi / anthropic / openai; Moonshot = openai
+  ```
+  `KIMI_MODEL_API_KEY` is required whenever `KIMI_MODEL_NAME` is set. Get a key
+  from the Moonshot platform (<https://platform.kimi.ai/console/api-keys>, or
+  `platform.moonshot.cn` for a China key) — note the endpoint must match the
+  key's region (`.ai` vs `.cn`), or you get `401 Invalid Authentication`.
 
-  The supervisor runs unattended and cannot complete the interactive login
-  itself — authenticate once up front. `kimi doctor` validates config.
+  Alternatively, a one-time `kimi login` on the host (device-code OAuth;
+  credentials cache at `~/.kimi-code/credentials/`) configures provider + model
+  in one step. The supervisor cannot complete an interactive login itself, so do
+  it up front. A raw `KIMI_API_KEY` alone is not enough — `kimi -p` also needs
+  the model configured. `kimi doctor` validates config.
 - A git repo as `work_dir`.
 
 ### Scaffold
@@ -34,8 +45,10 @@ agent-runner init --preset kimi
 ```
 
 This writes an `agent-runner.toml` whose agent command is
-`kimi --yolo --output-format stream-json` with the prompt passed on argv
-(`-p`). The model is whatever `~/.kimi-code/config.toml` sets as `default_model`;
+`kimi --output-format stream-json` with the prompt passed on argv (`-p`).
+`kimi -p` runs headlessly and auto-approves tool calls on its own — it rejects
+`--yolo` / `--auto` (`Cannot combine --prompt with --yolo`), so the preset omits
+them. The model is whatever `~/.kimi-code/config.toml` sets as `default_model`;
 pin a specific one by adding `"-m", "kimi-k3[1m]"` to the `command` array.
 
 ### Note on the prompt on argv

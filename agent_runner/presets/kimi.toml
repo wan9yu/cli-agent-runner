@@ -4,23 +4,28 @@
 #   - Kimi Code CLI installed (binary `kimi` on PATH):
 #       brew install kimi-code            (or: npm i -g @moonshot-ai/kimi-code,
 #       or the install script at https://code.kimi.com)
-#   - Model access on the supervisor host, via EITHER:
-#       - KIMI_API_KEY set in the environment (Moonshot AI Open Platform key), or
-#       - a one-time `kimi login` on the host (device-code OAuth; credentials
-#         cache at ~/.kimi-code/credentials/).
-#     The supervisor runs unattended, so it cannot do the interactive login
-#     itself — authenticate once up front. `kimi doctor` validates config.
+#   - The supervisor host authenticated AND a default model configured. The
+#     cleanest unattended path is a self-contained model spec in the environment
+#     (no interactive login, no config.toml) — set KIMI_MODEL_NAME,
+#     KIMI_MODEL_API_KEY, KIMI_MODEL_BASE_URL, KIMI_MODEL_PROVIDER_TYPE. See
+#     docs/recipes/kimi.md for the exact values (Moonshot = provider type
+#     `openai`, base `https://api.moonshot.ai/v1` — China: `api.moonshot.cn/v1`).
+#     Alternatively, `kimi login` once on the host (device-code OAuth; creds
+#     cache at ~/.kimi-code/credentials/). A raw KIMI_API_KEY alone is NOT enough
+#     — `kimi -p` also needs the model configured. `kimi doctor` validates config.
 #   - work_dir is a git repo.
 #
-# The model is whatever `~/.kimi-code/config.toml` sets as default_model; pin a
-# specific one by adding e.g. "-m", "kimi-k3[1m]" to the command below.
+# `kimi -p` runs one prompt headlessly and auto-approves tool calls by itself; it
+# REJECTS --yolo / --auto (`Cannot combine --prompt with --yolo`), so do not add
+# them. The model is `~/.kimi-code/config.toml`'s default_model; pin a specific
+# one with e.g. "-m", "kimi-k3[1m]" in the command.
 #
 # The prompt is passed on argv (`kimi -p` has no stdin path). If your prompt can
 # contain a token the agent later `pkill -f`s, prefer the claude preset pointed
 # at Kimi's Anthropic endpoint instead — see docs/recipes/kimi.md.
 
 [agent]
-command = ["kimi", "--yolo", "--output-format", "stream-json"]
+command = ["kimi", "--output-format", "stream-json"]
 prompt_arg_template = ["-p", "{prompt}"]
 name = "kimi"
 
@@ -43,4 +48,4 @@ dirty_action = "stash"
 stash_idempotency_s = 5
 
 [monitor]
-auth_fail_hint = "Set KIMI_API_KEY on the supervisor host, or run `kimi login` there (creds cache at ~/.kimi-code/credentials/); `kimi doctor` validates config."
+auth_fail_hint = "Configure Kimi model access on the supervisor host — set the KIMI_MODEL_* env vars (see docs/recipes/kimi.md) or run `kimi login`; `kimi doctor` validates config."
