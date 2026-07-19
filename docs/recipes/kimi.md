@@ -5,6 +5,15 @@ terminal coding agent, built on the K2.7/K3 code models. It runs one prompt and
 exits via `kimi -p`, fitting agent-runner's per-round lifecycle. There are two
 ways to run agent-runner against Kimi — pick by which agent experience you want.
 
+> **Which "kimi"?** This preset targets **Kimi Code CLI** — GitHub
+> `MoonshotAI/kimi-code`, command `kimi`, installed via `brew install kimi-code`
+> or `npm i -g @moonshot-ai/kimi-code`. Do **not** confuse it with the older
+> `MoonshotAI/kimi-cli` (a separate Python tool run as `uv run kimi`) —
+> `kimi-code` can even import a legacy install with `kimi migrate`. Verify a
+> package before installing: `brew info kimi-code` should read `From:
+> homebrew-core`, and `npm view @moonshot-ai/kimi-code repository.url` should
+> point at `github.com/MoonshotAI/kimi-code`.
+
 ## Option A — the native Kimi Code CLI (`--preset kimi`)
 
 The first-class Kimi experience: Moonshot's own agent, its subagents, MCP, and
