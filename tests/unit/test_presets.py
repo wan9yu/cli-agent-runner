@@ -7,7 +7,7 @@ import tomllib
 
 import pytest
 
-PRESET_NAMES = ["claude", "aider", "gemini", "codewhale"]
+PRESET_NAMES = ["claude", "aider", "gemini", "codewhale", "kimi"]
 
 
 def test_given_preset_names_when_compared_to_shipped_dir_then_match() -> None:

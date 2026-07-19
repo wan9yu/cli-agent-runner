@@ -35,7 +35,7 @@ appends `logs/` to `.gitignore`. By default also creates a git commit.
 
 Flags:
 
-- `--preset {claude,aider,gemini,codewhale}` — agent CLI preset to scaffold (default: `claude`)
+- `--preset {claude,aider,gemini,codewhale,kimi}` — agent CLI preset to scaffold (default: `claude`)
 - `--force` — overwrite an existing `agent-runner.toml`
 - `--no-commit` — skip the initial git commit
 

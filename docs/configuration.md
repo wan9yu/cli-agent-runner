@@ -161,6 +161,8 @@ guidance without authoring it themselves:
   credentials, or set `DEEPSEEK_API_KEY` on the supervisor host.
 - `--preset gemini` → verify your API key or check your authentication status
   for Gemini CLI.
+- `--preset kimi` → set `KIMI_API_KEY` on the supervisor host, or run `kimi login`
+  there; `kimi doctor` validates config.
 
 Override in your `agent-runner.toml` if you ship a custom CLI.
 

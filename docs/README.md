@@ -1,7 +1,7 @@
 # agent-runner — Documentation
 
 A restart-on-exit supervisor for autonomous coding CLIs (Claude Code, aider,
-gemini, codewhale, or any prompt-arg CLI). Each round runs the agent once and
+gemini, codewhale, kimi, or any prompt-arg CLI). Each round runs the agent once and
 exits; an external
 service manager (systemd / launchd / bash loop) restarts. State persists
 across restarts via JSON files; defenses (timeout, process-group reap,
@@ -23,10 +23,11 @@ modes.
 | [long-running-agents.md](long-running-agents.md) | Context rot, fresh eyes, long-lineage runs |
 | [recipes/aider.md](recipes/aider.md) | aider walkthrough |
 | [recipes/codewhale.md](recipes/codewhale.md) | codewhale walkthrough |
+| [recipes/kimi.md](recipes/kimi.md) | Kimi Code CLI + running Kimi K3 via the claude preset |
 
 ## 中文导读
 
-agent-runner 是一个面向自主编码 CLI（Claude Code、aider、gemini、codewhale，
+agent-runner 是一个面向自主编码 CLI（Claude Code、aider、gemini、codewhale、kimi，
 或任何 prompt-arg CLI）的「跑完即退、自动重启」调度框架。
 进程退出后由外部服务管理器（systemd / launchd / bash loop）立即拉起新一轮，
 状态文件持久化在 JSON 中，关键防御（超时、进程组回收、孤儿 stash、启动 smoke
