@@ -684,7 +684,7 @@ from agent_runner.vcs_state import register_plugin_owned_paths
 # Module-top side effect — must register before the first round runs.
 register_plugin_owned_paths([
     "proposals/",                  # trailing slash → prefix match
-    "logs/plugins/my_plugin/**/*", # recursive glob (fnmatch)
+    "logs/plugins/my_plugin/**/*", # recursive glob (globstar)
     "reports/*.md",                # single-segment glob (PurePath.match)
 ])
 ```

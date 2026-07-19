@@ -176,7 +176,7 @@ concat_separator = "\n\n"        # default; use "\n\n---\n\n" for visible breaks
 strip_yaml_frontmatter = true    # default; set false for non-LLM-CLI agents
 ```
 
-- **Missing `files[0]`** → `ConfigError` (fail-fast; the first file is required).
+- **Missing `files[0]`** → `FileNotFoundError` when the round assembles the prompt (the first file is required; the existence check happens at prompt assembly, not at config load).
 - **Missing `files[n≥1]`** → warning logged, file skipped (supports optional preamble pattern).
 - **Both `prompt.file` and `prompt.files` set** → `ConfigError`.
 - **`prompt.file = "x.md"` shorthand** — single-file back-compat, still works unchanged.
