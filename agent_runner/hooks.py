@@ -75,7 +75,7 @@ class HookContext:
     """Basename of ``cfg.agent.command[0]`` (e.g. ``'claude'``, ``'gemini'``).
     Distinct from ``agent_name`` (the user-cosmetic ``[agent] name`` field).
     Plugins should guard on ``agent_binary``, not ``agent_name``, so a custom
-    ``[agent] name = "argus_dev"`` does not suppress events.
+    ``[agent] name = "acme_dev"`` does not suppress events.
     Populated from 0.1.30+; defaults to ``None`` for manually-constructed
     HookContext instances (rare; tests set it via ``make_hook_context``).
     """

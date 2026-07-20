@@ -492,7 +492,7 @@ for audit/debug), and diagnostic quality (errors point at the next debug step).
 
 ### Migration notes
 
-- `Config.plugins` type change is breaking for any caller reading the field as a dict (`cfg.plugins.get("foo")`). Plugin authors using `[plugins.argus_*]`-style keys: read them from `cfg.plugins.raw.get("argus_*")` instead.
+- `Config.plugins` type change is breaking for any caller reading the field as a dict (`cfg.plugins.get("foo")`). Plugin authors using `[plugins.acme_*]`-style keys: read them from `cfg.plugins.raw.get("acme_*")` instead.
 - `LockHeldError` message format changed (now includes holder info: `"another agent-runner is holding /path (held by PID N, age Ns, cmd: ...)"` or stale/missing variants). Operators grepping the exact format string need to update.
 - For the integrator's P5 confusion: see new `docs/architecture.md` section "Plugin injection: two paths" — `inject_context` and `disable_pre_round_hooks` are INDEPENDENT flags. Setting one does not affect the other.
 - **Known limitation**: `[plugins] disable` removes named plugins from the hook / context-enricher / detector / event-kind registries, but does NOT remove a disabled plugin's owned VCS paths (the `register_plugin_owned_paths` registry has no name attribution today). Mostly inert. If this becomes a real issue, file a GitHub issue.
@@ -887,7 +887,7 @@ Initial public release on PyPI as `cli-agent-runner`.
 
 ### Added
 - Three-layer model: Round / Loop / Witness.
-- 13 CLI verbs: `init`, `install`, `uninstall`, `start`, `stop`, `kill`,
+- 14 CLI verbs: `init`, `install`, `uninstall`, `start`, `stop`, `kill`,
   `cancel`, `restart`, `status`, `round`, `serve`, `peek`, `watch`, `monitor`.
 - 11 named defenses (round timeout, process group isolation, orphan stash
   with SHA lock, set-diff classification, smoke check, flock concurrency,
@@ -914,7 +914,9 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.42...v0.2.0
 [0.1.26]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.24...v0.1.25
