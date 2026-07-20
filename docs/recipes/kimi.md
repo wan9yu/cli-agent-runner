@@ -30,7 +30,7 @@ skills.
   self-contained model spec in the environment — no interactive login, no
   `config.toml`. `kimi -p` reads these four variables:
   ```bash
-  export KIMI_MODEL_NAME=kimi-k2.7-code          # or another Moonshot model id, e.g. kimi-k3[1m]
+  export KIMI_MODEL_NAME=kimi-k2.7-code          # or another Moonshot model id, e.g. kimi-k3
   export KIMI_MODEL_API_KEY="$YOUR_MOONSHOT_KEY"
   export KIMI_MODEL_BASE_URL=https://api.moonshot.ai/v1   # China key: https://api.moonshot.cn/v1
   export KIMI_MODEL_PROVIDER_TYPE=openai         # must be one of kimi / anthropic / openai; Moonshot = openai
@@ -58,7 +58,7 @@ This writes an `agent-runner.toml` whose agent command is
 `kimi -p` runs headlessly and auto-approves tool calls on its own — it rejects
 `--yolo` / `--auto` (`Cannot combine --prompt with --yolo`), so the preset omits
 them. The model is whatever `~/.kimi-code/config.toml` sets as `default_model`;
-pin a specific one by adding `"-m", "kimi-k3[1m]"` to the `command` array.
+pin a specific one by adding `"-m", "kimi-k3"` to the `command` array.
 
 ### Note on the prompt on argv
 
@@ -83,7 +83,7 @@ agent-runner init --preset claude
 ```toml
 [agent]
 # swap the default --model value for the Kimi K3 id:
-command = ["claude", "--model", "kimi-k3[1m]",
+command = ["claude", "--model", "kimi-k3",
            "--dangerously-skip-permissions",
            "--verbose", "--output-format", "stream-json"]
 prompt_arg_template = ["-p"]
@@ -96,11 +96,11 @@ name = "claude"
 # tier — omitting one silently falls through in that scenario.
 ANTHROPIC_BASE_URL = "https://api.moonshot.ai/anthropic"
 ANTHROPIC_AUTH_TOKEN = "sk-...your-moonshot-key..."   # NOT ANTHROPIC_API_KEY
-ANTHROPIC_MODEL = "kimi-k3[1m]"
-ANTHROPIC_DEFAULT_OPUS_MODEL = "kimi-k3[1m]"
-ANTHROPIC_DEFAULT_SONNET_MODEL = "kimi-k3[1m]"
-ANTHROPIC_DEFAULT_HAIKU_MODEL = "kimi-k3[1m]"
-CLAUDE_CODE_SUBAGENT_MODEL = "kimi-k3[1m]"
+ANTHROPIC_MODEL = "kimi-k3"
+ANTHROPIC_DEFAULT_OPUS_MODEL = "kimi-k3"
+ANTHROPIC_DEFAULT_SONNET_MODEL = "kimi-k3"
+ANTHROPIC_DEFAULT_HAIKU_MODEL = "kimi-k3"
+CLAUDE_CODE_SUBAGENT_MODEL = "kimi-k3"
 ```
 
 The token is a Moonshot AI Open Platform key from
