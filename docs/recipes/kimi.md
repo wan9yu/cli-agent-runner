@@ -38,7 +38,10 @@ skills.
   `KIMI_MODEL_API_KEY` is required whenever `KIMI_MODEL_NAME` is set. Get a key
   from the Moonshot platform (<https://platform.kimi.ai/console/api-keys>, or
   `platform.moonshot.cn` for a China key) — note the endpoint must match the
-  key's region (`.ai` vs `.cn`), or you get `401 Invalid Authentication`.
+  key's region (`.ai` vs `.cn`), or you get `401 Invalid Authentication`. List
+  the model ids a key can actually reach with
+  `curl -s "$KIMI_MODEL_BASE_URL/models" -H "Authorization: Bearer $KIMI_MODEL_API_KEY"`
+  — Moonshot's flagship is `kimi-k3` (a plain id, no `[1m]`-style suffix).
 
   Alternatively, a one-time `kimi login` on the host (device-code OAuth;
   credentials cache at `~/.kimi-code/credentials/`) configures provider + model
