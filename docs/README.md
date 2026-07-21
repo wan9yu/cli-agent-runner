@@ -24,6 +24,7 @@ modes.
 | [recipes/aider.md](recipes/aider.md) | aider walkthrough |
 | [recipes/codewhale.md](recipes/codewhale.md) | codewhale walkthrough |
 | [recipes/kimi.md](recipes/kimi.md) | Kimi Code CLI + running Kimi K3 via the claude preset |
+| [recipes/pi.md](recipes/pi.md) | Pi Coding Agent + Kimi K3 via a Moonshot provider |
 
 ## 中文导读
 
