@@ -8,9 +8,8 @@
 #     ~/.pi/agent/models.json — see docs/recipes/pi.md — then --model moonshot/kimi-k3.
 #   - work_dir is a git repo.
 #
-# pi runs tool calls in "full YOLO" mode (no per-call confirmation) — no --yolo /
-# --dangerously-skip-permissions flag needed. --mode json gives a structured JSONL
-# event stream; prefer --mode text for cleaner logs (see recipe).
+# pi runs tools unconfined (full YOLO, no confirmation) and agent-runner does not
+# sandbox it — only point it at a repo/host where unattended automated shell is OK.
 
 [agent]
 # Replace PROVIDER/MODEL — pi has no default. Our default: moonshot/kimi-k3.
