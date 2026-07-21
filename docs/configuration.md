@@ -163,6 +163,9 @@ guidance without authoring it themselves:
   for Gemini CLI.
 - `--preset kimi` → set the `KIMI_MODEL_*` env vars (see `recipes/kimi.md`), or
   run `kimi login`; `kimi doctor` validates config.
+- `--preset pi` → configure a pi provider in `~/.pi/agent/models.json` (see
+  `recipes/pi.md`) or run `pi /login`, and set `--model` to a reachable
+  provider/model.
 
 Override in your `agent-runner.toml` if you ship a custom CLI.
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `--preset kimi` — a preset for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) (`kimi -p --output-format stream-json`). `docs/recipes/kimi.md` also documents running Kimi K3 through the existing `claude` preset via Moonshot's Anthropic-compatible endpoint.
+- `--preset pi` — a preset for [Pi Coding Agent](https://github.com/earendil-works/pi) (`pi -p --mode json --model …`). `docs/recipes/pi.md` documents driving Kimi K3 through pi via a Moonshot OpenAI-compatible provider.
 
 ## [0.2.2] - 2026-07-18
 

@@ -24,7 +24,7 @@ _VALID_PROMPT = "placeholder agent task prompt line. " * 20
 # owns the drift-guard that asserts this matches the shipped presets/*.toml; both
 # test_presets and test_scaffold_presets import from here so a new preset is added
 # in exactly one place.
-PRESET_NAMES = ["claude", "aider", "gemini", "codewhale", "kimi"]
+PRESET_NAMES = ["claude", "aider", "gemini", "codewhale", "kimi", "pi"]
 
 
 class FakeArgs:

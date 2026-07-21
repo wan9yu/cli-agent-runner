@@ -15,8 +15,8 @@
 Each layer can run without the layer above. The Witness can watch a remote
 Loop.
 
-**Provider-agnostic by design.** 5 presets ship (`claude` — the default —
-plus `aider`, `gemini`, `codewhale` and `kimi`) because those are what we run in
+**Provider-agnostic by design.** 6 presets ship (`claude` — the default —
+plus `aider`, `gemini`, `codewhale`, `kimi` and `pi`) because those are what we run in
 production, but the supervisor's defenses, observability, and lifecycle make
 no CLI-specific assumptions in core. Set `[agent].command` to any prompt-arg
 CLI and the same Round / Loop / Witness layers apply.
