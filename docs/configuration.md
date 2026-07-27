@@ -273,6 +273,11 @@ round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress hea
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables
 all auto-stop behaviour and reduces monitor to alert-only.
 
+`remote_failure_tolerance_s` is read on the **relay client** only: it is how
+long `monitor --host <alias> --mode events` keeps reconnecting before it emits
+`monitor_remote_giveup` and exits 1 (`0` disables reconnection). It has no
+effect on a monitor watching its own host.
+
 ## Context injection modes
 
 `prompt.context_injection_mode` controls how each round's context (round number,

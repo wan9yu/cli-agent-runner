@@ -190,6 +190,21 @@ Use `--no-restart` to force package-only mode even on a systemd --user host
 
     agent-runner upgrade --target <version> --no-restart
 
+### What the smoke covers
+
+The orchestrated path smokes `--version` + `peek --json --config <your toml>` in
+a fresh subprocess — the new code does parse and validate your config — and a
+failure auto-rolls-back (reinstall previous version, sanity smoke, restart). The
+package-only path smokes `--version` only: your TOML is never loaded, and its
+rollback restores the *package*, not a service it does not manage. Neither path
+runs a round or invokes hooks/detectors, and plugins that fail to import surface
+as a `UserWarning` with exit 0. Before restarting a 24/7 service onto a breaking
+version, self-check with the service stopped:
+
+    python3 -c "from agent_runner.config import load_config; load_config('<path>/agent-runner.toml')"
+    python3 -c "import my_plugin"            # each plugin you ship
+    agent-runner serve --once --config <path>   # one real round (spawns the agent)
+
 ### Manual rollback
 
 `agent-runner upgrade --target <previous-version>` is the supported way to
@@ -303,6 +318,12 @@ dead — nothing depends on a client being connected. Run:
 
 or install it as a unit (`agent-runner install --monitor`), and use the relay
 from your laptop to watch what it emits.
+
+The stop itself is local too. When it fails (unit missing, permission denied,
+stale pidfile) the monitor emits `monitor_auto_stop_failed` with the error and
+keeps polling — losing the supervision that noticed the problem would be worse
+than a failed stop. Grep that kind on the *supervised* host, not on a relay
+client.
 
 ### SSH trust boundary
 

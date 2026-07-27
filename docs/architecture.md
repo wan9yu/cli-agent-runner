@@ -12,8 +12,9 @@
 └──────────────────────────────────────────┘
 ```
 
-Each layer can run without the layer above. The Witness can watch a remote
-Loop.
+Each layer can run without the layer above. The Witness runs on the host it
+watches; a client elsewhere relays its event stream (see "Remote observation"
+below).
 
 **Provider-agnostic by design.** 6 presets ship (`claude` — the default —
 plus `aider`, `gemini`, `codewhale`, `kimi` and `pi`) because those are what we run in
