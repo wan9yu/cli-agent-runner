@@ -57,6 +57,12 @@ Notes:
 - **`round_timeout_s` is the only brake.** pi has no turn cap, runtime timeout,
   or token budget of its own — agent-runner's wall-clock `round_timeout_s` is
   the sole thing that ends a runaway round.
+- **pi exits 0 on provider failure** (auth errors and exhausted retries alike;
+  errors surface only as JSONL `errorMessage` on stdout). The `pi` detector
+  plugin reads those records to drive rate-limit/5xx back-off, but the
+  `oauth_fail` auto-stop keys on nonzero exits and therefore cannot fire for
+  pi — a bad credential shows up in round logs and `transient`-free event
+  streams, not as an automatic stop. Check `peek` after rotating keys.
 - **Log volume.** `--mode json` is a verbose JSONL event stream; switch to
   `--mode text` for cleaner round logs — agent-runner needs no specific format.
 - `PI_OFFLINE = "1"` (in `[agent.env]`) suppresses pi's startup auto-update and
