@@ -1225,6 +1225,65 @@ def test_given_orphan_action_in_toml_when_loaded_then_raises_with_migration_hint
         load_config(cfg_path)
 
 
+def test_given_relative_work_dir_when_loaded_from_other_cwd_then_anchored_to_config_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """work_dir = "." anchors to the config file's directory, never the caller's cwd —
+    otherwise `agent-runner round --config /abs/proj/...` run from $HOME would drive
+    the wrong tree. Paths derived from work_dir follow it."""
+    proj = tmp_path / "proj"
+    (proj / "prompts").mkdir(parents=True)
+    (proj / "prompts" / "main.md").write_text("p")
+    cfg_path = proj / "agent-runner.toml"
+    cfg_path.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        'work_dir = "."\n'
+        'log_dir = "logs"\n'
+        "[prompt]\n"
+        'file = "./prompts/main.md"\n'
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.runtime.work_dir == proj.resolve()
+    assert cfg.prompt.file == (proj / "prompts" / "main.md").resolve()
+    assert cfg.runtime.log_dir == (proj / "logs").resolve()
+
+
+def test_given_absolute_work_dir_when_loaded_from_other_cwd_then_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absolute work_dir is independent of both the cwd and the config's location."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "prompt.md").write_text("p")
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{proj}"\n'
+        'log_dir = "logs"\n'
+        "[prompt]\n"
+        'file = "prompt.md"\n'
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.runtime.work_dir == proj.resolve()
+    assert cfg.prompt.file == (proj / "prompt.md").resolve()
+
+
 def test_given_relative_log_dir_when_loaded_then_resolved_to_absolute(
     tmp_path: Path,
 ) -> None:

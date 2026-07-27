@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Round-log tail scanning hardened: plugin JSONL parsers filter non-JSON chatter *before* windowing (a stderr burst of any size can no longer evict the terminal event), monitor detectors share the same 200-line window (was 50 — the oauth/network text scans had the identical eviction risk), and each monitor poll reads only the newest 20 round logs instead of every log ever written.
+- A relative `runtime.work_dir` (and every path derived from it) now resolves against the config file's directory instead of the caller's cwd, so `--config /abs/proj/agent-runner.toml` drives `/abs/proj` no matter where the supervisor was launched from.
 - Startup validation resolves the agent command exactly as the spawn does (child's PATH — `[agent.env]` may override it — and `work_dir` base); `PWD` now stays pinned to `work_dir` even if `[agent.env]` sets it. The stdout+stderr merge is now pinned by a behavioral test, not just prose.
 
 ## [0.2.3] - 2026-07-26

@@ -382,7 +382,13 @@ def load_config(toml_path: Path) -> Config:
         prompt_delivery=prompt_delivery,
     )
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
-    work_dir = _expand_path(raw_work_dir, "").resolve()
+    # A relative work_dir anchors to the config file's directory, not the loading
+    # process's cwd — `--config /abs/proj/agent-runner.toml` must drive /abs/proj
+    # no matter where the supervisor was launched from.
+    work_dir = _expand_path(raw_work_dir, "")
+    if not work_dir.is_absolute():
+        work_dir = toml_path.parent / work_dir
+    work_dir = work_dir.resolve()
     project_name = work_dir.name or "default"
 
     # Phases first — needed for per-phase round_timeout validation below.
