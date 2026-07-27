@@ -141,6 +141,8 @@ def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_t
 
     def capturing_run(**kwargs):
         captured_timeout.append(kwargs["timeout_s"])
+        # cwd= spawn wiring: runner must thread cfg.runtime.work_dir through
+        assert kwargs["work_dir"] == cfg.runtime.work_dir
         return original_run(**kwargs)
 
     monkeypatch.setattr(agent_runtime_mod, "run", capturing_run)

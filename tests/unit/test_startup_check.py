@@ -123,4 +123,4 @@ def test_given_relative_slash_command_missing_in_work_dir_then_cli_check_fails(
     results = run_battery(cfg)
     cli = next(r for r in results if r.name == "agent_cli_in_path")
     assert not cli.ok
-    assert "work_dir" in (cli.reason or "") or str(tmp_git_repo) in (cli.reason or "")
+    assert str(tmp_git_repo) in cli.reason

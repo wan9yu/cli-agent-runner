@@ -179,12 +179,7 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
 
 
 def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path) -> None:
-    """The agent child runs in work_dir, not the supervisor's cwd (0.2.3 fix).
-
-    CLIs with no --cwd flag of their own (e.g. pi) depend on this; previously
-    only launch conventions (systemd WorkingDirectory=, relative --config)
-    kept the two aligned.
-    """
+    """The agent child runs in work_dir, not the supervisor's cwd."""
     work = tmp_path / "the-work-dir"
     work.mkdir()
     script = _bash_script(tmp_path, "pwd -P")
@@ -200,3 +195,23 @@ def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path)
     )
     assert result.exit_code == 0
     assert log.read_text().strip() == str(work.resolve())
+
+
+def test_given_stderr_output_when_run_then_merged_into_round_log(tmp_path: Path) -> None:
+    """stderr=STDOUT is load-bearing: oauth_fail/network_fail regex-scan stderr
+    text out of the round log (contract: hooks.HookContext.agent_log_path)."""
+    script = _bash_script(tmp_path, "echo OUT_LINE; echo ERR_MARKER >&2")
+    log = tmp_path / "out.log"
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="ignored",
+        timeout_s=10,
+        log_path=log,
+        env_extra={},
+    )
+    assert result.exit_code == 0
+    text = log.read_text()
+    assert "OUT_LINE" in text
+    assert "ERR_MARKER" in text

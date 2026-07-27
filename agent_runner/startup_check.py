@@ -5,11 +5,10 @@ spawning the agent so we never silent-burn rounds on broken config.
 from __future__ import annotations
 
 import os
-import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
+from agent_runner import agent_runtime
 from agent_runner.config import Config
 
 ESCAPE_HATCH_ENV = "AGENT_RUNNER_SKIP_STARTUP_CHECK"
@@ -46,27 +45,27 @@ def _check_agent_cli(cfg: Config) -> CheckResult:
     if not cfg.agent.command:
         return CheckResult("agent_cli_in_path", False, "agent.command is empty")
     cli = cfg.agent.command[0]
-    if "/" in cli:
-        # Slash-containing commands are exec'd relative to the agent's cwd
-        # (= runtime.work_dir since the cwd= spawn fix), not PATH — validate
-        # against the same base the exec will use, not the supervisor's cwd.
-        candidate = Path(cli)
-        if not candidate.is_absolute():
-            candidate = cfg.runtime.work_dir / candidate
-        if not (candidate.is_file() and os.access(candidate, os.X_OK)):
-            return CheckResult(
-                "agent_cli_in_path",
-                False,
-                reason=f"{cli!r} not found or not executable under {cfg.runtime.work_dir}",
-                how_to_fix="fix the path relative to runtime.work_dir, or use an absolute path",
-            )
-        return CheckResult("agent_cli_in_path", True)
-    if shutil.which(cli) is None:
+    # Validate with the exact resolution the spawn uses (agent_runtime owns
+    # the model): slash-containing commands resolve against work_dir (the
+    # child's cwd); bare names use the CHILD's PATH ([agent.env] may set it).
+    resolved = agent_runtime.resolve_exec_target(
+        cli, cfg.runtime.work_dir, env_path=cfg.agent.env.get("PATH")
+    )
+    if resolved is None:
+        relative = "/" in cli
         return CheckResult(
             "agent_cli_in_path",
             False,
-            reason=f"{cli!r} not found on PATH",
-            how_to_fix=f"install {cli} or set agent.command[0] to its absolute path",
+            reason=(
+                f"{cli!r} not found or not executable under {cfg.runtime.work_dir}"
+                if relative
+                else f"{cli!r} not found on PATH"
+            ),
+            how_to_fix=(
+                "fix the path relative to runtime.work_dir, or use an absolute path"
+                if relative
+                else f"install {cli} or set agent.command[0] to its absolute path"
+            ),
         )
     return CheckResult("agent_cli_in_path", True)
 

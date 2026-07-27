@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import threading
@@ -130,6 +131,24 @@ def _live_children(
 _RESULT_MARKER = b'"type":"result"'
 
 
+def resolve_exec_target(command0: str, work_dir: Path, env_path: str | None = None) -> str | None:
+    """Model of Popen's POSIX exec resolution for argv[0].
+
+    Kept beside the ``Popen`` in :func:`run` so validation and exec cannot
+    drift: a slash-containing argv[0] resolves against the child's cwd
+    (``work_dir``); a bare name is looked up on the CHILD's PATH
+    (``env_path`` — pass ``[agent.env]``'s PATH override if set; ``None``
+    falls back to the supervisor's, matching env inheritance). Returns the
+    resolved executable path, or ``None`` if it would not exec.
+    """
+    if "/" in command0:
+        candidate = Path(command0)
+        if not candidate.is_absolute():
+            candidate = work_dir / candidate
+        return shutil.which(str(candidate))
+    return shutil.which(command0, path=env_path)
+
+
 def run(
     *,
     command: list[str],
@@ -150,11 +169,9 @@ def run(
 
     Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → REAP_GRACE_S → SIGKILL.
 
-    work_dir: the agent child's working directory (required). Before 0.2.3 the
-    child inherited the supervisor's cwd and only launch conventions (systemd
-    WorkingDirectory=, relative --config) kept the two aligned — fatal for CLIs
-    with no --cwd flag of their own (e.g. pi). Callers pass the already-absolute
-    cfg.runtime.work_dir.
+    work_dir: the agent child's working directory; callers pass the
+    already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
+    own (e.g. pi) depend on this.
 
     max_grace_after_result_s: when > 0, start a countdown after the first
     type=result event is detected in the log. After it elapses, reap the
@@ -182,8 +199,9 @@ def run(
         if stdin_mode
         else _build_argv(command, prompt_arg_template, prompt)
     )
-    # PWD pinned alongside cwd= so shell-reported paths agree; env_extra wins.
-    env = {**os.environ, "PWD": str(work_dir), **env_extra}
+    # PWD pinned last — it mirrors cwd= (a correctness pin, not a knob), so
+    # an [agent.env] PWD cannot silently diverge from where the child runs.
+    env = {**os.environ, **env_extra, "PWD": str(work_dir)}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
     start = time.time()
