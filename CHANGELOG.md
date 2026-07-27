@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.3] - 2026-07-26
+
+Details: [docs/migrations/0.2.3.md](docs/migrations/0.2.3.md)
 
 ### Added
 - `--preset kimi` — a preset for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) (`kimi -p --output-format stream-json`). `docs/recipes/kimi.md` also documents running Kimi K3 through the existing `claude` preset via Moonshot's Anthropic-compatible endpoint.
@@ -919,7 +921,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wan9yu/cli-agent-runner/compare/v0.1.42...v0.2.0
