@@ -6,8 +6,13 @@ same window size, raw-text caps, and transient-error back-off defaults.
 
 from __future__ import annotations
 
-_TAIL_LINES: int = 50
-"""Number of log lines to scan from the end of round-N.log."""
+_TAIL_LINES: int = 200
+"""Number of log lines to scan from the end of round-N.log.
+
+200, not 50: the round log is merged stdout+stderr, and a CLI that bursts
+stderr text after its terminal JSONL event (observed with stderr-chatty
+agents like pi) could evict that event from a 50-line window — silently
+dropping usage/transient classification for the round."""
 
 _RAW_CAP: int = 200
 """Maximum length for ``raw`` field in transient_error_detected payload."""

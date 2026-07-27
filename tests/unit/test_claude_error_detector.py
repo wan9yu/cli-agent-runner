@@ -646,3 +646,33 @@ def test_emit_transient_raw_redacted(tmp_path):
     )
     payload = json.loads(sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text().splitlines()[-1])
     assert "sk-ant-LEAKvalue000111" not in payload["raw"] and "<redacted>" in payload["raw"]
+
+
+def test_given_stderr_burst_after_terminal_event_then_still_classified(tmp_path):
+    """The round log is merged stdout+stderr; a >50-line stderr burst after the
+    terminal JSONL event must not evict it from the tail window (_TAIL_LINES).
+    Regression guard for the 50-line window that could silently drop
+    usage/transient classification for stderr-chatty CLIs."""
+    from agent_runner.builtin_plugins.claude_rate_limit import ClaudeErrorDetector
+
+    log_path = write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 500,
+                "result": "API Error: 500 Internal server error",
+            },
+        ],
+    )
+    with log_path.open("a") as f:
+        for i in range(150):
+            f.write(f"stderr chatter line {i}: retrying connection...\n")
+    with patch(
+        "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
+    ) as new_emit:
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+    new_emit.assert_called_once()
+    assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"

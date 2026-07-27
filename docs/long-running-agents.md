@@ -227,10 +227,12 @@ migration recipes.
 ### Reading agent stdout from a plugin
 
 Use `ctx.agent_log_path` (added in 0.1.25). This points to the agent's
-actual JSONL stdout for the current round
-(`log_dir/rounds/R<N>-<timestamp>.log`). Do NOT compute the path from
-`ctx.log_dir + round_num` — historical naming conventions in that directory
-are subject to change.
+round log (`log_dir/rounds/R<N>-<timestamp>.log`) — the agent's **merged
+stdout+stderr**, merged deliberately so auth/network error text emitted on
+stderr stays detectable. Parse it as JSONL that may contain non-JSON lines
+(per-line `json.loads` in try/except, as the built-in plugins do). Do NOT
+compute the path from `ctx.log_dir + round_num` — historical naming
+conventions in that directory are subject to change.
 
 ```python
 def after_round(self, ctx: HookContext, result: Any) -> None:

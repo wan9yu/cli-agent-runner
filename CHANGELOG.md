@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The agent subprocess now runs in `runtime.work_dir` (`cwd=` on spawn). Previously it inherited the supervisor's cwd and only launch conventions (systemd `WorkingDirectory=`, relative `--config`) kept the two aligned — fatal for agent CLIs with no working-directory flag of their own (e.g. `pi`). The startup check now also validates a relative `agent.command[0]` against `work_dir`, matching where it executes.
+- Plugin round-log tail window widened 50 → 200 lines: a stderr burst after the agent's terminal JSONL event could evict it from the scan window, silently dropping usage/transient classification. The round log's merged stdout+stderr contract is now documented (`HookContext.agent_log_path`, `docs/long-running-agents.md`) — the merge is deliberate; auth/network detection reads stderr text from it.
 
 ## [0.2.2] - 2026-07-18
 
