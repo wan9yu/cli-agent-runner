@@ -668,6 +668,28 @@ class MonitorRemoteError(Exception):
         self.stderr = stderr
 
 
+class MonitorRemoteUnsupportedError(Exception):
+    """Remote monitoring cannot read the remote host's round logs or events.
+
+    ``RemoteSource`` lists remote filenames over ssh, but every read of those
+    paths resolves against the LOCAL filesystem — so a remote monitor sees an
+    empty world and reports every project healthy. Raised at monitor startup
+    (``api.monitor_loop``) so the blindness surfaces as an error instead of
+    masquerading as health. Remote reads are unimplemented in this version.
+    """
+
+    def __init__(self, host: str) -> None:
+        super().__init__(
+            f"remote monitoring (--host {host}) is unsupported in this version: "
+            "remote round logs and events cannot be read, so the monitor would "
+            "watch an empty world and report every project healthy.\n"
+            f"Run the monitor on the host itself: ssh {host}, then "
+            "agent-runner monitor --config ~/.agent-runner/<project>/agent-runner.toml\n"
+            'See docs/runbook.md, section "Remote monitor & SSH trust".'
+        )
+        self.host = host
+
+
 def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, str]:
     """Run a single shell command over ssh; returns (returncode, stdout).
 
@@ -694,7 +716,14 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
 
 @dataclass(frozen=True)
 class RemoteSource:
-    """Mirrors LocalSource but fetches paths via ssh ls; reads via cat."""
+    """Lists remote log filenames over ssh — but every read resolves LOCALLY.
+
+    The paths handed back are remote strings; their consumers (events/metrics
+    parsing, round-log tails, status reads) open them on the local filesystem,
+    so no remote content is ever read. Unreachable in this version: monitor
+    startup rejects ``--host`` with ``MonitorRemoteUnsupportedError``. Kept
+    pending the decision to implement remote reads or drop remote mode.
+    """
 
     host: str
     project: str

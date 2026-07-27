@@ -525,12 +525,29 @@ def monitor_loop(
     to that kind as the canonical "supervision is up" signal (monitor is otherwise
     silent during healthy operation by design).
 
+    ``host`` (remote mode) raises ``MonitorRemoteUnsupportedError`` immediately:
+    remote reads are unimplemented, so a remote loop would poll an empty world
+    and report healthy forever. The check is eager — this wrapper validates
+    before handing back the generator, so the failure lands at startup rather
+    than at the first ``next()``.
+    """
+    if host is not None:
+        raise monitor.MonitorRemoteUnsupportedError(host)
+    return _monitor_loop_iter(project, host=host, interval_s=interval_s)
+
+
+def _monitor_loop_iter(
+    project: str | Path | None = None, *, host: str | None = None, interval_s: int = 30
+) -> Iterator[monitor.Alert]:
+    """Polling generator behind ``monitor_loop``.
+
     Tolerates transient ``MonitorRemoteError`` failures (from ``--host`` ssh)
     for up to ``cfg.monitor.remote_failure_tolerance_s`` seconds with exponential
     backoff (1s → 2s → 4s → ... → 30s cap). Each retry emits ``monitor_remote_blip``;
     crossing the cap emits one ``monitor_remote_giveup`` and propagates the error
     (CLI exits 1; systemd restarts the process). Setting tolerance to 0 preserves
-    the 0.1.10 immediate-propagate behavior with no blip events emitted.
+    the 0.1.10 immediate-propagate behavior with no blip events emitted. That
+    path is dormant while remote mode is rejected at startup.
     """
     import json as _json
 

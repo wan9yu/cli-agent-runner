@@ -80,20 +80,20 @@ Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
 - `oauth_fail` — burning API quota on auth-rejected rounds
 - `disk_critical` — writing to a near-full disk risks corruption
 
-Runs locally or against a remote host via ssh:
+Runs against the supervised project's local logs:
 
 ```bash
-agent-runner monitor                  # local, 30s poll
-agent-runner monitor --host pi        # remote, 60s poll
+agent-runner monitor                  # 30s poll
 agent-runner monitor --json | jq -c   # pipe to downstream consumers
 ```
 
-> **SSH trust boundary**: `monitor --host <alias>` shells out via plain SSH
-> using your local `~/.ssh/config` (aliases, `StrictHostKeyChecking` behavior).
-> A monitor with `auto_stop` enabled can issue `agent-runner stop` on the
-> remote — verify your SSH config before pointing monitor at a remote service.
-> See [`docs/runbook.md`](docs/runbook.md) § "Remote monitor & SSH trust" for
-> recommended hygiene.
+> **Remote monitoring is unsupported in this version**: `monitor --host <alias>`
+> cannot read a remote host's round logs or events, so it exits with an error at
+> startup instead of watching an empty world and reporting healthy. Run the
+> monitor on the supervised host itself (`ssh <alias>`, then `agent-runner
+> monitor`). See [`docs/runbook.md`](docs/runbook.md) § "Remote monitor & SSH
+> trust" — the SSH trust boundary applies to any agent-runner command you drive
+> over ssh.
 
 ## Documentation
 

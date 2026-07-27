@@ -119,6 +119,42 @@ def test_given_monitor_loop_raises_remote_error_when_cmd_then_stderr_and_exit_1(
     assert captured.out == ""  # error path must not leak to stdout
 
 
+def test_given_monitor_host_when_cmd_then_exit_1_with_unsupported_message(capsys, tmp_path) -> None:
+    """`monitor --host` exits 1 with guidance instead of watching an empty world."""
+    from types import SimpleNamespace
+
+    from agent_runner.cli import monitor_cmd
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work_dir}"\n'
+        f'log_dir = "{work_dir}/logs"\n'
+        "[prompt]\n"
+        'inline = "p"\n'
+    )
+
+    args = SimpleNamespace(
+        host="pi",
+        interval=None,
+        mode="anomaly",
+        json=False,
+        config=str(work_dir / "agent-runner.toml"),
+    )
+    rc = monitor_cmd.cmd(args)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "remote monitoring (--host pi) is unsupported" in captured.err
+    assert "ssh pi" in captured.err
+    assert "docs/runbook.md" in captured.err
+    assert captured.out == ""  # error path must not leak to stdout
+
+
 def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr(
     monkeypatch, capsys, tmp_path
 ) -> None:

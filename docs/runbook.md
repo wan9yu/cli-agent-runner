@@ -247,14 +247,27 @@ just like any other plugin component.
 
 ## Remote monitor & SSH trust
 
-`agent-runner monitor --host <alias>` is built on plain SSH, not a privileged
-API. Power profile:
+**Remote monitoring is unsupported in this version.** `agent-runner monitor
+--host <alias>` exits 1 at startup with an explanation. It could list remote log
+filenames over ssh but never read their contents — the reads resolved against
+the *local* filesystem — so a remote monitor watched an empty world and reported
+every project healthy. The flag is kept for compatibility; it will either gain
+real remote reads or be removed.
 
-- Reads `~/.ssh/config` for the alias (host, user, identity file,
+Run the monitor on the supervised host instead:
+
+    ssh pi
+    agent-runner monitor --config ~/.agent-runner/<project>/agent-runner.toml
+
+### SSH trust boundary
+
+Driving agent-runner over ssh (running the monitor on the host, `agent-runner
+stop` from a laptop, deploys) is plain SSH, not a privileged API:
+
+- It reads `~/.ssh/config` for the alias (host, user, identity file,
   `StrictHostKeyChecking` policy).
-- Runs `agent-runner peek --json` on the remote to collect status.
-- When alerting with `auto_stop` enabled, runs `agent-runner stop` on the
-  remote — a real state change.
+- Anything you run remotely runs with that account's full shell access —
+  `agent-runner stop` on a remote service is a real state change.
 - Default SSH behavior in many environments is `StrictHostKeyChecking
   accept-new`, which silently trusts new host keys on first connect.
 
@@ -268,26 +281,23 @@ API. Power profile:
 - **Restrict remote user**: confine the remote account's shell access to
   `agent-runner` commands via a `command="..."` restriction in
   `~/.ssh/authorized_keys` on the server.
-- **Audit `auto_stop` triggers**: a monitor stopping a remote service is a
-  real state change. Verify the detector logic and thresholds before enabling
-  `auto_stop` on a production remote.
+- **Audit `auto_stop` triggers**: a monitor stopping a service is a real state
+  change. Verify the detector logic and thresholds before enabling `auto_stop`
+  on a production host.
 
-### Liveness monitoring: run monitor from a separate machine
+### Liveness monitoring: the host-death blind spot
 
 `agent-runner monitor` detects anomalies including `supervisor_stale` — the
 supervisor stopped emitting events because it is stuck between rounds or dead.
 But a monitor running on the *same host* as the supervisor dies when that host
 dies, so it cannot report its own host's death.
 
-For true liveness coverage, run the monitor from a **separate machine**:
-
-    # On your laptop / a second host, NOT on the supervised host:
-    agent-runner monitor --host pi
-
-This catches both failure modes:
-
-- Supervisor stuck on a live host → `supervisor_stale` alert (events frozen).
-- Host itself dead / network gone → SSH poll fails → `monitor_remote_giveup`.
+That is the current coverage boundary: with remote monitoring unsupported (see
+above), agent-runner catches a supervisor stuck on a live host
+(`supervisor_stale`, events frozen) but not the death of the host itself. Cover
+host death outside agent-runner — an uptime/ping check, or a scheduled
+`ssh <host> agent-runner peek --json` from a second machine that alerts when the
+command or its `last_event_ts` goes stale.
 
 The `supervisor_stale` threshold defaults to `round_timeout_s * 1.5`. Override
 with `[monitor] supervisor_stale_threshold_s = N` for projects whose legitimate
@@ -548,8 +558,8 @@ serve as the index into deeper diagnostic logs:
 
 | Event | What it tells you | Where to look next |
 |---|---|---|
-| `monitor_remote_blip` | A single `monitor --host` poll failed with ssh rc=255 | Subsequent events in the same window; if a `monitor_remote_giveup` follows, supervision exited |
-| `monitor_remote_giveup` | Cumulative ssh failure exceeded `remote_failure_tolerance_s` | `journalctl --user -u agent-runner-monitor@<project>` for the restart |
+| `monitor_remote_blip` | A single remote poll failed with ssh rc=255 (dormant: remote monitoring is unsupported) | Subsequent events in the same window; if a `monitor_remote_giveup` follows, supervision exited |
+| `monitor_remote_giveup` | Cumulative ssh failure exceeded `remote_failure_tolerance_s` (dormant, as above) | `journalctl --user -u agent-runner-monitor@<project>` for the restart |
 | `agent_network_blip` | An agent round's log matched a network pattern | `{log_dir}/rounds/R{round_num}-*.log` for the full agent output |
 
 The events file is the index. The round log file is the body.

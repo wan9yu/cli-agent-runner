@@ -146,12 +146,11 @@ agent-runner events --kind transient_error_backoff_capped --tail
 ### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--mode MODE] [--port PORT] [--json]`
 
 Anomaly-detection daemon. Runs the 11 detectors against the live state on every
-poll. Without `--host`, watches local logs at default 30s interval. With
-`--host`, watches a remote agent-runner over plain ssh at default 60s interval.
+poll, watching the project's local logs at a default 30s interval.
 
 When OAuth-fail or disk-critical detectors fire, monitor automatically issues a
-graceful stop (locally via `api.stop`; remotely via `ssh <host> 'agent-runner stop'`).
-Override with `[monitor]` config block (see configuration.md).
+graceful stop via `api.stop`. Override with the `[monitor]` config block (see
+configuration.md).
 
 Flags:
 
@@ -159,11 +158,13 @@ Flags:
   streams a human-readable narrative; `events` streams raw event JSON; `http` serves
   a local progress page.
 - `--port PORT` — HTTP port for `--mode http` (default: `8765`, local-only).
-- `--host SSH-ALIAS` — watch a remote agent-runner via ssh (anomaly mode only).
+- `--host SSH-ALIAS` — unsupported in this version: remote round logs and events
+  cannot be read, so the monitor exits 1 at startup rather than watching an empty
+  world. Run the monitor on the supervised host instead (see
+  [runbook.md](runbook.md) § "Remote monitor & SSH trust").
 
 ```bash
 agent-runner monitor                       # local anomaly mode
-agent-runner monitor --host pi             # remote
 agent-runner monitor --mode narrate        # streaming narrative
 agent-runner monitor --mode http --port 9000  # HTTP progress page on port 9000
 agent-runner monitor --json | jq -c        # pipe alerts to a downstream consumer

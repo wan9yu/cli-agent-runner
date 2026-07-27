@@ -301,6 +301,43 @@ def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
     assert payload["log_dir"] == str(log_dir)
 
 
+def test_given_host_when_monitor_loop_then_raises_before_first_poll(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remote monitoring cannot read remote round logs/events — reject at startup.
+
+    RemoteSource lists remote filenames over ssh but reads them locally, so a
+    remote monitor observes an empty world and reports healthy. The rejection
+    must land before the first poll and before monitor_started is emitted.
+    """
+    from agent_runner.monitor import MonitorRemoteUnsupportedError
+
+    work_dir = tmp_path / "proj"
+    work_dir.mkdir()
+    log_dir = work_dir / "logs"
+    log_dir.mkdir()
+    _write_minimal_monitor_toml(work_dir, log_dir)
+
+    def never_polls(*_args, **_kwargs):
+        raise AssertionError("remote monitor must not poll")
+
+    monkeypatch.setattr(api, "_poll_once", never_polls)
+
+    with pytest.raises(MonitorRemoteUnsupportedError) as exc_info:
+        api.monitor_loop(work_dir, host="pi", interval_s=60)
+
+    msg = str(exc_info.value)
+    assert "--host pi" in msg
+    assert "round logs and events cannot be read" in msg
+    assert "ssh pi" in msg
+    assert "docs/runbook.md" in msg
+    assert exc_info.value.host == "pi"
+    assert not sorted(log_dir.glob("events-*.jsonl")), (
+        "monitor_started must not be emitted — supervision never came up"
+    )
+
+
 def test_given_work_dir_with_shell_metachars_when_project_name_then_raises(tmp_path: Path) -> None:
     """Project name (work_dir basename) must reject shell metacharacters."""
     bad_dir = tmp_path / "foo;rm -rf /"
@@ -316,11 +353,15 @@ def test_given_clean_work_dir_when_project_name_then_returns_basename(tmp_path: 
     assert api._project_name(good_dir) == "my-project_v1.2"
 
 
+# The four ssh blip / give-up tests below drive api._monitor_loop_iter directly.
+# The public monitor_loop rejects --host at startup (remote reads are
+# unimplemented), so the tolerance machinery it wraps is reachable only through
+# the private iterator until remote reads land or remote mode is removed.
 def test_given_two_blips_then_recovery_when_monitor_loop_then_blips_logged_no_crash(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """monitor_loop tolerates transient blips and emits one event per attempt."""
+    """The poll loop tolerates transient blips and emits one event per attempt."""
     from agent_runner.monitor import MonitorRemoteError
 
     work_dir = tmp_path / "proj"
@@ -342,7 +383,7 @@ def test_given_two_blips_then_recovery_when_monitor_loop_then_blips_logged_no_cr
     # 3 sleeps fire in this scenario: backoff(1s), backoff(2s), interval_s(30)
     # The third must raise _StopLoopError to break out of the while True loop.
     with patch("agent_runner.api.time.sleep", side_effect=[None, None, _StopLoopError()]):
-        gen = api.monitor_loop(work_dir, host="pi", interval_s=30)
+        gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
         try:
             next(gen, None)
         except _StopLoopError:
@@ -366,7 +407,7 @@ def test_given_persistent_failure_when_monitor_loop_then_emits_giveup_and_raises
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Past cap_s, monitor_loop emits monitor_remote_giveup and propagates."""
+    """Past cap_s, the poll loop emits monitor_remote_giveup and propagates."""
     from agent_runner.monitor import MonitorRemoteError
 
     work_dir = tmp_path / "proj"
@@ -396,7 +437,7 @@ def test_given_persistent_failure_when_monitor_loop_then_emits_giveup_and_raises
     monkeypatch.setattr("agent_runner.api.time.monotonic", fake_monotonic)
     monkeypatch.setattr("agent_runner.api.time.sleep", lambda _s: None)
 
-    gen = api.monitor_loop(work_dir, host="pi", interval_s=30)
+    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
     with pytest.raises(MonitorRemoteError):
         next(gen, None)
     gen.close()
@@ -431,7 +472,7 @@ def test_given_tolerance_zero_when_blip_then_raises_immediately_no_events(
 
     monkeypatch.setattr(api, "_poll_once", always_fail)
 
-    gen = api.monitor_loop(work_dir, host="pi", interval_s=30)
+    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
     with pytest.raises(MonitorRemoteError):
         next(gen, None)
     gen.close()
@@ -475,7 +516,7 @@ def test_given_blip_then_success_when_monitor_loop_then_state_resets(
     monkeypatch.setattr(api, "_poll_once", fake_poll_once)
     monkeypatch.setattr("agent_runner.api.time.sleep", lambda _s: None)
 
-    gen = api.monitor_loop(work_dir, host="pi", interval_s=30)
+    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
     try:
         while True:
             next(gen)  # no default — let exceptions propagate naturally

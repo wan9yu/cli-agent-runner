@@ -20,7 +20,7 @@ def add_parser(sub, parent) -> None:
         type=str,
         default=None,
         metavar="SSH-ALIAS",
-        help="Watch a remote agent-runner via ssh (anomaly mode only)",
+        help="Remote ssh alias (unsupported in this version — errors at startup)",
     )
     p.add_argument(
         "--interval",
@@ -77,6 +77,8 @@ def _cmd_anomaly(args) -> int:
                 sys.stdout.flush()
     except KeyboardInterrupt:
         return 0
+    except monitor.MonitorRemoteUnsupportedError as e:
+        return fail(str(e))
     except monitor.MonitorRemoteError as e:
         return fail(f"cannot reach {e.host!r} via ssh: {e.stderr}")
     return 0

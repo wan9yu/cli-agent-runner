@@ -99,10 +99,13 @@ API quota / writing to a near-full disk).
 
 The monitor emits no events during healthy operation — it surfaces alerts only when a detector fires. To verify the monitor process is running, look for the `monitor_started` event in `events-*.jsonl`. Programmatic consumers (e.g. an external supervisory layer) should subscribe to that event kind as the canonical "supervision is up" signal. The event carries `mode: "anomaly-only"` to document the intentional silence.
 
-## Monitor: transient ssh tolerance
+## Monitor: transient ssh tolerance (dormant)
 
-`monitor --host <alias>` tolerates short ssh-protocol failures (rc=255) during
-steady-state polling. The tolerance window defaults to 90 seconds and is
+Remote monitoring is unsupported in this version — `monitor --host <alias>`
+exits 1 at startup because remote round logs and events cannot be read, so the
+tolerance described here is dormant until remote reads land (or remote mode is
+removed). It applies to remote polling: short ssh-protocol failures (rc=255)
+during steady-state polling are tolerated. The window defaults to 90 seconds and is
 configurable via `[monitor] remote_failure_tolerance_s` (set to 0 to disable).
 Backoff is 1s → 2s → 4s → ... → 30s. During the window each failed poll emits a
 `monitor_remote_blip` event; if the window expires without recovery a
