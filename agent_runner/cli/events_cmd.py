@@ -3,7 +3,13 @@
 One-shot (--window N) or streaming (--tail) query against events.jsonl.
 JSON Lines output (one JSON object per line, no pretty-print).
 
-Current-month scope only. Tail mode follows month rollover via per-poll glob.
+Current-month scope only, except under ``--since <ISO ts>``, which replays every
+matching event with ``ts >= since`` across month files (and then follows, under
+``--tail``). That replay is at-least-once by contract: a client resumes by
+passing the last ts it saw, so the boundary event may arrive twice — no event is
+ever silently lost across a dropped connection.
+
+Tail mode follows month rollover via per-poll glob.
 """
 
 from __future__ import annotations
@@ -15,6 +21,8 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+from agent_runner.events import parse_iso_ms
 
 # Sentinel for "user did not explicitly set --window" so we can detect
 # --window + --tail combinations. argparse mutually-exclusive group would
@@ -64,6 +72,18 @@ def add_parser(sub, parent) -> None:
         action="store_true",
         help=("Streaming mode: emit each new matching event as it fires (blocks until SIGINT)."),
     )
+    p.add_argument(
+        "--since",
+        type=str,
+        default=None,
+        metavar="ISO-TS",
+        help=(
+            "Replay every matching event with ts >= this ISO-8601 timestamp "
+            "(e.g. 2026-07-27T10:00:00.000Z), across month files, then keep "
+            "streaming if --tail. At-least-once: resume by passing the last ts "
+            "you saw — that event may repeat, none is lost. Excludes --window."
+        ),
+    )
     p.set_defaults(func=cmd_events)
 
 
@@ -97,6 +117,27 @@ def cmd_events(args) -> int:
         )
         return 2
 
+    since_raw = getattr(args, "since", None)
+    since: datetime | None = None
+    if since_raw is not None:
+        if window_explicit:
+            print(
+                "Error: --window and --since are mutually exclusive",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            since = parse_iso_ms(since_raw)
+        except ValueError:
+            print(
+                f"Error: --since expects an ISO-8601 timestamp "
+                f"(e.g. 2026-07-27T10:00:00.000Z), got {since_raw!r}",
+                file=sys.stderr,
+            )
+            return 2
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+
     try:
         log_dir = _resolve_log_dir(args)
     except FileNotFoundError as e:
@@ -104,7 +145,15 @@ def cmd_events(args) -> int:
         return 1
 
     if args.tail:
-        return _tail_events(log_dir, kind_set)
+        return _tail_events(log_dir, kind_set, since=since)
+
+    if since is not None:
+        try:
+            _replay_since(log_dir, kind_set, since)  # offset only matters to --tail
+        except OSError as e:
+            print(f"Error: events file unreadable: {e}", file=sys.stderr)
+            return 1
+        return 0
 
     window = args.window if args.window != _WINDOW_DEFAULT_SENTINEL else 10
     return _query_events(log_dir, kind_set, window)
@@ -113,6 +162,68 @@ def cmd_events(args) -> int:
 def _current_month_events_file(log_dir: Path) -> Path:
     month = datetime.now(UTC).strftime("%Y-%m")
     return log_dir / f"events-{month}.jsonl"
+
+
+def _month_of(events_file: Path) -> str:
+    """The YYYY-MM embedded in an ``events-YYYY-MM.jsonl`` filename."""
+    return events_file.name[len("events-") : -len(".jsonl")]
+
+
+def _matches_since(line: str, kind_set: set[str], since: datetime) -> bool:
+    """True if ``line`` is a matching kind whose ts is at or after ``since``.
+
+    Malformed lines and lines carrying no parseable ``ts`` are skipped silently,
+    matching the tolerance of the other parse loops in this module.
+    """
+    try:
+        evt = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if evt.get("event") not in kind_set:
+        return False
+    ts = evt.get("ts")
+    if not isinstance(ts, str):
+        return False
+    try:
+        parsed = parse_iso_ms(ts)
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed >= since
+
+
+def _replay_since(log_dir: Path, kind_set: set[str], since: datetime) -> tuple[Path, int]:
+    """Emit every matching event with ``ts >= since``, oldest month file first.
+
+    Not windowed: replay is the resume path, so it emits the whole backlog.
+
+    Returns ``(current-month file, bytes consumed of it)``. That offset is the
+    handoff point for ``--tail``: it is the true end-of-read position, so a line
+    appended while the replay was running is picked up by the poll loop instead
+    of being skipped, and no line is emitted in both phases.
+    """
+    since_month = since.astimezone(UTC).strftime("%Y-%m")
+    current = _current_month_events_file(log_dir)
+    offset = 0
+    for path in sorted(log_dir.glob("events-*.jsonl")):
+        if _month_of(path) < since_month:
+            # Nothing to replay from a month that ended before `since`. The live
+            # file lands here only when `since` names a future month — seed the
+            # tail at its end rather than rewinding it to 0.
+            if path == current:
+                offset = path.stat().st_size
+            continue
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if _matches_since(line, kind_set, since):
+                    print(line, flush=True)
+            if path == current:
+                offset = f.tell()
+    return current, offset
 
 
 def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
@@ -143,10 +254,15 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
     return 0
 
 
-def _tail_events(log_dir: Path, kind_set: set[str]) -> int:
+def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = None) -> int:
     """Streaming: poll current-month events.jsonl at 1s interval; emit each
     new matching line as it fires. Blocks until SIGINT (KeyboardInterrupt).
     Follows month rollover via per-poll glob.
+
+    With ``since``, the backlog (``ts >= since``, across month files) is replayed
+    first and the poll resumes at the exact byte the replay stopped on — no gap
+    and no duplicate across the handoff. At-least-once overall: the caller
+    resumes from the last ts it saw, so that one event may repeat.
     """
     last_size = 0
     current_file: Path | None = None
@@ -155,6 +271,13 @@ def _tail_events(log_dir: Path, kind_set: set[str]) -> int:
         raise KeyboardInterrupt()
 
     signal.signal(signal.SIGINT, _handle_sigint)
+
+    if since is not None:
+        try:
+            current_file, last_size = _replay_since(log_dir, kind_set, since)
+        except OSError as e:
+            print(f"Error: events file unreadable: {e}", file=sys.stderr)
+            return 1
 
     try:
         while True:

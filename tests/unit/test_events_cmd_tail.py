@@ -17,9 +17,12 @@ def _events_file(log_dir: Path) -> Path:
     return log_dir / f"events-{datetime.now(UTC).strftime('%Y-%m')}.jsonl"
 
 
-def _append(path: Path, kind: str, n: int) -> None:
+def _append(path: Path, kind: str, n: int, ts: str | None = None) -> None:
+    payload: dict[str, object] = {"event": kind, "n": n}
+    if ts is not None:
+        payload = {"ts": ts, **payload}
     with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"event": kind, "n": n}) + "\n")
+        f.write(json.dumps(payload) + "\n")
 
 
 def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_once(
@@ -71,3 +74,37 @@ def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_on
 
     emitted = [json.loads(line)["n"] for line in capsys.readouterr().out.splitlines() if line]
     assert emitted == [1, 2], f"expected each event once, got {emitted}"
+
+
+def test_given_since_when_tailing_then_replay_then_live_lines_each_once(
+    tmp_log_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--tail --since replays the backlog, then follows — with no gap, no repeat."""
+    events_file = _events_file(tmp_log_dir)
+    _append(events_file, "round_start", 0, ts="2026-07-01T09:00:00.000Z")  # before --since
+    _append(events_file, "round_start", 1, ts="2026-07-01T10:00:00.000Z")  # replayed
+    _append(events_file, "other", 2, ts="2026-07-01T11:00:00.000Z")  # wrong kind
+
+    polls = {"n": 0}
+
+    def fake_sleep(_interval: float) -> None:
+        polls["n"] += 1
+        if polls["n"] == 1:
+            _append(events_file, "round_start", 3, ts="2026-07-01T12:00:00.000Z")
+        elif polls["n"] >= 3:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(events_cmd, "time", SimpleNamespace(sleep=fake_sleep))
+    monkeypatch.setattr(
+        events_cmd,
+        "signal",
+        SimpleNamespace(SIGINT=signal.SIGINT, signal=lambda *_a: None),
+    )
+
+    since = datetime(2026, 7, 1, 10, 0, 0, tzinfo=UTC)
+    assert events_cmd._tail_events(tmp_log_dir, {"round_start"}, since=since) == 0
+
+    emitted = [json.loads(line)["n"] for line in capsys.readouterr().out.splitlines() if line]
+    assert emitted == [1, 3], f"expected replay then live, each once, got {emitted}"

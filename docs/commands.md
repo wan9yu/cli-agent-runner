@@ -120,10 +120,11 @@ agent-runner peek --round 42 --log         # drill into round 42, include log ta
 agent-runner peek --events 50              # last 50 events
 ```
 
-### `agent-runner events --kind K[,K2,...] [--window N] [--tail]`
+### `agent-runner events --kind K[,K2,...] [--window N] [--tail] [--since ISO-TS]`
 
 Query or stream events.jsonl by kind. Output is always JSON Lines (one event
-JSON per line). Current-month events.jsonl scope only.
+JSON per line). Current-month events.jsonl scope only, except under `--since`,
+whose replay spans month files.
 
 ```bash
 # One-shot: last 5 usage records
@@ -134,10 +135,18 @@ agent-runner events --kind round_end,hook_failed --window 20
 
 # Streaming: emit each new matching event as it fires; blocks until SIGINT
 agent-runner events --kind transient_error_backoff_capped --tail
+
+# Resume a dropped stream: replay the backlog, then keep streaming
+agent-runner events --kind round_end --tail --since 2026-07-27T10:00:00.000Z
 ```
 
-`--window N` and `--tail` are mutually exclusive. Exit codes: 0 normal,
-2 invalid arguments, 1 unreadable events file.
+`--since ISO-TS` emits every match with `ts >= ISO-TS` (no windowing), then
+follows if `--tail` was given. It is at-least-once by contract: reconnect with
+the last ts you saw and that one event may repeat, but nothing that fired while
+you were disconnected is lost.
+
+`--window N` is mutually exclusive with `--tail` and with `--since`. Exit codes:
+0 normal, 2 invalid arguments, 1 unreadable events file.
 
 ### `agent-runner watch [--interval N] [peek-flags]`
 
