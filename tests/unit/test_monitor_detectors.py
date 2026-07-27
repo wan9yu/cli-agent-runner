@@ -149,6 +149,63 @@ def test_given_short_exit_with_oauth_pattern_when_detect_then_returns_auto_stop_
     assert a.auto_action == "stop_service"
 
 
+def _exit_zero_rounds(n: int = 10) -> list[dict]:
+    """n short agent_exit records the text path can never match: exit code 0.
+
+    The shape pi produces — it exits 0 even when the provider rejected the key.
+    """
+    return [
+        _ev("agent_exit", round_num=i, duration_s=5.0, exit_code=0, timed_out=False)
+        for i in range(n)
+    ]
+
+
+def test_given_structured_auth_events_on_exit_zero_rounds_when_detect_then_auto_stops() -> None:
+    """Structured evidence bypasses the exit-code gate: the agent's own output
+    said the credential was rejected, so no heuristic shield is needed."""
+    from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
+
+    events = _exit_zero_rounds()
+    events += [
+        _ev(AGENT_AUTH_ERROR_DETECTED, round_num=i, agent="pi", raw="401: invalid key")
+        for i in (0, 1)
+    ]
+    a = detect_oauth_fail(events, {}, window=10, threshold=0.2)
+    assert a is not None
+    assert a.severity == "critical"
+    assert a.auto_action == "stop_service"
+    assert a.context["matches"] == 2
+
+
+def test_given_auth_text_on_exit_zero_rounds_when_detect_then_no_alert() -> None:
+    """The text path keeps its nonzero-exit gate: prose mentioning 401 in a
+    round that exited cleanly is not evidence of an auth loop."""
+    events = _exit_zero_rounds()
+    log_tails = dict.fromkeys(range(10), "Error: 401 Unauthorized — invalid API key")
+    assert detect_oauth_fail(events, log_tails, window=10, threshold=0.2) is None
+
+
+def test_given_one_text_and_one_structured_match_when_detect_then_alert_counts_both() -> None:
+    """The two evidence paths count into one window/threshold."""
+    from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
+
+    events = _exit_zero_rounds()
+    events[0] = _ev("agent_exit", round_num=0, duration_s=5.0, exit_code=1, timed_out=False)
+    events.append(_ev(AGENT_AUTH_ERROR_DETECTED, round_num=5, agent="pi", raw="401: invalid key"))
+    log_tails = {0: "Error: 401 Unauthorized"}
+    a = detect_oauth_fail(events, log_tails, window=10, threshold=0.2)
+    assert a is not None
+    assert a.context["matches"] == 2
+
+
+def test_given_single_structured_auth_event_when_detect_then_below_threshold() -> None:
+    from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
+
+    events = _exit_zero_rounds()
+    events.append(_ev(AGENT_AUTH_ERROR_DETECTED, round_num=3, agent="pi", raw="401: invalid key"))
+    assert detect_oauth_fail(events, {}, window=10, threshold=0.2) is None
+
+
 def test_given_short_exit_with_network_pattern_when_detect_then_returns_warning_alert() -> None:
     events = []
     log_tails = {}

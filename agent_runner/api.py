@@ -790,6 +790,7 @@ def check_self_terminated_sentinel(log_dir: Path) -> bool:
 # Re-export emit_* wrappers from _emit module (extracted for size hygiene).
 # Preserves the public import surface: `from agent_runner.api import emit_*` continues to work.
 from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-export
+    emit_agent_auth_error_detected,
     emit_agent_usage_recorded,
     emit_anomaly_repetitive_tool,
     emit_config_broken,

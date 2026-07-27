@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 __all__ = [
+    "emit_agent_auth_error_detected",
     "emit_agent_usage_recorded",
     "emit_anomaly_repetitive_tool",
     "emit_fresh_eyes_round_triggered",
@@ -147,6 +148,38 @@ def emit_transient_error_detected(
         reset_at_epoch=reset_at_epoch,
         round_num=round_num,
         raw=raw,
+    )
+
+
+def emit_agent_auth_error_detected(
+    log_dir: Path,
+    *,
+    round_num: int,
+    agent: str,
+    raw: str,
+) -> None:
+    """Emit an authentication/authorization failure the agent itself reported.
+
+    Contract: emitted by a per-CLI plugin only when the agent's OWN structured
+    output names the failure (e.g. an HTTP 401 in its JSON event stream). That
+    is certain evidence, unlike the monitor's ``oauth_fail`` text heuristic,
+    which scans free-text log tails and therefore needs a nonzero-exit shield
+    against prose that merely mentions "401". The monitor counts a round
+    carrying this event without that shield — which is what makes an auth loop
+    visible for a CLI that exits 0 on provider failure.
+
+    No back-off partner event: an auth failure is permanent until an operator
+    fixes the credential, so it is deliberately not a transient classification.
+    """
+    from agent_runner._redact import redact_secrets
+    from agent_runner.events import AGENT_AUTH_ERROR_DETECTED, emit
+
+    emit(
+        log_dir,
+        AGENT_AUTH_ERROR_DETECTED,
+        round_num=round_num,
+        agent=agent,
+        raw=redact_secrets(raw),
     )
 
 

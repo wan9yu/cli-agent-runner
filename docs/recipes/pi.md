@@ -59,10 +59,11 @@ Notes:
   the sole thing that ends a runaway round.
 - **pi exits 0 on provider failure** (auth errors and exhausted retries alike;
   errors surface only as JSONL `errorMessage` on stdout). The `pi` detector
-  plugin reads those records to drive rate-limit/5xx back-off, but the
-  `oauth_fail` auto-stop keys on nonzero exits and therefore cannot fire for
-  pi — a bad credential shows up in round logs and `transient`-free event
-  streams, not as an automatic stop. Check `peek` after rotating keys.
+  plugin reads those records to drive rate-limit/5xx back-off, and reports a
+  401 as an `agent_auth_error_detected` event — which the `oauth_fail`
+  auto-stop counts directly, so a bad credential does stop the service (at
+  ≥2 of the last 10 rounds). The detector's other path, the log-tail text
+  heuristic, still requires a nonzero exit and so stays blind to pi.
 - **Log volume.** `--mode json` is a verbose JSONL event stream; switch to
   `--mode text` for cleaner round logs — agent-runner needs no specific format.
 - `PI_OFFLINE = "1"` (in `[agent.env]`) suppresses pi's startup auto-update and

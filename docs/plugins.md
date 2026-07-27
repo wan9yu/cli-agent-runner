@@ -419,8 +419,17 @@ exhausted retries against 429/503, all exited 0 with an empty stderr — so the
 failure signal is the final assistant message's `stopReason == "error"` rather
 than the exit code. pi self-retries up to 3 times; a blip it recovered from
 leaves the final state clean and emits nothing. Auth (401) and unknown model
-(404) map to no bucket: they are permanent until an operator fixes config, and
-the monitor's default `auth_fail_patterns` already match pi's 401 wording.
+(404) map to no bucket: they are permanent until an operator fixes config, so
+backing off would only stall.
+
+A 401 instead emits `agent_auth_error_detected` (`round_num`, `agent`, `raw`
+≤200 chars, redacted) — the third member of the plugin event family, alongside
+`transient_error_detected` and `agent_usage_recorded`. It is emitted only when
+the CLI's own structured output names the failure, which makes it certain
+evidence: the monitor's `oauth_fail` detector counts a round carrying it
+directly, without the nonzero-exit gate its text heuristic needs. That gate is
+why pi's auth loops were previously invisible — pi exits 0. 403 would qualify
+on the same reasoning but has not been observed from pi, so it is not parsed.
 
 Disable with `[plugins] disable = ["pi_error_detector"]`.
 

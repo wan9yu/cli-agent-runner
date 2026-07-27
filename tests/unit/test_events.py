@@ -150,6 +150,45 @@ def test_given_monitor_started_kind_when_imported_then_in_known_event_kinds() ->
     assert "monitor_started" in KNOWN_EVENT_KINDS
 
 
+def test_emit_agent_auth_error_detected_writes_structured_payload(tmp_path):
+    """The agent's own output reported an auth failure — certain evidence, so the
+    monitor's oauth_fail detector counts the round without an exit-code shield.
+    """
+    import json
+
+    from agent_runner._emit import emit_agent_auth_error_detected
+    from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
+
+    emit_agent_auth_error_detected(
+        tmp_path,
+        round_num=7,
+        agent="pi",
+        raw='401: {"message":"Invalid Authentication"}',
+    )
+    line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
+    payload = json.loads(line)
+    assert payload["event"] == AGENT_AUTH_ERROR_DETECTED
+    assert payload["round_num"] == 7
+    assert payload["agent"] == "pi"
+    assert "401" in payload["raw"]
+
+
+def test_emit_agent_auth_error_detected_redacts_secrets_in_raw(tmp_path):
+    """raw is a provider error body — the same redaction the transient sibling applies."""
+    import json
+
+    from agent_runner._emit import emit_agent_auth_error_detected
+
+    emit_agent_auth_error_detected(
+        tmp_path,
+        round_num=1,
+        agent="pi",
+        raw='401: {"key":"sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"}',
+    )
+    line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
+    assert "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789" not in json.loads(line)["raw"]
+
+
 def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
     """0.1.33+ payload includes original_reset_at_epoch, applied_reset_at_epoch,
     consecutive_count, capped_by_absolute_max for backoff-curve observability.

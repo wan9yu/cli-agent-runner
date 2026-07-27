@@ -1,8 +1,9 @@
-"""Built-in post_round_hook for pi CLI: usage events + transient classification.
+"""Built-in post_round_hook for pi CLI: usage, transient, and auth events.
 
 Fifth built-in plugin (after claude, gemini, codewhale, kimi). Parses the tail
-of a `pi -p -na --mode json ...` round log and emits both agent_usage_recorded
-(pi's stream carries token counters) and transient_error_detected.
+of a `pi -p -na --mode json ...` round log and emits agent_usage_recorded (pi's
+stream carries token counters), transient_error_detected, and
+agent_auth_error_detected.
 
 Scope (verified against Pi Coding Agent 0.80.10, not documentation):
 
@@ -42,9 +43,14 @@ reported as None rather than a fabricated $0.00.
 Transient classification reads the failing message's ``errorMessage``. Two
 formats were observed -- ``"429 status code (no body)"`` and
 ``"401: {...json body...}"`` -- both leading with the HTTP status, plus the
-status-less ``"Request timed out."`` that only the text fallback catches. pi's
-401 wording is already matched by the monitor's default ``auth_fail_patterns``
-in the raw log.
+status-less ``"Request timed out."`` that only the text fallback catches.
+
+A 401 gets no transient bucket (back-off cannot fix a rejected credential) and
+instead emits ``agent_auth_error_detected``: because pi exits 0, the monitor's
+text heuristic — which requires a nonzero exit — can never see a pi auth loop,
+whereas that event is certain evidence the detector counts directly. 401 is the
+only auth status observed from pi 0.80.10; 403 would qualify on the same
+reasoning but has not been seen, and this parser stays on observed shapes.
 """
 
 from __future__ import annotations
@@ -58,6 +64,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_runner.api import (
+    emit_agent_auth_error_detected,
     emit_agent_usage_recorded,
     emit_transient_error_detected,
 )
@@ -112,6 +119,16 @@ class PiErrorDetector:
                     classification=classification,
                     agent="pi",
                     reset_at_epoch=int(time.time() + _BACK_OFF_DEFAULTS[classification]),
+                    raw=str(error_text)[:_RAW_CAP],
+                )
+            elif _is_auth_error(error_text):
+                # No transient classification on purpose — an auth failure is
+                # permanent until an operator intervenes, so backing off would
+                # only stall. The event is what lets the monitor see the loop.
+                emit_agent_auth_error_detected(
+                    ctx.log_dir,
+                    round_num=ctx.round_num,
+                    agent="pi",
                     raw=str(error_text)[:_RAW_CAP],
                 )
 
@@ -245,6 +262,18 @@ def _classify_pi_error(text: str | None) -> str | None:
     if "timed out" in text.lower() or "timeout" in text.lower():
         return "api_timeout"
     return None
+
+
+def _is_auth_error(text: str | None) -> bool:
+    """True when pi's ``errorMessage`` carries an HTTP 401.
+
+    Read from the same status prefix the transient classifier uses. 401 is the
+    only auth status observed from pi 0.80.10 (invalid key against a Moonshot
+    provider); 403 would qualify on the same reasoning but has not been seen,
+    and this parser stays on shapes captured from a real run.
+    """
+    match = _STATUS_RE.match(text or "")
+    return bool(match) and match.group(1) == "401"
 
 
 register_post_round_hook(PiErrorDetector())

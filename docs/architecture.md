@@ -174,6 +174,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 ## Known event kinds
 
 <!-- gen:event-kinds -->
+- `agent_auth_error_detected`
 - `agent_exit`
 - `agent_network_blip`
 - `agent_self_terminated`

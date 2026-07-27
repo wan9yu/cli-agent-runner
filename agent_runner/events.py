@@ -27,6 +27,7 @@ from typing import Any
 # Cross-module event-kind constants. Every module-level UPPER_CASE constant
 # whose value is a snake_case string is automatically collected into
 # _BUILTIN_KINDS via _collect_builtin_kinds() below (single-source).
+AGENT_AUTH_ERROR_DETECTED = "agent_auth_error_detected"
 AGENT_EXIT = "agent_exit"
 ANOMALY_REPETITIVE_TOOL = "anomaly_repetitive_tool"
 AGENT_NETWORK_BLIP = "agent_network_blip"

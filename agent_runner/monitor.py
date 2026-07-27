@@ -1,7 +1,8 @@
 """Monitor — anomaly detectors over events + metrics + log tails.
 
 11 built-in detectors. Two trigger ``auto_action="stop_service"``:
-  * oauth_fail  — auth pattern in short-exit logs (retrying burns API quota)
+  * oauth_fail  — agent-reported auth failures, or an auth pattern in
+    short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
 The detectors are pure functions; the loop, ssh fetch, and auto-stop wiring
@@ -34,6 +35,7 @@ from agent_runner.builtin_plugins._constants import _TAIL_LINES
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, _DEFAULT_AUTO_STOP_ON, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
+    AGENT_AUTH_ERROR_DETECTED,
     AGENT_EXIT,
     ANOMALY_REPETITIVE_TOOL,
     MONITOR_ALERT_EMITTED,
@@ -285,15 +287,38 @@ def detect_oauth_fail(
     patterns: list[re.Pattern[str]] | None = None,
     hint: str | None = None,
 ) -> Alert | None:
+    """Auth-failure loop over the last ``window`` rounds, from two evidence paths.
+
+    1. **Text heuristic** — an auth pattern in the round's log tail, gated on a
+       short *nonzero* exit that did not time out. The gate is the false-positive
+       shield: the tail is free text, and prose mentioning "401" in a round that
+       exited cleanly is not an auth failure.
+    2. **Structured** — the round carries an ``agent_auth_error_detected`` event,
+       emitted by a per-CLI plugin that read the failure out of the agent's own
+       output. That is certain, not inferred, so it needs no exit-code shield —
+       and the shield would in fact hide it, since some agent CLIs exit 0 even
+       when the provider rejected the credential.
+
+    A round matching either path counts once; both paths share this window,
+    threshold, and auto-stop.
+    """
     pats = patterns or [re.compile(p, re.IGNORECASE) for p in _DEFAULT_AUTH_PATTERNS]
     recent = _last_n_round_exits(events, window)
+    auth_rounds = {
+        e.get("round_num")
+        for e in events
+        if e.get("event") == AGENT_AUTH_ERROR_DETECTED and e.get("round_num") is not None
+    }
     matches = sum(
         1
         for e in recent
-        if (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
-        and e.get("exit_code", 0) != 0
-        and not e.get("timed_out", False)
-        and any(p.search(log_tails.get(e.get("round_num"), "")) for p in pats)
+        if e.get("round_num") in auth_rounds
+        or (
+            (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
+            and e.get("exit_code", 0) != 0
+            and not e.get("timed_out", False)
+            and any(p.search(log_tails.get(e.get("round_num"), "")) for p in pats)
+        )
     )
     total = len(recent)
     if total < window or matches / total < threshold:
@@ -301,7 +326,7 @@ def detect_oauth_fail(
     return _alert(
         "oauth_fail",
         "critical",
-        f"{matches}/{total} recent rounds short-exited with auth failure pattern",
+        f"{matches}/{total} recent rounds failed auth (agent-reported or short-exit pattern)",
         {
             "matches": matches,
             "window": total,

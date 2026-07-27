@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `kimi_error_detector` plugin — classifies transient errors from Kimi Code CLI rounds (`turn.step.retrying` records) so a rate-limited round backs off instead of hot-restarting. No usage events: the CLI's stream-json output carries no token counters.
+- `agent_auth_error_detected` event — a plugin reports an auth failure named by the agent CLI's own structured output, and the `oauth_fail` detector counts those rounds directly. Makes pi's 401 loop visible (pi exits 0); the text-heuristic path keeps its nonzero-exit gate unchanged.
 - `pi_error_detector` plugin — emits per-round token usage (summed across the round's assistant messages, since pi reports usage per message) and classifies transient errors from Pi Coding Agent rounds. pi exits 0 on provider failure, so the classifier reads the final message's `stopReason`/`errorMessage` rather than the exit code.
 
 ### Fixed
