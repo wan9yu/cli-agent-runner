@@ -42,9 +42,9 @@ reported as None rather than a fabricated $0.00.
 Transient classification reads the failing message's ``errorMessage``. Two
 formats were observed -- ``"429 status code (no body)"`` and
 ``"401: {...json body...}"`` -- both leading with the HTTP status, plus the
-status-less ``"Request timed out."``. Auth (401) and unknown-model (404) map to
-nothing: they are permanent until an operator intervenes, and the monitor's
-default ``auth_fail_patterns`` already match pi's 401 wording in the raw log.
+status-less ``"Request timed out."`` that only the text fallback catches. pi's
+401 wording is already matched by the monitor's default ``auth_fail_patterns``
+in the raw log.
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ import json
 import re
 import time
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -61,16 +62,23 @@ from agent_runner.api import (
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
-    _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    json_tail,
+    classify_transient_status,
+    json_events,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
 _STATUS_RE = re.compile(r"^\s*(\d{3})\b")
 """pi prefixes provider errors with the HTTP status (``429 status code ...``,
 ``401: {...}``)."""
+
+_SESSION_HEAD_LINES: int = 20
+"""Lines to scan for the ``session`` header before giving up on it.
+
+Not just the first line: a real round often opens with plain-text node
+warnings on stderr, and anchoring on line 1 would silently zero every duration.
+"""
 
 
 class PiErrorDetector:
@@ -84,13 +92,16 @@ class PiErrorDetector:
         log_path = ctx.agent_log_path
         if log_path is None or not log_path.exists():
             return
-        parsed = _parse_pi_log(log_path)
-        messages = parsed["assistant_messages"]
+        messages, session_start_ms = _parse_pi_log(log_path)
         if not messages:
             return
 
-        error_text = _final_error(messages, parsed["retry_final_error"])
-        round_ok = result.exit_code == 0 and not result.timed_out and error_text is None
+        # The last assistant message is the round's verdict: it carries the
+        # post-retry state, and pi writes it before the auto_retry_end record.
+        last = messages[-1]
+        is_error = last.get("stopReason") == "error"
+        error_text = str(last.get("errorMessage") or "error") if is_error else None
+        round_ok = result.ok and error_text is None
 
         if not round_ok:
             classification = _classify_pi_error(error_text)
@@ -104,7 +115,7 @@ class PiErrorDetector:
                     raw=str(error_text)[:_RAW_CAP],
                 )
 
-        usage = _aggregate_usage(messages, parsed["session_start_ms"])
+        usage = _aggregate_usage(messages, session_start_ms)
         if usage:
             emit_agent_usage_recorded(
                 ctx.log_dir,
@@ -115,45 +126,23 @@ class PiErrorDetector:
             )
 
 
-def _parse_pi_log(log_path: Path) -> dict[str, Any]:
-    """Collect the round's assistant messages plus the failure signals.
+def _parse_pi_log(log_path: Path) -> tuple[list[dict], int | None]:
+    """The round's assistant messages plus the session-start epoch-ms.
 
     Prefers ``agent_end`` records (one line per agent run, listing only that
     run's messages) and falls back to ``message_end`` when the round was killed
-    before any ``agent_end`` was written. Tolerates non-JSON lines: the round
-    log merges stdout+stderr.
+    before any ``agent_end`` was written.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = json_tail(f)
-        f.seek(0)
-        session_start_ms = _session_start_ms(f.readline())
-
     from_agent_end: list[dict] = []
     from_message_end: list[dict] = []
-    retry_final_error: str | None = None
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
+    for event in json_events(log_path):
         etype = event.get("type")
         if etype == "agent_end":
             from_agent_end.extend(_assistants(event.get("messages")))
         elif etype == "message_end":
             from_message_end.extend(_assistants([event.get("message")]))
-        elif etype == "auto_retry_end" and not event.get("success"):
-            retry_final_error = event.get("finalError")
 
-    return {
-        "assistant_messages": from_agent_end or from_message_end,
-        "retry_final_error": retry_final_error,
-        "session_start_ms": session_start_ms,
-    }
+    return from_agent_end or from_message_end, _session_start_ms(log_path)
 
 
 def _assistants(messages: Any) -> list[dict]:
@@ -163,34 +152,28 @@ def _assistants(messages: Any) -> list[dict]:
     return [m for m in messages if isinstance(m, dict) and m.get("role") == "assistant"]
 
 
-def _session_start_ms(first_line: str) -> int | None:
-    """Epoch-ms of the round's ``session`` header line, or None if absent."""
-    try:
-        event = json.loads(first_line)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(event, dict) or event.get("type") != "session":
-        return None
-    stamp = event.get("timestamp")
-    if not isinstance(stamp, str):
-        return None
-    try:
-        return int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() * 1000)
-    except ValueError:
-        return None
+def _session_start_ms(log_path: Path) -> int | None:
+    """Epoch-ms of the round's ``session`` header, or None if absent.
 
-
-def _final_error(messages: list[dict], retry_final_error: str | None) -> str | None:
-    """Failure text of the round, or None when the round ended cleanly.
-
-    The last assistant message is authoritative (post-retry state); the
-    exhausted-retry record is the fallback for a stream that ends without one.
+    Read from the head of the file, not the tail window: the header is the
+    round's first record and would otherwise be evicted by a long round.
     """
-    last = messages[-1]
-    if last.get("stopReason") == "error":
-        return str(last.get("errorMessage") or "error")
-    if retry_final_error:
-        return str(retry_final_error)
+    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+        head = list(islice(f, _SESSION_HEAD_LINES))
+    for line in head:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "session":
+            continue
+        stamp = event.get("timestamp")
+        if not isinstance(stamp, str):
+            return None
+        try:
+            return int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() * 1000)
+        except ValueError:
+            return None
     return None
 
 
@@ -230,7 +213,6 @@ def _aggregate_usage(messages: list[dict], session_start_ms: int | None) -> dict
         "cache_creation_tokens": totals["cacheWrite"],
         "cost_usd": cost if cost > 0 else None,
         "duration_ms": _duration_ms(last, session_start_ms),
-        "models_breakdown": None,  # --model pins one model per round
         "tool_call_count": tool_calls,
     }
 
@@ -249,25 +231,17 @@ def _duration_ms(last_message: dict, session_start_ms: int | None) -> int:
 
 
 def _classify_pi_error(text: str | None) -> str | None:
-    """Map a pi ``errorMessage`` to a transient bucket, or None.
+    """Map a pi ``errorMessage`` to a transient bucket via the shared ladder.
 
-    None means 'not a transient error': auth (401) and unknown model (404) are
-    the non-transient failures observed from this CLI, both permanent until an
-    operator fixes configuration, and both oauth_fail / config territory rather
-    than something a back-off would clear.
+    pi leads provider errors with the HTTP status, so the status prefix is
+    authoritative when present. Only when there is none does the text fallback
+    apply — pi's own ``"Request timed out."`` carries no status at all.
     """
     if not text:
         return None
     match = _STATUS_RE.match(text)
     if match:
-        status = int(match.group(1))
-        if status == 429:
-            return "rate_limit_model"
-        if status in _5XX_STATUSES:
-            return "api_transient_5xx"
-        if status == 408:
-            return "api_timeout"
-        return None
+        return classify_transient_status(int(match.group(1)))
     if "timed out" in text.lower() or "timeout" in text.lower():
         return "api_timeout"
     return None

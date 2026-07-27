@@ -18,9 +18,9 @@ passes ``exit_code=0`` — the round-failed signal has to come from the stream.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, write_round_log
+from tests._test_helpers import make_hook_context, make_run_result, write_round_log
 
 _MOD = "agent_runner.builtin_plugins.pi"
 
@@ -220,7 +220,7 @@ _AGENT_END_MULTI_TURN = {
 
 
 def _ok_round():
-    return MagicMock(exit_code=0, timed_out=False)
+    return make_run_result()
 
 
 def _run(tmp_path, events, result=None, agent_name="pi"):
@@ -355,7 +355,7 @@ def test_given_round_killed_before_agent_end_when_after_round_then_usage_from_me
     usage_emit, err_emit = _run(
         tmp_path,
         [_SESSION, _MSG_UPDATE_THINKING, _MSG_END_OK],
-        result=MagicMock(exit_code=124, timed_out=True),
+        result=make_run_result(124, timed_out=True),
     )
     err_emit.assert_not_called()  # no classifiable provider error in the stream
     kw = usage_emit.call_args.kwargs
@@ -393,7 +393,11 @@ def test_given_missing_round_log_when_after_round_then_no_crash(tmp_path):
 
 def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
     """The round log merges stdout+stderr; non-JSON lines must not crash the
-    parser nor block the usage record on the JSON lines around them."""
+    parser nor block the usage record on the JSON lines around them.
+
+    Real rounds open with node warnings on stderr, so the ``session`` header
+    is routinely not line 1 — anchoring the duration on the first line alone
+    would silently report 0 for every such round."""
     from agent_runner.builtin_plugins.pi import PiErrorDetector
 
     write_round_log(tmp_path, 1, [_SESSION, _MSG_END_OK, _AGENT_END_OK])
@@ -409,7 +413,9 @@ def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
             PiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="pi"), result=_ok_round()
             )
-    assert usage_emit.call_args.kwargs["input_tokens"] == 793
+    kw = usage_emit.call_args.kwargs
+    assert kw["input_tokens"] == 793
+    assert kw["duration_ms"] == 12607  # session header found past the chatter
 
 
 def test_classify_pi_error_maps_only_observed_shapes():

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, write_round_log
+from tests._test_helpers import make_hook_context, make_run_result, write_round_log
 
 
 def test_given_rate_limit_event_when_classified_then_rate_limit_account(tmp_path):
@@ -36,7 +36,7 @@ def test_given_rate_limit_event_when_classified_then_rate_limit_account(tmp_path
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     # New event emitted with rate_limit_account classification
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_account"
@@ -62,7 +62,7 @@ def test_given_5xx_error_when_classified_then_api_transient_5xx(tmp_path):
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
         with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1060  # now + 60s default
@@ -79,7 +79,7 @@ def test_given_502_error_then_classified_as_api_transient_5xx(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"
 
 
@@ -102,7 +102,7 @@ def test_given_429_without_rate_limit_event_then_classified_as_rate_limit_model(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
         with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_model"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1060  # now + 60s
 
@@ -119,7 +119,7 @@ def test_given_408_timeout_then_classified_as_api_timeout(tmp_path):
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
         with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     assert new_emit.call_args.kwargs["classification"] == "api_timeout"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1030  # now + 30s
 
@@ -131,7 +131,7 @@ def test_given_no_error_when_classified_then_no_emit(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_not_called()
 
 
@@ -147,7 +147,7 @@ def test_given_non_claude_preset_when_classified_then_no_emit(tmp_path):
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
         ClaudeErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="aider"), result=MagicMock()
+            make_hook_context(tmp_path, agent_name="aider"), result=make_run_result()
         )
     new_emit.assert_not_called()
 
@@ -164,7 +164,7 @@ def test_given_unknown_error_status_when_classified_then_no_emit(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_not_called()
 
 
@@ -193,7 +193,7 @@ def test_given_malformed_jsonl_when_classified_then_skips_invalid_and_continues(
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_account"
 
@@ -207,7 +207,7 @@ def test_given_missing_log_file_when_classified_then_no_crash_no_emit(tmp_path):
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
         ClaudeErrorDetector().after_round(
-            make_hook_context(tmp_path, round_num=99), result=MagicMock()
+            make_hook_context(tmp_path, round_num=99), result=make_run_result()
         )
     new_emit.assert_not_called()
 
@@ -241,7 +241,7 @@ def test_given_successful_round_with_usage_when_after_round_then_emits_usage(tmp
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+            ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     err_emit.assert_not_called()
     usage_emit.assert_called_once()
     kwargs = usage_emit.call_args.kwargs
@@ -280,7 +280,9 @@ def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
             with patch(f"{_MOD}.time.time", return_value=1000):
-                ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+                ClaudeErrorDetector().after_round(
+                    make_hook_context(tmp_path), result=make_run_result()
+                )
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
     usage_emit.assert_called_once()
@@ -316,7 +318,7 @@ def test_given_claude_log_with_assistant_event_when_extracted_then_model_populat
         ],
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     usage_emit.assert_called_once()
     assert usage_emit.call_args.kwargs["model"] == "claude-opus-4-7"
 
@@ -343,7 +345,9 @@ def test_given_claude_log_without_assistant_event_when_extracted_then_model_unkn
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
             with patch(f"{_MOD}.time.time", return_value=1000):
-                ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+                ClaudeErrorDetector().after_round(
+                    make_hook_context(tmp_path), result=make_run_result()
+                )
     assert usage_emit.call_args.kwargs["model"] == "unknown"
 
 
@@ -429,7 +433,7 @@ def test_given_claude_round_with_phase_when_after_round_then_phase_in_usage_even
         ],
     )
     ctx = make_hook_context(tmp_path, agent_name="claude", phase="planning")
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         ClaudeErrorDetector().after_round(ctx, result)
     kwargs = usage_emit.call_args.kwargs
@@ -455,7 +459,7 @@ def test_given_claude_round_no_phase_when_after_round_then_phase_empty_string(tm
         ],
     )
     ctx = make_hook_context(tmp_path, agent_name="claude", phase=None)
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         ClaudeErrorDetector().after_round(ctx, result)
     kwargs = usage_emit.call_args.kwargs
@@ -482,7 +486,7 @@ def test_given_claude_round_failed_when_after_round_then_success_false(tmp_path)
         ],
     )
     ctx = make_hook_context(tmp_path, agent_name="claude")
-    result = MagicMock(exit_code=1, timed_out=False)
+    result = make_run_result(1)
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
             with patch(f"{_MOD}.time.time", return_value=1000):
@@ -513,7 +517,7 @@ def test_given_custom_agent_name_with_claude_binary_when_after_round_then_event_
         agent_binary="claude",
         agent_log_path=round_log,
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         ClaudeErrorDetector().after_round(ctx, result)
     emit.assert_called_once()
@@ -609,7 +613,7 @@ def test_given_non_claude_binary_when_after_round_then_no_event(tmp_path):
         agent_binary="aider",
         agent_log_path=round_log,
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         ClaudeErrorDetector().after_round(ctx, result)
     emit.assert_not_called()
@@ -670,6 +674,6 @@ def test_given_stderr_burst_after_terminal_event_then_still_classified(tmp_path)
         for i in range(1000):
             f.write(f"stderr chatter line {i}: retrying connection...\n")
     with patch(f"{_MOD}.emit_transient_error_detected") as new_emit:
-        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=MagicMock())
+        ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"

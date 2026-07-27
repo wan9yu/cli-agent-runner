@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, write_round_log
+from tests._test_helpers import make_hook_context, make_run_result, write_round_log
 
 _MOD = "agent_runner.builtin_plugins.gemini"
 
@@ -46,7 +46,7 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             GeminiErrorDetector().after_round(
-                make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
             )
     usage_emit.assert_called_once()
     kwargs = usage_emit.call_args.kwargs
@@ -104,7 +104,7 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         GeminiErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+            make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
         )
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["model"] == "gemini-3-flash-preview"  # primary by total_tokens
@@ -125,7 +125,7 @@ def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             GeminiErrorDetector().after_round(
-                make_hook_context(tmp_path, agent_name="claude"), result=MagicMock()
+                make_hook_context(tmp_path, agent_name="claude"), result=make_run_result()
             )
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
@@ -157,7 +157,7 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch(f"{_MOD}.time.time", return_value=1000):
                 GeminiErrorDetector().after_round(
-                    make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                    make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
     err_emit.assert_called_once()
     kwargs = err_emit.call_args.kwargs
@@ -192,7 +192,7 @@ def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_l
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch(f"{_MOD}.time.time", return_value=1000):
                 GeminiErrorDetector().after_round(
-                    make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                    make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "rate_limit_model"
@@ -224,7 +224,7 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
             GeminiErrorDetector().after_round(
-                make_hook_context(tmp_path, agent_name="gemini"), result=MagicMock()
+                make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
             )
     err_emit.assert_not_called()
     usage_emit.assert_called_once()
@@ -277,7 +277,7 @@ def test_given_gemini_multi_model_when_extracted_then_breakdown_entries_use_cano
     )
     ctx = make_hook_context(tmp_path, agent_name="gemini")
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-        GeminiErrorDetector().after_round(ctx, result=MagicMock(exit_code=0, timed_out=False))
+        GeminiErrorDetector().after_round(ctx, result=make_run_result())
     breakdown = usage_emit.call_args.kwargs["models_breakdown"]
     entry = breakdown["gemini-3-flash-preview"]
     assert "input" not in entry, f"raw 'input' key leaked: {entry}"
@@ -316,7 +316,7 @@ def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_
     )
     ctx = make_hook_context(tmp_path, agent_name="gemini", phase="planning")
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-        GeminiErrorDetector().after_round(ctx, result=MagicMock(exit_code=0, timed_out=False))
+        GeminiErrorDetector().after_round(ctx, result=make_run_result())
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["phase"] == "planning"
     assert kwargs["success"] is True
@@ -342,7 +342,7 @@ def test_given_custom_agent_name_with_gemini_binary_when_after_round_then_event_
         agent_binary="gemini",
         agent_log_path=round_log,
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         GeminiErrorDetector().after_round(ctx, result)
     emit.assert_called_once()
@@ -360,7 +360,7 @@ def test_given_non_gemini_binary_when_after_round_then_no_event(tmp_path):
         agent_binary="claude",
         agent_log_path=log_dir / "x.log",
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         GeminiErrorDetector().after_round(ctx, result)
     emit.assert_not_called()

@@ -80,6 +80,8 @@ def _cmd_anomaly(args) -> int:
     except monitor.MonitorRemoteUnsupportedError as e:
         return fail(str(e))
     except monitor.MonitorRemoteError as e:
+        # Dormant alongside the rest of remote mode: ssh only runs under --host,
+        # which the MonitorRemoteUnsupportedError handler above already rejects.
         return fail(f"cannot reach {e.host!r} via ssh: {e.stderr}")
     return 0
 

@@ -45,13 +45,7 @@ ALLOWED_SERVE_FROM = [
     ("agent_runner.lifecycle", {"PIDFile"}),
     (
         "agent_runner.round_log",
-        {
-            "ROUND_CURRENT_LINK",
-            "atomic_relink",
-            "next_round_num",
-            "prune_old_round_logs",
-            "prune_rounds_dir",
-        },
+        {"ROUND_CURRENT_LINK", "atomic_relink", "next_round_num", "prune_old_round_logs"},
     ),
     ("agent_runner._throttle", {"_check_throttle_state", "reset_counters"}),
     ("agent_runner.runner", {"_apply_back_off"}),

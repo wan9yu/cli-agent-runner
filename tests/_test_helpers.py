@@ -223,6 +223,17 @@ def make_hook_context(
     )
 
 
+def make_run_result(exit_code: int = 0, *, timed_out: bool = False) -> Any:
+    """Build the ``result`` a post_round_hook receives.
+
+    The real dataclass rather than a mock: plugins read ``result.ok``, and a
+    MagicMock would answer every ``.ok`` truthy regardless of exit code.
+    """
+    from agent_runner.agent_runtime import RunResult
+
+    return RunResult(exit_code=exit_code, duration_s=0.0, timed_out=timed_out, pid=0)
+
+
 def write_round_log(log_dir: Path, round_num: int, events: list[dict]) -> Path:
     """Write fake JSONL to the path where plugins read agent stdout (post-0.1.25)."""
     import json

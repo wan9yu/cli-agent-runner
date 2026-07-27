@@ -669,14 +669,7 @@ class MonitorRemoteError(Exception):
 
 
 class MonitorRemoteUnsupportedError(Exception):
-    """Remote monitoring cannot read the remote host's round logs or events.
-
-    ``RemoteSource`` lists remote filenames over ssh, but every read of those
-    paths resolves against the LOCAL filesystem — so a remote monitor sees an
-    empty world and reports every project healthy. Raised at monitor startup
-    (``api.monitor_loop``) so the blindness surfaces as an error instead of
-    masquerading as health. Remote reads are unimplemented in this version.
-    """
+    """Raised at monitor startup (``api.monitor_loop``) when ``--host`` is passed."""
 
     def __init__(self, host: str) -> None:
         super().__init__(
@@ -692,6 +685,9 @@ class MonitorRemoteUnsupportedError(Exception):
 
 def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, str]:
     """Run a single shell command over ssh; returns (returncode, stdout).
+
+    Dormant: both call sites (``RemoteSource._list``, ``on_alert``'s remote
+    stop) are reachable only with ``--host``, which monitor startup rejects.
 
     Raises ``MonitorRemoteError`` when ssh itself fails (rc=255 — host
     unreachable, key reject, etc.). Command-level non-zero rcs are returned
@@ -718,11 +714,9 @@ def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, 
 class RemoteSource:
     """Lists remote log filenames over ssh — but every read resolves LOCALLY.
 
-    The paths handed back are remote strings; their consumers (events/metrics
-    parsing, round-log tails, status reads) open them on the local filesystem,
-    so no remote content is ever read. Unreachable in this version: monitor
-    startup rejects ``--host`` with ``MonitorRemoteUnsupportedError``. Kept
-    pending the decision to implement remote reads or drop remote mode.
+    Dormant: unreachable while monitor startup rejects ``--host`` (see
+    ``MonitorRemoteUnsupportedError`` for why). Kept pending the decision to
+    implement remote reads or drop remote mode.
     """
 
     host: str
@@ -801,6 +795,8 @@ def on_alert(
     if host is None:
         _call_local_stop(project)
     else:
+        # Dormant: host is never non-None in a running monitor — startup
+        # rejects --host with MonitorRemoteUnsupportedError.
         try:
             run_remote_command(
                 host,

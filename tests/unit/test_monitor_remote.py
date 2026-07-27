@@ -1,3 +1,12 @@
+"""Unit tests for the remote-monitoring machinery (RemoteSource, ssh helper,
+remote auto-stop).
+
+That machinery is dormant: monitor startup rejects ``--host`` with
+``MonitorRemoteUnsupportedError``, so nothing here is reachable through the CLI.
+These tests keep it honest pending the decision to implement remote reads (a
+real remote ``StateSource``) or delete remote mode outright.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

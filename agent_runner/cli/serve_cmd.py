@@ -39,7 +39,6 @@ from agent_runner.round_log import (
     atomic_relink,
     next_round_num,
     prune_old_round_logs,
-    prune_rounds_dir,
 )
 from agent_runner.runner import _apply_back_off
 
@@ -108,7 +107,6 @@ def cmd(args) -> int:
     # Pre-loop cleanup: remove stale sentinel, prune old round logs.
     (log_dir / ".agent-done").unlink(missing_ok=True)
     prune_old_round_logs(log_dir, cfg.runtime.round_log_retention)
-    prune_rounds_dir(log_dir / "rounds", cfg.runtime.round_log_retention)
 
     round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
 

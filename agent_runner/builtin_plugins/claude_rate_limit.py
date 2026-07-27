@@ -14,7 +14,6 @@ rate-limit detector was generalized to multi-classification in 0.1.23
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
@@ -25,10 +24,10 @@ from agent_runner.api import (
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
-    _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    json_tail,
+    classify_transient_status,
+    json_events,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -59,7 +58,7 @@ class ClaudeErrorDetector:
                 ctx.log_dir,
                 round_num=ctx.round_num,
                 phase=ctx.phase or "",
-                success=(result.exit_code == 0 and not result.timed_out),
+                success=result.ok,
                 **parsed["usage"],
             )
 
@@ -119,20 +118,11 @@ def _parse_claude_log(
     anomaly_window/anomaly_threshold: when both > 0, slide a window over
     (tool_name, target) tuples; populate 'anomaly' if threshold reached.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = json_tail(f)
     rate_limit_info: dict | None = None
     result_event: dict | None = None
     assistant_model: str | None = None
     tool_calls: list[tuple[str, str | None]] = []
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for event in json_events(log_path):
         event_type = event.get("type")
         if event_type == "rate_limit_event":
             rli = event.get("rate_limit_info", {})
@@ -178,8 +168,8 @@ def _parse_claude_log(
 def _classify_transient_error(
     rate_limit_info: dict | None, result_event: dict | None
 ) -> dict | None:
-    """Refactored from prior _scan_log_for_transient_error 0.1.23 logic; same shape, same
-    priority (rate_limit_event.rejected > 429 > 5xx > 408).
+    """Claude-specific precedence: an account-level rate_limit_event outranks the
+    result event's ``api_error_status``, which is handed to the shared ladder.
     """
     if rate_limit_info is not None and rate_limit_info.get("rateLimitType") == "five_hour":
         return {
@@ -192,15 +182,10 @@ def _classify_transient_error(
     # classification below.
     if result_event is None or result_event.get("is_error") is not True:
         return None
-    status = result_event.get("api_error_status")
-    raw = str(result_event.get("result", ""))[:_RAW_CAP]
-    if status == 429:
-        return _classify("rate_limit_model", raw)
-    if status in _5XX_STATUSES:
-        return _classify("api_transient_5xx", raw)
-    if status == 408:
-        return _classify("api_timeout", raw)
-    return None
+    classification = classify_transient_status(result_event.get("api_error_status"))
+    if classification is None:
+        return None
+    return _classify(classification, str(result_event.get("result", ""))[:_RAW_CAP])
 
 
 def _extract_usage(result_event: dict, *, model: str | None, tool_call_count: int) -> dict | None:

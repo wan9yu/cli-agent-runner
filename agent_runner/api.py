@@ -486,6 +486,8 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
     if host is None:
         src = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
     else:
+        # Dormant: monitor_loop rejects --host before any poll, so this branch
+        # is unreachable today. See monitor.MonitorRemoteUnsupportedError.
         src = monitor.RemoteSource(host=host, project=_project_name(work_dir))
     events = monitor.parse_events_from_jsonl_files(src.events_files())
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())

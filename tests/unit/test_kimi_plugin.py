@@ -9,9 +9,9 @@ hand-written shapes.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, write_round_log
+from tests._test_helpers import make_hook_context, make_run_result, write_round_log
 
 _MOD = "agent_runner.builtin_plugins.kimi"
 
@@ -51,7 +51,7 @@ _ASSISTANT = {"role": "assistant", "content": "pong"}
 
 def _failed_round():
     """Round killed by the supervisor's round timeout while kimi kept retrying."""
-    return MagicMock(exit_code=124, timed_out=True)
+    return make_run_result(124, timed_out=True)
 
 
 def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(tmp_path):
@@ -93,7 +93,7 @@ def test_given_retry_absorbed_by_successful_round_when_after_round_then_no_emit(
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         KimiErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="kimi"),
-            result=MagicMock(exit_code=0, timed_out=False),
+            result=make_run_result(),
         )
     err_emit.assert_not_called()
 
@@ -135,7 +135,7 @@ def test_given_plain_text_stderr_error_when_after_round_then_tolerated(tmp_path)
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         KimiErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="kimi"),
-            result=MagicMock(exit_code=1, timed_out=False),
+            result=make_run_result(1),
         )
     err_emit.assert_not_called()
 
@@ -151,24 +151,7 @@ def test_given_completed_round_when_after_round_then_no_usage_event_written(tmp_
     write_round_log(tmp_path, 1, [_ASSISTANT, _RESUME_HINT])
     KimiErrorDetector().after_round(
         make_hook_context(tmp_path, agent_name="kimi"),
-        result=MagicMock(exit_code=0, timed_out=False),
+        result=make_run_result(),
     )
     emitted = "".join(p.read_text() for p in tmp_path.glob("events-*.jsonl"))
     assert AGENT_USAGE_RECORDED not in emitted
-
-
-def test_classify_kimi_retry_maps_only_known_buckets():
-    """Lock the status→bucket mapping to the canonical classification set."""
-    from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
-    from agent_runner.builtin_plugins.kimi import _classify_kimi_status
-
-    assert _classify_kimi_status(429) == "rate_limit_model"
-    assert _classify_kimi_status(503) == "api_transient_5xx"
-    assert _classify_kimi_status(500) == "api_transient_5xx"
-    assert _classify_kimi_status(408) == "api_timeout"
-    # non-transient statuses observed from the CLI: auth + unknown-model
-    assert _classify_kimi_status(401) is None
-    assert _classify_kimi_status(404) is None
-    assert _classify_kimi_status(None) is None
-    for status in (429, 500, 408):
-        assert _classify_kimi_status(status) in _BACK_OFF_DEFAULTS

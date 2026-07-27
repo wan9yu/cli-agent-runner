@@ -26,24 +26,20 @@ round output.
 Fatal errors that kimi does not retry (auth, unknown model) never produce a
 retry record -- they arrive as plain text on stderr, e.g.
 ``error: failed to run prompt: provider.auth_error: 401 Invalid Authentication``.
-That is oauth_fail territory (the monitor's auth_fail_patterns already match it
-in the raw log tail), not a transient bucket, so nothing is emitted for them
-here.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
 from agent_runner.api import emit_transient_error_detected
 from agent_runner.builtin_plugins._constants import (
-    _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    json_tail,
+    classify_transient_status,
+    json_events,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -62,7 +58,7 @@ class KimiErrorDetector:
         # kimi retries provider failures itself (max_attempts 10 with growing
         # delays). A round that still succeeded absorbed the blip, so only a
         # failed round warrants supervisor-level back-off.
-        if result.exit_code == 0 and not result.timed_out:
+        if result.ok:
             return
         transient_error = _parse_kimi_log(log_path)
         if transient_error:
@@ -73,28 +69,17 @@ def _parse_kimi_log(log_path: Path) -> dict[str, Any] | None:
     """Scan the JSON tail window for the last `turn.step.retrying` record and
     map its status_code to a transient bucket. Returns None when nothing maps.
 
-    Tolerates non-JSON lines: the round log merges stdout+stderr, and kimi's
-    fatal errors are plain text on stderr.
+    kimi's fatal errors are plain text on stderr, so a round can legitimately
+    reach here with no JSON record at all.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = json_tail(f)
     retry_event: dict | None = None
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
+    for event in json_events(log_path):
         if event.get("role") == "meta" and event.get("type") == "turn.step.retrying":
             retry_event = event
 
     if retry_event is None:
         return None
-    classification = _classify_kimi_status(retry_event.get("status_code"))
+    classification = classify_transient_status(retry_event.get("status_code"))
     if classification is None:
         return None
     return {
@@ -103,22 +88,6 @@ def _parse_kimi_log(log_path: Path) -> dict[str, Any] | None:
         "reset_at_epoch": int(time.time() + _BACK_OFF_DEFAULTS[classification]),
         "raw": str(retry_event.get("error_message", "retrying"))[:_RAW_CAP],
     }
-
-
-def _classify_kimi_status(status: Any) -> str | None:
-    """Map a retry record's HTTP status_code to a transient bucket, or None.
-
-    None means 'not a transient error' — 401 (auth) and 404 (unknown model) are
-    the non-transient statuses observed from this CLI; both are permanent until
-    an operator fixes configuration.
-    """
-    if status == 429:
-        return "rate_limit_model"
-    if status in _5XX_STATUSES:
-        return "api_transient_5xx"
-    if status == 408:
-        return "api_timeout"
-    return None
 
 
 register_post_round_hook(KimiErrorDetector())

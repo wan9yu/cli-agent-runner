@@ -62,12 +62,14 @@ def prune_rounds_dir(rounds_dir: Path, keep: int) -> int:
         match = _AGENT_ROUND_LOG_RE.match(path.name)
         if match:
             numbered.append((int(match.group(1)), path))
+    # Sort on the number alone: the same round can be present twice with
+    # different timestamps after a crash-rerun, and tuple comparison would then
+    # fall through to comparing Paths.
     numbered.sort(key=lambda item: item[0], reverse=True)
-    deleted = 0
-    for _num, old in numbered[keep:]:
+    stale = numbered[keep:]
+    for _num, old in stale:
         old.unlink(missing_ok=True)
-        deleted += 1
-    return deleted
+    return len(stale)
 
 
 def next_round_num(log_dir: Path) -> int:

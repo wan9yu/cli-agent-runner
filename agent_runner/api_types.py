@@ -173,6 +173,15 @@ class RoundResult:
     dirty_outcome: DirtyOutcome | None = None
     killed_for_grace: bool = False
 
+    @property
+    def ok(self) -> bool:
+        """The supervisor's round-success predicate: clean exit, no timeout.
+
+        Single definition of "did this round fail" at the supervisor level. A
+        plugin MAY narrow it further when its CLI's exit code is unreliable.
+        """
+        return self.exit_code == 0 and not self.timed_out
+
 
 @dataclass(frozen=True)
 class InitResult:

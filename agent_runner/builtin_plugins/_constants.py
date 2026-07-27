@@ -1,14 +1,18 @@
-"""Shared constants for built-in CLI plugins and round-log tail readers.
+"""Shared constants and tail-scan helpers for built-in CLI plugins.
 
 Extracted to single source of truth so every round-log tail-scanner
 (plugin JSONL parsers and monitor text detectors) uses the same window
-size, raw-text caps, and transient-error back-off defaults.
+size, raw-text caps, transient-error back-off defaults, and the same
+HTTP-status → classification ladder.
 """
 
 from __future__ import annotations
 
+import json
 from collections import deque
-from typing import TextIO
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, TextIO
 
 _TAIL_LINES: int = 200
 """Number of log lines to scan from the end of a round log.
@@ -28,6 +32,28 @@ def json_tail(f: TextIO, maxlen: int = _TAIL_LINES) -> deque[str]:
     return deque((ln for ln in f if ln.lstrip()[:1] in "{["), maxlen=maxlen)
 
 
+def json_events(log_path: Path) -> Iterator[dict]:
+    """JSON objects in a round log's tail window, in file order.
+
+    One reader for every plugin's parse loop: window via ``json_tail``, then
+    per line strip / skip blank / ``json.loads`` / drop anything that is not an
+    object. Non-JSON lines are expected — the round log merges stdout+stderr,
+    and every CLI writes some plain text there.
+    """
+    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+        tail = json_tail(f)
+    for line in tail:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            yield event
+
+
 _RAW_CAP: int = 200
 """Maximum length for ``raw`` field in transient_error_detected payload."""
 
@@ -45,6 +71,30 @@ _BACK_OFF_DEFAULTS: dict[str, int] = {
 # issues; treated as transient per Anthropic SDK behavior).
 # Excluded: 501 (not implemented = permanent), 505 (HTTP version mismatch).
 _5XX_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504, 529})
+
+
+def classify_transient_status(status: Any) -> str | None:
+    """Map an HTTP status from a CLI's error record to a transient bucket.
+
+    The one ladder every plugin classifier delegates to, so a status is
+    bucketed identically no matter which CLI reported it.
+
+    ``None`` means 'not transient — do not back off'. Notably 401 (auth) and
+    404 (unknown model) land here: both are permanent until an operator fixes
+    configuration, which is oauth/config territory rather than something a
+    back-off would clear. Non-integer or missing statuses are ``None`` too;
+    a CLI that reports no status gets no classification.
+    """
+    if not isinstance(status, int) or isinstance(status, bool):
+        return None
+    if status == 429:
+        return "rate_limit_model"
+    if status in _5XX_STATUSES:
+        return "api_transient_5xx"
+    if status == 408:
+        return "api_timeout"
+    return None
+
 
 _CLASSIFICATIONS: frozenset[str] = frozenset(
     {

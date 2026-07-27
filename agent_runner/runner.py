@@ -247,7 +247,7 @@ def _scan_round_log_for_network_blip(
     """
     # Network blips almost exclusively manifest with non-zero exit or timeout.
     # Skip the I/O on the success path.
-    if result.exit_code == 0 and not result.timed_out:
+    if result.ok:
         return
     if signal_name(result.exit_code) is not None:
         return  # signal death is a termination, not a network blip
@@ -543,7 +543,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         events.emit(log_dir, events.DIRTY_DETECTED, round_num=round_num, files=dirty[:20])
 
     dirty_outcome = None
-    if dirty and not result.timed_out and result.exit_code == 0:
+    if dirty and result.ok:
         dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, log_dir=log_dir)
     elif not dirty:
         context_store.clear_orphan_state(log_dir)

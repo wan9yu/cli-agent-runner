@@ -7,7 +7,6 @@ agent_usage_recorded event families without any agent-runner core changes.
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
@@ -17,10 +16,10 @@ from agent_runner.api import (
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
-    _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    json_tail,
+    classify_transient_status,
+    json_events,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -45,7 +44,7 @@ class GeminiErrorDetector:
                 ctx.log_dir,
                 round_num=ctx.round_num,
                 phase=ctx.phase or "",
-                success=(result.exit_code == 0 and not result.timed_out),
+                success=result.ok,
                 **parsed["usage"],
             )
 
@@ -55,17 +54,8 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
 
     Returns dict with optional 'usage' and 'transient_error' keys.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = json_tail(f)
     result_event: dict | None = None
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for event in json_events(log_path):
         if event.get("type") == "result":
             result_event = event
     if result_event is None:
@@ -86,7 +76,7 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
             (err.get("message") if isinstance(err, dict) else None)
             or result_event.get("status", "error")
         )[:_RAW_CAP]
-        classification = _classify_gemini_error(code)
+        classification = classify_transient_status(code)
         if classification:
             duration = _BACK_OFF_DEFAULTS[classification]
             out["transient_error"] = {
@@ -134,17 +124,6 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
         "models_breakdown": breakdown,
         "tool_call_count": int(stats.get("tool_calls", 0)),
     }
-
-
-def _classify_gemini_error(code: Any) -> str | None:
-    """Map gemini error code to 0.1.23 classification. None means 'not transient'."""
-    if code == 429:
-        return "rate_limit_model"
-    if code in _5XX_STATUSES:
-        return "api_transient_5xx"
-    if code == 408:
-        return "api_timeout"
-    return None
 
 
 register_post_round_hook(GeminiErrorDetector())

@@ -12,7 +12,6 @@ is added when a real rate-limit sample is captured.
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
@@ -22,10 +21,10 @@ from agent_runner.api import (
     emit_transient_error_detected,
 )
 from agent_runner.builtin_plugins._constants import (
-    _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    json_tail,
+    classify_transient_status,
+    json_events,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -51,7 +50,7 @@ class CodewhaleErrorDetector:
                 ctx.log_dir,
                 round_num=ctx.round_num,
                 phase=ctx.phase or "",
-                success=(result.exit_code == 0 and not result.timed_out),
+                success=result.ok,
                 **parsed["usage"],
             )
 
@@ -60,23 +59,13 @@ def _parse_codewhale_log(log_path: Path) -> dict[str, Any]:
     """Scan the JSON tail window of codewhale NDJSON; extract usage from the metadata
     record; classify any {"type":"error"} that maps to a transient bucket.
 
-    Tolerates non-JSON lines (codewhale prefixes some stdout with terminal
-    escapes) via per-line try/except.
+    codewhale prefixes some stdout lines with terminal escapes, so the
+    non-JSON lines ``json_events`` drops are routine here, not a corruption
+    signal.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = json_tail(f)
     metadata: dict | None = None
     error_event: dict | None = None
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
+    for event in json_events(log_path):
         etype = event.get("type")
         if etype == "metadata":
             metadata = event.get("meta") or {}
@@ -110,23 +99,15 @@ def _parse_codewhale_log(log_path: Path) -> dict[str, Any]:
 
 
 def _classify_codewhale_error(error_event: dict[str, Any]) -> str | None:
-    """Map a codewhale {"type":"error"} record to a transient bucket, or None.
+    """Pull a status code out of a codewhale {"type":"error"} record for the
+    shared ladder.
 
-    None means 'not a transient error' (e.g. auth failure -> handled by the
-    monitor's oauth_fail log-scan, not the transient classifier). codewhale's
-    error record currently carries only a free-text 'error' string with no
-    status code; until a real rate-limit/5xx sample is captured we cannot map
-    to rate_limit_model / api_transient_5xx / api_timeout, so we return None.
-    A future revision keys on a numeric status field once observed.
+    The only error record captured so far carries a free-text 'error' string
+    and no status code at all (an auth failure), so nothing maps today; the
+    numeric-field lookup is the forward path for when a real rate-limit or 5xx
+    sample is captured.
     """
-    code = error_event.get("code") or error_event.get("status_code")
-    if code == 429:
-        return "rate_limit_model"
-    if code in _5XX_STATUSES:
-        return "api_transient_5xx"
-    if code == 408:
-        return "api_timeout"
-    return None
+    return classify_transient_status(error_event.get("code") or error_event.get("status_code"))
 
 
 register_post_round_hook(CodewhaleErrorDetector())

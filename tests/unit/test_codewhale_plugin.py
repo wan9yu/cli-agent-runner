@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, write_round_log
+from tests._test_helpers import make_hook_context, make_run_result, write_round_log
 
 _MOD = "agent_runner.builtin_plugins.codewhale"
 
@@ -32,7 +32,7 @@ def test_given_success_round_when_after_round_then_usage_emitted_from_metadata(t
             {"type": "done"},
         ],
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             CodewhaleErrorDetector().after_round(
@@ -67,7 +67,7 @@ def test_given_non_codewhale_binary_when_after_round_then_no_emit(tmp_path):
             }
         ],
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         CodewhaleErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="claude"), result=result
@@ -96,7 +96,7 @@ def test_given_auth_error_round_when_after_round_then_no_transient_error(tmp_pat
             {"type": "done"},
         ],
     )
-    result = MagicMock(exit_code=1, timed_out=False)
+    result = make_run_result(1)
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             CodewhaleErrorDetector().after_round(
@@ -126,7 +126,7 @@ def test_given_non_json_lines_when_after_round_then_tolerated(tmp_path):
         '{"type":"done"}\n',
         encoding="utf-8",
     )
-    result = MagicMock(exit_code=0, timed_out=False)
+    result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         CodewhaleErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="codewhale"), result=result

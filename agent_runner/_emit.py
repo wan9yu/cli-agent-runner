@@ -205,7 +205,10 @@ def emit_agent_usage_recorded(
       Claude: count of ``tool_use`` content blocks across all assistant events.
       Gemini: ``stats.tool_calls``.
     - ``phase``: phase label from HookContext (e.g. "planning"); empty string when None.
-    - ``success``: True when exit_code == 0 and not timed_out.
+    - ``success``: the supervisor's clean-exit predicate (``RoundResult.ok``).
+      A plugin MAY additionally fold in the agent's own terminal verdict when
+      its CLI's exit code is unreliable — pi does, because pi exits 0 on
+      provider failure.
     """
     from agent_runner.events import AGENT_USAGE_RECORDED, emit
 
