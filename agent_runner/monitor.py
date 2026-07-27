@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     SystemMetrics,
 )
+from agent_runner.builtin_plugins._constants import _TAIL_LINES
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, _DEFAULT_AUTO_STOP_ON, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
@@ -502,20 +504,39 @@ def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]
     return out
 
 
-def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = 50) -> dict[int, str]:
+_MAX_TAIL_FILES = 20
+"""Newest round logs to tail per poll — detectors only inspect the last 10
+round exits, and reading every historical log fully on every poll is
+O(all-logs-ever) waste."""
+
+
+def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = _TAIL_LINES) -> dict[int, str]:
+    """Tail the newest round logs as plain text (merged stdout+stderr).
+
+    Window shares _TAIL_LINES with the plugin parsers: oauth/network
+    detectors regex stderr text out of these tails, and a stderr burst must
+    not evict the line they scan for (same eviction argument, rawer input).
+    """
     tails: dict[int, str] = {}
     if not rounds_dir.is_dir():
         return tails
-    for f in rounds_dir.glob("R*-*.log"):
+
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    for f in sorted(rounds_dir.glob("R*-*.log"), key=_mtime)[-_MAX_TAIL_FILES:]:
         try:
             num = int(f.name.split("-", 1)[0][1:])
         except (ValueError, IndexError):
             continue
         try:
-            lines = f.read_text(encoding="utf-8").splitlines()
+            with f.open(encoding="utf-8") as fh:
+                tails[num] = "".join(deque(fh, maxlen=tail_lines))
         except FileNotFoundError:
             continue
-        tails[num] = "\n".join(lines[-tail_lines:])
     return tails
 
 

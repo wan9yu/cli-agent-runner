@@ -1,18 +1,32 @@
-"""Shared constants for built-in CLI plugins (claude, gemini, ...).
+"""Shared constants for built-in CLI plugins and round-log tail readers.
 
-Extracted to single source of truth so all plugin tail-scanners use the
-same window size, raw-text caps, and transient-error back-off defaults.
+Extracted to single source of truth so every round-log tail-scanner
+(plugin JSONL parsers and monitor text detectors) uses the same window
+size, raw-text caps, and transient-error back-off defaults.
 """
 
 from __future__ import annotations
 
-_TAIL_LINES: int = 200
-"""Number of log lines to scan from the end of round-N.log.
+from collections import deque
+from typing import TextIO
 
-200, not 50: the round log is merged stdout+stderr, and a CLI that bursts
-stderr text after its terminal JSONL event (observed with stderr-chatty
-agents like pi) could evict that event from a 50-line window — silently
-dropping usage/transient classification for the round."""
+_TAIL_LINES: int = 200
+"""Number of log lines to scan from the end of a round log.
+
+The round log is merged stdout+stderr. JSONL consumers window via
+``json_tail`` (chatter filtered before windowing); plain-text consumers
+(monitor oauth/network detectors) window the raw tail — keep this generous
+so a stderr burst cannot evict what they scan for."""
+
+
+def json_tail(f: TextIO, maxlen: int = _TAIL_LINES) -> deque[str]:
+    """Last ``maxlen`` JSON-looking lines of a merged round log.
+
+    Non-JSON chatter (stderr text) is filtered BEFORE windowing, so a burst
+    of any size cannot evict the terminal JSONL event from the window.
+    """
+    return deque((ln for ln in f if ln.lstrip()[:1] in "{["), maxlen=maxlen)
+
 
 _RAW_CAP: int = 200
 """Maximum length for ``raw`` field in transient_error_detected payload."""

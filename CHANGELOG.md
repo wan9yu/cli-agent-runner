@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Round-log tail scanning hardened: plugin JSONL parsers filter non-JSON chatter *before* windowing (a stderr burst of any size can no longer evict the terminal event), monitor detectors share the same 200-line window (was 50 — the oauth/network text scans had the identical eviction risk), and each monitor poll reads only the newest 20 round logs instead of every log ever written.
+
 ## [0.2.3] - 2026-07-26
 
 Details: [docs/migrations/0.2.3.md](docs/migrations/0.2.3.md)

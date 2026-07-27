@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import time
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,7 @@ from agent_runner.builtin_plugins._constants import (
     _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    _TAIL_LINES,
+    json_tail,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -114,14 +113,14 @@ def _parse_claude_log(
     anomaly_window: int = 0,
     anomaly_threshold: int = 0,
 ) -> dict[str, Any]:
-    """Scan last _TAIL_LINES for rate_limit/result/assistant events.
+    """Scan the JSON tail window for rate_limit/result/assistant events.
 
     Returns dict with optional 'transient_error', 'usage', and 'anomaly' keys.
     anomaly_window/anomaly_threshold: when both > 0, slide a window over
     (tool_name, target) tuples; populate 'anomaly' if threshold reached.
     """
     with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = deque(f, maxlen=_TAIL_LINES)
+        tail = json_tail(f)
     rate_limit_info: dict | None = None
     result_event: dict | None = None
     assistant_model: str | None = None

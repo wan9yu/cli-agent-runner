@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import time
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +25,7 @@ from agent_runner.builtin_plugins._constants import (
     _5XX_STATUSES,
     _BACK_OFF_DEFAULTS,
     _RAW_CAP,
-    _TAIL_LINES,
+    json_tail,
 )
 from agent_runner.hooks import HookContext, register_post_round_hook
 
@@ -58,14 +57,14 @@ class CodewhaleErrorDetector:
 
 
 def _parse_codewhale_log(log_path: Path) -> dict[str, Any]:
-    """Scan last _TAIL_LINES of codewhale NDJSON; extract usage from the metadata
+    """Scan the JSON tail window of codewhale NDJSON; extract usage from the metadata
     record; classify any {"type":"error"} that maps to a transient bucket.
 
     Tolerates non-JSON lines (codewhale prefixes some stdout with terminal
     escapes) via per-line try/except.
     """
     with log_path.open("r", encoding="utf-8", errors="replace") as f:
-        tail = deque(f, maxlen=_TAIL_LINES)
+        tail = json_tail(f)
     metadata: dict | None = None
     error_event: dict | None = None
     for line in tail:

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 from agent_runner import defenses
-from agent_runner.builtin_plugins._constants import _5XX_STATUSES
+from agent_runner.builtin_plugins._constants import _5XX_STATUSES, _TAIL_LINES
 from agent_runner.cli import _build_parser
 from agent_runner.config import (
     _VALID_DIRTY_ACTIONS,
@@ -52,6 +52,7 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/commands.md", r"Runs the (\d+) detectors", detectors),
         ("docs/commands.md", r"(\d+) 个动词", verbs),
         ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),
+        ("docs/plugins.md", r"last (\d+) JSON lines", _TAIL_LINES),
     ]
 
     failures: list[str] = []

@@ -321,8 +321,9 @@ old-name alias was kept as a `pyproject.toml` entry-point through 0.1.34
 and removed in 0.1.35. Operators still using `[plugins] disable =
 ["claude_rate_limit_detector"]` must switch to `claude_error_detector`.
 
-After each round, scans the last 50 lines of the round's JSONL log for
-transient errors and usage data:
+After each round, scans the last 200 JSON lines of the round's log (non-JSON
+stderr chatter is filtered out before windowing) for transient errors and
+usage data:
 
 - A `rate_limit_event` message with `status: "rejected"` and
   `rateLimitType: "five_hour"` (account 5h quota), or
