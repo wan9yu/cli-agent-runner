@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `kimi_error_detector` plugin — classifies transient errors from Kimi Code CLI rounds (`turn.step.retrying` records) so a rate-limited round backs off instead of hot-restarting. No usage events: the CLI's stream-json output carries no token counters.
+
 ### Fixed
 - Round-log tail scanning hardened: plugin JSONL parsers filter non-JSON chatter *before* windowing (a stderr burst of any size can no longer evict the terminal event), monitor detectors share the same 200-line window (was 50 — the oauth/network text scans had the identical eviction risk), and each monitor poll reads only the newest 20 round logs instead of every log ever written.
 - A relative `runtime.work_dir` (and every path derived from it) now resolves against the config file's directory instead of the caller's cwd, so `--config /abs/proj/agent-runner.toml` drives `/abs/proj` no matter where the supervisor was launched from.

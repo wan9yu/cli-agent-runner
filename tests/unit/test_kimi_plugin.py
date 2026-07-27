@@ -1,0 +1,174 @@
+"""Unit tests for KimiErrorDetector (retry-record classifier; no usage source).
+
+Fixtures are real records captured from Kimi Code CLI 0.29.1
+`kimi --output-format stream-json -p ...` (session ids replaced with
+placeholders). The retry records came from pointing KIMI_MODEL_BASE_URL at a
+local endpoint returning 429/503, so they are genuine CLI output rather than
+hand-written shapes.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+from tests._test_helpers import make_hook_context, write_round_log
+
+_MOD = "agent_runner.builtin_plugins.kimi"
+
+# Real captured `turn.step.retrying` record (429 from the provider).
+_RETRY_429 = {
+    "role": "meta",
+    "type": "turn.step.retrying",
+    "failed_attempt": 1,
+    "next_attempt": 2,
+    "max_attempts": 10,
+    "delay_ms": 566.6868929526177,
+    "error_name": "APIProviderRateLimitError",
+    "error_message": "429 Your account has hit the rate limit, please retry later",
+    "status_code": 429,
+}
+_RETRY_503 = {
+    "role": "meta",
+    "type": "turn.step.retrying",
+    "failed_attempt": 1,
+    "next_attempt": 2,
+    "max_attempts": 10,
+    "delay_ms": 1134.5171852413182,
+    "error_name": "APIStatusError",
+    "error_message": "503 upstream unavailable",
+    "status_code": 503,
+}
+# Real captured terminal record of a completed round.
+_RESUME_HINT = {
+    "role": "meta",
+    "type": "session.resume_hint",
+    "session_id": "session_00000000-0000-0000-0000-000000000000",
+    "command": "kimi -r session_00000000-0000-0000-0000-000000000000",
+    "content": "To resume this session: kimi -r session_00000000-0000-0000-0000-000000000000",
+}
+_ASSISTANT = {"role": "assistant", "content": "pong"}
+
+
+def _failed_round():
+    """Round killed by the supervisor's round timeout while kimi kept retrying."""
+    return MagicMock(exit_code=124, timed_out=True)
+
+
+def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(tmp_path):
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    write_round_log(tmp_path, 1, [_RETRY_429, _RETRY_429])
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        with patch(f"{_MOD}.time.time", return_value=1000):
+            KimiErrorDetector().after_round(
+                make_hook_context(tmp_path, agent_name="kimi"), result=_failed_round()
+            )
+    err_emit.assert_called_once()
+    kw = err_emit.call_args.kwargs
+    assert kw["classification"] == "rate_limit_model"
+    assert kw["agent"] == "kimi"
+    assert kw["reset_at_epoch"] == 1060  # now + 60s default back-off
+    assert "429 Your account has hit the rate limit" in kw["raw"]
+
+
+def test_given_503_retry_on_failed_round_when_after_round_then_api_transient_5xx(tmp_path):
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    write_round_log(tmp_path, 1, [_RETRY_503, _RESUME_HINT])
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        KimiErrorDetector().after_round(
+            make_hook_context(tmp_path, agent_name="kimi"), result=_failed_round()
+        )
+    err_emit.assert_called_once()
+    assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
+
+
+def test_given_retry_absorbed_by_successful_round_when_after_round_then_no_emit(tmp_path):
+    """kimi retries internally (max_attempts 10); a blip it recovered from is not
+    a supervisor-level transient error — backing off after a successful round
+    would be a false alarm."""
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    write_round_log(tmp_path, 1, [_RETRY_429, _ASSISTANT, _RESUME_HINT])
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        KimiErrorDetector().after_round(
+            make_hook_context(tmp_path, agent_name="kimi"),
+            result=MagicMock(exit_code=0, timed_out=False),
+        )
+    err_emit.assert_not_called()
+
+
+def test_given_non_kimi_binary_when_after_round_then_no_emit(tmp_path):
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    write_round_log(tmp_path, 1, [_RETRY_429])
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        KimiErrorDetector().after_round(
+            make_hook_context(tmp_path, agent_name="claude"), result=_failed_round()
+        )
+    err_emit.assert_not_called()
+
+
+def test_given_missing_round_log_when_after_round_then_no_crash(tmp_path):
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    ctx = make_hook_context(tmp_path, agent_name="kimi")
+    assert not ctx.agent_log_path.exists()
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        KimiErrorDetector().after_round(ctx, result=_failed_round())
+    err_emit.assert_not_called()
+
+
+def test_given_plain_text_stderr_error_when_after_round_then_tolerated(tmp_path):
+    """The round log merges stdout+stderr: kimi's fatal errors arrive as plain
+    text (real captured 401 wording). Non-JSON lines must not crash the parser,
+    and auth failure is oauth_fail territory, not a transient bucket."""
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+
+    rounds_dir = tmp_path / "rounds"
+    rounds_dir.mkdir(parents=True, exist_ok=True)
+    (rounds_dir / "R1-test.log").write_text(
+        "error: failed to run prompt: provider.auth_error: 401 Invalid Authentication\n"
+        "See log: /Users/dev/.kimi-code/logs/kimi-code.log\n",
+        encoding="utf-8",
+    )
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        KimiErrorDetector().after_round(
+            make_hook_context(tmp_path, agent_name="kimi"),
+            result=MagicMock(exit_code=1, timed_out=False),
+        )
+    err_emit.assert_not_called()
+
+
+def test_given_completed_round_when_after_round_then_no_usage_event_written(tmp_path):
+    """Pins the Phase-A finding: kimi's stream-json writer emits no token
+    counters, so no agent_usage_recorded is fabricated. Asserted through the
+    real emitter path (no patching) so a future usage source has to update this.
+    """
+    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
+    from agent_runner.events import AGENT_USAGE_RECORDED
+
+    write_round_log(tmp_path, 1, [_ASSISTANT, _RESUME_HINT])
+    KimiErrorDetector().after_round(
+        make_hook_context(tmp_path, agent_name="kimi"),
+        result=MagicMock(exit_code=0, timed_out=False),
+    )
+    emitted = "".join(p.read_text() for p in tmp_path.glob("events-*.jsonl"))
+    assert AGENT_USAGE_RECORDED not in emitted
+
+
+def test_classify_kimi_retry_maps_only_known_buckets():
+    """Lock the status→bucket mapping to the canonical classification set."""
+    from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
+    from agent_runner.builtin_plugins.kimi import _classify_kimi_status
+
+    assert _classify_kimi_status(429) == "rate_limit_model"
+    assert _classify_kimi_status(503) == "api_transient_5xx"
+    assert _classify_kimi_status(500) == "api_transient_5xx"
+    assert _classify_kimi_status(408) == "api_timeout"
+    # non-transient statuses observed from the CLI: auth + unknown-model
+    assert _classify_kimi_status(401) is None
+    assert _classify_kimi_status(404) is None
+    assert _classify_kimi_status(None) is None
+    for status in (429, 500, 408):
+        assert _classify_kimi_status(status) in _BACK_OFF_DEFAULTS

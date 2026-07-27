@@ -305,10 +305,11 @@ under your plugin's name — the dict is shared across every installed plugin.
 
 ## Built-in post_round_hooks
 
-agent-runner ships 3 built-in `post_round_hooks` plugins registered
+agent-runner ships 4 built-in `post_round_hooks` plugins registered
 automatically via their own entry-points: `claude_error_detector` (below),
-`gemini_error_detector` (0.1.24+, parallel for gemini CLI), and
-`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI).
+`gemini_error_detector` (0.1.24+, parallel for gemini CLI),
+`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI), and
+`kimi_error_detector` (parallel for Kimi Code CLI).
 
 ### `claude_error_detector` (0.1.23+)
 
@@ -360,6 +361,33 @@ Scans the round's JSONL log tail for transient errors and emits
 `transient_error_detected` with the same 4-bucket `classification` contract.
 
 Disable with `[plugins] disable = ["codewhale_error_detector"]`.
+
+### `kimi_error_detector`
+
+**Entry-point group:** `agent_runner.post_round_hooks`
+**Module:** `agent_runner.builtin_plugins.kimi`
+
+Parallel to `claude_error_detector` for the Kimi Code CLI. Returns early when
+`ctx.agent_binary != "kimi"`, so it costs nothing on other projects. Requires
+the preset's `--output-format stream-json`.
+
+Kimi retries provider failures internally (up to 10 attempts with growing
+delays), emitting a `{"role":"meta","type":"turn.step.retrying",...}` record
+carrying `status_code` for each attempt. The detector reads the last such
+record **only on a round that failed or timed out** — a round that still
+succeeded absorbed the blip, and backing off after it would be a false alarm —
+and emits `transient_error_detected` with the same 4-bucket `classification`
+contract ({429 → `rate_limit_model`, 5xx → `api_transient_5xx`, 408 →
+`api_timeout`}). Without it, a rate-limited kimi round restarts straight into
+the next round with no back-off.
+
+No `agent_usage_recorded`: the CLI's stream-json output carries no token
+counters (verified against Kimi Code 0.29.1), and emitting zeros would read as
+a round that cost nothing. Errors kimi does not retry — auth, unknown model —
+never produce a retry record; they arrive as plain text on stderr and are
+matched by the monitor's `oauth_fail` detector instead.
+
+Disable with `[plugins] disable = ["kimi_error_detector"]`.
 
 ## Custom monitor detectors (§3.3)
 
