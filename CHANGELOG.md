@@ -5,14 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.5] - 2026-07-27
 
 ### Added
-- `monitor --host <alias> --mode events` — a managed ssh event relay, replacing a hand-rolled `ssh … --tail; sleep` loop. Passes the remote's JSONL through unmodified, reconnects with `--since <last ts>` so a dropped link replays its gap, emits `monitor_remote_blip` per drop and `monitor_remote_giveup` + exit 1 once the outage passes `[monitor] remote_failure_tolerance_s`, and kills the ssh process GROUP on exit so no orphan tree survives. New flags `--kind` and `--remote-config`.
 - `events --since <ISO ts>` — replays every matching event with `ts >= since`, across month files, one-shot or as the backlog phase of `--tail`. At-least-once: a client whose stream dropped reconnects with the last ts it saw and loses nothing (that one event may repeat).
+- `monitor --host <alias> --mode events` — a managed ssh event relay, replacing a hand-rolled `ssh … --tail; sleep` loop. Passes the remote's JSONL through unmodified, reconnects with `--since <last ts>` so a dropped link replays its gap, emits `monitor_remote_blip` per drop and `monitor_remote_giveup` + exit 1 once the outage passes `[monitor] remote_failure_tolerance_s`, and kills the ssh process GROUP on exit so no orphan tree survives. New flags `--kind` and `--remote-config`.
 
 ### Removed
 - The polling remote monitor (`RemoteSource`, `run_remote_command`, `MonitorRemoteError`, auto-stop over ssh) — it read remote paths on the local filesystem and was already failing loud since 0.2.4. Detection is on-host by design; remote observation is the relay above. `monitor.on_alert` lost its `host` parameter and `monitor_auto_stop_triggered` its `host` field; `monitor_auto_stop_failed` now reports a failed *local* stop (previously a failed ssh stop) instead of crashing the monitor loop.
+
+See `docs/migrations/0.2.5.md`.
 
 ## [0.2.4] - 2026-07-27
 
@@ -948,7 +950,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.1...v0.2.2
