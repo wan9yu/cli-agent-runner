@@ -487,6 +487,31 @@ systemctl --user start agent-runner@<project>
 systemctl --user enable agent-runner@<project>  # restart on Pi reboot
 ```
 
+## Supervision coverage on a 24/7 host
+
+Check this table before wrapping `[agent] command` in a shell script — most
+host-safety needs are already in-core. Detector rows require a running
+`agent-runner monitor` (`agent-runner install --monitor`); the rest are always on.
+
+| Operator need | What exists | Notes |
+|---|---|---|
+| Never two supervisors on one project | `flock_concurrency` defense — exclusive `flock` on `{log_dir}/agent-runner.lock` | A second `serve` fails fast naming the holder's PID, lock age, and cmdline. No cron-overlap guard of your own needed |
+| Runaway round | `[runtime] round_timeout_s` (default 1800) | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_timeout_s` |
+| Cap the agent process itself | `[agent.env]` | Passed verbatim into the round subprocess env and takes precedence over the inherited `os.environ`, so e.g. `NODE_OPTIONS = "--max-old-space-size=384"` reaches a Node-based CLI |
+| Host memory pressure | `mem_pressure` detector | Fires when host-wide `mem_available_mb` < `[monitor.host_health] mem_avail_min_mb` (default 200). Warning severity, **notify-only — it never auto-stops**. Whole-host figure, not the agent's share |
+| Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health]` |
+| Auth burn (401 loop) | `oauth_fail` detector, auto-stops by default | Fires at ≥20% of a **fixed 10-event window** of `agent_exit` records. Under 10 exits it cannot fire at all, so a host that starts with bad credentials burns its first ~10 rounds before the stop lands |
+| Token / cost accounting | `agent_usage_recorded` events in `events-*.jsonl` | Raw per-round records; rollups and budget alerts are the consumer's job. Emitted by the `claude_error_detector` / `gemini_error_detector` / `codewhale_error_detector` plugins — pi and kimi have no such plugin yet, so their rounds emit no usage events |
+
+**Not covered: per-round peak RSS and pre-round memory gating.** agent-runner
+records RSS nowhere; `metrics-*.jsonl` samples host memory once at round start and
+once at round end, so a mid-round spike is invisible and nothing attributes memory
+to the agent versus the rest of the host. There is likewise no "skip this round if
+free memory < N" gate: a `PreRoundHook` does run before dispatch, but its return
+value is ignored by contract, so it cannot veto a round — raising from it only
+emits `hook_failed` and the round proceeds anyway. A wrapper script around
+`[agent] command` that checks free memory and exits early remains the answer today.
+
 ## Troubleshooting
 
 ### Serve stopped on its own (`crash_loop` / `config_broken`)
