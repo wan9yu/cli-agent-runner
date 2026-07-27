@@ -22,6 +22,7 @@ def test_given_subprocess_within_timeout_when_run_then_returns_exit_code_zero(
     script = _bash_script(tmp_path, "echo hello; exit 0")
     log = tmp_path / "out.log"
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
@@ -40,6 +41,7 @@ def test_given_subprocess_returning_nonzero_when_run_then_exit_code_propagated(
 ) -> None:
     script = _bash_script(tmp_path, "exit 7")
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -56,6 +58,7 @@ def test_given_subprocess_exceeds_timeout_when_run_then_kills_process_group(
     script = _bash_script(tmp_path, "sleep 30")
     start = time.time()
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -78,6 +81,7 @@ def test_given_subprocess_emits_constant_activity_when_timeout_exceeded_then_kil
         "while true; do echo activity; sleep 0.1; done",
     )
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -94,6 +98,7 @@ def test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv(
     script = _bash_script(tmp_path, 'echo "prompt-was=$2"; exit 0')
     log = tmp_path / "out.log"
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=["-p", "{prompt}"],
         prompt="HELLO",
@@ -108,6 +113,7 @@ def test_given_env_extra_when_run_then_envs_propagated_to_subprocess(tmp_path: P
     script = _bash_script(tmp_path, 'echo "EFFORT=$CLAUDE_CODE_EFFORT_LEVEL"; exit 0')
     log = tmp_path / "out.log"
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -129,6 +135,7 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
     pid_file = Path("/tmp/agent_runner_test_child_pid")
     pid_file.unlink(missing_ok=True)
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -158,6 +165,7 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
     )
     log = tmp_path / "out.log"
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -168,3 +176,27 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
     text = log.read_text()
     assert "AUTOUPDATER=unset" in text
     assert "EFFORT=unset" in text
+
+
+def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path) -> None:
+    """The agent child runs in work_dir, not the supervisor's cwd (0.2.3 fix).
+
+    CLIs with no --cwd flag of their own (e.g. pi) depend on this; previously
+    only launch conventions (systemd WorkingDirectory=, relative --config)
+    kept the two aligned.
+    """
+    work = tmp_path / "the-work-dir"
+    work.mkdir()
+    script = _bash_script(tmp_path, "pwd -P")
+    log = tmp_path / "out.log"
+    result = run(
+        work_dir=work,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="ignored",
+        timeout_s=10,
+        log_path=log,
+        env_extra={},
+    )
+    assert result.exit_code == 0
+    assert log.read_text().strip() == str(work.resolve())

@@ -28,6 +28,7 @@ def test_grace_kill_fires_when_result_then_idle(tmp_path):
     )
     log_path = tmp_path / "round.log"
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -49,6 +50,7 @@ def test_no_grace_kill_when_disabled(tmp_path):
     )
     log_path = tmp_path / "round.log"
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -66,6 +68,7 @@ def test_no_grace_kill_when_result_not_emitted(tmp_path):
     script = _write_fake_script(tmp_path, 'echo "no result here"\nexit 0\n')
     log_path = tmp_path / "round.log"
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -122,6 +125,7 @@ def test_grace_extended_when_result_but_child_running(tmp_path):
     log_path = tmp_path / "round.log"
     extended = []
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -148,6 +152,7 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path):
     log_path = tmp_path / "round.log"
     extended = []
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -211,6 +216,7 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path):
     log_path = tmp_path / "round.log"
     extended = []
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",

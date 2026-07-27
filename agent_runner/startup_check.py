@@ -8,6 +8,7 @@ import os
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent_runner.config import Config
 
@@ -45,6 +46,21 @@ def _check_agent_cli(cfg: Config) -> CheckResult:
     if not cfg.agent.command:
         return CheckResult("agent_cli_in_path", False, "agent.command is empty")
     cli = cfg.agent.command[0]
+    if "/" in cli:
+        # Slash-containing commands are exec'd relative to the agent's cwd
+        # (= runtime.work_dir since the cwd= spawn fix), not PATH — validate
+        # against the same base the exec will use, not the supervisor's cwd.
+        candidate = Path(cli)
+        if not candidate.is_absolute():
+            candidate = cfg.runtime.work_dir / candidate
+        if not (candidate.is_file() and os.access(candidate, os.X_OK)):
+            return CheckResult(
+                "agent_cli_in_path",
+                False,
+                reason=f"{cli!r} not found or not executable under {cfg.runtime.work_dir}",
+                how_to_fix="fix the path relative to runtime.work_dir, or use an absolute path",
+            )
+        return CheckResult("agent_cli_in_path", True)
     if shutil.which(cli) is None:
         return CheckResult(
             "agent_cli_in_path",

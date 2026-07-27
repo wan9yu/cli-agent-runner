@@ -95,3 +95,32 @@ def test_given_escape_hatch_env_set_when_battery_runs_then_returns_empty(
     cfg.prompt.file.unlink()  # would normally fail
     results = run_battery(cfg)
     assert results == []
+
+
+def test_given_relative_slash_command_when_battery_runs_then_validated_against_work_dir(
+    tmp_git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """./relative agent commands exec in work_dir (cwd= spawn fix), so the CLI
+    check must validate against work_dir — not the supervisor's cwd."""
+    cfg = _cfg(tmp_git_repo)
+    script = tmp_git_repo / "agent.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    object.__setattr__(cfg.agent, "command", ["./agent.sh"])
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # supervisor cwd deliberately != work_dir
+    results = run_battery(cfg)
+    cli = next(r for r in results if r.name == "agent_cli_in_path")
+    assert cli.ok, cli.reason
+
+
+def test_given_relative_slash_command_missing_in_work_dir_then_cli_check_fails(
+    tmp_git_repo: Path,
+) -> None:
+    cfg = _cfg(tmp_git_repo)
+    object.__setattr__(cfg.agent, "command", ["./no-such-agent.sh"])
+    results = run_battery(cfg)
+    cli = next(r for r in results if r.name == "agent_cli_in_path")
+    assert not cli.ok
+    assert "work_dir" in (cli.reason or "") or str(tmp_git_repo) in (cli.reason or "")

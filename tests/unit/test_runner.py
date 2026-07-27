@@ -1036,3 +1036,42 @@ def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
     assert "round_end" in seen[-1], (
         "PostRoundHook ran before round_end was emitted — hooks.py:149's claim"
     )
+
+
+def test_given_round_when_agent_spawned_then_work_dir_threaded_to_runtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """runner passes cfg.runtime.work_dir to agent_runtime.run (cwd= spawn fix)."""
+    from agent_runner import runner
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        VcsConfig,
+    )
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    captured: dict = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return RunResult(exit_code=0, duration_s=0.1, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="ignore"),
+        phases=PhasesConfig(),
+    )
+    runner._run_one_round_inner(cfg)
+    assert captured["work_dir"] == cfg.runtime.work_dir

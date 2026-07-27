@@ -137,6 +137,7 @@ def run(
     prompt: str,
     prompt_delivery: str = "argv",
     timeout_s: int,
+    work_dir: Path,
     log_path: Path,
     env_extra: dict[str, str],
     max_grace_after_result_s: int = 0,
@@ -148,6 +149,12 @@ def run(
     """Spawn the agent subprocess and wait for exit or timeout.
 
     Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → REAP_GRACE_S → SIGKILL.
+
+    work_dir: the agent child's working directory (required). Before 0.2.3 the
+    child inherited the supervisor's cwd and only launch conventions (systemd
+    WorkingDirectory=, relative --config) kept the two aligned — fatal for CLIs
+    with no --cwd flag of their own (e.g. pi). Callers pass the already-absolute
+    cfg.runtime.work_dir.
 
     max_grace_after_result_s: when > 0, start a countdown after the first
     type=result event is detected in the log. After it elapses, reap the
@@ -175,16 +182,20 @@ def run(
         if stdin_mode
         else _build_argv(command, prompt_arg_template, prompt)
     )
-    env = {**os.environ, **env_extra}
+    # PWD pinned alongside cwd= so shell-reported paths agree; env_extra wins.
+    env = {**os.environ, "PWD": str(work_dir), **env_extra}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
     start = time.time()
     last_progress_at = start
     proc = subprocess.Popen(
         argv,
+        cwd=work_dir,
         env=env,
         stdin=subprocess.PIPE if stdin_mode else subprocess.DEVNULL,
         stdout=log_file,
+        # Merged on purpose: oauth_fail / network_fail / network-blip detection
+        # regex-scan stderr text out of this log (see hooks.agent_log_path).
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )

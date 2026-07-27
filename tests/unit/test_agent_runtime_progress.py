@@ -20,6 +20,7 @@ def test_given_progress_callback_with_interval_when_run_then_called_at_least_twi
     log_path = tmp_path / "round.log"
     calls: list[dict] = []
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -41,6 +42,7 @@ def test_given_progress_interval_zero_when_run_then_callback_never_called(tmp_pa
     log_path = tmp_path / "round.log"
     calls: list[dict] = []
     run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
@@ -58,6 +60,7 @@ def test_given_progress_callback_none_when_run_then_no_crash(tmp_path):
     script = _write_fake_script(tmp_path, "echo done\nexit 0")
     log_path = tmp_path / "round.log"
     result = run(
+        work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",

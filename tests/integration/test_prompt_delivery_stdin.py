@@ -23,6 +23,7 @@ def test_stdin_mode_keeps_prompt_out_of_argv(tmp_path):
     log_path = tmp_path / "round.log"
     marker = "PYTEST_MARKER_TOKEN_XYZ"
     res = agent_runtime.run(
+        work_dir=tmp_path,
         command=[sys.executable, str(fake)],
         prompt_arg_template=["-p"],
         prompt=f"do the thing {marker}",
@@ -44,6 +45,7 @@ def test_argv_mode_unchanged(tmp_path):
     log_path = tmp_path / "round.log"
     marker = "ARGV_MARKER_TOKEN"
     agent_runtime.run(
+        work_dir=tmp_path,
         command=[sys.executable, str(fake)],
         prompt_arg_template=["-p", "{prompt}"],
         prompt=f"hello {marker}",
@@ -67,6 +69,7 @@ def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
     marker = "LARGE_PROMPT_MARKER"
     big_prompt = "x" * 100_000 + marker
     res = agent_runtime.run(
+        work_dir=tmp_path,
         command=[sys.executable, str(fake)],
         prompt_arg_template=["-p"],
         prompt=big_prompt,
@@ -91,6 +94,7 @@ def test_stdin_mode_guards_against_prompt_in_argv_template(tmp_path):
     log_path = tmp_path / "round.log"
     marker = "SECRET_MARKER"
     agent_runtime.run(
+        work_dir=tmp_path,
         command=[sys.executable, str(fake)],
         prompt_arg_template=["-p", "{prompt}"],
         prompt=marker,
