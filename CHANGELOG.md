@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `--preset kimi` — a preset for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) (`kimi -p --output-format stream-json`). `docs/recipes/kimi.md` also documents running Kimi K3 through the existing `claude` preset via Moonshot's Anthropic-compatible endpoint.
-- `--preset pi` — a preset for [Pi Coding Agent](https://github.com/earendil-works/pi) (`pi -p --mode json --model …`). `docs/recipes/pi.md` documents driving Kimi K3 through pi via a Moonshot OpenAI-compatible provider.
+- `--preset pi` — a preset for [Pi Coding Agent](https://github.com/earendil-works/pi) (`pi -p -na --mode json --model …`; `-na` pins project trust off for unattended runs). `docs/recipes/pi.md` documents driving Kimi K3 through pi via a Moonshot OpenAI-compatible provider.
 
 ### Fixed
 - The agent subprocess now runs in `runtime.work_dir` (`cwd=` on spawn). Previously it inherited the supervisor's cwd and only launch conventions (systemd `WorkingDirectory=`, relative `--config`) kept the two aligned — fatal for agent CLIs with no working-directory flag of their own (e.g. `pi`). The startup check now also validates a relative `agent.command[0]` against `work_dir`, matching where it executes.

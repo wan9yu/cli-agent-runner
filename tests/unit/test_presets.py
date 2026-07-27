@@ -198,3 +198,19 @@ def test_given_codewhale_preset_when_parsed_then_uses_exec_stream_json() -> None
 def test_given_codewhale_preset_when_parsed_then_no_agent_env_block() -> None:
     text = _preset_text("codewhale").replace("{project}", "test-project")
     assert "env" not in tomllib.loads(text)["agent"]
+
+
+def test_given_pi_preset_when_parsed_then_includes_no_approve() -> None:
+    """pi -na pins project trust off for unattended runs.
+
+    Without it, a saved ~/.pi/agent/trust.json decision for work_dir OR ANY
+    PARENT path silently loads repo-local .pi/ resources in -p mode —
+    including .pi/SYSTEM.md, which REPLACES the system prompt.
+    """
+    text = _preset_text("pi").replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
+    cmd = parsed["agent"]["command"]
+    assert "-na" in cmd, (
+        f"pi preset must pin project trust off with -na; got {cmd}. "
+        "Dropping it reintroduces the trust.json config-injection vector."
+    )

@@ -21,7 +21,8 @@ provider-agnostic — you pick the model.
 - A provider + model configured (see Provider auth below). Pi has no default
   model — with no `--model` it falls back to `--provider google`, so the preset
   requires you to set `--model` explicitly.
-- A git repo as `work_dir`.
+- A git repo as `work_dir` — agent-runner starts the agent in it (pi itself
+  has no `--cwd` flag).
 
 ## Scaffold
 
@@ -30,21 +31,32 @@ agent-runner init --preset pi
 ```
 
 This writes an `agent-runner.toml` whose agent command is
-`pi -p --mode json --model PROVIDER/MODEL`. **Replace `PROVIDER/MODEL`** with a
-provider/model you have configured — our setup is Kimi K3 via Moonshot:
+`pi -p -na --mode json --model PROVIDER/MODEL`. **Replace `PROVIDER/MODEL`**
+with a provider/model you have configured — our setup is Kimi K3 via Moonshot:
 
 ```toml
-command = ["pi", "-p", "--mode", "json", "--model", "moonshot/kimi-k3"]
+command = ["pi", "-p", "-na", "--mode", "json", "--model", "moonshot/kimi-k3"]
 ```
 
 Notes:
 - **Runs unconfined, unattended, with no confirmation.** pi executes
   bash/write/edit in "full YOLO" mode with no per-call approval — so unlike the
   `claude` / `gemini` / `kimi` presets there is no `--yolo` flag to add, and no
-  way to require confirmation. agent-runner supervises lifecycle but does not
-  sandbox the agent, so an unattended pi round runs arbitrary shell in `work_dir`
-  unprompted — point it only at a repo/host where that is acceptable.
-  (`-a`/`--approve` only trusts project-local pi extensions.)
+  interactive confirmation to fall back to. agent-runner supervises lifecycle
+  but does not sandbox the agent, so an unattended pi round runs arbitrary
+  shell in `work_dir` unprompted — point it only at a repo/host where that is
+  acceptable. To narrow pi itself: `--tools read,grep,find,ls` is pi's
+  documented read-only mode, and a pi extension's `tool_call` hook can veto
+  calls (`{ block: true }`) — load a policy extension via an explicit
+  `-e <path>`, because `-na` (below) means repo-local `.pi/` extensions never
+  load.
+- **`-na` pins project trust off.** Without it, a saved trust decision for
+  `work_dir` or any parent silently loads repo-local pi resources in `-p` runs
+  (`.pi/` settings, extensions, skills — and `.pi/SYSTEM.md` **replaces** the
+  system prompt). Drop `-na` only for a repo whose `.pi/` you control and want.
+- **`round_timeout_s` is the only brake.** pi has no turn cap, runtime timeout,
+  or token budget of its own — agent-runner's wall-clock `round_timeout_s`
+  (preset default 1800s) is the sole thing that ends a runaway round.
 - **Log volume.** `--mode json` is a verbose JSONL event stream; switch to
   `--mode text` for cleaner round logs — agent-runner needs no specific format.
 - `PI_OFFLINE = "1"` (in `[agent.env]`) suppresses pi's startup auto-update and
