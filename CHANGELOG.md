@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.4] - 2026-07-27
 
 ### Added
 - `kimi_error_detector` plugin — classifies transient errors from Kimi Code CLI rounds (`turn.step.retrying` records) so a rate-limited round backs off instead of hot-restarting. No usage events: the CLI's stream-json output carries no token counters.
@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent round logs (`{log_dir}/rounds/R*-*.log`) are now pruned under `runtime.round_log_retention` at the start of every round — previously that family grew unboundedly, since only the serve-level `round-<N>.log` family was pruned, and only at serve startup.
 - Startup validation resolves the agent command exactly as the spawn does (child's PATH — `[agent.env]` may override it — and `work_dir` base); `PWD` now stays pinned to `work_dir` even if `[agent.env]` sets it. The stdout+stderr merge is now pinned by a behavioral test, not just prose.
 - Generated serve systemd units now set `KillMode=mixed`: with systemd's default `control-group`, `systemctl stop` SIGTERMed the whole cgroup — agent child included — making the graceful round drain structurally ineffective. Existing installs: re-run `agent-runner install` (or add a drop-in) to pick this up.
+
+See `docs/migrations/0.2.4.md`.
 
 ## [0.2.3] - 2026-07-26
 
@@ -936,7 +938,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.0...v0.2.1
