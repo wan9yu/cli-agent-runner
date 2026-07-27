@@ -648,6 +648,7 @@ No breaking changes. Plugin authors:
   between rounds, opt them out:
   ```python
   from agent_runner.vcs_state import register_plugin_owned_paths
+
   register_plugin_owned_paths(["your-output-dir/", "logs/your-plugin/**/*"])
   ```
 - If you followed the old `_register()` pattern from docs and noticed

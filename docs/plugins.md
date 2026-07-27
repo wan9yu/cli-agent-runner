@@ -97,8 +97,8 @@ class HookContext:
     project: str
     round_num: int
     phase: str | None
-    agent_name: str | None       # cosmetic name from [agent].name TOML
-    agent_binary: str | None     # 0.1.30+: basename of agent.command[0]
+    agent_name: str | None  # cosmetic name from [agent].name TOML
+    agent_binary: str | None  # 0.1.30+: basename of agent.command[0]
     # plus dry_run, anomaly_repetitive_*, agent_log_path — see source for full set
 ```
 
@@ -132,7 +132,9 @@ class CurrentBranchEnricher:
     def enrich(self, ctx: HookContext) -> dict:
         out = subprocess.run(
             ["git", "-C", str(ctx.work_dir), "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         return {"branch": out.stdout.strip() or "(detached)"}
 
@@ -205,9 +207,11 @@ Protocol:
 ```python
 from typing import Protocol, runtime_checkable
 
+
 @runtime_checkable
 class ServeStartupHook(Protocol):
     name: str
+
     def __call__(self, cfg: Config) -> None: ...
 ```
 
@@ -216,12 +220,15 @@ Registration (in your plugin package's `__init__.py`):
 ```python
 from agent_runner.hooks import register_serve_startup_hook
 
+
 class MySeederHook:
     name = "my_seeder"
+
     def __call__(self, cfg):
         seed_path = cfg.runtime.work_dir / ".my-plugin-state"
         if not seed_path.exists():
             seed_path.write_text(_default_state())
+
 
 register_serve_startup_hook(MySeederHook())
 ```
@@ -453,8 +460,8 @@ from agent_runner.monitor import register_detector
 
 class MyDetector:
     name = "my_detector"
-    severity = "warning"     # "info" | "warning" | "critical"
-    auto_action = "none"     # "none" | "stop_service"
+    severity = "warning"  # "info" | "warning" | "critical"
+    auto_action = "none"  # "none" | "stop_service"
 
     def detect(self, state: ProjectState) -> Alert | None:
         if not _should_fire(state):
@@ -553,8 +560,9 @@ class _ExemptHook:
     def after_round(self, ctx: HookContext, result) -> None:
         # Project rule: rounds under 60s are exempt (e.g. nothing-to-do iters)
         if result.duration_s < 60:
-            emit(ctx.log_dir, "myproject_round_exempt",
-                 round_num=ctx.round_num, reason="short_round")
+            emit(
+                ctx.log_dir, "myproject_round_exempt", round_num=ctx.round_num, reason="short_round"
+            )
 
 
 class _StuckRoundDetector:
@@ -566,11 +574,13 @@ class _StuckRoundDetector:
 
     def detect(self, state: ProjectState) -> Alert | None:
         exempt = {
-            e["round_num"] for e in state.recent_events
+            e["round_num"]
+            for e in state.recent_events
             if e.get("event") == "myproject_round_exempt"
         }
         rounds_ended = [
-            e for e in state.recent_events
+            e
+            for e in state.recent_events
             if e.get("event") == "round_end" and e.get("round_num") not in exempt
         ]
         if len(rounds_ended) < 3:
@@ -640,6 +650,7 @@ and register their own handler.
 ```python
 from typing import Protocol, runtime_checkable
 
+
 @runtime_checkable
 class DirtyHandler(Protocol):
     name: str
@@ -662,7 +673,7 @@ treated as `None` (pass to the next handler).
 ```python
 from agent_runner.api_types import DirtyOutcome
 
-DirtyOutcome(kind="ignored")                    # left dirty intentionally
+DirtyOutcome(kind="ignored")  # left dirty intentionally
 DirtyOutcome(kind="stashed", ref="<stash-sha>")
 DirtyOutcome(kind="committed", ref="<commit-sha>")
 ```
@@ -755,11 +766,13 @@ between rounds.
 from agent_runner.vcs_state import register_plugin_owned_paths
 
 # Module-top side effect — must register before the first round runs.
-register_plugin_owned_paths([
-    "proposals/",                  # trailing slash → prefix match
-    "logs/plugins/my_plugin/**/*", # recursive glob (globstar)
-    "reports/*.md",                # single-segment glob (PurePath.match)
-])
+register_plugin_owned_paths(
+    [
+        "proposals/",  # trailing slash → prefix match
+        "logs/plugins/my_plugin/**/*",  # recursive glob (globstar)
+        "reports/*.md",  # single-segment glob (PurePath.match)
+    ]
+)
 ```
 
 ### Matching semantics

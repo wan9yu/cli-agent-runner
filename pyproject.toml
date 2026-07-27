@@ -58,7 +58,7 @@ default_dirty_handler = "agent_runner.builtin_plugins.default_dirty_handler:Defa
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
-    "ruff>=0.5",
+    "ruff>=0.16,<0.17",  # minor-pinned: unpinned linter broke CI when 0.16 shipped new format rules
     "vulture>=2.13",
 ]
 e2e = [
