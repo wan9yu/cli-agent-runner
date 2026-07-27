@@ -124,3 +124,12 @@ def test_given_no_user_arg_when_render_serve_unit_then_no_user_directive(tmp_pat
     body = render_serve_unit(cfg, script_path=tmp_path / "ar")
     assert "User=" not in body
     assert "WantedBy=default.target" in body
+
+
+def test_given_serve_unit_when_rendered_then_killmode_mixed(tmp_path: Path) -> None:
+    """KillMode=mixed is the load-bearing half of graceful drain: systemd's
+    default control-group KillMode SIGTERMs the whole cgroup — round and agent
+    child included — so serve would never get to drain the current round.
+    Verified in production by a downstream integrator via an interrupted round."""
+    body = render_serve_unit(_cfg(tmp_path), script_path=Path("/usr/bin/agent-runner"))
+    assert "KillMode=mixed" in body

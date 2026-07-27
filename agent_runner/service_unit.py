@@ -5,7 +5,12 @@ Two units per project:
   agent-runner-monitor@<project>.service  - runs `agent-runner monitor`
 
 Install command writes these to ~/.config/systemd/user/. The graceful-stop
-contract relies on KillSignal=SIGTERM + TimeoutStopSec=max(round_timeout_s, *per_phase)+60.
+contract relies on KillMode=mixed + KillSignal=SIGTERM +
+TimeoutStopSec=max(round_timeout_s, *per_phase)+60: SIGTERM must reach ONLY the
+serve process (which traps it and drains the current round). systemd's default
+KillMode=control-group would SIGTERM the whole cgroup — round and agent child
+included — making the drain structurally ineffective (verified in production
+by a downstream integrator via an interrupted round).
 """
 
 from __future__ import annotations
@@ -65,6 +70,7 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
         f"--config {_config_path(cfg)}\n"
         f"Restart=always\n"
         f"RestartSec=3\n"
+        f"KillMode=mixed\n"
         f"KillSignal=SIGTERM\n"
         f"TimeoutStopSec={timeout_total}\n"
         f"\n"

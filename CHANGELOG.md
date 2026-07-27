@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remote monitor (`monitor --host <alias>`) was silently observing an empty world and reporting healthy — it listed remote filenames over ssh but read every path locally. It now fails loudly at startup (exit 1, with guidance to run the monitor on the host) until remote reads are implemented.
 - Agent round logs (`{log_dir}/rounds/R*-*.log`) are now pruned under `runtime.round_log_retention` at the start of every round — previously that family grew unboundedly, since only the serve-level `round-<N>.log` family was pruned, and only at serve startup.
 - Startup validation resolves the agent command exactly as the spawn does (child's PATH — `[agent.env]` may override it — and `work_dir` base); `PWD` now stays pinned to `work_dir` even if `[agent.env]` sets it. The stdout+stderr merge is now pinned by a behavioral test, not just prose.
+- Generated serve systemd units now set `KillMode=mixed`: with systemd's default `control-group`, `systemctl stop` SIGTERMed the whole cgroup — agent child included — making the graceful round drain structurally ineffective. Existing installs: re-run `agent-runner install` (or add a drop-in) to pick this up.
 
 ## [0.2.3] - 2026-07-26
 
