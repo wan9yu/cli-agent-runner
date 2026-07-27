@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `kimi_error_detector` plugin — classifies transient errors from Kimi Code CLI rounds (`turn.step.retrying` records) so a rate-limited round backs off instead of hot-restarting. No usage events: the CLI's stream-json output carries no token counters.
+- `pi_error_detector` plugin — emits per-round token usage (summed across the round's assistant messages, since pi reports usage per message) and classifies transient errors from Pi Coding Agent rounds. pi exits 0 on provider failure, so the classifier reads the final message's `stopReason`/`errorMessage` rather than the exit code.
 
 ### Fixed
 - Round-log tail scanning hardened: plugin JSONL parsers filter non-JSON chatter *before* windowing (a stderr burst of any size can no longer evict the terminal event), monitor detectors share the same 200-line window (was 50 — the oauth/network text scans had the identical eviction risk), and each monitor poll reads only the newest 20 round logs instead of every log ever written.

@@ -305,11 +305,12 @@ under your plugin's name — the dict is shared across every installed plugin.
 
 ## Built-in post_round_hooks
 
-agent-runner ships 4 built-in `post_round_hooks` plugins registered
+agent-runner ships 5 built-in `post_round_hooks` plugins registered
 automatically via their own entry-points: `claude_error_detector` (below),
 `gemini_error_detector` (0.1.24+, parallel for gemini CLI),
-`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI), and
-`kimi_error_detector` (parallel for Kimi Code CLI).
+`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI),
+`kimi_error_detector` (parallel for Kimi Code CLI), and `pi_error_detector`
+(parallel for Pi Coding Agent).
 
 ### `claude_error_detector` (0.1.23+)
 
@@ -388,6 +389,40 @@ never produce a retry record; they arrive as plain text on stderr and are
 matched by the monitor's `oauth_fail` detector instead.
 
 Disable with `[plugins] disable = ["kimi_error_detector"]`.
+
+### `pi_error_detector`
+
+**Entry-point group:** `agent_runner.post_round_hooks`
+**Module:** `agent_runner.builtin_plugins.pi`
+
+Parallel to `claude_error_detector` for the Pi Coding Agent. Returns early when
+`ctx.agent_binary != "pi"`, so it costs nothing on other projects. Requires the
+preset's `--mode json`.
+
+Emits `agent_usage_recorded` on every round that reached the model. pi's usage
+is **per-message, not cumulative** (verified against pi 0.80.10): each assistant
+message carries `usage` with `input` (net of cache), `output` (reasoning
+included), `cacheRead`, `cacheWrite` and a `cost` sub-object, so the round total
+is the sum over the round's assistant messages — read from the `agent_end`
+records, each of which lists exactly the messages its agent run produced. Rounds
+that never reached the model report all-zero usage and emit nothing rather than
+a record that reads as a round costing nothing. `cost_usd` is `usage.cost.total`
+when the model catalog carries pricing, else null. `message_update` deltas are
+never parsed: each repeats the full message state with zeroed usage and a stale
+`stopReason`.
+
+Emits `transient_error_detected` with the same 4-bucket `classification`
+contract, keyed on the failing message's `errorMessage` ({429 →
+`rate_limit_model`, 5xx → `api_transient_5xx`, 408 or `"Request timed out."` →
+`api_timeout`}). **pi exits 0 on provider failure** — an invalid key, and three
+exhausted retries against 429/503, all exited 0 with an empty stderr — so the
+failure signal is the final assistant message's `stopReason == "error"` rather
+than the exit code. pi self-retries up to 3 times; a blip it recovered from
+leaves the final state clean and emits nothing. Auth (401) and unknown model
+(404) map to no bucket: they are permanent until an operator fixes config, and
+the monitor's default `auth_fail_patterns` already match pi's 401 wording.
+
+Disable with `[plugins] disable = ["pi_error_detector"]`.
 
 ## Custom monitor detectors (§3.3)
 
