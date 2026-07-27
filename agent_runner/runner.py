@@ -39,6 +39,7 @@ from agent_runner.events import (
     parse_iso_ms,
 )
 from agent_runner.monitor import NETWORK_PATTERNS
+from agent_runner.round_log import prune_rounds_dir
 
 _BACK_OFF_CAP_S = 28800  # 8h — defensive cap; 1.6× the 5h-window
 _BACK_OFF_JITTER_MIN_S = 5
@@ -426,6 +427,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir(exist_ok=True)
+    # Prune BEFORE minting this round's log: only historical files exist now,
+    # so the active round's log can never be a deletion candidate.
+    prune_rounds_dir(rounds_dir, cfg.runtime.round_log_retention)
     log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
 
     hook_ctx = hooks.HookContext(

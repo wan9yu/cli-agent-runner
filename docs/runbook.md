@@ -357,6 +357,11 @@ active round's log — `tail -F {log_dir}/round-current.log` for live view.
 Retention configurable via `runtime.round_log_retention` (default 100). At
 each serve startup, files beyond the retention count (by mtime) are pruned.
 
+The same knob also caps the agent's own transcripts in
+`{log_dir}/rounds/R<N>-<timestamp>.log` — that family is pruned by round
+number at the start of every round, so it stays bounded on a serve that never
+restarts.
+
 Note for systemd deployments: journalctl will no longer show per-round agent
 output — supervisor lifecycle messages remain in journal, raw agent output
 lives in the round log files.

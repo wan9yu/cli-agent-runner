@@ -6,11 +6,13 @@ Extracted from serve_cmd to keep that module a thin dispatcher.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from agent_runner.api import read_round_num
 
 ROUND_CURRENT_LINK = "round-current.log"
+_AGENT_ROUND_LOG_RE = re.compile(r"^R(\d+)-")
 
 
 def atomic_relink(link: Path, target: Path) -> None:
@@ -40,6 +42,32 @@ def prune_old_round_logs(log_dir: Path, retention: int) -> None:
     logs = [p for p in logs if p.name != ROUND_CURRENT_LINK]
     for old in logs[retention:]:
         old.unlink(missing_ok=True)
+
+
+def prune_rounds_dir(rounds_dir: Path, keep: int) -> int:
+    """Keep the ``keep`` highest-numbered ``R<n>-*.log`` agent logs; unlink the rest.
+
+    Ordered by the round number parsed out of the filename — not by string sort
+    (``R9`` must not outrank ``R10``) and not by mtime (a restore or copy can
+    rewrite that; the round number is the semantic order). Names that don't
+    match are left alone. Called at round start, before the current round's log
+    is minted, so the active log is never a deletion candidate.
+
+    Returns the number of files unlinked.
+    """
+    if not rounds_dir.is_dir():
+        return 0
+    numbered = []
+    for path in rounds_dir.glob("R*.log"):
+        match = _AGENT_ROUND_LOG_RE.match(path.name)
+        if match:
+            numbered.append((int(match.group(1)), path))
+    numbered.sort(key=lambda item: item[0], reverse=True)
+    deleted = 0
+    for _num, old in numbered[keep:]:
+        old.unlink(missing_ok=True)
+        deleted += 1
+    return deleted
 
 
 def next_round_num(log_dir: Path) -> int:
