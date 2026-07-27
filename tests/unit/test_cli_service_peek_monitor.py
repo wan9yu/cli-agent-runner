@@ -70,80 +70,55 @@ def test_given_peek_with_select_when_invoked_then_passes_select_arg(
         assert "42" in out
 
 
-def test_given_monitor_with_host_when_invoked_then_passes_host_arg(
-    tmp_git_repo: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("mode", ["anomaly", "narrate", "http"])
+def test_given_host_with_detection_mode_when_cmd_then_exit_1_pointing_at_events(
+    capsys, tmp_path: Path, mode: str
 ) -> None:
-    _init(tmp_git_repo)
-    with patch("agent_runner.api.monitor_loop") as ml:
-        ml.return_value = iter([])
-        main(["monitor", "--host", "pi", "--interval", "1"])
-        kwargs = ml.call_args.kwargs
-        assert kwargs["host"] == "pi"
-        assert kwargs["interval_s"] == 1
-
-
-def test_given_monitor_loop_raises_remote_error_when_cmd_then_stderr_and_exit_1(
-    monkeypatch, capsys, tmp_path
-) -> None:
-    """CLI surfaces MonitorRemoteError as stderr line + exit 1."""
-    from types import SimpleNamespace
-
-    from agent_runner import monitor
-    from agent_runner.cli import monitor_cmd
-
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    (work_dir / "agent-runner.toml").write_text(
-        f'[agent]\ncommand = ["true"]\n[runtime]\nwork_dir = "{work_dir}"\n[prompt]\ninline = "p"\n'
-    )
-
-    ssh_err = "ssh: connect to host pi port 22: Connection refused"
-
-    def fake_monitor_loop(*_args, **_kwargs):
-        raise monitor.MonitorRemoteError("pi", ssh_err)
-        yield  # pragma: no cover — makes this a generator function
-
-    from agent_runner import api
-
-    monkeypatch.setattr(api, "monitor_loop", fake_monitor_loop)
-
-    cfg = str(work_dir / "agent-runner.toml")
-    args = SimpleNamespace(host="pi", interval=None, json=False, config=cfg)
-    rc = monitor_cmd.cmd(args)
-
-    captured = capsys.readouterr()
-    assert rc == 1
-    assert "cannot reach 'pi'" in captured.err
-    assert "Connection refused" in captured.err
-    assert captured.out == ""  # error path must not leak to stdout
-
-
-def test_given_monitor_host_when_cmd_then_exit_1_with_unsupported_message(capsys, tmp_path) -> None:
-    """`monitor --host` exits 1 with guidance instead of watching an empty world."""
+    """--host is rejected for every mode but events: detection runs on-host."""
     from types import SimpleNamespace
 
     from agent_runner.cli import monitor_cmd
 
-    # No config file: monitor_loop rejects --host before anything is loaded.
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-
+    # No config file needed: the gate fires before anything is loaded.
     args = SimpleNamespace(
         host="pi",
         interval=None,
-        mode="anomaly",
+        mode=mode,
+        kind=None,
+        remote_config=None,
+        port=8765,
         json=False,
-        config=str(work_dir / "agent-runner.toml"),
+        config=str(tmp_path / "agent-runner.toml"),
     )
     rc = monitor_cmd.cmd(args)
 
     captured = capsys.readouterr()
     assert rc == 1
-    assert "remote monitoring (--host pi) is unsupported" in captured.err
-    assert "ssh pi" in captured.err
+    assert f"remote monitoring (--host pi) is unsupported for --mode {mode}" in captured.err
+    assert "detection runs on the supervised host by design" in captured.err
+    assert "monitor --host pi --mode events" in captured.err
     assert "docs/runbook.md" in captured.err
     assert captured.out == ""  # error path must not leak to stdout
+
+
+def test_given_relay_only_flags_without_host_when_cmd_then_rejected(capsys, tmp_path: Path) -> None:
+    """--kind / --remote-config must not silently no-op in local mode."""
+    from types import SimpleNamespace
+
+    from agent_runner.cli import monitor_cmd
+
+    args = SimpleNamespace(
+        host=None,
+        interval=None,
+        mode="events",
+        kind="round_end",
+        remote_config=None,
+        port=8765,
+        json=False,
+        config=str(tmp_path / "agent-runner.toml"),
+    )
+    assert monitor_cmd.cmd(args) == 1
+    assert "--kind applies to --host --mode events only" in capsys.readouterr().err
 
 
 def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr(
@@ -300,11 +275,59 @@ def test_given_mode_events_when_main_then_dispatches_events_stream(
     assert len(events_seen) == 1
 
 
-def test_given_mode_events_with_host_when_main_then_error(monkeypatch, tmp_path: Path) -> None:
-    """`monitor --mode events --host pi` rejected (local-only, like narrate)."""
+def test_given_mode_events_with_host_when_main_then_dispatches_relay(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """`monitor --mode events --host pi` is the supported remote combination."""
+    from agent_runner import api
     from agent_runner.cli import main
 
     cfg_path = make_toml(tmp_path)
+    seen: dict = {}
+
+    def fake_relay(host, **kwargs):
+        seen["host"] = host
+        seen.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(api, "relay_remote_events", fake_relay)
+
+    rc = main(
+        [
+            "--config",
+            str(cfg_path),
+            "monitor",
+            "--mode",
+            "events",
+            "--host",
+            "pi",
+            "--kind",
+            "round_end, oauth_fail",
+            "--remote-config",
+            "/srv/proj/agent-runner.toml",
+        ]
+    )
+    assert rc == 0
+    assert seen["host"] == "pi"
+    assert seen["kinds"] == ["round_end", "oauth_fail"]
+    assert seen["remote_config"] == "/srv/proj/agent-runner.toml"
+    assert seen["log_dir"] == tmp_path / "logs", "blips land in the CLIENT's log dir"
+    assert seen["failure_tolerance_s"] == 90, "default [monitor] remote_failure_tolerance_s"
+
+
+def test_given_mode_events_with_host_and_no_kind_when_main_then_relay_defaults(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Omitting --kind hands the relay None, which resolves to every known kind."""
+    from agent_runner import api
+    from agent_runner.cli import main
+
+    cfg_path = make_toml(tmp_path)
+    seen: dict = {}
+
+    monkeypatch.setattr(api, "relay_remote_events", lambda host, **kw: seen.update(kw) or 0)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "events", "--host", "pi"])
-    assert rc != 0
+    assert rc == 0
+    assert seen["kinds"] is None
+    assert seen["remote_config"] is None

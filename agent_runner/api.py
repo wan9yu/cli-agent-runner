@@ -16,9 +16,9 @@ import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
 import sysconfig
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TextIO
 
 from agent_runner import events, lifecycle
 from agent_runner.api_types import (
@@ -383,8 +383,6 @@ from agent_runner import defenses, monitor  # noqa: E402
 from agent_runner.events import (  # noqa: E402
     AGENT_NETWORK_BLIP,
     HOOK_FAILED,
-    MONITOR_REMOTE_BLIP,
-    MONITOR_REMOTE_GIVEUP,
     MONITOR_STARTED,
 )
 
@@ -479,16 +477,13 @@ def peek(
     return state if select is None else select_path(state, select)
 
 
-def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
+def _poll_once(project: str | Path) -> list[monitor.Alert]:
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
-    src: monitor.StateSource
-    if host is None:
-        src = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
-    else:
-        # Dormant: monitor_loop rejects --host before any poll, so this branch
-        # is unreachable today. See monitor.MonitorRemoteUnsupportedError.
-        src = monitor.RemoteSource(host=host, project=_project_name(work_dir))
+    # Always local: detection runs on the supervised host by design. Remote
+    # observation is an event RELAY (``monitor --host X --mode events``), not a
+    # remote poll — see agent_runner/remote_relay.py.
+    src: monitor.StateSource = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
     events = monitor.parse_events_from_jsonl_files(src.events_files())
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
     log_tails = monitor.load_round_log_tails(src.rounds_dir())
@@ -512,11 +507,6 @@ def _poll_once(project: str | Path, *, host: str | None) -> list[monitor.Alert]:
     return builtin + plugin
 
 
-# Backoff schedule for remote-failure retries: each element is the sleep duration
-# in seconds for that attempt index (capped at 30s per step).
-_REMOTE_FAILURE_BACKOFF = (1, 2, 4, 8, 16, 30)
-
-
 def monitor_loop(
     project: str | Path | None = None, *, host: str | None = None, interval_s: int = 30
 ) -> Iterator[monitor.Alert]:
@@ -527,11 +517,11 @@ def monitor_loop(
     to that kind as the canonical "supervision is up" signal (monitor is otherwise
     silent during healthy operation by design).
 
-    ``host`` (remote mode) raises ``MonitorRemoteUnsupportedError`` immediately:
-    remote reads are unimplemented, so a remote loop would poll an empty world
-    and report healthy forever. The check is eager — this wrapper validates
-    before handing back the generator, so the failure lands at startup rather
-    than at the first ``next()``.
+    ``host`` raises ``MonitorRemoteUnsupportedError`` immediately: detection runs
+    on the supervised host by design, so there is no remote polling mode. The
+    check is eager — this wrapper validates before handing back the generator,
+    so the failure lands at startup rather than at the first ``next()``. For a
+    remote event stream, see ``relay_remote_events``.
     """
     if host is not None:
         raise monitor.MonitorRemoteUnsupportedError(host)
@@ -543,13 +533,9 @@ def _monitor_loop_iter(
 ) -> Iterator[monitor.Alert]:
     """Polling generator behind ``monitor_loop``.
 
-    Tolerates transient ``MonitorRemoteError`` failures (from ``--host`` ssh)
-    for up to ``cfg.monitor.remote_failure_tolerance_s`` seconds with exponential
-    backoff (1s → 2s → 4s → ... → 30s cap). Each retry emits ``monitor_remote_blip``;
-    crossing the cap emits one ``monitor_remote_giveup`` and propagates the error
-    (CLI exits 1; systemd restarts the process). Setting tolerance to 0 preserves
-    the 0.1.10 immediate-propagate behavior with no blip events emitted. That
-    path is dormant while remote mode is rejected at startup.
+    ``host`` is None by construction (``monitor_loop`` rejects anything else);
+    it is carried into the ``monitor_started`` payload as an explicit record
+    that this monitor watches its own host.
     """
     import json as _json
 
@@ -566,51 +552,8 @@ def _monitor_loop_iter(
         mode="anomaly-only",
     )
 
-    tolerance_s = cfg.monitor.remote_failure_tolerance_s
-    blip_start: float | None = None
-    attempt = 0
-
     while True:
-        try:
-            alerts = _poll_once(work_dir, host=host)
-            # Success: reset retry state.
-            blip_start = None
-            attempt = 0
-        except monitor.MonitorRemoteError as e:
-            if tolerance_s == 0:
-                raise  # 0.1.10 behavior preserved
-            now = time.monotonic()
-            if blip_start is None:
-                blip_start = now
-            attempt += 1
-            elapsed = now - blip_start
-            if elapsed >= tolerance_s:
-                events.emit(
-                    cfg.runtime.log_dir,
-                    MONITOR_REMOTE_GIVEUP,
-                    host=host,
-                    total_attempts=attempt,
-                    total_elapsed_s=elapsed,
-                    cap_s=tolerance_s,
-                    final_error=e.stderr,
-                )
-                raise
-            backoff_idx = min(attempt - 1, len(_REMOTE_FAILURE_BACKOFF) - 1)
-            next_sleep_s = min(_REMOTE_FAILURE_BACKOFF[backoff_idx], tolerance_s - elapsed)
-            events.emit(
-                cfg.runtime.log_dir,
-                MONITOR_REMOTE_BLIP,
-                host=host,
-                error=e.stderr,
-                attempt=attempt,
-                elapsed_s=elapsed,
-                cap_s=tolerance_s,
-                interval_s=interval_s,
-                next_sleep_s=next_sleep_s,
-            )
-            time.sleep(next_sleep_s)
-            continue
-
+        alerts = _poll_once(work_dir)
         for alert in alerts:
             key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"
             if key in seen:
@@ -620,7 +563,6 @@ def _monitor_loop_iter(
             monitor.on_alert(
                 alert,
                 project=_project_name(work_dir),
-                host=host,
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )
@@ -847,6 +789,41 @@ def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.1) -> Itera
     consumption (vs ``narrate_events`` which formats for humans).
     """
     yield from _tail_events_jsonl(log_dir, start_at_now=True, poll_interval_s=poll_interval_s)
+
+
+def relay_remote_events(
+    host: str,
+    *,
+    log_dir: Path,
+    kinds: Sequence[str] | None = None,
+    remote_config: str | None = None,
+    failure_tolerance_s: float = 90.0,
+    out: TextIO | None = None,
+) -> int:
+    """Remote sibling of ``stream_events_jsonl``: relay ``host``'s event stream.
+
+    Spawns a managed ``ssh <host> -- agent-runner events --tail`` and passes its
+    JSONL through, reconnecting with ``--since`` so a dropped link replays its
+    gap. Returns a CLI exit code (0 on interrupt, 1 once the link stays down
+    past ``failure_tolerance_s``). Blocks until then.
+
+    ``log_dir`` is this CLIENT's log dir: the ``monitor_remote_blip`` /
+    ``monitor_remote_giveup`` events it writes describe the local machine's link
+    to ``host``, not the supervised project. Detection is deliberately NOT
+    relayed — the detectors run on ``host`` (see ``monitor_loop``).
+    """
+    # Late import: pulls agent_runtime (psutil, threading) only for the callers
+    # that actually stream from a remote host.
+    from agent_runner.remote_relay import relay_remote_events as _relay
+
+    return _relay(
+        host,
+        log_dir=log_dir,
+        kinds=kinds,
+        remote_config=remote_config,
+        failure_tolerance_s=failure_tolerance_s,
+        out=out,
+    )
 
 
 def _format_narrate_line(evt: dict[str, Any]) -> str:

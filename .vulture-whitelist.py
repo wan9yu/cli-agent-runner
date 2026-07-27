@@ -228,10 +228,6 @@ path
 # agent_runner.monitor.LocalSource
 log_dir
 
-# agent_runner.monitor.RemoteSource
-host
-project
-
 # agent_runner.startup_check.CheckResult
 name
 ok

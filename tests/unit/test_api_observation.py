@@ -126,7 +126,7 @@ def test_given_no_alerts_when_poll_once_then_returns_empty(
         )
 
     monkeypatch.setattr("agent_runner.api.load_config", patched_load)
-    alerts = api._poll_once(tmp_git_repo, host=None)
+    alerts = api._poll_once(tmp_git_repo)
     assert alerts == []
 
 
@@ -191,7 +191,7 @@ def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
     (log_dir / "metrics-2026-05.jsonl").write_text(
         '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","mem_total_mb":8000,"mem_available_mb":4000,"disk_used_pct":98.5,"disk_free_gb":1.0}\n'
     )
-    alerts = api._poll_once(tmp_git_repo, host=None)
+    alerts = api._poll_once(tmp_git_repo)
     crit = [a for a in alerts if a.detector == "disk_critical"]
     assert len(crit) == 1
     assert isinstance(crit[0], Alert)
@@ -305,11 +305,11 @@ def test_given_host_when_monitor_loop_then_raises_before_first_poll(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Remote monitoring cannot read remote round logs/events — reject at startup.
+    """Detection is on-host by design — reject --host at startup.
 
-    RemoteSource lists remote filenames over ssh but reads them locally, so a
-    remote monitor observes an empty world and reports healthy. The rejection
-    must land before the first poll and before monitor_started is emitted.
+    The detectors read the supervised host's own logs and stop its own service;
+    there is no remote polling mode (remote observation is the event relay).
+    The rejection must land before the first poll and before monitor_started.
     """
     from agent_runner.monitor import MonitorRemoteUnsupportedError
 
@@ -329,8 +329,9 @@ def test_given_host_when_monitor_loop_then_raises_before_first_poll(
 
     msg = str(exc_info.value)
     assert "--host pi" in msg
-    assert "round logs and events cannot be read" in msg
+    assert "detection runs on the supervised host by design" in msg
     assert "ssh pi" in msg
+    assert "--mode events" in msg, "the message must point at the supported remote mode"
     assert "docs/runbook.md" in msg
     assert exc_info.value.host == "pi"
     assert not sorted(log_dir.glob("events-*.jsonl")), (
@@ -351,186 +352,6 @@ def test_given_clean_work_dir_when_project_name_then_returns_basename(tmp_path: 
     good_dir = tmp_path / "my-project_v1.2"
     good_dir.mkdir()
     assert api._project_name(good_dir) == "my-project_v1.2"
-
-
-# The four ssh blip / give-up tests below drive api._monitor_loop_iter directly.
-# The public monitor_loop rejects --host at startup (remote reads are
-# unimplemented), so the tolerance machinery it wraps is reachable only through
-# the private iterator until remote reads land or remote mode is removed.
-def test_given_two_blips_then_recovery_when_monitor_loop_then_blips_logged_no_crash(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The poll loop tolerates transient blips and emits one event per attempt."""
-    from agent_runner.monitor import MonitorRemoteError
-
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    log_dir = work_dir / "logs"
-    log_dir.mkdir()
-    _write_minimal_monitor_toml(work_dir, log_dir)
-
-    call_count = [0]
-
-    def fake_poll_once(*_args, **_kwargs):
-        call_count[0] += 1
-        if call_count[0] <= 2:
-            raise MonitorRemoteError("pi", "ssh: connect: Connection refused")
-        return []  # success on 3rd call
-
-    monkeypatch.setattr(api, "_poll_once", fake_poll_once)
-
-    # 3 sleeps fire in this scenario: backoff(1s), backoff(2s), interval_s(30)
-    # The third must raise _StopLoopError to break out of the while True loop.
-    with patch("agent_runner.api.time.sleep", side_effect=[None, None, _StopLoopError()]):
-        gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
-        try:
-            next(gen, None)
-        except _StopLoopError:
-            pass
-        finally:
-            gen.close()
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    assert events_files
-    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    blips = [e for e in all_events if e["event"] == "monitor_remote_blip"]
-    giveups = [e for e in all_events if e["event"] == "monitor_remote_giveup"]
-    assert len(blips) == 2, f"expected 2 blips, got {[e['event'] for e in all_events]}"
-    assert len(giveups) == 0
-    assert blips[0]["attempt"] == 1
-    assert blips[1]["attempt"] == 2
-    assert "Connection refused" in blips[0]["error"]
-
-
-def test_given_persistent_failure_when_monitor_loop_then_emits_giveup_and_raises(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Past cap_s, the poll loop emits monitor_remote_giveup and propagates."""
-    from agent_runner.monitor import MonitorRemoteError
-
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    log_dir = work_dir / "logs"
-    log_dir.mkdir()
-    _write_minimal_monitor_toml(work_dir, log_dir)
-
-    # Override the TOML to use a tiny tolerance so we can exhaust quickly
-    (work_dir / "agent-runner.toml").write_text(
-        (work_dir / "agent-runner.toml").read_text() + "[monitor]\nremote_failure_tolerance_s = 2\n"
-    )
-
-    def always_fail(*_args, **_kwargs):
-        raise MonitorRemoteError("pi", "ssh: down")
-
-    monkeypatch.setattr(api, "_poll_once", always_fail)
-
-    # Speed up wall clock: monotonic returns 0, 1, 2, 3, ... so cap_s=2 is hit
-    fake_clock = [0.0]
-
-    def fake_monotonic():
-        v = fake_clock[0]
-        fake_clock[0] += 1.0
-        return v
-
-    monkeypatch.setattr("agent_runner.api.time.monotonic", fake_monotonic)
-    monkeypatch.setattr("agent_runner.api.time.sleep", lambda _s: None)
-
-    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
-    with pytest.raises(MonitorRemoteError):
-        next(gen, None)
-    gen.close()
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    giveups = [e for e in all_events if e["event"] == "monitor_remote_giveup"]
-    assert len(giveups) == 1
-    assert giveups[0]["host"] == "pi"
-    assert giveups[0]["cap_s"] == 2
-    assert giveups[0]["total_attempts"] == 3
-
-
-def test_given_tolerance_zero_when_blip_then_raises_immediately_no_events(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """remote_failure_tolerance_s=0 preserves 0.1.10 immediate-propagate."""
-    from agent_runner.monitor import MonitorRemoteError
-
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    log_dir = work_dir / "logs"
-    log_dir.mkdir()
-    _write_minimal_monitor_toml(work_dir, log_dir)
-    (work_dir / "agent-runner.toml").write_text(
-        (work_dir / "agent-runner.toml").read_text() + "[monitor]\nremote_failure_tolerance_s = 0\n"
-    )
-
-    def always_fail(*_args, **_kwargs):
-        raise MonitorRemoteError("pi", "ssh: down")
-
-    monkeypatch.setattr(api, "_poll_once", always_fail)
-
-    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
-    with pytest.raises(MonitorRemoteError):
-        next(gen, None)
-    gen.close()
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    blips = [e for e in all_events if e["event"] == "monitor_remote_blip"]
-    giveups = [e for e in all_events if e["event"] == "monitor_remote_giveup"]
-    assert blips == []
-    assert giveups == []
-
-
-def test_given_blip_then_success_when_monitor_loop_then_state_resets(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """After a successful poll, blip counter resets so the next blip is attempt=1."""
-    from agent_runner.monitor import MonitorRemoteError
-
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    log_dir = work_dir / "logs"
-    log_dir.mkdir()
-    _write_minimal_monitor_toml(work_dir, log_dir)
-
-    sequence = iter(
-        [
-            MonitorRemoteError("pi", "blip 1"),  # blip
-            [],  # success — resets state
-            MonitorRemoteError("pi", "blip 2"),  # blip again, should be attempt=1
-            _StopLoopError(),  # break the loop
-        ]
-    )
-
-    def fake_poll_once(*_args, **_kwargs):
-        item = next(sequence)
-        if isinstance(item, BaseException):
-            raise item
-        return item
-
-    monkeypatch.setattr(api, "_poll_once", fake_poll_once)
-    monkeypatch.setattr("agent_runner.api.time.sleep", lambda _s: None)
-
-    gen = api._monitor_loop_iter(work_dir, host="pi", interval_s=30)
-    try:
-        while True:
-            next(gen)  # no default — let exceptions propagate naturally
-    except (StopIteration, _StopLoopError):
-        pass
-    finally:
-        gen.close()
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    blips = [e for e in all_events if e["event"] == "monitor_remote_blip"]
-    assert len(blips) == 2
-    assert blips[0]["attempt"] == 1
-    assert blips[1]["attempt"] == 1, "successful poll should have reset the counter"
 
 
 def test_given_recent_blips_in_events_when_peek_then_populated_in_state(

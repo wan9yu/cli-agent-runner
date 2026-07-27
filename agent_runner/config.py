@@ -113,8 +113,9 @@ _DEFAULT_AUTH_HINT: str = ""
 # Plugin detectors must be added explicitly by the operator to opt them in.
 _DEFAULT_AUTO_STOP_ON: tuple[str, ...] = ("oauth_fail", "disk_critical")
 
-# Default window for tolerating transient remote failures before propagating.
-# 0 = opt-out (immediate propagation).
+# How long the event relay (``monitor --host X --mode events``) keeps
+# reconnecting a dropped ssh link before it gives up and exits 1.
+# 0 = opt-out (the first ssh exit is fatal, no reconnect).
 _DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
 
 

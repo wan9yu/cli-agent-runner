@@ -31,7 +31,8 @@ CLI and the same Round / Loop / Witness layers apply.
 
 `peek` and `watch` accept the same drill-down flags: `--round N`, `--log`,
 `--events N`, `--select PATH`. `monitor` is the anomaly lens and takes its own
-flags (`--mode`, `--host`, `--interval`, `--port`); `--config` and `--json` are
+flags (`--mode`, `--host`, `--interval`, `--kind`, `--remote-config`,
+`--port`); `--config` and `--json` are
 common to all three. Operator learns one mental model, three lenses.
 
 ## Defenses-as-data
@@ -99,19 +100,33 @@ API quota / writing to a near-full disk).
 
 The monitor emits no events during healthy operation — it surfaces alerts only when a detector fires. To verify the monitor process is running, look for the `monitor_started` event in `events-*.jsonl`. Programmatic consumers (e.g. an external supervisory layer) should subscribe to that event kind as the canonical "supervision is up" signal. The event carries `mode: "anomaly-only"` to document the intentional silence.
 
-## Monitor: transient ssh tolerance (dormant)
+## Remote observation: relay, not remote detection
 
-Remote monitoring is unsupported in this version — `monitor --host <alias>`
-exits 1 at startup because remote round logs and events cannot be read, so the
-tolerance described here is dormant until remote reads land (or remote mode is
-removed). It applies to remote polling: short ssh-protocol failures (rc=255)
-during steady-state polling are tolerated. The window defaults to 90 seconds and is
-configurable via `[monitor] remote_failure_tolerance_s` (set to 0 to disable).
-Backoff is 1s → 2s → 4s → ... → 30s. During the window each failed poll emits a
-`monitor_remote_blip` event; if the window expires without recovery a
-`monitor_remote_giveup` event is emitted before the error propagates (CLI
-exits 1; systemd restarts the process). The two-event scheme makes postmortem
-grep cleaner than a single event with a `final=true` flag.
+Detection is on-host by design. The detectors read the supervised host's round
+logs and metrics, and `auto_stop_on` stops that host's service — so detection
+and auto-stop survive a closed laptop, a dead VPN, or a dropped ssh session
+with no client in the loop. `monitor --host` is therefore rejected for
+`--mode anomaly | narrate | http`.
+
+The one remote mode is an event **relay**: `monitor --host X --mode events`
+(`agent_runner/remote_relay.py`) runs on the client, spawns
+`ssh X -- agent-runner events --tail --kind …`, and passes the remote's JSONL
+through unmodified. It is a transport, and carries no detector logic.
+
+Its transient-failure tolerance reuses the `[monitor]
+remote_failure_tolerance_s` window (default 90s, 0 disables reconnection).
+Backoff is 1s → 2s → 4s → ... → 30s. Each ssh exit emits a
+`monitor_remote_blip`; if the window expires without a relayed line, a
+`monitor_remote_giveup` is emitted and the relay exits 1 (a service manager
+restarts it). The two-event scheme makes postmortem grep cleaner than a single
+event with a `final=true` flag. Both events are written to the CLIENT's log dir:
+they describe that machine's link, not the supervised project's health.
+
+Reconnects pass `--since <last relayed ts>` so the gap is replayed
+(at-least-once), and the failure clock resets only on a relayed line — a
+connection that comes up and immediately dies is still an outage. The ssh child
+runs in its own process group, torn down SIGTERM → grace → SIGKILL on interrupt,
+give-up and every reconnect, so no orphaned ssh/sleep tree survives a drop.
 
 ## Plugin injection: two paths
 

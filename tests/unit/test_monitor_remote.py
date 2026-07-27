@@ -1,46 +1,273 @@
-"""Unit tests for the remote-monitoring machinery (RemoteSource, ssh helper,
-remote auto-stop).
+"""Unit tests for the managed ssh event relay (``monitor --host X --mode events``).
 
-That machinery is dormant: monitor startup rejects ``--host`` with
-``MonitorRemoteUnsupportedError``, so nothing here is reachable through the CLI.
-These tests keep it honest pending the decision to implement remote reads (a
-real remote ``StateSource``) or delete remote mode outright.
+No test here spawns a real ssh at a real host: ``remote_relay._SSH`` is pointed
+at a bash stub that plays the part (emits JSONL, exits, records its argv).
 """
 
 from __future__ import annotations
 
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from io import StringIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent_runner import remote_relay
 from agent_runner.api_types import Alert
-from agent_runner.monitor import (
-    RemoteSource,
-    on_alert,
-    run_remote_command,
-)
+from agent_runner.monitor import on_alert
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_LINE_1 = '{"event":"round_start","ts":"2026-07-27T10:00:00.000Z","round_num":1}'
+_LINE_2 = '{"event":"round_end","ts":"2026-07-27T10:00:01.000Z","round_num":1}'
 
 
-def test_given_run_remote_command_when_called_then_invokes_ssh() -> None:
-    with patch("agent_runner.monitor.subprocess.run") as run:
-        run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
-        rc, out = run_remote_command("pi", "echo ok")
-        assert (rc, out) == (0, "ok\n")
-        argv = run.call_args[0][0]
-        assert argv[0] == "ssh"
-        assert argv[1] == "pi"
+def _write_stub(path: Path, body: str) -> Path:
+    path.write_text(f"#!/usr/bin/env bash\n{body}")
+    path.chmod(0o755)
+    return path
 
 
-def test_given_remote_source_when_files_listed_then_returns_remote_paths() -> None:
-    with patch("agent_runner.monitor.run_remote_command") as rc:
-        rc.return_value = (0, "events-2026-05.jsonl\nmetrics-2026-05.jsonl\n")
-        src = RemoteSource(host="pi", project="myproj")
-        files = src.events_files()
-        assert any("events-2026-05.jsonl" in str(p) for p in files)
+@pytest.fixture
+def fast_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(remote_relay, "_RECONNECT_BACKOFF_S", (0.01,))
 
 
-def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing() -> None:
+def _events(log_dir: Path) -> list[dict]:
+    out: list[dict] = []
+    for f in sorted(log_dir.glob("events-*.jsonl")):
+        out += [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# argv construction
+# ---------------------------------------------------------------------------
+
+
+def test_given_no_kinds_when_argv_built_then_defaults_to_every_known_kind() -> None:
+    """The documented default: every kind this client knows, comma-joined."""
+    from agent_runner.events import KNOWN_EVENT_KINDS
+
+    argv = remote_relay._remote_argv("pi", remote_relay.default_kinds(), None, since=None)
+    assert argv[:3] == ["ssh", "pi", "--"]
+    assert argv[3:6] == ["agent-runner", "events", "--tail"]
+    assert argv[6] == "--kind"
+    assert argv[7].split(",") == sorted(KNOWN_EVENT_KINDS)
+    assert "--since" not in argv, "first connect streams from now"
+    assert "--config" not in argv, "no --remote-config: remote resolves ./agent-runner.toml"
+
+
+def test_given_explicit_kinds_and_remote_config_when_argv_built_then_passed_through() -> None:
+    argv = remote_relay._remote_argv(
+        "pi",
+        ["round_end", "oauth_fail"],
+        "/srv/proj/agent-runner.toml",
+        since="2026-07-27T10:00:00.000Z",
+    )
+    assert "round_end,oauth_fail" in argv
+    assert argv[argv.index("--since") + 1] == "2026-07-27T10:00:00.000Z"
+    assert argv[argv.index("--config") + 1] == "/srv/proj/agent-runner.toml"
+
+
+def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Path) -> None:
+    """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
+    with pytest.raises(ValueError, match="starts with '-'"):
+        remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# passthrough + resume
+# ---------------------------------------------------------------------------
+
+
+def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
+) -> None:
+    """Lines pass through byte-identically; every RE-connect carries --since <max ts>."""
+    argv_log = tmp_path / "argv.log"
+    state = tmp_path / "first-run-done"
+    stub = _write_stub(
+        tmp_path / "fake-ssh",
+        f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+        f'if [ ! -f "{state}" ]; then\n'
+        f'  touch "{state}"\n'
+        f"  printf '%s\\n' '{_LINE_1}'\n"
+        f"  printf '%s\\n' '{_LINE_2}'\n"
+        f"fi\n"
+        f"exit 1\n",
+    )
+    monkeypatch.setattr(remote_relay, "_SSH", str(stub))
+    log_dir = tmp_path / "logs"
+    out = StringIO()
+
+    rc = remote_relay.relay_remote_events(
+        "pi", log_dir=log_dir, kinds=["round_start", "round_end"], failure_tolerance_s=0.05, out=out
+    )
+
+    assert rc == 1, "the stub never recovers, so the relay eventually gives up"
+    assert out.getvalue() == f"{_LINE_1}\n{_LINE_2}\n"
+
+    invocations = argv_log.read_text().splitlines()
+    assert len(invocations) >= 2, "relay must have reconnected at least once"
+    assert "--since" not in invocations[0], "first connect streams from now"
+    for argv in invocations[1:]:
+        assert "--since 2026-07-27T10:00:01.000Z" in argv, "reconnect replays from the last ts seen"
+
+    kinds = _events(log_dir)
+    assert [e["event"] for e in kinds if e["event"] == "monitor_remote_blip"], "no blip emitted"
+    assert sum(1 for e in kinds if e["event"] == "monitor_remote_giveup") == 1
+    blip = next(e for e in kinds if e["event"] == "monitor_remote_blip")
+    assert blip["host"] == "pi"
+    assert blip["returncode"] == 1
+
+
+def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
+) -> None:
+    """Garbage is relayed verbatim but never becomes the resume point."""
+    argv_log = tmp_path / "argv.log"
+    state = tmp_path / "first-run-done"
+    stub = _write_stub(
+        tmp_path / "fake-ssh",
+        f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+        f'if [ ! -f "{state}" ]; then\n'
+        f'  touch "{state}"\n'
+        f"  printf '%s\\n' 'not json at all'\n"
+        f'  printf \'%s\\n\' \'{{"event":"x","ts":"not-a-timestamp"}}\'\n'
+        f"fi\n"
+        f"exit 1\n",
+    )
+    monkeypatch.setattr(remote_relay, "_SSH", str(stub))
+    out = StringIO()
+
+    rc = remote_relay.relay_remote_events(
+        "pi", log_dir=tmp_path / "logs", kinds=["x"], failure_tolerance_s=0.05, out=out
+    )
+
+    assert rc == 1
+    assert out.getvalue() == 'not json at all\n{"event":"x","ts":"not-a-timestamp"}\n'
+    for argv in argv_log.read_text().splitlines():
+        assert "--since" not in argv, "unparseable ts must not become a resume point"
+
+
+def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, capsys
+) -> None:
+    stub = _write_stub(
+        tmp_path / "fake-ssh", 'echo "ssh: connect: no route to host" >&2\nexit 255\n'
+    )
+    monkeypatch.setattr(remote_relay, "_SSH", str(stub))
+    log_dir = tmp_path / "logs"
+
+    rc = remote_relay.relay_remote_events(
+        "pi", log_dir=log_dir, kinds=["round_end"], failure_tolerance_s=0.05, out=StringIO()
+    )
+
+    assert rc == 1
+    giveups = [e for e in _events(log_dir) if e["event"] == "monitor_remote_giveup"]
+    assert len(giveups) == 1
+    assert giveups[0]["host"] == "pi"
+    assert giveups[0]["returncode"] == 255
+    assert "no route to host" in giveups[0]["final_error"], "ssh stderr belongs in the event"
+
+    err = capsys.readouterr().err
+    assert "gave up" in err and "no route to host" in err, "a terminal give-up must not be silent"
+
+
+def test_given_zero_tolerance_when_ssh_exits_then_gives_up_without_reconnecting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tolerance 0 disables reconnection: one shot, no blip."""
+    argv_log = tmp_path / "argv.log"
+    stub = _write_stub(tmp_path / "fake-ssh", f'printf "%s\\n" "$*" >> "{argv_log}"\nexit 1\n')
+    monkeypatch.setattr(remote_relay, "_SSH", str(stub))
+    log_dir = tmp_path / "logs"
+
+    rc = remote_relay.relay_remote_events(
+        "pi", log_dir=log_dir, kinds=["round_end"], failure_tolerance_s=0, out=StringIO()
+    )
+
+    assert rc == 1
+    assert len(argv_log.read_text().splitlines()) == 1
+    kinds = [e["event"] for e in _events(log_dir)]
+    assert kinds == ["monitor_remote_giveup"]
+
+
+# ---------------------------------------------------------------------------
+# process hygiene
+# ---------------------------------------------------------------------------
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:  # pragma: no cover — not expected for our own children
+        return True
+    return True
+
+
+def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: Path) -> None:
+    """The orphan-tree scar: SIGINT must take out ssh AND its children."""
+    stub = _write_stub(
+        tmp_path / "fake-ssh",
+        "sleep 300 &\n"
+        'printf \'{"event":"probe","ts":"2026-07-27T10:00:00.000Z",'
+        '"stub_pid":%s,"sleep_pid":%s}\n\' $$ $!\n'
+        "wait\n",
+    )
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from agent_runner import remote_relay\n"
+        "remote_relay._SSH = sys.argv[1]\n"
+        "sys.exit(remote_relay.relay_remote_events('pi', log_dir=Path(sys.argv[2])))\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, str(driver), str(stub), str(tmp_path / "logs")],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        assert proc.stdout is not None
+        deadline = time.time() + 15
+        line = ""
+        while time.time() < deadline and not line:
+            line = proc.stdout.readline()
+        payload = json.loads(line)
+        stub_pid, sleep_pid = payload["stub_pid"], payload["sleep_pid"]
+        assert _alive(sleep_pid), "stub's child should be running before the interrupt"
+
+        os.kill(proc.pid, signal.SIGINT)
+        assert proc.wait(timeout=15) == 0, "SIGINT is a clean relay shutdown"
+
+        deadline = time.time() + 10
+        while time.time() < deadline and (_alive(stub_pid) or _alive(sleep_pid)):
+            time.sleep(0.1)
+        assert not _alive(stub_pid), "ssh stub survived the relay"
+        assert not _alive(sleep_pid), "ssh stub's child survived the relay (orphan tree)"
+    finally:
+        if proc.poll() is None:  # pragma: no cover — only on assertion failure
+            proc.kill()
+            proc.wait(timeout=5)
+
+
+# ---------------------------------------------------------------------------
+# auto-stop is on-host only
+# ---------------------------------------------------------------------------
+
+
+def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing(tmp_path: Path) -> None:
     a = Alert(
         severity="warning",
         detector="timeout_rate",
@@ -49,12 +276,14 @@ def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing() -> No
         ts="t",
         auto_action="none",
     )
-    with patch("agent_runner.monitor.subprocess.run") as run:
-        on_alert(a, project="myproj", host=None, log_dir=Path("/tmp/fake"))
-        run.assert_not_called()
+    from unittest.mock import patch
+
+    with patch("agent_runner.monitor._call_local_stop") as stop:
+        on_alert(a, project="myproj", log_dir=tmp_path)
+        stop.assert_not_called()
 
 
-def test_given_critical_alert_local_when_on_alert_then_calls_local_stop(tmp_log_dir: Path) -> None:
+def test_given_critical_alert_when_on_alert_then_calls_local_stop(tmp_log_dir: Path) -> None:
     a = Alert(
         severity="critical",
         detector="oauth_fail",
@@ -63,12 +292,17 @@ def test_given_critical_alert_local_when_on_alert_then_calls_local_stop(tmp_log_
         ts="t",
         auto_action="stop_service",
     )
+    from unittest.mock import patch
+
     with patch("agent_runner.monitor._call_local_stop") as stop:
-        on_alert(a, project="myproj", host=None, log_dir=tmp_log_dir)
+        on_alert(a, project="myproj", log_dir=tmp_log_dir)
         stop.assert_called_once_with("myproj")
 
 
-def test_given_critical_alert_remote_when_on_alert_then_calls_ssh_stop(tmp_log_dir: Path) -> None:
+def test_given_local_stop_raises_when_on_alert_then_emits_failed_event(tmp_log_dir: Path) -> None:
+    """A failing stop is recorded, not raised — it must not kill the monitor."""
+    from unittest.mock import patch
+
     a = Alert(
         severity="critical",
         detector="oauth_fail",
@@ -77,100 +311,10 @@ def test_given_critical_alert_remote_when_on_alert_then_calls_ssh_stop(tmp_log_d
         ts="t",
         auto_action="stop_service",
     )
-    with patch("agent_runner.monitor.run_remote_command") as rc:
-        rc.return_value = (0, "")
-        on_alert(a, project="myproj", host="pi", log_dir=tmp_log_dir)
-        rc.assert_called_once()
-        cmd = rc.call_args[0][1]
-        assert "agent-runner stop" in cmd
+    with patch("agent_runner.monitor._call_local_stop", side_effect=RuntimeError("unit missing")):
+        on_alert(a, project="myproj", log_dir=tmp_log_dir)
 
-
-def test_given_ssh_rc_255_when_run_remote_command_then_raises_monitor_remote_error(
-    monkeypatch,
-) -> None:
-    """ssh exits 255 on protocol-level failure (host unreachable, key reject)."""
-    import subprocess
-
-    from agent_runner.monitor import MonitorRemoteError, run_remote_command
-
-    def fake_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(
-            args=_args[0],
-            returncode=255,
-            stdout="",
-            stderr="ssh: connect to host pi port 22: Connection refused\n",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    with pytest.raises(MonitorRemoteError) as exc_info:
-        run_remote_command("pi", "ls /tmp")
-    assert exc_info.value.host == "pi"
-    assert "Connection refused" in exc_info.value.stderr
-
-
-def test_given_ssh_rc_2_when_run_remote_command_then_returned_tolerated(
-    monkeypatch,
-) -> None:
-    """ssh rc=2 (command 'no match') is legitimate — caller decides."""
-    import subprocess
-
-    from agent_runner.monitor import run_remote_command
-
-    def fake_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=_args[0], returncode=2, stdout="", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    rc, out = run_remote_command("pi", "ls /nope")
-    assert rc == 2
-    assert out == ""
-
-
-def test_given_host_starts_with_dash_when_run_remote_command_then_raises_value_error() -> None:
-    """Reject ssh hosts beginning with '-' to prevent ProxyCommand injection."""
-    from agent_runner.monitor import run_remote_command
-
-    with pytest.raises(ValueError, match="starts with '-'"):
-        run_remote_command("-oProxyCommand=touch /tmp/x", "ls")
-
-
-def test_given_remote_auto_stop_raises_when_on_alert_then_emits_failed_event(
-    monkeypatch, tmp_path
-) -> None:
-    """on_alert tolerates MonitorRemoteError from remote stop and emits event."""
-    import json
-
-    from agent_runner.api_types import Alert
-    from agent_runner.monitor import MonitorRemoteError, on_alert
-
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-
-    def fake_run(*_args, **_kwargs):
-        raise MonitorRemoteError("pi", "ssh: connect: Connection refused")
-
-    # Patch run_remote_command via monitor module's reference
-    from agent_runner import monitor
-
-    monkeypatch.setattr(monitor, "run_remote_command", fake_run)
-
-    alert = Alert(
-        severity="critical",
-        detector="oauth_fail",
-        message="boom",
-        context={},
-        ts="2026-05-13T12:00:00.000Z",
-        auto_action="stop_service",
-    )
-
-    # Should NOT raise — failure is logged as event instead
-    on_alert(alert, project="proj", host="pi", log_dir=log_dir)
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    assert events_files
-    all_events = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    failed = [e for e in all_events if e.get("event") == "monitor_auto_stop_failed"]
-    assert failed, f"expected monitor_auto_stop_failed; got {[e.get('event') for e in all_events]}"
-    assert failed[0]["host"] == "pi"
-    assert "Connection refused" in failed[0]["error"]
+    failed = [e for e in _events(tmp_log_dir) if e["event"] == "monitor_auto_stop_failed"]
+    assert len(failed) == 1
+    assert failed[0]["detector"] == "oauth_fail"
+    assert "unit missing" in failed[0]["error"]

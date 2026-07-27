@@ -5,9 +5,13 @@
     short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
-The detectors are pure functions; the loop, ssh fetch, and auto-stop wiring
-live further down. Plugin detectors register via :func:`register_detector`
-and run alongside the builtins on every poll.
+The detectors are pure functions; state assembly and the auto-stop wiring live
+further down. Plugin detectors register via :func:`register_detector` and run
+alongside the builtins on every poll.
+
+Detection is always on-host: every source reads the local filesystem and
+auto-stop stops the local service. Remote observation is a separate concern —
+an event relay, ``agent_runner/remote_relay.py``.
 """
 
 from __future__ import annotations
@@ -482,7 +486,8 @@ def detect_supervisor_stale(
 
 
 class StateSource(Protocol):
-    """Local or remote source — returns paths to read."""
+    """The paths a poll reads. ``LocalSource`` is the only implementation:
+    detection runs on the supervised host, so every path is local."""
 
     def events_files(self) -> list[Path]: ...
     def metrics_files(self) -> list[Path]: ...
@@ -672,104 +677,32 @@ def run_plugin_detectors(state: ProjectState) -> list[Alert]:
 
 
 # ---------------------------------------------------------------------------
-# Remote source + auto-stop dispatch (Task 3.3)
+# Auto-stop dispatch
 # ---------------------------------------------------------------------------
-
-import subprocess  # noqa: TID251, E402 — monitor needs ssh + local stop subprocess
-
-
-class MonitorRemoteError(Exception):
-    """ssh failed at the protocol level (host unreachable, key reject, etc.).
-
-    Raised by ``run_remote_command`` when ssh exits with rc=255 (its reserved
-    code for ssh-level failures, per the ssh(1) man page). Command-level
-    non-zero exits (e.g. rc=2 from ``ls`` on no-match) are NOT raised; callers
-    inspect the returncode and decide.
-    """
-
-    def __init__(self, host: str, stderr: str) -> None:
-        super().__init__(f"ssh to {host!r} failed: {stderr}")
-        self.host = host
-        self.stderr = stderr
 
 
 class MonitorRemoteUnsupportedError(Exception):
-    """Raised at monitor startup (``api.monitor_loop``) when ``--host`` is passed."""
+    """Raised at monitor startup (``api.monitor_loop``) when ``--host`` is passed
+    to a detection mode.
 
-    def __init__(self, host: str) -> None:
+    Detection is on-host by design: the detectors read round logs and metrics
+    from the local filesystem, and ``auto_stop_on`` acts on the local service
+    with no client in the loop. Only ``--mode events`` is relayable.
+    """
+
+    def __init__(self, host: str, mode: str = "anomaly") -> None:
         super().__init__(
-            f"remote monitoring (--host {host}) is unsupported in this version: "
-            "remote round logs and events cannot be read, so the monitor would "
-            "watch an empty world and report every project healthy.\n"
-            f"Run the monitor on the host itself: ssh {host}, then "
-            "agent-runner monitor --config ~/.agent-runner/<project>/agent-runner.toml\n"
-            'See docs/runbook.md, section "Remote monitor & SSH trust".'
+            f"remote monitoring (--host {host}) is unsupported for --mode {mode}: "
+            "detection runs on the supervised host by design — the detectors read "
+            "that host's logs and stop that host's service with no client involved.\n"
+            f"Run it there: ssh {host}, then "
+            "agent-runner monitor --config ~/.agent-runner/<project>/agent-runner.toml "
+            "(or install it as a unit: agent-runner install --monitor).\n"
+            f"For a remote event stream from this machine: "
+            f"agent-runner monitor --host {host} --mode events\n"
+            'See docs/runbook.md, section "Remote event relay & SSH trust".'
         )
         self.host = host
-
-
-def run_remote_command(host: str, cmd: str, *, timeout: int = 30) -> tuple[int, str]:
-    """Run a single shell command over ssh; returns (returncode, stdout).
-
-    Dormant: both call sites (``RemoteSource._list``, ``on_alert``'s remote
-    stop) are reachable only with ``--host``, which monitor startup rejects.
-
-    Raises ``MonitorRemoteError`` when ssh itself fails (rc=255 — host
-    unreachable, key reject, etc.). Command-level non-zero rcs are returned
-    as-is so callers (like ``RemoteSource._list``) can decide whether to
-    tolerate them.
-    """
-    # ssh treats arguments starting with '-' as option flags (e.g. -oProxyCommand=...),
-    # which can execute arbitrary local commands. Reject explicitly.
-    if host.startswith("-"):
-        raise ValueError(f"invalid ssh host (starts with '-'): {host!r}")
-    r = subprocess.run(
-        ["ssh", host, cmd],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-    if r.returncode == 255:
-        raise MonitorRemoteError(host, r.stderr.strip())
-    return r.returncode, r.stdout
-
-
-@dataclass(frozen=True)
-class RemoteSource:
-    """Lists remote log filenames over ssh — but every read resolves LOCALLY.
-
-    Dormant: unreachable while monitor startup rejects ``--host`` (see
-    ``MonitorRemoteUnsupportedError`` for why). Kept pending the decision to
-    implement remote reads or drop remote mode.
-    """
-
-    host: str
-    project: str
-
-    def _remote_log_dir(self) -> str:
-        return f"~/.agent-runner/{self.project}/logs"
-
-    def _list(self, glob: str) -> list[Path]:
-        _rc, out = run_remote_command(
-            self.host, f"ls -1 {self._remote_log_dir()}/{glob} 2>/dev/null"
-        )
-        return [Path(line.strip()) for line in out.splitlines() if line.strip()]
-
-    def events_files(self) -> list[Path]:
-        return self._list("events-*.jsonl")
-
-    def metrics_files(self) -> list[Path]:
-        return self._list("metrics-*.jsonl")
-
-    def rounds_dir(self) -> Path:
-        return Path(f"{self._remote_log_dir()}/rounds")
-
-    def status_path(self) -> Path:
-        return Path(f"{self._remote_log_dir()}/status.json")
-
-    def orphan_path(self) -> Path:
-        return Path(f"{self._remote_log_dir()}/orphan-state.json")
 
 
 def _call_local_stop(project: str) -> None:
@@ -783,7 +716,6 @@ def on_alert(
     alert: Alert,
     *,
     project: str,
-    host: str | None,
     log_dir: Path,
     allowed_stop_names: list[str] | None = None,
 ) -> None:
@@ -793,6 +725,8 @@ def on_alert(
     ``allowed_stop_names`` defaults to the legacy builtin pair when not
     supplied; callers with access to ``cfg.monitor.auto_stop_on`` should
     pass it through so operators can opt plugin detectors in/out.
+
+    The stop is always local: the monitor runs on the host it supervises.
     """
     effective_allowed = (
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
@@ -815,27 +749,18 @@ def on_alert(
             log_dir,
             MONITOR_AUTO_STOP_TRIGGERED,
             detector=alert.detector,
-            host=host,
         )
-    if host is None:
+    try:
         _call_local_stop(project)
-    else:
-        # Dormant: host is never non-None in a running monitor — startup
-        # rejects --host with MonitorRemoteUnsupportedError.
-        try:
-            run_remote_command(
-                host,
-                f"agent-runner stop --config ~/.agent-runner/{project}/agent-runner.toml",
-                timeout=30,
+    except Exception as e:
+        # Any stop failure (unit missing, permission denied, stale pidfile) is
+        # recorded and swallowed: crashing the monitor here would take out the
+        # supervision that noticed the problem. The next poll retries naturally
+        # while the condition persists.
+        if log_dir.is_dir():
+            emit_event(
+                log_dir,
+                MONITOR_AUTO_STOP_FAILED,
+                detector=alert.detector,
+                error=f"{type(e).__name__}: {e}",
             )
-        except MonitorRemoteError as e:
-            if log_dir.is_dir():
-                emit_event(
-                    log_dir,
-                    MONITOR_AUTO_STOP_FAILED,
-                    detector=alert.detector,
-                    host=host,
-                    error=e.stderr,
-                )
-            # Continue rather than crash the monitor loop — the next poll
-            # will retry naturally if the condition persists.

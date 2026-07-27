@@ -170,9 +170,10 @@ agent-runner assumes the agent and the supervisor run on the **same host**.
 The unattended model requires it: to survive a disconnected laptop and run
 24×7, the agent must live on the supervised host, not stream commands to it
 from elsewhere. We do not route an agent's tool calls to a remote shell (SSH,
-container, k8s pod). The `monitor --host` flag was scoped to remote
-*observation*, never remote *execution* — and remote observation is unsupported
-in this version (see [`runbook.md`](runbook.md) § "Remote monitor & SSH trust").
+container, k8s pod). The `monitor --host` flag is scoped to remote
+*observation*, never remote *execution*: it relays the host's event stream to a
+client (`--mode events`), while detection and auto-stop stay on the host itself
+(see [`runbook.md`](runbook.md) § "Remote event relay & SSH trust").
 
 Tools like [zmx](https://zmx.sh) cover the complementary case — an
 interactive, attended agent that stays local while its shell runs remotely.

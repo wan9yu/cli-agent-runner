@@ -182,7 +182,7 @@ def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_
 
     monkeypatch.setattr("agent_runner.monitor.run_all_detectors", capturing_rad)
 
-    api._poll_once(tmp_git_repo, host=None)
+    api._poll_once(tmp_git_repo)
 
     assert captured, "run_all_detectors was never called"
     call_kwargs = captured[0]
@@ -207,7 +207,7 @@ def test_poll_once_forwards_supervisor_stale_threshold(
 
     monkeypatch.setattr("agent_runner.monitor.run_all_detectors", capturing_rad)
 
-    api._poll_once(tmp_git_repo, host=None)
+    api._poll_once(tmp_git_repo)
 
     assert captured, "run_all_detectors was never called"
     call_kwargs = captured[0]

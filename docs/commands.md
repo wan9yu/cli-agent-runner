@@ -152,7 +152,7 @@ you were disconnected is lost.
 
 `peek` in a clear-and-refresh loop. Default 2s interval. Stop with Ctrl-C.
 
-### `agent-runner monitor [--host SSH-ALIAS] [--interval N] [--mode MODE] [--port PORT] [--json]`
+### `agent-runner monitor [--mode MODE] [--host SSH-ALIAS] [--kind K,...] [--remote-config PATH] [--interval N] [--port PORT] [--json]`
 
 Anomaly-detection daemon. Runs the 11 detectors against the live state on every
 poll, watching the project's local logs at a default 30s interval.
@@ -167,16 +167,44 @@ Flags:
   streams a human-readable narrative; `events` streams raw event JSON; `http` serves
   a local progress page.
 - `--port PORT` — HTTP port for `--mode http` (default: `8765`, local-only).
-- `--host SSH-ALIAS` — unsupported in this version: remote round logs and events
-  cannot be read, so the monitor exits 1 at startup rather than watching an empty
-  world. Run the monitor on the supervised host instead (see
-  [runbook.md](runbook.md) § "Remote monitor & SSH trust").
+- `--host SSH-ALIAS` — stream a remote host's events over a managed ssh relay.
+  Supported with `--mode events` only.
+- `--kind K[,K2,...]` — kinds to relay (relay only). Default: every kind this
+  client knows — built-ins plus locally installed plugin kinds. A kind that
+  exists only on the remote must be named explicitly.
+- `--remote-config PATH` — config path **on the remote host** (relay only).
+  Omitted by default, so the remote resolves `./agent-runner.toml` in the ssh
+  landing directory.
+
+Mode × `--host` matrix:
+
+| `--mode` | local | `--host X` |
+|---|---|---|
+| `anomaly` (default) | 11 detectors + auto-stop | rejected (exit 1) |
+| `narrate` | human-readable stream | rejected (exit 1) |
+| `events` | JSONL stream of local events | **managed ssh relay** |
+| `http` | progress page on 127.0.0.1 | rejected (exit 1) |
+
+Detection is rejected remotely by design: the detectors read the supervised
+host's logs and stop its service, so they must run there (see
+[runbook.md](runbook.md) § "Remote event relay & SSH trust").
+
+Relay behavior: stdout is the remote's JSONL, unmodified. Each ssh exit emits
+`monitor_remote_blip` and reconnects with `--since <last relayed ts>` so the gap
+is replayed (at-least-once — the boundary event may repeat). An outage longer
+than `[monitor] remote_failure_tolerance_s` (default 90s) emits
+`monitor_remote_giveup` and exits 1. Those two events go to the **client's**
+`log_dir` — they describe this machine's link, not the remote project. The ssh
+process group is killed (SIGTERM → grace → SIGKILL) on Ctrl-C, on give-up and
+before each reconnect.
 
 ```bash
 agent-runner monitor                       # local anomaly mode
 agent-runner monitor --mode narrate        # streaming narrative
 agent-runner monitor --mode http --port 9000  # HTTP progress page on port 9000
 agent-runner monitor --json | jq -c        # pipe alerts to a downstream consumer
+agent-runner monitor --host pi --mode events  # relay pi's event stream here
+agent-runner monitor --host pi --mode events --kind round_end,oauth_fail | jq -c
 ```
 
 ## 中文摘要

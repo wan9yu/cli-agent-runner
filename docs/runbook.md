@@ -245,19 +245,64 @@ To inspect failures: `grep serve_startup_hook_failed {log_dir}/events-*.jsonl`.
 Operators can disable a misbehaving hook via `[plugins] disable = ["hook_name"]`
 just like any other plugin component.
 
-## Remote monitor & SSH trust
+## Remote event relay & SSH trust
 
-**Remote monitoring is unsupported in this version.** `agent-runner monitor
---host <alias>` exits 1 at startup with an explanation. It could list remote log
-filenames over ssh but never read their contents — the reads resolved against
-the *local* filesystem — so a remote monitor watched an empty world and reported
-every project healthy. The flag is kept for compatibility; it will either gain
-real remote reads or be removed.
+Remote support is an **event relay**, not remote detection:
 
-Run the monitor on the supervised host instead:
+```bash
+agent-runner monitor --host pi --mode events
+```
+
+One command replaces the hand-rolled reconnect loop
+(`while true; ssh pi 'agent-runner events --tail …'; sleep 30; done`). It spawns
+`ssh pi -- agent-runner events --tail --kind <kinds>` and passes the remote's
+JSON Lines through your stdout unchanged, and it owns the three things the
+hand-rolled loop gets wrong:
+
+- **No gap on reconnect.** The relay remembers the last `ts` it saw and
+  reconnects with `--since <that ts>`, so events written while the link was down
+  are replayed. At-least-once: the boundary event may repeat, none is lost. The
+  first connect passes no `--since` — streaming starts from now.
+- **A deadline, not an infinite retry.** Each ssh exit emits a
+  `monitor_remote_blip` and retries with escalating backoff (1s → 2s → … → 30s).
+  If the link stays down past `[monitor] remote_failure_tolerance_s` (default
+  90s) the relay emits `monitor_remote_giveup`, prints the last ssh diagnostic
+  to stderr and exits 1 — so a service manager restarts it instead of a dead
+  loop pretending to watch. The failure clock resets on the first relayed
+  *line*, not on a successful connect. ssh's own stderr never reaches stdout;
+  stdout is JSONL and nothing else.
+- **No orphan process tree.** ssh runs in its own process group, and the whole
+  group is torn down (SIGTERM → grace → SIGKILL) on Ctrl-C, on give-up and
+  before every reconnect — including the `sleep` children a `pkill -f ssh`
+  leaves behind.
+
+Flags:
+
+- `--kind K[,K2,…]` — kinds to relay. Default: every kind this client knows
+  (built-ins plus locally installed plugin kinds). A kind that exists only on
+  the remote must be named explicitly.
+- `--remote-config PATH` — config path **on the remote host**. Omitted by
+  default, so the remote resolves `./agent-runner.toml` in the ssh landing
+  directory.
+
+`--config` (the client's own config) is still required: it names the log dir
+where the relay writes `monitor_remote_blip` / `monitor_remote_giveup`. Those
+are the *client's* telemetry about its own link — they say nothing about the
+supervised project's health, which is why they land locally.
+
+### Detection stays on the host
+
+`--host` with `--mode anomaly`, `narrate` or `http` exits 1. This is by design,
+not a gap: the detectors read the supervised host's round logs and metrics, and
+`auto_stop_on` stops that host's service. Running them there means detection and
+auto-stop keep working with the laptop closed, the VPN down, or the ssh session
+dead — nothing depends on a client being connected. Run:
 
     ssh pi
     agent-runner monitor --config ~/.agent-runner/<project>/agent-runner.toml
+
+or install it as a unit (`agent-runner install --monitor`), and use the relay
+from your laptop to watch what it emits.
 
 ### SSH trust boundary
 
@@ -292,12 +337,14 @@ supervisor stopped emitting events because it is stuck between rounds or dead.
 But a monitor running on the *same host* as the supervisor dies when that host
 dies, so it cannot report its own host's death.
 
-That is the current coverage boundary: with remote monitoring unsupported (see
-above), agent-runner catches a supervisor stuck on a live host
-(`supervisor_stale`, events frozen) but not the death of the host itself. Cover
-host death outside agent-runner — an uptime/ping check, or a scheduled
-`ssh <host> agent-runner peek --json` from a second machine that alerts when the
-command or its `last_event_ts` goes stale.
+That is the coverage boundary: agent-runner's detectors catch a supervisor stuck
+on a live host (`supervisor_stale`, events frozen) but not the death of the host
+itself. The event relay (see above) narrows it from a second machine —
+`monitor --host <alias> --mode events` emits `monitor_remote_giveup` and exits 1
+when the link stays down, which is a signal a service manager or alerting rule
+can act on. It cannot distinguish a dead host from a dead network, so pair it
+with an uptime/ping check, or a scheduled `ssh <host> agent-runner peek --json`
+that alerts when the command or its `last_event_ts` goes stale.
 
 The `supervisor_stale` threshold defaults to `round_timeout_s * 1.5`. Override
 with `[monitor] supervisor_stale_threshold_s = N` for projects whose legitimate
@@ -318,7 +365,8 @@ Stdout emits one event per line as JSON. Subscription begins at process-start;
 historical events are not replayed (use `cat events-*.jsonl | jq .` for that).
 The mode follows monthly file rotation transparently.
 
-Local-only (no `--host` support). For remote monitoring use `--mode anomaly`.
+To consume the same stream from another machine, add `--host` — the relay in
+§ "Remote event relay & SSH trust" produces identical stdout.
 
 Example pipe:
 
@@ -383,8 +431,9 @@ Open `http://localhost:8765/` to see a 5-section page (auto-refresh 5s):
 
 JSON endpoint at `/api/state` for scripts.
 
-Local-only (binds 127.0.0.1, no auth). For remote monitoring use
-`--mode anomaly`. Zero new dependencies — stdlib `http.server`.
+Local-only (binds 127.0.0.1, no auth); `--host` is rejected. To watch from
+another machine, use the event relay (`--mode events --host <alias>`) or forward
+the port over ssh. Zero new dependencies — stdlib `http.server`.
 
 If the port is in use, monitor exits with code 1 and a structured stderr
 message. Pick another port via `--port`.
@@ -584,13 +633,15 @@ outages self-heal.
 
 ### Network-blip postmortem trail
 
-When the monitor or an agent round hits network errors, two structured events
-serve as the index into deeper diagnostic logs:
+When the event relay's ssh link or an agent round hits network errors, three
+structured events serve as the index into deeper diagnostic logs. The two relay
+events are written to the *client's* log dir (the machine running
+`monitor --host`), not the supervised host's:
 
 | Event | What it tells you | Where to look next |
 |---|---|---|
-| `monitor_remote_blip` | A single remote poll failed with ssh rc=255 (dormant: remote monitoring is unsupported) | Subsequent events in the same window; if a `monitor_remote_giveup` follows, supervision exited |
-| `monitor_remote_giveup` | Cumulative ssh failure exceeded `remote_failure_tolerance_s` (dormant, as above) | `journalctl --user -u agent-runner-monitor@<project>` for the restart |
+| `monitor_remote_blip` | The event relay's ssh exited and is reconnecting (payload: `returncode`, ssh `error` tail, `resume_since`) | Subsequent events in the same window; if a `monitor_remote_giveup` follows, the relay exited |
+| `monitor_remote_giveup` | The relay's link stayed down past `remote_failure_tolerance_s`; it exited 1 | The relay's own service manager for the restart; the host itself for why ssh stopped answering |
 | `agent_network_blip` | An agent round's log matched a network pattern | `{log_dir}/rounds/R{round_num}-*.log` for the full agent output |
 
 The events file is the index. The round log file is the body.

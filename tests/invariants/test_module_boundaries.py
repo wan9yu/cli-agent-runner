@@ -66,6 +66,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subproc
         "cli/upgrade_cmd.py",
         "metrics.py",
         "monitor.py",
+        "remote_relay.py",
         "scaffold.py",
         "vcs_state.py",
     }

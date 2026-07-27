@@ -87,13 +87,24 @@ agent-runner monitor                  # 30s poll
 agent-runner monitor --json | jq -c   # pipe to downstream consumers
 ```
 
-> **Remote monitoring is unsupported in this version**: `monitor --host <alias>`
-> cannot read a remote host's round logs or events, so it exits with an error at
-> startup instead of watching an empty world and reporting healthy. Run the
-> monitor on the supervised host itself (`ssh <alias>`, then `agent-runner
-> monitor`). See [`docs/runbook.md`](docs/runbook.md) § "Remote monitor & SSH
-> trust" — the SSH trust boundary applies to any agent-runner command you drive
-> over ssh.
+Watch a remote host's event stream from your laptop — one command instead of a
+hand-rolled `ssh … ; sleep` loop:
+
+```bash
+agent-runner monitor --host pi --mode events   # managed ssh relay, JSONL stdout
+```
+
+The relay reconnects with `--since <last ts>` so a dropped link replays its gap,
+gives up (exit 1) once the outage passes `remote_failure_tolerance_s`, and kills
+the ssh process group on exit so no orphan tree is left behind.
+
+> **Detection stays on the host.** `--host` with `--mode anomaly | narrate |
+> http` exits with an error: the detectors read the supervised host's logs and
+> auto-stop its service, which must keep working with your laptop closed. Run
+> the monitor there (`ssh <alias>`, then `agent-runner monitor`) and relay its
+> events here. See [`docs/runbook.md`](docs/runbook.md) § "Remote event relay &
+> SSH trust" — the SSH trust boundary applies to any agent-runner command you
+> drive over ssh.
 
 ## Documentation
 

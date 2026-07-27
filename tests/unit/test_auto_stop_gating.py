@@ -28,7 +28,6 @@ def test_given_builtin_critical_in_allowed_list_when_on_alert_then_stop_called(
         on_alert(
             alert,
             project="proj",
-            host=None,
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical"],
         )
@@ -43,7 +42,6 @@ def test_given_plugin_critical_not_in_allowed_list_when_on_alert_then_stop_not_c
         on_alert(
             alert,
             project="proj",
-            host=None,
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical"],
         )
@@ -58,7 +56,6 @@ def test_given_plugin_critical_explicitly_opted_in_when_on_alert_then_stop_calle
         on_alert(
             alert,
             project="proj",
-            host=None,
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical", "my_plugin_critical"],
         )
@@ -73,7 +70,6 @@ def test_given_non_stop_action_when_on_alert_then_stop_not_called(
         on_alert(
             alert,
             project="proj",
-            host=None,
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail"],
         )
@@ -87,5 +83,5 @@ def test_given_no_allowed_list_when_on_alert_then_backward_compat_allows_builtin
     legacy builtin pair (oauth_fail + disk_critical)."""
     alert = _make_alert("oauth_fail")
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
-        on_alert(alert, project="proj", host=None, log_dir=tmp_path)
+        on_alert(alert, project="proj", log_dir=tmp_path)
     mock_stop.assert_called_once_with("proj")

@@ -37,7 +37,7 @@ def test_given_seeded_disk_critical_when_poll_once_then_emits_auto_stop_alert(
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed(tmp_git_repo, disk_pct=98.0, mem_avail_mb=4000)
-    alerts = api._poll_once(tmp_git_repo, host=None)
+    alerts = api._poll_once(tmp_git_repo)
     assert any(a.detector == "disk_critical" and a.auto_action == "stop_service" for a in alerts)
 
 
@@ -48,5 +48,5 @@ def test_given_seeded_mem_pressure_when_poll_once_then_emits_warning(
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed(tmp_git_repo, disk_pct=50.0, mem_avail_mb=100)
-    alerts = api._poll_once(tmp_git_repo, host=None)
+    alerts = api._poll_once(tmp_git_repo)
     assert any(a.detector == "mem_pressure" for a in alerts)
