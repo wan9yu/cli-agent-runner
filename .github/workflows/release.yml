@@ -9,9 +9,13 @@ permissions:
 
 # Trusted Publishing: the `environment` name below MUST match the
 # `Environment name` field in the PyPI pending publisher config.
-# A mismatch fails publish with an opaque OIDC error.
-# Note: TestPyPI stage intentionally omitted — first release verification
-# happens via the manual approval gate on the `pypi` environment.
+# A mismatch fails publish with an opaque OIDC error. Keep the environment
+# declared even when it carries no protection rules — it is the OIDC claim,
+# not just an approval gate; deleting it breaks publishing outright. Whether
+# a tag publishes straight through or waits for a reviewer is configured in
+# the repo's environment settings, not here.
+# Note: TestPyPI stage intentionally omitted — the tag is the release signal;
+# pre-tag verification is `./build.sh check` plus the CI matrix on main.
 
 concurrency:
   group: release-${{ github.ref }}
