@@ -13,8 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.3] - 2026-07-26
 
-Details: [docs/migrations/0.2.3.md](docs/migrations/0.2.3.md)
-
 ### Added
 - `--preset kimi` — a preset for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) (`kimi -p --output-format stream-json`). `docs/recipes/kimi.md` also documents running Kimi K3 through the existing `claude` preset via Moonshot's Anthropic-compatible endpoint.
 - `--preset pi` — a preset for [Pi Coding Agent](https://github.com/earendil-works/pi) (`pi -p -na --mode json --model …`; `-na` pins project trust off for unattended runs). `docs/recipes/pi.md` documents driving Kimi K3 through pi via a Moonshot OpenAI-compatible provider.
@@ -22,6 +20,8 @@ Details: [docs/migrations/0.2.3.md](docs/migrations/0.2.3.md)
 ### Fixed
 - The agent subprocess now runs in `runtime.work_dir` (`cwd=` on spawn). Previously it inherited the supervisor's cwd and only launch conventions (systemd `WorkingDirectory=`, relative `--config`) kept the two aligned — fatal for agent CLIs with no working-directory flag of their own (e.g. `pi`). The startup check now also validates a relative `agent.command[0]` against `work_dir`, matching where it executes.
 - Plugin round-log tail window widened 50 → 200 lines: a stderr burst after the agent's terminal JSONL event could evict it from the scan window, silently dropping usage/transient classification. The round log's merged stdout+stderr contract is now documented (`HookContext.agent_log_path`, `docs/long-running-agents.md`) — the merge is deliberate; auth/network detection reads stderr text from it.
+
+See `docs/migrations/0.2.3.md`.
 
 ## [0.2.2] - 2026-07-18
 

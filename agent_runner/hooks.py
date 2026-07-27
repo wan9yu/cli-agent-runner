@@ -81,11 +81,11 @@ class HookContext:
     """
     agent_log_path: Path | None = None
     """Path to the agent's round log (e.g.
-    ``log_dir/rounds/R<N>-<timestamp>.log``). Contract: the file is the
-    agent's MERGED stdout+stderr — the merge is deliberate (oauth_fail /
-    network_fail detection regex-scans stderr text out of it), so JSONL
-    consumers must skip non-JSON lines (per-line ``json.loads`` in
-    try/except). Plugins parse this to extract usage / classify errors.
+    ``log_dir/rounds/R<N>-<timestamp>.log``); plugins parse it to extract
+    usage / classify errors. Contract: the file is the agent's MERGED
+    stdout+stderr — the merge is deliberate (oauth_fail / network_fail
+    detection regex-scans stderr text out of it), so JSONL consumers must
+    skip non-JSON lines (per-line ``json.loads`` in try/except).
     Default ``None`` for backward compatibility with manually-constructed
     HookContext instances (rare; the supervisor always populates this
     from 0.1.25+).

@@ -45,18 +45,18 @@ Notes:
   interactive confirmation to fall back to. agent-runner supervises lifecycle
   but does not sandbox the agent, so an unattended pi round runs arbitrary
   shell in `work_dir` unprompted — point it only at a repo/host where that is
-  acceptable. To narrow pi itself: `--tools read,grep,find,ls` is pi's
-  documented read-only mode, and a pi extension's `tool_call` hook can veto
-  calls (`{ block: true }`) — load a policy extension via an explicit
-  `-e <path>`, because `-na` (below) means repo-local `.pi/` extensions never
-  load.
+  acceptable.
 - **`-na` pins project trust off.** Without it, a saved trust decision for
   `work_dir` or any parent silently loads repo-local pi resources in `-p` runs
   (`.pi/` settings, extensions, skills — and `.pi/SYSTEM.md` **replaces** the
   system prompt). Drop `-na` only for a repo whose `.pi/` you control and want.
+  To narrow pi instead: `--tools read,grep,find,ls` is pi's documented
+  read-only mode, and a `tool_call` extension hook can veto calls
+  (`{ block: true }`) — load it via an explicit `-e <path>` (with `-na`,
+  repo-local `.pi/` extensions never load).
 - **`round_timeout_s` is the only brake.** pi has no turn cap, runtime timeout,
-  or token budget of its own — agent-runner's wall-clock `round_timeout_s`
-  (preset default 1800s) is the sole thing that ends a runaway round.
+  or token budget of its own — agent-runner's wall-clock `round_timeout_s` is
+  the sole thing that ends a runaway round.
 - **Log volume.** `--mode json` is a verbose JSONL event stream; switch to
   `--mode text` for cleaner round logs — agent-runner needs no specific format.
 - `PI_OFFLINE = "1"` (in `[agent.env]`) suppresses pi's startup auto-update and

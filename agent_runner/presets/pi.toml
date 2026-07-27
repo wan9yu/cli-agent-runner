@@ -14,9 +14,8 @@
 
 [agent]
 # Replace PROVIDER/MODEL — pi has no default. Our default: moonshot/kimi-k3.
-# -na pins project trust off: project-local pi resources (.pi/ settings,
-# extensions, skills, SYSTEM.md; project .agents/skills) never load, instead
-# of depending on the host's saved trust.json decisions or defaultProjectTrust.
+# -na = no project trust: repo-local .pi/ (settings, extensions, skills,
+# SYSTEM.md) never loads — see docs/recipes/pi.md.
 command = ["pi", "-p", "-na", "--mode", "json", "--model", "PROVIDER/MODEL"]
 prompt_arg_template = ["{prompt}"]
 name = "pi"
