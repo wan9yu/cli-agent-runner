@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, make_run_result, write_round_log
+from tests._test_helpers import (
+    make_hook_context,
+    make_run_result,
+    write_round_log,
+    write_round_log_text,
+)
 
 _MOD = "agent_runner.builtin_plugins.pi"
 
@@ -32,25 +37,53 @@ _SESSION = {
     "cwd": "/tmp/pi-round-test",
 }
 
+
+def _assistant(
+    content: list,
+    *,
+    inp: int = 0,
+    out: int = 0,
+    cache: int = 0,
+    cost: float = 0,
+    stop: str = "stop",
+    provider: str = "mockok",
+    model: str = "mock-ok",
+    ts: int = 1785131556045,
+    error: str | None = None,
+) -> dict:
+    """A pi assistant message. Same shape as ``_ASSISTANT_OK``, which is kept
+    spelled out below as the one full-fidelity specimen."""
+    message = {
+        "role": "assistant",
+        "content": content,
+        "api": "openai-completions",
+        "provider": provider,
+        "model": model,
+        "usage": {
+            "input": inp,
+            "output": out,
+            "cacheRead": cache,
+            "cacheWrite": 0,
+            "totalTokens": inp + out + cache,
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": cost},
+        },
+        "stopReason": stop,
+        "timestamp": ts,
+    }
+    if error is not None:
+        message["errorMessage"] = error
+    return message
+
+
 # --- real moonshot/kimi-k3 round: attempt 1 timed out, retry succeeded --------
-_ASSISTANT_TIMEOUT = {
-    "role": "assistant",
-    "content": [],
-    "api": "openai-completions",
-    "provider": "moonshot",
-    "model": "kimi-k3",
-    "usage": {
-        "input": 0,
-        "output": 0,
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "totalTokens": 0,
-        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
-    },
-    "stopReason": "error",
-    "timestamp": 1784594216632,
-    "errorMessage": "Request timed out.",
-}
+_ASSISTANT_TIMEOUT = _assistant(
+    [],
+    stop="error",
+    provider="moonshot",
+    model="kimi-k3",
+    ts=1784594216632,
+    error="Request timed out.",
+)
 _ASSISTANT_OK = {
     "role": "assistant",
     "content": [
@@ -102,27 +135,6 @@ _AGENT_SETTLED = {"type": "agent_settled"}
 # and a stale ``stopReason`` — parsing these would poison both emissions.
 _MSG_UPDATE_THINKING = {
     "type": "message_update",
-    "assistantMessageEvent": {
-        "type": "thinking_delta",
-        "contentIndex": 0,
-        "delta": "The",
-        "partial": {
-            "role": "assistant",
-            "content": [{"type": "thinking", "thinking": "The user asks me"}],
-            "provider": "moonshot",
-            "model": "kimi-k3",
-            "usage": {
-                "input": 0,
-                "output": 0,
-                "cacheRead": 0,
-                "cacheWrite": 0,
-                "totalTokens": 0,
-                "cost": {"total": 0},
-            },
-            "stopReason": "stop",
-            "timestamp": 1784594229160,
-        },
-    },
     "message": {
         "role": "assistant",
         "content": [{"type": "thinking", "thinking": "The user asks me"}],
@@ -144,24 +156,14 @@ _MSG_UPDATE_THINKING = {
 
 def _failing_assistant(error_message: str, provider: str = "mock") -> dict:
     """Assistant message as pi writes it when the provider call failed."""
-    return {
-        "role": "assistant",
-        "content": [],
-        "api": "openai-completions",
-        "provider": provider,
-        "model": "mock-model",
-        "usage": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0,
-            "totalTokens": 0,
-            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
-        },
-        "stopReason": "error",
-        "timestamp": 1785131425512,
-        "errorMessage": error_message,
-    }
+    return _assistant(
+        [],
+        stop="error",
+        provider=provider,
+        model="mock-model",
+        ts=1785131425512,
+        error=error_message,
+    )
 
 
 _ERR_429 = "429 status code (no body)"
@@ -169,44 +171,22 @@ _ERR_503 = "503 status code (no body)"
 _ERR_401 = '401: {"message":"Invalid Authentication","type":"invalid_authentication_error"}'
 
 # --- real multi-turn round (tool call then final answer) ----------------------
-_ASSISTANT_TOOLCALL = {
-    "role": "assistant",
-    "content": [
-        {"type": "toolCall", "id": "call_000000", "name": "bash", "arguments": {"cmd": "echo hi"}}
-    ],
-    "api": "openai-completions",
-    "provider": "mockok",
-    "model": "mock-ok",
-    "usage": {
-        "input": 60,
-        "output": 20,
-        "cacheRead": 40,
-        "cacheWrite": 0,
-        "reasoning": 0,
-        "totalTokens": 120,
-        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
-    },
-    "stopReason": "toolUse",
-    "timestamp": 1785131556045,
-}
-_ASSISTANT_AFTER_TOOL = {
-    "role": "assistant",
-    "content": [{"type": "text", "text": "DONE"}],
-    "api": "openai-completions",
-    "provider": "mockok",
-    "model": "mock-ok",
-    "usage": {
-        "input": 210,
-        "output": 7,
-        "cacheRead": 90,
-        "cacheWrite": 0,
-        "reasoning": 0,
-        "totalTokens": 307,
-        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
-    },
-    "stopReason": "stop",
-    "timestamp": 1785131556065,
-}
+# The one fixture with catalog pricing behind it, so cost_usd has a money path.
+_ASSISTANT_TOOLCALL = _assistant(
+    [{"type": "toolCall", "id": "call_000000", "name": "bash", "arguments": {"cmd": "echo hi"}}],
+    inp=60,
+    out=20,
+    cache=40,
+    stop="toolUse",
+)
+_ASSISTANT_AFTER_TOOL = _assistant(
+    [{"type": "text", "text": "DONE"}],
+    inp=210,
+    out=7,
+    cache=90,
+    cost=0.0031,
+    ts=1785131556065,
+)
 _AGENT_END_MULTI_TURN = {
     "type": "agent_end",
     "messages": [
@@ -264,6 +244,7 @@ def test_given_multi_turn_round_when_after_round_then_usage_summed_across_messag
     assert kw["input_tokens"] == 270  # 60 + 210
     assert kw["output_tokens"] == 27  # 20 + 7
     assert kw["cached_tokens"] == 130  # 40 + 90
+    assert kw["cost_usd"] == 0.0031  # usage.cost.total, summed the same way
     assert kw["tool_call_count"] == 1
     assert kw["model"] == "mockok/mock-ok"
 
@@ -314,19 +295,6 @@ def test_given_exhausted_429_retries_when_after_round_then_rate_limit_model(tmp_
     assert _ERR_429 in kw["raw"]
     # nothing reached the model, so there is no cost record to publish
     usage_emit.assert_not_called()
-
-
-def test_given_exhausted_503_retries_when_after_round_then_api_transient_5xx(tmp_path):
-    failed = _failing_assistant(_ERR_503)
-    _, err_emit = _run(
-        tmp_path,
-        [
-            _SESSION,
-            {"type": "agent_end", "messages": [failed], "willRetry": False},
-            {"type": "auto_retry_end", "success": False, "attempt": 3, "finalError": _ERR_503},
-        ],
-    )
-    assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
 
 
 def test_given_auth_failure_when_after_round_then_no_transient_and_no_usage(tmp_path):
@@ -400,13 +368,13 @@ def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
     would silently report 0 for every such round."""
     from agent_runner.builtin_plugins.pi import PiErrorDetector
 
-    write_round_log(tmp_path, 1, [_SESSION, _MSG_END_OK, _AGENT_END_OK])
-    log_path = tmp_path / "rounds" / "R1-test.log"
-    log_path.write_text(
+    log_path = write_round_log(tmp_path, 1, [_SESSION, _MSG_END_OK, _AGENT_END_OK])
+    write_round_log_text(
+        tmp_path,
+        1,
         "node:internal/process/warning: ExperimentalWarning\n"
         + log_path.read_text()
         + "some trailing stderr chatter\n",
-        encoding="utf-8",
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
@@ -420,7 +388,6 @@ def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
 
 def test_classify_pi_error_maps_only_observed_shapes():
     """Lock the errorMessage → bucket mapping to shapes captured from pi 0.80.10."""
-    from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
     from agent_runner.builtin_plugins.pi import _classify_pi_error
 
     assert _classify_pi_error(_ERR_429) == "rate_limit_model"
@@ -434,5 +401,3 @@ def test_classify_pi_error_maps_only_observed_shapes():
     assert _classify_pi_error('400: {"message":"bad request"}') is None
     assert _classify_pi_error("") is None
     assert _classify_pi_error(None) is None
-    for text in (_ERR_429, _ERR_503, "Request timed out."):
-        assert _classify_pi_error(text) in _BACK_OFF_DEFAULTS

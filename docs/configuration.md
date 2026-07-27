@@ -189,6 +189,8 @@ strip_yaml_frontmatter = true    # default; set false for non-LLM-CLI agents
 
 Paths are resolved against `runtime.work_dir` (consistent with existing path resolution).
 
+A relative `runtime.work_dir` itself resolves against the **config file's own directory**, not the caller's cwd — so `agent-runner serve --config /srv/proj/agent-runner.toml` behaves identically from any working directory.
+
 ## `[phases]` (optional)
 
 Field-level types and defaults are in the generated schema table above

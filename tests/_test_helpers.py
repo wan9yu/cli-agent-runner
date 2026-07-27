@@ -234,15 +234,25 @@ def make_run_result(exit_code: int = 0, *, timed_out: bool = False) -> Any:
     return RunResult(exit_code=exit_code, duration_s=0.0, timed_out=timed_out, pid=0)
 
 
+def write_round_log_text(log_dir: Path, round_num: int, text: str) -> Path:
+    """Write raw text to the path where plugins read agent stdout (post-0.1.25).
+
+    The path convention matches ``make_hook_context``'s default
+    ``agent_log_path``; use this for the merged-stdout+stderr cases that are
+    not pure JSONL.
+    """
+    rounds_dir = log_dir / "rounds"
+    rounds_dir.mkdir(parents=True, exist_ok=True)
+    log_path = rounds_dir / f"R{round_num}-test.log"
+    log_path.write_text(text, encoding="utf-8")
+    return log_path
+
+
 def write_round_log(log_dir: Path, round_num: int, events: list[dict]) -> Path:
     """Write fake JSONL to the path where plugins read agent stdout (post-0.1.25)."""
     import json
 
-    rounds_dir = log_dir / "rounds"
-    rounds_dir.mkdir(exist_ok=True)
-    log_path = rounds_dir / f"R{round_num}-test.log"
-    log_path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
-    return log_path
+    return write_round_log_text(log_dir, round_num, "\n".join(json.dumps(e) for e in events) + "\n")
 
 
 def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:

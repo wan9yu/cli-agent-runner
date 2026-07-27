@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, make_run_result, write_round_log
+from tests._test_helpers import (
+    make_hook_context,
+    make_run_result,
+    write_round_log,
+    write_round_log_text,
+)
 
 _MOD = "agent_runner.builtin_plugins.kimi"
 
@@ -54,15 +59,27 @@ def _failed_round():
     return make_run_result(124, timed_out=True)
 
 
-def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(tmp_path):
+def _run(tmp_path, log, *, result=None, agent_name="kimi"):
+    """Write a round log (JSONL events or raw text), run the detector, return
+    the transient-error emit mock. Defaults to a failed round, which is the
+    only kind kimi's detector looks at."""
     from agent_runner.builtin_plugins.kimi import KimiErrorDetector
 
-    write_round_log(tmp_path, 1, [_RETRY_429, _RETRY_429])
+    if isinstance(log, str):
+        write_round_log_text(tmp_path, 1, log)
+    else:
+        write_round_log(tmp_path, 1, log)
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.time.time", return_value=1000):
             KimiErrorDetector().after_round(
-                make_hook_context(tmp_path, agent_name="kimi"), result=_failed_round()
+                make_hook_context(tmp_path, agent_name=agent_name),
+                result=result if result is not None else _failed_round(),
             )
+    return err_emit
+
+
+def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(tmp_path):
+    err_emit = _run(tmp_path, [_RETRY_429, _RETRY_429])
     err_emit.assert_called_once()
     kw = err_emit.call_args.kwargs
     assert kw["classification"] == "rate_limit_model"
@@ -72,13 +89,7 @@ def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(
 
 
 def test_given_503_retry_on_failed_round_when_after_round_then_api_transient_5xx(tmp_path):
-    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
-
-    write_round_log(tmp_path, 1, [_RETRY_503, _RESUME_HINT])
-    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-        KimiErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="kimi"), result=_failed_round()
-        )
+    err_emit = _run(tmp_path, [_RETRY_503, _RESUME_HINT])
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
 
@@ -87,25 +98,12 @@ def test_given_retry_absorbed_by_successful_round_when_after_round_then_no_emit(
     """kimi retries internally (max_attempts 10); a blip it recovered from is not
     a supervisor-level transient error — backing off after a successful round
     would be a false alarm."""
-    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
-
-    write_round_log(tmp_path, 1, [_RETRY_429, _ASSISTANT, _RESUME_HINT])
-    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-        KimiErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="kimi"),
-            result=make_run_result(),
-        )
+    err_emit = _run(tmp_path, [_RETRY_429, _ASSISTANT, _RESUME_HINT], result=make_run_result())
     err_emit.assert_not_called()
 
 
 def test_given_non_kimi_binary_when_after_round_then_no_emit(tmp_path):
-    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
-
-    write_round_log(tmp_path, 1, [_RETRY_429])
-    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-        KimiErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="claude"), result=_failed_round()
-        )
+    err_emit = _run(tmp_path, [_RETRY_429], agent_name="claude")
     err_emit.assert_not_called()
 
 
@@ -123,20 +121,12 @@ def test_given_plain_text_stderr_error_when_after_round_then_tolerated(tmp_path)
     """The round log merges stdout+stderr: kimi's fatal errors arrive as plain
     text (real captured 401 wording). Non-JSON lines must not crash the parser,
     and auth failure is oauth_fail territory, not a transient bucket."""
-    from agent_runner.builtin_plugins.kimi import KimiErrorDetector
-
-    rounds_dir = tmp_path / "rounds"
-    rounds_dir.mkdir(parents=True, exist_ok=True)
-    (rounds_dir / "R1-test.log").write_text(
+    err_emit = _run(
+        tmp_path,
         "error: failed to run prompt: provider.auth_error: 401 Invalid Authentication\n"
         "See log: /Users/dev/.kimi-code/logs/kimi-code.log\n",
-        encoding="utf-8",
+        result=make_run_result(1),
     )
-    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-        KimiErrorDetector().after_round(
-            make_hook_context(tmp_path, agent_name="kimi"),
-            result=make_run_result(1),
-        )
     err_emit.assert_not_called()
 
 

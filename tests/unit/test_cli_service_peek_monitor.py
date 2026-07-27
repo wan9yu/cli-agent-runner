@@ -125,18 +125,9 @@ def test_given_monitor_host_when_cmd_then_exit_1_with_unsupported_message(capsys
 
     from agent_runner.cli import monitor_cmd
 
+    # No config file: monitor_loop rejects --host before anything is loaded.
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
-    (work_dir / "agent-runner.toml").write_text(
-        "[agent]\n"
-        'command = ["true"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{work_dir}"\n'
-        f'log_dir = "{work_dir}/logs"\n'
-        "[prompt]\n"
-        'inline = "p"\n'
-    )
 
     args = SimpleNamespace(
         host="pi",

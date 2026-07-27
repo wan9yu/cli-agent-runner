@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests._test_helpers import make_hook_context, make_run_result, write_round_log
+from tests._test_helpers import (
+    make_hook_context,
+    make_run_result,
+    write_round_log,
+    write_round_log_text,
+)
 
 _MOD = "agent_runner.builtin_plugins.codewhale"
 
@@ -110,21 +115,18 @@ def test_given_non_json_lines_when_after_round_then_tolerated(tmp_path):
     """Real codewhale stdout has terminal-escape non-JSON lines; parser must skip them."""
     from agent_runner.builtin_plugins.codewhale import CodewhaleErrorDetector
 
-    # Write raw lines manually (write_round_log only emits JSON dicts).
-    # Path must match make_hook_context default: tmp_path/rounds/R1-test.log
-    rounds_dir = tmp_path / "rounds"
-    rounds_dir.mkdir(parents=True, exist_ok=True)
     meta_line = (
         '{"type":"metadata","meta":{'
         '"model":"deepseek-v4-pro","input_tokens":5,"output_tokens":2,'
         '"status":"completed"}}'
     )
-    (rounds_dir / "R1-test.log").write_text(
+    write_round_log_text(
+        tmp_path,
+        1,
         "\x1b]9;4;1\x07\x1b]0;\U0001f433 CodeWhale\x07"
         '{"type":"content","content":"hi"}\n' + meta_line + "\n"
         "not json at all\n"
         '{"type":"done"}\n',
-        encoding="utf-8",
     )
     result = make_run_result()
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
