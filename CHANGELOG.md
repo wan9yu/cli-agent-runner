@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.6] - 2026-07-28
 
+### Changed
+- **Round-log pruning is now opt-in.** `runtime.round_log_retention` defaults to `0` (never prune) and `0` is now a legal value — previously both `0` and `-1` were rejected, so there was no off switch. Retaining too much is defended (`disk_warning` at 90%, `disk_critical` at 95% auto-stops the service); deleting too much was not defended at all. Both round-log families are affected, including the serve-level `round-<N>.log` family that had been capped at 100 for many releases. Set `round_log_retention = 100` for the previous behavior.
+
 ### Fixed
-- Round-log pruning no longer deletes a backlog it did not create. A prune that would remove more files than it keeps is now deferred wholesale — nothing is deleted — so the first round after upgrading from ≤0.2.3 no longer silently wipes `{log_dir}/rounds/`, which 0.2.4 and 0.2.5 did (one deployment: 12,193 of 12,293 transcripts). The same guard covers the serve-level `round-<N>.log` family, so lowering `runtime.round_log_retention` can no longer wipe history there either.
+- A prune that would delete more files than it keeps is now refused wholesale — nothing is deleted — so opting in on an existing backlog, or lowering the value later, can no longer wipe history in one pass. 0.2.4 and 0.2.5 did exactly that on their first post-upgrade round (one deployment: 12,193 of 12,293 transcripts, ~6.4 GB).
 
 ### Added
-- `round_logs_prune_deferred` event — emitted on every prune attempt that the bulk guard defers, carrying `directory`, `existing`, `keep`, `would_delete` and a hint naming `runtime.round_log_retention`. Resolve by raising retention above the backlog or deleting the files yourself; the guard never blocks a round.
+- `round_logs_prune_deferred` event — emitted on every prune attempt the bulk guard defers, carrying `directory`, `existing`, `keep`, `would_delete` and a hint naming `runtime.round_log_retention`. Resolve by raising retention above the backlog or deleting the files yourself; the guard never blocks a round. Retention `0` emits nothing.
 
 See `docs/migrations/0.2.6.md`.
 

@@ -423,32 +423,42 @@ Each round subprocess writes its merged stdout+stderr to
 `events.jsonl`. A symlink `{log_dir}/round-current.log` always points to the
 active round's log — `tail -F {log_dir}/round-current.log` for live view.
 
-Retention configurable via `runtime.round_log_retention` (default 100). At
-each serve startup, files beyond the retention count (by mtime) are pruned.
+The same family naming applies to the agent's own transcripts in
+`{log_dir}/rounds/R<N>-<timestamp>.log`, one file per round.
 
-The same knob also caps the agent's own transcripts in
-`{log_dir}/rounds/R<N>-<timestamp>.log` — that family is pruned by round
-number at the start of every round, so it stays bounded on a serve that never
-restarts.
+**Neither family is pruned by default (0.2.6+).** `runtime.round_log_retention`
+defaults to `0`, which means never prune; both families grow for as long as the
+deployment runs. That growth is watched by `disk_warning` (90%) and
+`disk_critical` (95%, auto-stops the service by default), so a filling disk
+announces itself long before it bites. Set a positive count to opt in —
+`round-<N>.log` is then pruned by mtime at each serve startup and
+`rounds/R<N>-*.log` by round number at the start of every round. See
+`docs/configuration.md` § `runtime.round_log_retention` for sizing.
+
+To reclaim space without enabling pruning, delete or archive old files under
+`{log_dir}` / `{log_dir}/rounds` yourself; nothing in the supervisor depends on
+their presence.
 
 ### `round_logs_prune_deferred` — a bulk prune was refused
 
-A prune that would delete more files than it keeps is a **bulk** prune, and
-agent-runner never performs one: it deletes nothing and emits
-`round_logs_prune_deferred` instead, with `directory`, `existing` (files
-present), `keep` (current retention), `would_delete` and a `hint`. The round —
-or the serve startup — proceeds normally; only the deletion is deferred.
+Only reachable when you have opted into pruning. A prune that would delete more
+files than it keeps is a **bulk** prune, and agent-runner never performs one:
+it deletes nothing and emits `round_logs_prune_deferred` instead, with
+`directory`, `existing` (files present), `keep` (current retention),
+`would_delete` and a `hint`. The round — or the serve startup — proceeds
+normally; only the deletion is deferred.
 
-Expect it on a first start after a backlog accumulated, or right after
-lowering `round_log_retention`. It repeats on every prune attempt until you
-resolve it, either way:
+Expect it the first time you set a retention on an existing backlog, or right
+after lowering the value. It repeats on every prune attempt until you resolve
+it, either way:
 
 ```bash
 agent-runner events --kind round_logs_prune_deferred   # directory + counts
 ```
 
 - **Keep the backlog** — raise `[runtime] round_log_retention` to at least the
-  reported `existing`. Pruning resumes normally as the count grows past it.
+  reported `existing` (or back to `0`, never prune). Pruning resumes normally
+  as the count grows past a positive value.
 - **Drop it** — delete (or archive) files under the reported `directory`
   yourself; the next prune sees a count it no longer calls bulk and resumes.
 
