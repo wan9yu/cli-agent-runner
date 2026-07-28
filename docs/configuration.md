@@ -119,6 +119,36 @@ commands happen to match a token drawn from its prompt. The `claude` preset
 defaults to `"stdin"`; existing configs are unchanged. See
 `docs/migrations/0.2.1.md` to adopt on an existing config.
 
+### `runtime.round_log_retention`
+
+Type: int
+Default: `100`
+
+Caps both round-log families: the serve-level `{log_dir}/round-<N>.log` files
+(pruned by mtime once at serve startup) and the agent transcripts in
+`{log_dir}/rounds/R<N>-<timestamp>.log` (pruned by round number at the start of
+every round).
+
+**Bulk-prune guard (0.2.6+).** A prune that would delete *more* files than it
+keeps is a bulk prune, and a bulk prune deletes nothing. It emits
+`round_logs_prune_deferred` (fields: `directory`, `existing`, `keep`,
+`would_delete`, `hint`) and leaves every file in place. In steady state a round
+retires about one file, so the guard can only trip on a first encounter with a
+pre-existing backlog, or after retention is lowered far below the current file
+count — cases where erasing the history is far likelier to be an accident than
+an intent.
+
+The deferral is permanent until you act, and you have two options:
+
+- **Raise `round_log_retention`** to at least the reported `existing` count.
+  The backlog then fits inside the kept window, nothing is deleted, and normal
+  per-round pruning resumes once the count grows past the new value.
+- **Delete files yourself** from the reported `directory`. The next prune sees
+  a count the guard no longer calls bulk and resumes.
+
+The supervisor never performs a bulk deletion on its own. Until you choose, the
+family keeps growing — unbounded, as it was before 0.2.4, but now loud.
+
 ### `vcs.dirty_action`
 
 Type: string, one of `"stash"`, `"ignore"`, `"auto_commit"`

@@ -189,6 +189,34 @@ def test_emit_agent_auth_error_detected_redacts_secrets_in_raw(tmp_path):
     assert "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789" not in json.loads(line)["raw"]
 
 
+def test_emit_round_logs_prune_deferred_writes_actionable_payload(tmp_path):
+    """The deferral must be actionable from the event alone: which directory,
+    how many files exist, what retention is set to, how many were spared, and
+    the knob to turn.
+    """
+    import json
+
+    from agent_runner._emit import emit_round_logs_prune_deferred
+    from agent_runner.events import ROUND_LOGS_PRUNE_DEFERRED
+
+    emit_round_logs_prune_deferred(
+        tmp_path,
+        directory=str(tmp_path / "rounds"),
+        existing=12293,
+        keep=100,
+        would_delete=12193,
+    )
+    line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
+    payload = json.loads(line)
+    assert payload["event"] == ROUND_LOGS_PRUNE_DEFERRED
+    assert payload["directory"] == str(tmp_path / "rounds")
+    assert payload["existing"] == 12293
+    assert payload["keep"] == 100
+    assert payload["would_delete"] == 12193
+    assert "runtime.round_log_retention" in payload["hint"]
+    assert "12293" in payload["hint"]
+
+
 def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
     """0.1.33+ payload includes original_reset_at_epoch, applied_reset_at_epoch,
     consecutive_count, capped_by_absolute_max for backoff-curve observability.

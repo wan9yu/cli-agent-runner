@@ -431,6 +431,30 @@ The same knob also caps the agent's own transcripts in
 number at the start of every round, so it stays bounded on a serve that never
 restarts.
 
+### `round_logs_prune_deferred` — a bulk prune was refused
+
+A prune that would delete more files than it keeps is a **bulk** prune, and
+agent-runner never performs one: it deletes nothing and emits
+`round_logs_prune_deferred` instead, with `directory`, `existing` (files
+present), `keep` (current retention), `would_delete` and a `hint`. The round —
+or the serve startup — proceeds normally; only the deletion is deferred.
+
+Expect it on a first start after a backlog accumulated, or right after
+lowering `round_log_retention`. It repeats on every prune attempt until you
+resolve it, either way:
+
+```bash
+agent-runner events --kind round_logs_prune_deferred   # directory + counts
+```
+
+- **Keep the backlog** — raise `[runtime] round_log_retention` to at least the
+  reported `existing`. Pruning resumes normally as the count grows past it.
+- **Drop it** — delete (or archive) files under the reported `directory`
+  yourself; the next prune sees a count it no longer calls bulk and resumes.
+
+Until then the family grows unbounded. Disk is usually the cheaper side of
+that trade: these transcripts are what you reconstruct a lost round from.
+
 Note for systemd deployments: journalctl will no longer show per-round agent
 output — supervisor lifecycle messages remain in journal, raw agent output
 lives in the round log files.

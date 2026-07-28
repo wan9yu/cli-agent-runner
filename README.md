@@ -57,7 +57,7 @@ Verb reference: [`docs/commands.md`](docs/commands.md).
 
 ## Defenses (built in)
 
-12 named defenses, structured as data — see `agent-runner peek --select defenses`.
+13 named defenses, structured as data — see `agent-runner peek --select defenses`.
 Each carries the historical incident it codifies and the invariant test that
 guards it. Highlights:
 

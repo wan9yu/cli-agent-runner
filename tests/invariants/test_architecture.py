@@ -34,6 +34,7 @@ ALLOWED_SERVE_FROM = [
             "emit_crash_loop",
             "emit_max_rounds_reached",
             "emit_rate_limit_stop",
+            "emit_round_logs_prune_deferred",
             "emit_stop_file_detected",
             "emit_round_substrate_before",
             "emit_round_substrate_after",

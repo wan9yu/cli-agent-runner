@@ -22,6 +22,7 @@ __all__ = [
     "emit_rate_limit_stop",
     "emit_round_grace_extended",
     "emit_round_grace_kill",
+    "emit_round_logs_prune_deferred",
     "emit_round_progress",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
@@ -343,6 +344,42 @@ def emit_round_grace_extended(
         grace_s=grace_s,
         live_children=live_children,
         ignored_children=ignored_children or [],
+    )
+
+
+def emit_round_logs_prune_deferred(
+    log_dir: Path,
+    *,
+    directory: str,
+    existing: int,
+    keep: int,
+    would_delete: int,
+) -> None:
+    """Emit when a round-log prune was deferred because it would be *bulk*
+    (it would delete more files than it keeps), so nothing was deleted.
+
+    ``directory`` is the directory holding the family — ``{log_dir}/rounds``
+    for agent transcripts, ``{log_dir}`` for the serve-level ``round-<N>.log``
+    files. Re-emitted on every prune attempt while the condition holds: the
+    deferral is permanent until an operator acts, and a one-shot event would
+    be missed by anyone who started watching later.
+
+    The hint is composed here rather than at the call sites so both families
+    name the same knob with the same wording.
+    """
+    from agent_runner.events import ROUND_LOGS_PRUNE_DEFERRED, emit
+
+    emit(
+        log_dir,
+        ROUND_LOGS_PRUNE_DEFERRED,
+        directory=directory,
+        existing=existing,
+        keep=keep,
+        would_delete=would_delete,
+        hint=(
+            f"nothing deleted; raise runtime.round_log_retention to >= {existing} "
+            f"to keep this backlog, or delete files in {directory} yourself"
+        ),
     )
 
 

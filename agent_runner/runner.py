@@ -428,8 +428,17 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir(exist_ok=True)
     # Prune BEFORE minting this round's log: only historical files exist now,
-    # so the active round's log can never be a deletion candidate.
-    prune_rounds_dir(rounds_dir, cfg.runtime.round_log_retention)
+    # so the active round's log can never be a deletion candidate. A bulk
+    # prune deletes nothing and is reported instead — never blocks the round.
+    pruned = prune_rounds_dir(rounds_dir, cfg.runtime.round_log_retention)
+    if pruned.deferred:
+        api.emit_round_logs_prune_deferred(
+            log_dir,
+            directory=str(rounds_dir),
+            existing=pruned.existing,
+            keep=cfg.runtime.round_log_retention,
+            would_delete=pruned.deferred,
+        )
     log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
 
     hook_ctx = hooks.HookContext(

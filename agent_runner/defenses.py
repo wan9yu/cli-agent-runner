@@ -103,6 +103,17 @@ def catalog(cfg: Config) -> list[Defense]:
             current_state="active",
         ),
         Defense(
+            name="bulk_round_log_prune_guard",
+            value="a prune deleting more files than it keeps deletes nothing",
+            codifies=(
+                "0.2.4 — rounds/ pruning shipped against backlogs it never built; "
+                "one deployment's first post-upgrade round would have deleted "
+                "12,193 of 12,293 transcripts silently"
+            ),
+            guarded_by=Path("tests/unit/test_round_log_helpers.py"),
+            current_state="active",
+        ),
+        Defense(
             name="flock_concurrency",
             value="agent-runner.lock",
             codifies="Architectural — prevent concurrent supervisors corrupting state",

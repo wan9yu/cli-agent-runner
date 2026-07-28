@@ -1036,3 +1036,43 @@ def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
     assert "round_end" in seen[-1], (
         "PostRoundHook ran before round_end was emitted — hooks.py:149's claim"
     )
+
+
+def test_given_bulk_rounds_backlog_when_round_runs_then_defers_and_emits_once(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+) -> None:
+    """A round meeting a bulk backlog spares every file, emits exactly one
+    round_logs_prune_deferred with an actionable payload, and still completes.
+    The guard defers a deletion — it must never block or fail the round.
+    """
+    import dataclasses
+
+    from tests._test_helpers import read_events_for_current_month
+
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+    cfg = dataclasses.replace(cfg, runtime=dataclasses.replace(cfg.runtime, round_log_retention=3))
+    rounds_dir = cfg.runtime.log_dir / "rounds"
+    rounds_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(1, 21):
+        (rounds_dir / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0
+    status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
+    assert status["round_num"] == 1
+    # 20 spared + this round's own freshly minted log
+    assert len(list(rounds_dir.glob("R*.log"))) == 21
+
+    deferrals = [
+        e
+        for e in read_events_for_current_month(cfg.runtime.log_dir)
+        if e["event"] == "round_logs_prune_deferred"
+    ]
+    assert len(deferrals) == 1
+    assert deferrals[0]["directory"] == str(rounds_dir)
+    assert deferrals[0]["existing"] == 20
+    assert deferrals[0]["keep"] == 3
+    assert deferrals[0]["would_delete"] == 17
+    assert "runtime.round_log_retention" in deferrals[0]["hint"]

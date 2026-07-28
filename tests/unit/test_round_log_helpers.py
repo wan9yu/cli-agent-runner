@@ -43,45 +43,141 @@ def test_given_target_when_atomic_relink_then_symlink_replaced(tmp_path: Path) -
     assert link.resolve() == target2.resolve()
 
 
-def test_given_many_round_files_when_prune_then_only_recent_kept(tmp_path: Path) -> None:
-    """prune_old_round_logs keeps most-recent N by mtime."""
+def _write_round_logs(dir_path: Path, count: int, *, first: int = 1) -> None:
+    """Create ``count`` serve-level round-<N>.log files with ascending mtimes."""
     import os
 
-    for i in range(1, 6):
-        path = tmp_path / f"round-{i}.log"
+    for i in range(first, first + count):
+        path = dir_path / f"round-{i}.log"
         path.write_text(f"r{i}")
         os.utime(path, (1000000.0 + i, 1000000.0 + i))
 
-    prune_old_round_logs(tmp_path, retention=2)
 
-    # rounds 4, 5 (most recent by mtime) survive; 1, 2, 3 pruned
+def _write_agent_round_logs(dir_path: Path, count: int, *, first: int = 1) -> None:
+    """Create ``count`` agent transcripts named R<N>-<timestamp>.log."""
+    for i in range(first, first + count):
+        (dir_path / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+
+
+def test_given_many_round_files_when_prune_then_only_recent_kept(tmp_path: Path) -> None:
+    """prune_old_round_logs keeps most-recent N by mtime."""
+    _write_round_logs(tmp_path, 6)
+
+    outcome = prune_old_round_logs(tmp_path, retention=3)
+
+    # rounds 4, 5, 6 (most recent by mtime) survive; 1, 2, 3 pruned
+    assert outcome.deleted == 3
+    assert outcome.deferred == 0
     assert not (tmp_path / "round-1.log").exists()
     assert not (tmp_path / "round-2.log").exists()
     assert not (tmp_path / "round-3.log").exists()
     assert (tmp_path / "round-4.log").exists()
     assert (tmp_path / "round-5.log").exists()
+    assert (tmp_path / "round-6.log").exists()
 
 
 def test_given_symlink_when_prune_then_symlink_excluded(tmp_path: Path) -> None:
     """The round-current.log symlink is not counted toward retention nor pruned."""
-    import os
-
-    for i in range(1, 4):
-        path = tmp_path / f"round-{i}.log"
-        path.write_text(f"r{i}")
-        os.utime(path, (1000000.0 + i, 1000000.0 + i))
+    _write_round_logs(tmp_path, 3)
     # Create symlink to round-3 (newest)
     atomic_relink(tmp_path / ROUND_CURRENT_LINK, tmp_path / "round-3.log")
 
-    prune_old_round_logs(tmp_path, retention=1)
+    outcome = prune_old_round_logs(tmp_path, retention=2)
 
-    # round-3 (most recent) kept
+    # Only round-1 goes: the symlink is excluded before the retention slice, so
+    # round-2 is inside the kept window rather than displaced by it.
+    assert outcome.existing == 3
+    assert outcome.deleted == 1
     assert (tmp_path / "round-3.log").exists()
+    assert (tmp_path / "round-2.log").exists()
     # symlink intact
     assert (tmp_path / ROUND_CURRENT_LINK).is_symlink()
-    # rounds 1, 2 pruned
     assert not (tmp_path / "round-1.log").exists()
-    assert not (tmp_path / "round-2.log").exists()
+
+
+def test_given_bulk_backlog_when_prune_old_round_logs_then_nothing_deleted(
+    tmp_path: Path,
+) -> None:
+    """The bulk guard covers the serve-level family too: one knob, one contract.
+
+    An operator who drastically lowers round_log_retention has the same
+    exposure here as in rounds/ — the deletion is deferred, not performed.
+    """
+    _write_round_logs(tmp_path, 60)
+
+    outcome = prune_old_round_logs(tmp_path, retention=10)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 50
+    assert outcome.existing == 60
+    assert len(list(tmp_path.glob("round-*.log"))) == 60
+
+
+def test_given_bulk_backlog_when_prune_rounds_dir_then_nothing_deleted(tmp_path: Path) -> None:
+    """A prune that would remove more than it keeps deletes NOTHING and reports.
+
+    The 0.2.4 regression: the first post-upgrade round on a deployment with a
+    12k-file backlog silently deleted the entire history.
+    """
+    _write_agent_round_logs(tmp_path, 300)
+
+    outcome = prune_rounds_dir(tmp_path, keep=100)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 200
+    assert outcome.existing == 300
+    assert len(list(tmp_path.glob("R*.log"))) == 300
+
+
+def test_given_steady_state_backlog_when_prune_rounds_dir_then_one_deleted(
+    tmp_path: Path,
+) -> None:
+    """Normal operation is untouched: one round over retention prunes one file."""
+    _write_agent_round_logs(tmp_path, 101)
+
+    outcome = prune_rounds_dir(tmp_path, keep=100)
+
+    assert outcome.deleted == 1
+    assert outcome.deferred == 0
+    assert outcome.existing == 101
+    assert not (tmp_path / "R1-20260101T000000.log").exists()
+
+
+def test_given_stale_equal_to_keep_when_prune_rounds_dir_then_deletes(tmp_path: Path) -> None:
+    """Boundary: stale == keep is not bulk — the prune runs."""
+    _write_agent_round_logs(tmp_path, 10)
+
+    outcome = prune_rounds_dir(tmp_path, keep=5)
+
+    assert outcome.deleted == 5
+    assert outcome.deferred == 0
+    assert len(list(tmp_path.glob("R*.log"))) == 5
+
+
+def test_given_stale_one_over_keep_when_prune_rounds_dir_then_defers(tmp_path: Path) -> None:
+    """Boundary: stale == keep + 1 is bulk — nothing is deleted."""
+    _write_agent_round_logs(tmp_path, 11)
+
+    outcome = prune_rounds_dir(tmp_path, keep=5)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 6
+    assert len(list(tmp_path.glob("R*.log"))) == 11
+
+
+def test_given_retention_raised_above_backlog_when_prune_rounds_dir_then_no_deferral(
+    tmp_path: Path,
+) -> None:
+    """The operator's escape hatch: raise retention past the backlog and the
+    guard stops tripping without any file being deleted."""
+    _write_agent_round_logs(tmp_path, 300)
+
+    outcome = prune_rounds_dir(tmp_path, keep=400)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 0
+    assert outcome.existing == 300
+    assert len(list(tmp_path.glob("R*.log"))) == 300
 
 
 def test_given_two_digit_rounds_when_prune_rounds_dir_then_sorted_numerically(
@@ -91,9 +187,9 @@ def test_given_two_digit_rounds_when_prune_rounds_dir_then_sorted_numerically(
     for i in (8, 9, 10, 11):
         (tmp_path / f"R{i}-20260101T000000.log").write_text(f"r{i}")
 
-    deleted = prune_rounds_dir(tmp_path, keep=2)
+    outcome = prune_rounds_dir(tmp_path, keep=2)
 
-    assert deleted == 2
+    assert outcome.deleted == 2
     assert not (tmp_path / "R8-20260101T000000.log").exists()
     assert not (tmp_path / "R9-20260101T000000.log").exists()
     assert (tmp_path / "R10-20260101T000000.log").exists()
@@ -101,15 +197,16 @@ def test_given_two_digit_rounds_when_prune_rounds_dir_then_sorted_numerically(
 
 
 def test_given_unrelated_files_when_prune_rounds_dir_then_left_alone(tmp_path: Path) -> None:
-    """Filenames that don't match R<n>-*.log are never pruned."""
-    for i in (1, 2, 3):
-        (tmp_path / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+    """Filenames that don't match R<n>-*.log are never pruned nor counted."""
+    _write_agent_round_logs(tmp_path, 3)
     (tmp_path / "notes.txt").write_text("keep me")
     (tmp_path / "Rx-20260101T000000.log").write_text("keep me")
 
-    deleted = prune_rounds_dir(tmp_path, keep=1)
+    outcome = prune_rounds_dir(tmp_path, keep=2)
 
-    assert deleted == 2
+    assert outcome.deleted == 1
+    assert outcome.existing == 3
+    assert not (tmp_path / "R1-20260101T000000.log").exists()
     assert (tmp_path / "R3-20260101T000000.log").exists()
     assert (tmp_path / "notes.txt").exists()
     assert (tmp_path / "Rx-20260101T000000.log").exists()
@@ -117,27 +214,31 @@ def test_given_unrelated_files_when_prune_rounds_dir_then_left_alone(tmp_path: P
 
 def test_given_missing_rounds_dir_when_prune_rounds_dir_then_no_op(tmp_path: Path) -> None:
     """A rounds/ dir that doesn't exist yet is a no-op, not a crash."""
-    assert prune_rounds_dir(tmp_path / "rounds", keep=5) == 0
+    outcome = prune_rounds_dir(tmp_path / "rounds", keep=5)
+
+    assert (outcome.deleted, outcome.deferred, outcome.existing) == (0, 0, 0)
 
 
 def test_given_fewer_files_than_keep_when_prune_rounds_dir_then_nothing_deleted(
     tmp_path: Path,
 ) -> None:
     """keep larger than the file count deletes nothing."""
-    for i in (1, 2):
-        (tmp_path / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+    _write_agent_round_logs(tmp_path, 2)
 
-    assert prune_rounds_dir(tmp_path, keep=10) == 0
+    outcome = prune_rounds_dir(tmp_path, keep=10)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 0
     assert (tmp_path / "R1-20260101T000000.log").exists()
     assert (tmp_path / "R2-20260101T000000.log").exists()
 
 
-def test_given_keep_two_when_prune_rounds_dir_then_newest_rounds_survive(tmp_path: Path) -> None:
+def test_given_keep_three_when_prune_rounds_dir_then_newest_rounds_survive(tmp_path: Path) -> None:
     """The newest rounds are never pruned — pins that the live round's log survives."""
-    for i in range(1, 6):
-        (tmp_path / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+    _write_agent_round_logs(tmp_path, 5)
 
-    prune_rounds_dir(tmp_path, keep=2)
+    prune_rounds_dir(tmp_path, keep=3)
 
+    assert (tmp_path / "R3-20260101T000000.log").exists()
     assert (tmp_path / "R4-20260101T000000.log").exists()
     assert (tmp_path / "R5-20260101T000000.log").exists()

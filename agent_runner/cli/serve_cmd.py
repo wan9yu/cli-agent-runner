@@ -15,6 +15,7 @@ import signal
 import subprocess  # noqa: TID251
 import sys
 import time
+from pathlib import Path
 
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
@@ -26,6 +27,7 @@ from agent_runner.api import (
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
+    emit_round_logs_prune_deferred,
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_stop_file_detected,
@@ -54,6 +56,24 @@ def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> i
     if effective is not None and effective < 1:
         raise ValueError(f"--max-rounds must be positive integer, got {effective}")
     return effective
+
+
+def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:
+    """Prune the serve-level ``round-<N>.log`` family; report a deferred prune.
+
+    A prune that would delete more files than it keeps is deferred wholesale
+    (nothing is deleted) and surfaced as ``round_logs_prune_deferred`` — the
+    same contract ``rounds/`` gets at round start, since one knob governs both.
+    """
+    outcome = prune_old_round_logs(log_dir, retention)
+    if outcome.deferred:
+        emit_round_logs_prune_deferred(
+            log_dir,
+            directory=str(log_dir),
+            existing=outcome.existing,
+            keep=retention,
+            would_delete=outcome.deferred,
+        )
 
 
 def _is_fresh_eyes_round(*, round_num: int, every_n: int | None) -> bool:
@@ -106,7 +126,7 @@ def cmd(args) -> int:
 
     # Pre-loop cleanup: remove stale sentinel, prune old round logs.
     (log_dir / ".agent-done").unlink(missing_ok=True)
-    prune_old_round_logs(log_dir, cfg.runtime.round_log_retention)
+    _prune_serve_round_logs(log_dir, cfg.runtime.round_log_retention)
 
     round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
 
