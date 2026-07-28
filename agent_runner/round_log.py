@@ -21,14 +21,27 @@ class PruneOutcome:
     """What one prune pass did to a round-log family.
 
     ``deleted`` and ``deferred`` are never both nonzero: a pass either prunes
-    normally or defers wholesale (see the bulk guard below). ``existing`` is
-    the total number of files the pass considered — carried so a caller
-    reporting a deferral does not have to re-derive it from the slice rule.
+    normally, defers wholesale (see the bulk guard below), or does not run at
+    all (pruning disabled). ``existing`` is the total number of files the pass
+    considered — carried so a caller reporting a deferral does not have to
+    re-derive it from the slice rule.
     """
 
     deleted: int
     deferred: int
     existing: int
+
+
+def _pruning_disabled(keep: int) -> bool:
+    """``keep == 0`` disables pruning entirely — the default.
+
+    Distinct from a deferral, and deliberately reported as neither deleted nor
+    deferred: 0 is the operator's expressed intent, not a backlog awaiting a
+    decision, so callers emit nothing. Unbounded growth is the accepted trade
+    and it is not undefended — ``disk_warning`` (90%) alerts and
+    ``disk_critical`` (95%) auto-stops the service.
+    """
+    return keep == 0
 
 
 def _is_bulk(stale: int, keep: int) -> bool:
@@ -64,12 +77,14 @@ def prune_old_round_logs(log_dir: Path, retention: int) -> PruneOutcome:
     Called once at serve startup (no mid-session pruning, avoid race with
     active writes).
 
-    Subject to the bulk guard (:func:`_is_bulk`): a startup that would delete
-    more than it keeps deletes nothing and reports the deferral instead. No
-    backlog was ever introduced here by a release — this family has been
-    pruned since it was introduced — but ``round_log_retention`` governs both
-    round-log families, so lowering it must mean the same thing in both.
+    ``retention == 0`` (the default) never prunes. Otherwise subject to the
+    bulk guard (:func:`_is_bulk`): a startup that would delete more than it
+    keeps deletes nothing and reports the deferral instead. ``round_log_retention``
+    governs both round-log families, so both opting in and lowering the value
+    mean the same thing in both.
     """
+    if _pruning_disabled(retention):
+        return PruneOutcome(deleted=0, deferred=0, existing=0)
     logs = sorted(
         log_dir.glob("round-*.log"),
         key=lambda p: p.stat().st_mtime,
@@ -93,12 +108,16 @@ def prune_rounds_dir(rounds_dir: Path, keep: int) -> PruneOutcome:
     match are left alone. Called at round start, before the current round's log
     is minted, so the active log is never a deletion candidate.
 
-    Subject to the bulk guard (:func:`_is_bulk`): a pass that would delete more
-    than it keeps deletes nothing. These transcripts are forensic material —
-    the record used to reconstruct a round lost to a dropped connection or to
-    find a flaky test's trigger — so a first encounter with a large backlog
-    must not consume them.
+    ``keep == 0`` (the default) never prunes: these transcripts are forensic
+    material — the record used to reconstruct a round lost to a dropped
+    connection, or to verify that a fix actually worked — so retaining them is
+    the default and discarding them is opt-in. When pruning IS enabled, the
+    bulk guard (:func:`_is_bulk`) still applies: a pass that would delete more
+    than it keeps deletes nothing, so opting in (or later lowering the value)
+    does not consume a backlog in one shot.
     """
+    if _pruning_disabled(keep):
+        return PruneOutcome(deleted=0, deferred=0, existing=0)
     if not rounds_dir.is_dir():
         return PruneOutcome(deleted=0, deferred=0, existing=0)
     numbered = []

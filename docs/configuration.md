@@ -39,7 +39,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `round_timeout_s` | `int` | 1800 |
 | `restart_delay_s` | `int` | 3 |
 | `disable_pre_round_hooks` | `bool` | False |
-| `round_log_retention` | `int` | 100 |
+| `round_log_retention` | `int` | 0 |
 | `narrative_file` | `Path \| None` | None |
 | `transient_error_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
 | `max_rounds` | `int \| None` | None |
@@ -121,22 +121,49 @@ defaults to `"stdin"`; existing configs are unchanged. See
 
 ### `runtime.round_log_retention`
 
-Type: int
-Default: `100`
+Type: int (>= 0)
+Default: `0`
 
-Caps both round-log families: the serve-level `{log_dir}/round-<N>.log` files
-(pruned by mtime once at serve startup) and the agent transcripts in
-`{log_dir}/rounds/R<N>-<timestamp>.log` (pruned by round number at the start of
-every round).
+**Pruning is opt-in. `0` — the default — never prunes anything.** Round logs
+accumulate for as long as the deployment runs, and agent-runner deletes none of
+them unless you ask it to.
 
-**Bulk-prune guard (0.2.6+).** A prune that would delete *more* files than it
-keeps is a bulk prune, and a bulk prune deletes nothing. It emits
+The knob governs both round-log families:
+
+- the serve-level `{log_dir}/round-<N>.log` files, pruned by mtime once at
+  serve startup;
+- the agent transcripts in `{log_dir}/rounds/R<N>-<timestamp>.log`, pruned by
+  round number at the start of every round.
+
+**We are not ignoring disk.** Unbounded growth is watched, and loudly: the
+`disk_warning` detector alerts at 90% used and `disk_critical` — in the default
+`[monitor] auto_stop_on` — stops the service at 95%. Deleting history has no
+equivalent defense; it is discovered on the day you need the file and it is not
+there. Given a risk that already auto-stops the service versus a risk with no
+detector at all, the default belongs on the side that keeps the files.
+
+### Enabling pruning
+
+Set a positive count — the number of files to keep per family:
+
+```toml
+[runtime]
+round_log_retention = 100   # pre-0.2.6 behavior
+```
+
+Sizing it: agent transcripts are one file per round, from a few KB to several
+MB each depending on how verbose the agent CLI is. Multiply by your rounds/day
+and check it against free space rather than picking a round number.
+
+### Bulk-prune guard (0.2.6+)
+
+If you do enable pruning, a prune that would delete *more* files than it keeps
+is a bulk prune, and a bulk prune deletes nothing. It emits
 `round_logs_prune_deferred` (fields: `directory`, `existing`, `keep`,
 `would_delete`, `hint`) and leaves every file in place. In steady state a round
-retires about one file, so the guard can only trip on a first encounter with a
-pre-existing backlog, or after retention is lowered far below the current file
-count — cases where erasing the history is far likelier to be an accident than
-an intent.
+retires about one file, so the guard only trips when you first opt in on an
+existing backlog, or when you lower the value far below the current file
+count — exactly the moments a mass deletion would otherwise happen silently.
 
 The deferral is permanent until you act, and you have two options:
 
@@ -146,8 +173,9 @@ The deferral is permanent until you act, and you have two options:
 - **Delete files yourself** from the reported `directory`. The next prune sees
   a count the guard no longer calls bulk and resumes.
 
-The supervisor never performs a bulk deletion on its own. Until you choose, the
-family keeps growing — unbounded, as it was before 0.2.4, but now loud.
+The supervisor never performs a bulk deletion on its own. Note that `0` is not
+a deferral: it emits nothing, because never-prune is a stated intent rather
+than a backlog awaiting a decision.
 
 ### `vcs.dirty_action`
 

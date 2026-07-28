@@ -113,6 +113,31 @@ def test_given_bulk_backlog_when_prune_old_round_logs_then_nothing_deleted(
     assert len(list(tmp_path.glob("round-*.log"))) == 60
 
 
+def test_given_retention_zero_when_prune_old_round_logs_then_never_prunes(
+    tmp_path: Path,
+) -> None:
+    """0 = never prune, the default. Not a deferral: no backlog to report."""
+    _write_round_logs(tmp_path, 50)
+
+    outcome = prune_old_round_logs(tmp_path, retention=0)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 0
+    assert len(list(tmp_path.glob("round-*.log"))) == 50
+
+
+def test_given_retention_zero_when_prune_rounds_dir_then_never_prunes(tmp_path: Path) -> None:
+    """0 = never prune. ``deferred`` stays 0 so no event is emitted: 0 is the
+    operator's expressed intent, not a backlog awaiting a decision."""
+    _write_agent_round_logs(tmp_path, 500)
+
+    outcome = prune_rounds_dir(tmp_path, keep=0)
+
+    assert outcome.deleted == 0
+    assert outcome.deferred == 0
+    assert len(list(tmp_path.glob("R*.log"))) == 500
+
+
 def test_given_bulk_backlog_when_prune_rounds_dir_then_nothing_deleted(tmp_path: Path) -> None:
     """A prune that would remove more than it keeps deletes NOTHING and reports.
 

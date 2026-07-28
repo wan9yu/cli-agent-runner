@@ -1076,3 +1076,30 @@ def test_given_bulk_rounds_backlog_when_round_runs_then_defers_and_emits_once(
     assert deferrals[0]["keep"] == 3
     assert deferrals[0]["would_delete"] == 17
     assert "runtime.round_log_retention" in deferrals[0]["hint"]
+
+
+def test_given_retention_zero_when_round_runs_then_no_prune_and_no_event(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+) -> None:
+    """The default (0) never prunes and stays silent — an event every round
+    would be noise, since 0 is the operator's expressed intent.
+    """
+    from tests._test_helpers import read_events_for_current_month
+
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+    assert cfg.runtime.round_log_retention == 0, "default is opt-out"
+    rounds_dir = cfg.runtime.log_dir / "rounds"
+    rounds_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(1, 21):
+        (rounds_dir / f"R{i}-20260101T000000.log").write_text(f"r{i}")
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0
+    assert len(list(rounds_dir.glob("R*.log"))) == 21
+    assert not [
+        e
+        for e in read_events_for_current_month(cfg.runtime.log_dir)
+        if e["event"] == "round_logs_prune_deferred"
+    ]

@@ -761,10 +761,10 @@ def test_given_disable_hooks_non_bool_when_load_config_then_raises(
         load_config(cfg_path)
 
 
-def test_given_default_runtime_when_loaded_then_round_log_retention_is_100(
+def test_given_default_runtime_when_loaded_then_round_log_retention_is_zero(
     tmp_path: Path,
 ) -> None:
-    """RuntimeConfig.round_log_retention defaults to 100 when unset in TOML."""
+    """Pruning is opt-in: round_log_retention defaults to 0 (never prune)."""
     from agent_runner.config import load_config
 
     (tmp_path / "prompt.md").write_text("p")
@@ -780,8 +780,57 @@ def test_given_default_runtime_when_loaded_then_round_log_retention_is_100(
     )
 
     cfg = load_config(tmp_path / "agent-runner.toml")
-    assert cfg.runtime.round_log_retention == 100
+    assert cfg.runtime.round_log_retention == 0
     assert cfg.runtime.narrative_file is None
+
+
+def test_given_explicit_zero_round_log_retention_when_loaded_then_accepted(
+    tmp_path: Path,
+) -> None:
+    """0 is a legal value with a meaning (never prune), not a rejected input.
+
+    The question this answers: "is there a value that disables pruning?"
+    """
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "round_log_retention = 0\n"
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.runtime.round_log_retention == 0
+
+
+def test_given_negative_round_log_retention_when_loaded_then_rejected(
+    tmp_path: Path,
+) -> None:
+    """Negative is still meaningless — rejected at load, not silently coerced."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    (tmp_path / "agent-runner.toml").write_text(
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        "round_log_retention = -1\n"
+        "[prompt]\n"
+        f'file = "{tmp_path}/prompt.md"\n'
+    )
+
+    with pytest.raises(ValueError, match="round_log_retention: must be >= 0"):
+        load_config(tmp_path / "agent-runner.toml")
 
 
 def test_given_explicit_round_log_retention_when_loaded_then_used(

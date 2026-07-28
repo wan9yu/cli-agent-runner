@@ -39,7 +39,7 @@ class RuntimeConfig:
     round_timeout_s: int = 1800
     restart_delay_s: int = 3
     disable_pre_round_hooks: bool = False
-    round_log_retention: int = 100
+    round_log_retention: int = 0  # 0 = never prune (pruning is opt-in)
     narrative_file: Path | None = None
     transient_error_action: Literal["back_off", "skip", "stop"] = "back_off"
     max_rounds: int | None = None  # None = unbounded
@@ -439,8 +439,8 @@ def load_config(toml_path: Path) -> Config:
             runtime_d.get("disable_pre_round_hooks", False),
             field="runtime.disable_pre_round_hooks",
         ),
-        round_log_retention=_require_positive_int(
-            runtime_d.get("round_log_retention", 100), field="runtime.round_log_retention"
+        round_log_retention=_require_non_negative_int(
+            runtime_d.get("round_log_retention", 0), field="runtime.round_log_retention"
         ),
         narrative_file=_expand_and_resolve(str(runtime_d["narrative_file"]), project_name, work_dir)
         if "narrative_file" in runtime_d

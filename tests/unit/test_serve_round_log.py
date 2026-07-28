@@ -136,6 +136,33 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
     assert (log_dir / "round-6.log").exists()
 
 
+def test_given_retention_zero_when_serve_starts_then_no_prune_and_no_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The default (0) leaves the serve-level family alone and stays silent."""
+    import subprocess
+
+    from agent_runner.cli import serve_cmd
+    from tests._test_helpers import read_events_for_current_month
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    _write_old_round_logs(log_dir, 50)
+    cfg_path = _toml_with_retention(tmp_path, log_dir, retention=0)
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+
+    serve_cmd.cmd(FakeArgs(cfg_path))
+
+    for i in range(1, 51):
+        assert (log_dir / f"round-{i}.log").exists(), f"round-{i}.log was deleted"
+    assert not [
+        e
+        for e in read_events_for_current_month(log_dir)
+        if e["event"] == "round_logs_prune_deferred"
+    ]
+
+
 def test_given_bulk_backlog_when_serve_starts_then_prune_deferred_and_emitted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
