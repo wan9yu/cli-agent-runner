@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-07-28
+
+### Fixed
+- Round-log pruning no longer deletes a backlog it did not create. A prune that would remove more files than it keeps is now deferred wholesale — nothing is deleted — so the first round after upgrading from ≤0.2.3 no longer silently wipes `{log_dir}/rounds/`, which 0.2.4 and 0.2.5 did (one deployment: 12,193 of 12,293 transcripts). The same guard covers the serve-level `round-<N>.log` family, so lowering `runtime.round_log_retention` can no longer wipe history there either.
+
+### Added
+- `round_logs_prune_deferred` event — emitted on every prune attempt that the bulk guard defers, carrying `directory`, `existing`, `keep`, `would_delete` and a hint naming `runtime.round_log_retention`. Resolve by raising retention above the backlog or deleting the files yourself; the guard never blocks a round.
+
+See `docs/migrations/0.2.6.md`.
+
 ## [0.2.5] - 2026-07-27
 
 ### Added
@@ -950,7 +960,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.2...v0.2.3
