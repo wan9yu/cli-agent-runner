@@ -201,9 +201,13 @@ runs a round or invokes hooks/detectors, and plugins that fail to import surface
 as a `UserWarning` with exit 0. Before restarting a 24/7 service onto a breaking
 version, self-check with the service stopped:
 
-    python3 -c "from agent_runner.config import load_config; load_config('<path>/agent-runner.toml')"
+    agent-runner peek --json --config <path> >/dev/null && echo "config loads"
     python3 -c "import my_plugin"            # each plugin you ship
     agent-runner serve --once --config <path>   # one real round (spawns the agent)
+
+`peek` runs the full `load_config` path, so a config the new version rejects
+fails here instead of on your first live round. (Calling `load_config` directly
+takes a `Path`, not a `str` — `load_config(Path("..."))`.)
 
 ### Manual rollback
 
