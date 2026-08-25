@@ -53,3 +53,8 @@ def test_schedule_bad_timezone_rejected(tmp_path):
 def test_schedule_malformed_window_rejected(tmp_path):
     with pytest.raises(ConfigError, match="pause_windows"):
         load_config(_write(tmp_path, '[schedule]\npause_windows = ["9-12"]\n'))
+
+
+def test_schedule_weekday_windows_parse(tmp_path):
+    cfg = load_config(_write(tmp_path, '[schedule]\npause_windows = ["Mon-Fri 09:00-12:00"]\n'))
+    assert cfg.schedule.pause_windows[0].days == frozenset({0, 1, 2, 3, 4})

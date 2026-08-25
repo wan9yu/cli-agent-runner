@@ -248,6 +248,7 @@ active_window
 start_min
 end_min
 label
+days
 
 # agent_runner.startup_check.CheckResult
 name
