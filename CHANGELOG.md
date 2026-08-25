@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-08-22
+
+### Added
+- `[schedule]` config gates the serve loop between rounds: `pause_windows` / `run_windows` decide whether the next round launches now or the supervisor idle-sleeps until a window opens, then auto-resumes. Windows are `[WEEKDAYS ]HH:MM-HH:MM` (24h, end-exclusive, midnight-wrap; optional `Mon-Fri` / `Sat,Sun` weekday prefix, bare = every day). Timezone-aware (`timezone`, IANA; omit → host local). Evaluation is `run AND NOT pause`. Absent section → unchanged 7×24 behavior. An in-flight round is never interrupted; `agent-runner round` is never gated.
+- `schedule_paused` / `schedule_resumed` events; `peek` surfaces the current pause state (`schedule` field).
+- `serve --ignore-schedule` runs rounds regardless of the windows (catch-up / testing).
+
+### Fixed
+- Monitor no longer raises `supervisor_stale` during an intentional schedule pause (suppressed until `resume_at` plus one staleness window).
+
+See `docs/migrations/0.2.7.md`.
+
 ## [0.2.6] - 2026-07-28
 
 ### Changed

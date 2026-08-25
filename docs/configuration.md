@@ -379,6 +379,78 @@ auth_fail_hint = "Check OPENAI_API_KEY env var or rotate at platform.openai.com"
 ```
 <!-- skip-test -->
 
+## `[schedule]` time-window gating (0.2.7+)
+
+`[schedule]` gates the serve loop against a wall clock: between rounds, the
+supervisor decides whether to launch the next round now or idle-sleep until a
+configured window opens. **The section is opt-in** — omit it (or leave both
+window lists empty) and serve runs 7×24 exactly as before. This section is the
+authoritative description of `pause_windows` / `run_windows`; the generated
+schema table above lists the raw field types (windows are stored parsed, hence
+the internal `tuple[schedule.Window, ...]` type — configure them as the string
+list documented here).
+
+```toml
+[schedule]
+timezone = "Asia/Shanghai"
+pause_windows = ["Mon-Fri 09:00-12:00", "Mon-Fri 14:00-18:00"]
+```
+
+### Fields
+
+| Field | Meaning |
+|---|---|
+| `timezone` | IANA zone name (e.g. `"Asia/Shanghai"`) the windows are evaluated in. Omit → the supervisor host's local time. An unknown zone is rejected at config load. |
+| `pause_windows` | List of windows during which serve must **not** start a round. |
+| `run_windows` | List of windows during which serve **may** start a round. Empty (the default) means "every time is runnable". |
+
+Gating happens **only between rounds**. An in-flight round is never interrupted
+by a window boundary — a round that starts at 08:59 runs to completion even
+though a pause window opens at 09:00. `agent-runner round` (a manual, one-shot
+round) is **never** gated; scheduling governs the `serve` supervisor loop only.
+
+### Window syntax: `[WEEKDAYS ]HH:MM-HH:MM`
+
+- 24-hour `HH:MM`. The end bound is **exclusive**: `09:00-12:00` covers 09:00
+  through 11:59 and reopens at 12:00.
+- `24:00` is accepted **only** as an end bound and means end-of-day, so
+  `00:00-24:00` is the whole day.
+- A window whose end is at or before its start **wraps past midnight**:
+  `22:00-02:00` covers 22:00–23:59 and 00:00–01:59 the next morning. Start must
+  not equal end (zero-length is rejected).
+
+### Weekday prefix (optional)
+
+A window may carry an optional weekday prefix, scoping it to particular days:
+
+- Tokens `Mon Tue Wed Thu Fri Sat Sun`, case-insensitive.
+- Range: `Mon-Fri` (ascending only — `Fri-Mon` is rejected).
+- List: `Sat,Sun`.
+- Combination: `Mon-Fri,Sun`.
+- **No prefix means every day** (`09:00-18:00` applies Mon through Sun).
+
+For a wrapping window, the early-morning tail is attributed to the window's
+**start** day: `Fri 22:00-02:00` covers Friday evening and the small hours of
+Saturday, but not Saturday evening.
+
+### Evaluation rule
+
+A given instant is runnable when it is **inside a run window AND NOT inside any
+pause window**:
+
+- With only `pause_windows` set (the common case), serve runs at all times
+  except inside a pause window.
+- With `run_windows` set, serve runs only inside a run window, minus any pause
+  window that overlaps it. `run_windows` is fully supported for this
+  forward-compatible use; the pause-based form above is the documented recipe
+  for this release.
+
+The `[schedule]` block above is the current DeepSeek off-peak policy: rounds
+pause during the provider's Mon–Fri peak hours and run at all other times,
+including the full weekend. See `docs/runbook.md` ("Off-peak scheduling") for
+the operational recipe, the `schedule_paused` / `schedule_resumed` events,
+`serve --ignore-schedule`, and how `peek` surfaces the pause state.
+
 ## 中文摘要
 
 主要小节：`[agent]` 命令模板、`[runtime]` 工作目录与日志目录、`[prompt]` 提示词位置、

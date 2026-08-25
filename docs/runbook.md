@@ -147,6 +147,48 @@ Restart=on-failure
 RestartSec=5
 ```
 
+## Off-peak scheduling (0.2.7+)
+
+Restrict the supervisor to off-peak hours — for example, to avoid a provider's
+peak-pricing window — without stopping the service. `[schedule]` gates the serve
+loop **between rounds**: when a pause window is active the supervisor idle-sleeps
+instead of launching the next round, and it auto-resumes when the window closes.
+An in-flight round is **never** killed by a boundary, so no work is lost.
+
+```toml
+[schedule]
+timezone = "Asia/Shanghai"
+pause_windows = ["Mon-Fri 09:00-12:00", "Mon-Fri 14:00-18:00"]
+```
+
+That is the current DeepSeek off-peak policy: rounds pause through the provider's
+Mon–Fri peak hours and run at every other hour, including the full weekend.
+Window syntax (`[WEEKDAYS ]HH:MM-HH:MM`, end-exclusive, midnight-wrap, weekday
+prefixes) and the `run AND NOT pause` evaluation rule are documented in
+`docs/configuration.md` (`[schedule]`).
+
+**What you observe:**
+
+- Entering a pause emits `schedule_paused` (`active_window`, `resume_at`,
+  `timezone`); resuming emits `schedule_resumed` (`paused_for_s`).
+- `agent-runner peek` surfaces the current pause state — the `schedule` field in
+  `peek --json`, and the same in the generic pretty output — so you can see
+  `paused until <resume_at>` at a glance.
+- The monitor does **not** raise `supervisor_stale` during an intentional pause:
+  the silence is expected, and staleness suppression holds until `resume_at`
+  plus one staleness window (a supervisor that actually died mid-pause still
+  alarms once that bound passes).
+
+**Forced catch-up.** To run regardless of the windows — a one-off backlog drain,
+or testing — start serve with `--ignore-schedule`:
+
+```bash
+agent-runner serve --config /etc/agent-runner.toml --ignore-schedule
+```
+
+`agent-runner round` (a manual one-shot round) is never gated by `[schedule]`, so
+you can always drive a single round by hand irrespective of the schedule.
+
 ## Upgrading agent-runner
 
 `upgrade` detects the deployment topology and takes the safe path for it. Pick
