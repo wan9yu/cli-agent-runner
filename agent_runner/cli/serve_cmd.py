@@ -100,11 +100,17 @@ def _maybe_pause_for_schedule(
         resume_at=decision.resume_at.isoformat() if decision.resume_at else "",
         timezone=sched.timezone or "local",
     )
+    stop_file = cfg.runtime.stop_file
     window_opened = False
     while not stop["requested"]:
-        if not schedule.evaluate(
-            run_windows=run_w, pause_windows=pause_w, now_local=now_fn(sched.timezone)
-        ).paused:
+        if stop_file is not None and stop_file.exists():
+            # Operator stop_file dropped mid-pause: break without emitting
+            # schedule_resumed (the window did not open). The serve loop's
+            # top-of-loop stop_file check then emits stop_file_detected and exits.
+            break
+        # #3: should_run (not evaluate) avoids the 8-day next_resume_at scan on
+        # every poll; should_run is the negation of the pre-loop paused decision.
+        if schedule.should_run(now_fn(sched.timezone), run_windows=run_w, pause_windows=pause_w):
             window_opened = True
             break
         sleep_fn(chunk_s)

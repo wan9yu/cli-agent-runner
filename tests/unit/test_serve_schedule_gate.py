@@ -17,8 +17,11 @@ def _cfg(pause):
     )
 
 
-def _mk_cfg(tmp_path, schedule_cfg):
-    return types.SimpleNamespace(schedule=schedule_cfg)
+def _mk_cfg(tmp_path, schedule_cfg, stop_file=None):
+    return types.SimpleNamespace(
+        schedule=schedule_cfg,
+        runtime=types.SimpleNamespace(stop_file=stop_file),
+    )
 
 
 class _FakeClock:
@@ -81,6 +84,27 @@ def test_gate_interrupted_by_stop(tmp_path):
     )
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["schedule_paused"]
+
+
+def test_gate_breaks_on_stop_file_during_pause(tmp_path):
+    """A stop_file dropped during a pause is noticed on the first poll: the loop
+    breaks without sleeping and without emitting schedule_resumed (the window did
+    not open), leaving the outer serve loop to emit stop_file_detected."""
+    stop_path = tmp_path / "STOP"
+    stop_path.write_text("halt")
+    cfg = _mk_cfg(tmp_path, _cfg(["09:00-12:00"]), stop_file=stop_path)
+    stop = {"requested": False}
+    slept = []
+    paused = serve_cmd._maybe_pause_for_schedule(
+        cfg,
+        tmp_path,
+        stop,
+        now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        sleep_fn=lambda s: slept.append(s),
+    )
+    assert paused is True
+    assert [e["event"] for e in _events(tmp_path)] == ["schedule_paused"]
+    assert slept == []  # stop_file seen on the first iteration, no waiting
 
 
 def _toml_with_always_pause(tmp_path):

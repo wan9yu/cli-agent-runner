@@ -481,11 +481,23 @@ def detect_supervisor_stale(
         # Suppress only while the pause is plausibly still live: until its
         # announced resume_at plus one staleness window. A supervisor that died
         # mid-pause therefore still alarms once that bound passes.
+        paused = sched[-1]
+        bound = None
         try:
-            resume_dt = datetime.fromisoformat(sched[-1].get("resume_at", ""))
+            resume_dt = datetime.fromisoformat(paused.get("resume_at", ""))
+            if resume_dt.tzinfo is not None:
+                bound = resume_dt
         except (ValueError, TypeError):
-            return None  # no parseable resume bound (rare config) → suppress
-        if resume_dt.tzinfo is None or now <= resume_dt + timedelta(seconds=stale_threshold_s):
+            bound = None
+        if bound is None:
+            # No usable resume_at (empty/unparseable/naive) → bound by the pause's
+            # own timestamp + the 8-day resume horizon, so an always-paused config
+            # is not a permanent silent-death blind spot.
+            try:
+                bound = parse_iso_ms(paused["ts"]) + timedelta(days=8)
+            except (KeyError, ValueError, TypeError):
+                return None  # truly no anchor → suppress conservatively
+        if now <= bound + timedelta(seconds=stale_threshold_s):
             return None
     return _alert(
         "supervisor_stale",
