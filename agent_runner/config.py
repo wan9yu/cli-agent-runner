@@ -379,8 +379,11 @@ def _parse_schedule(schedule_d: dict) -> ScheduleConfig:
             raise ConfigError(f"schedule.timezone: unknown IANA zone {tz!r}")
 
     def _parse_list(key: str) -> tuple[schedule.Window, ...]:
+        raw = schedule_d.get(key, [])
+        if not isinstance(raw, list):
+            raise ConfigError(f"schedule.{key} must be a list of window strings")
         out = []
-        for w in schedule_d.get(key, []):
+        for w in raw:
             try:
                 out.append(schedule.parse_window(str(w)))
             except ValueError as e:

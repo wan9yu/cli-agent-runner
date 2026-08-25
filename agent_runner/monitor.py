@@ -22,7 +22,7 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -48,6 +48,8 @@ from agent_runner.events import (
     ORPHAN_STASHED,
     ROUND_END,
     ROUND_START,
+    SCHEDULE_PAUSED,
+    SCHEDULE_RESUMED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     now_iso_ms,
@@ -447,6 +449,16 @@ def detect_anomaly_repetitive_active(
     )
 
 
+def _latest_schedule_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Newest schedule_paused/schedule_resumed event by stream order, or None.
+
+    Reverse-walk with early break — events grows unboundedly over a project's life."""
+    for e in reversed(events):
+        if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED):
+            return e
+    return None
+
+
 def detect_supervisor_stale(
     events: list[dict[str, Any]],
     *,
@@ -472,19 +484,15 @@ def detect_supervisor_stale(
     if age_s <= stale_threshold_s:
         return None
 
-    from datetime import timedelta
-
-    from agent_runner.events import SCHEDULE_PAUSED, SCHEDULE_RESUMED
-
-    sched = [e for e in events if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED)]
-    if sched and sched[-1].get("event") == SCHEDULE_PAUSED:
+    newest = _latest_schedule_event(events)
+    if newest is not None and newest.get("event") == SCHEDULE_PAUSED:
         # Suppress only while the pause is plausibly still live: until its
         # announced resume_at plus one staleness window. A supervisor that died
         # mid-pause therefore still alarms once that bound passes.
-        paused = sched[-1]
+        paused = newest
         bound = None
         try:
-            resume_dt = datetime.fromisoformat(paused.get("resume_at", ""))
+            resume_dt = parse_iso_ms(paused.get("resume_at") or "")
             if resume_dt.tzinfo is not None:
                 bound = resume_dt
         except (ValueError, TypeError):
@@ -513,13 +521,8 @@ def latest_schedule_state(events: list[dict[str, Any]]) -> dict[str, Any] | None
 
     Returns None when there is no pause in effect (no schedule events, or the
     newest one is a resume). When paused, returns the paused indicator dict."""
-    from agent_runner.events import SCHEDULE_PAUSED, SCHEDULE_RESUMED
-
-    sched = [e for e in events if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED)]
-    if not sched:
-        return None
-    newest = sched[-1]  # stream order = chronological (see detect_supervisor_stale note on ties)
-    if newest.get("event") != SCHEDULE_PAUSED:
+    newest = _latest_schedule_event(events)
+    if newest is None or newest.get("event") != SCHEDULE_PAUSED:
         return None
     return {
         "paused": True,

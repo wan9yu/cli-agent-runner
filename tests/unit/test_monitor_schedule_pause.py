@@ -90,3 +90,14 @@ def test_stale_fires_with_no_schedule_events():
     old = now - timedelta(hours=2)
     events = [{"ts": _ts(old), "event": "round_end", "round_num": 5}]
     assert monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600) is not None
+
+
+def test_null_resume_at_does_not_crash_and_falls_back_to_ts_bound():
+    # A foreign/corrupted event file may carry "resume_at": null. It must not raise;
+    # suppression falls back to the paused ts + 8d bound (recent pause → suppressed).
+    now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+    old = now - timedelta(hours=2)
+    events = [
+        {"ts": _ts(old), "event": "schedule_paused", "resume_at": None, "active_window": "x"},
+    ]
+    assert monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600) is None

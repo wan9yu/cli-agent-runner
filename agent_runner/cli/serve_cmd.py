@@ -85,10 +85,10 @@ def _maybe_pause_for_schedule(
     sched = cfg.schedule
     if not sched.enabled:
         return False
-    run_w = list(sched.run_windows)
-    pause_w = list(sched.pause_windows)
     decision = schedule.evaluate(
-        run_windows=run_w, pause_windows=pause_w, now_local=now_fn(sched.timezone)
+        run_windows=sched.run_windows,
+        pause_windows=sched.pause_windows,
+        now_local=now_fn(sched.timezone),
     )
     if not decision.paused:
         return False
@@ -110,7 +110,11 @@ def _maybe_pause_for_schedule(
             break
         # #3: should_run (not evaluate) avoids the 8-day next_resume_at scan on
         # every poll; should_run is the negation of the pre-loop paused decision.
-        if schedule.should_run(now_fn(sched.timezone), run_windows=run_w, pause_windows=pause_w):
+        if schedule.should_run(
+            now_fn(sched.timezone),
+            run_windows=sched.run_windows,
+            pause_windows=sched.pause_windows,
+        ):
             window_opened = True
             break
         sleep_fn(chunk_s)
@@ -243,9 +247,7 @@ def cmd(args) -> int:
                     max_rounds=effective_max_rounds,
                 )
                 break
-            if not getattr(args, "ignore_schedule", False) and _maybe_pause_for_schedule(
-                cfg, log_dir, stop
-            ):
+            if not args.ignore_schedule and _maybe_pause_for_schedule(cfg, log_dir, stop):
                 continue
             round_num = next_round_num(log_dir)
             git_head_before = compute_git_head(work_dir)

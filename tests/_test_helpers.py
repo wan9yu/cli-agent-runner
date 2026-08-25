@@ -39,6 +39,7 @@ class FakeArgs:
         port: int = 8765,
         mode: str = "anomaly",
         host: str | None = None,
+        ignore_schedule: bool = False,
     ):
         self.config = config
         self.once = once
@@ -46,6 +47,7 @@ class FakeArgs:
         self.port = port
         self.mode = mode
         self.host = host
+        self.ignore_schedule = ignore_schedule
 
 
 def make_toml(tmp_path: Path) -> Path:

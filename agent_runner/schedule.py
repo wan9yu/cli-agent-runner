@@ -5,6 +5,7 @@ configured window opens. All functions are clock-injectable for testing."""
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -44,16 +45,17 @@ class Window:
     days: frozenset[int] = frozenset()  # empty = every day
 
     def contains(self, weekday: int, minute: int) -> bool:
-        if self.start_min < self.end_min:
-            in_time = self.start_min <= minute < self.end_min
-        else:  # wraps past midnight
+        wraps = self.start_min >= self.end_min
+        if wraps:  # spans past midnight
             in_time = minute >= self.start_min or minute < self.end_min
+        else:
+            in_time = self.start_min <= minute < self.end_min
         if not in_time:
             return False
         if not self.days:
             return True
         start_day = weekday
-        if self.start_min >= self.end_min and minute < self.end_min:
+        if wraps and minute < self.end_min:
             start_day = (weekday - 1) % 7  # wrapped tail belongs to the start day
         return start_day in self.days
 
@@ -97,8 +99,8 @@ def _minute_of_day(now_local: datetime) -> int:
 def should_run(
     now_local: datetime,
     *,
-    run_windows: list[Window],
-    pause_windows: list[Window],
+    run_windows: Sequence[Window],
+    pause_windows: Sequence[Window],
 ) -> bool:
     minute = _minute_of_day(now_local)
     weekday = now_local.weekday()
@@ -110,8 +112,8 @@ def should_run(
 def next_resume_at(
     now_local: datetime,
     *,
-    run_windows: list[Window],
-    pause_windows: list[Window],
+    run_windows: Sequence[Window],
+    pause_windows: Sequence[Window],
 ) -> datetime | None:
     """First minute-boundary within the next 8 days where should_run flips True.
     Called only while currently paused; returns None if no window opens in 8 days."""
@@ -126,8 +128,8 @@ def next_resume_at(
 def _active_window_label(
     now_local: datetime,
     *,
-    run_windows: list[Window],
-    pause_windows: list[Window],
+    run_windows: Sequence[Window],
+    pause_windows: Sequence[Window],
 ) -> str:
     minute = _minute_of_day(now_local)
     weekday = now_local.weekday()
@@ -146,8 +148,8 @@ class PauseDecision:
 
 def evaluate(
     *,
-    run_windows: list[Window],
-    pause_windows: list[Window],
+    run_windows: Sequence[Window],
+    pause_windows: Sequence[Window],
     now_local: datetime,
 ) -> PauseDecision:
     if should_run(now_local, run_windows=run_windows, pause_windows=pause_windows):
