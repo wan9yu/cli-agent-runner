@@ -15,7 +15,7 @@ full disks, runaway memory.
 ┌──────────────────────────────────────────┐
 │ Layer 3: The Witness (monitor)           │  11 detectors + auto-stop
 ├──────────────────────────────────────────┤
-│ Layer 2: The Loop (serve, ~120 LOC)      │  signal-trapping restart loop
+│ Layer 2: The Loop (serve)                │  signal-trapping restart loop
 ├──────────────────────────────────────────┤
 │ Layer 1: The Round (round)               │  one agent invocation
 └──────────────────────────────────────────┘
@@ -69,6 +69,10 @@ guards it. Highlights:
 - **startup_smoke_check** — refuse to run with a clearly-truncated prompt
 
 Full list and rationale: [`docs/architecture.md`](docs/architecture.md).
+
+Optionally pause the loop during off-hours: `[schedule]` run/pause windows gate
+`serve` (override with `serve --ignore-schedule`) — see the `[schedule]` section
+of [`docs/configuration.md`](docs/configuration.md).
 
 ## Monitor: 11 detectors
 

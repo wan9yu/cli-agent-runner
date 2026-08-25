@@ -2,7 +2,7 @@
 
 All commands accept `--config PATH` (default `./agent-runner.toml`) and `--json`
 where supported. Drill-down flags (`--round` / `--log` / `--events` / `--select`)
-are shared between `peek`, `watch`, and `monitor`.
+are shared between `peek` and `watch`.
 
 ## At a glance
 
