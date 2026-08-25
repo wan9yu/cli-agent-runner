@@ -473,6 +473,7 @@ def peek(
         recent_events=recent,
         recent_hook_failures=recent_hook_failures,
         recent_blips=recent_blips,
+        schedule=monitor.latest_schedule_state(parsed_events),
     )
     return state if select is None else select_path(state, select)
 

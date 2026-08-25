@@ -98,6 +98,7 @@ class ProjectState:
     recent_events: list[dict[str, Any]] = field(default_factory=list)
     recent_hook_failures: list[dict[str, Any]] = field(default_factory=list)
     recent_blips: list[dict[str, Any]] = field(default_factory=list)
+    schedule: dict | None = None
 
 
 @dataclass(frozen=True)

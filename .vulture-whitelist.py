@@ -50,6 +50,7 @@ service
 recent_events
 recent_hook_failures
 recent_blips
+schedule
 
 # agent_runner.api_types.RateLimitState
 throttled_until_epoch

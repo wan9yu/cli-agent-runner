@@ -471,6 +471,22 @@ def detect_supervisor_stale(
     age_s = (now - parse_iso_ms(last_ts_str)).total_seconds()
     if age_s <= stale_threshold_s:
         return None
+
+    from datetime import timedelta
+
+    from agent_runner.events import SCHEDULE_PAUSED, SCHEDULE_RESUMED
+
+    sched = [e for e in events if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED)]
+    if sched and sched[-1].get("event") == SCHEDULE_PAUSED:
+        # Suppress only while the pause is plausibly still live: until its
+        # announced resume_at plus one staleness window. A supervisor that died
+        # mid-pause therefore still alarms once that bound passes.
+        try:
+            resume_dt = datetime.fromisoformat(sched[-1].get("resume_at", ""))
+        except (ValueError, TypeError):
+            return None  # no parseable resume bound (rare config) → suppress
+        if resume_dt.tzinfo is None or now <= resume_dt + timedelta(seconds=stale_threshold_s):
+            return None
     return _alert(
         "supervisor_stale",
         "warning",
@@ -478,6 +494,26 @@ def detect_supervisor_stale(
         f"supervisor may be stuck or dead. Last event: {last_ts_str}.",
         {"age_s": int(age_s), "threshold_s": stale_threshold_s, "last_ts": last_ts_str},
     )
+
+
+def latest_schedule_state(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Current schedule-pause state derived from the event stream.
+
+    Returns None when there is no pause in effect (no schedule events, or the
+    newest one is a resume). When paused, returns the paused indicator dict."""
+    from agent_runner.events import SCHEDULE_PAUSED, SCHEDULE_RESUMED
+
+    sched = [e for e in events if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED)]
+    if not sched:
+        return None
+    newest = sched[-1]  # stream order = chronological (see detect_supervisor_stale note on ties)
+    if newest.get("event") != SCHEDULE_PAUSED:
+        return None
+    return {
+        "paused": True,
+        "resume_at": newest.get("resume_at", ""),
+        "active_window": newest.get("active_window", ""),
+    }
 
 
 # ---------------------------------------------------------------------------
