@@ -144,8 +144,7 @@ def test_given_gemini_preset_when_parsed_then_uses_stream_json_output_format() -
     assert "-o" in cmd, f"gemini preset must include -o flag, got: {cmd}"
     o_idx = cmd.index("-o")
     assert cmd[o_idx + 1] == "stream-json", (
-        f"gemini preset must use -o stream-json (plugin requires JSONL); "
-        f"got {cmd[o_idx + 1]!r}. See docs/migrations/0.1.26.md."
+        f"gemini preset must use -o stream-json (plugin requires JSONL); got {cmd[o_idx + 1]!r}."
     )
 
 

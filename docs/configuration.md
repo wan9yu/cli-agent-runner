@@ -315,7 +315,7 @@ Unconfigured phases (and configs without `[phases]`) keep using the global
 `runtime.round_timeout_s`.
 
 > **Migration from 0.1.15**: `runtime.round_timeout_per_phase` dict syntax is
-> removed. See `docs/migrations/0.1.16.md` for the full recipe.
+> removed.
 
 ## `[monitor]` (optional, defaults shown)
 

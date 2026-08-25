@@ -1774,7 +1774,7 @@ def test_given_invalid_pct_when_loaded_then_raises(
     ("literal", "expected"),
     [
         ("95.0", 95.0),
-        ("90", 90.0),  # TOML parses a bare int; docs/migrations/0.1.32.md recommends these
+        ("90", 90.0),  # TOML parses a bare int; both int and float literals accepted
         ("0", 0.0),
         ("100", 100.0),
     ],

@@ -218,9 +218,7 @@ field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
 `api_timeout`). The same back-off mechanism covers all 4 classifications.
 The legacy `rate_limit_rejected` aliases were removed in 0.1.29 — subscribe
 to `transient_error_detected` (filter by `classification == "rate_limit_account"`
-if you only want 5h-quota events). See `docs/migrations/0.1.27.md` for the
-consumer dispatch recipe and `docs/migrations/0.1.29.md` for alias-removal
-migration recipes.
+if you only want 5h-quota events).
 
 ## Writing post_round_hook plugins
 
@@ -250,7 +248,3 @@ In production, the supervisor always populates it.
 
 - `docs/runbook.md` § Rate limits — 5h OAuth account quota + transient error handling
 - `docs/runbook.md` § Bounded runs — max_rounds + stop_file workflow
-- `docs/migrations/0.1.22.md` — substrate fingerprint + fresh-eyes (0.1.22)
-- `docs/migrations/0.1.23.md` — unified transient-error classifier (0.1.23)
-- `docs/migrations/0.1.24.md` — usage events + gemini plugin (0.1.24)
-- `docs/migrations/0.1.25.md` — plugin path hotfix + HookContext.agent_log_path (0.1.25)

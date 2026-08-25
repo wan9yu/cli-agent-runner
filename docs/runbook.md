@@ -888,10 +888,6 @@ throttled (for any classification). It clears automatically when
 `transient_error_recovered` is emitted. No configuration needed;
 auto-stop is NOT triggered.
 
-See `docs/migrations/0.1.23.md` (initial 4-bucket classifier) and
-`docs/migrations/0.1.27.md` (supervisor consumer guide with dispatch
-table + back-off recipe per bucket).
-
 ## 中文摘要
 
 故障手册按场景：OAuth/auth 401（自动停服 → 刷新对应 provider 凭据，例如

@@ -57,6 +57,4 @@ def test_legacy_claude_rate_limit_detector_alias_removed():
     Consumers using the old name in `[plugins] disable/enable` must migrate.
     """
     entries = _read_post_round_hook_entries()
-    assert "claude_rate_limit_detector" not in entries, (
-        "0.1.20-era alias should be gone; see docs/migrations/0.1.35.md"
-    )
+    assert "claude_rate_limit_detector" not in entries, "0.1.20-era alias should be gone"
