@@ -1,10 +1,13 @@
 import json
+import subprocess
 import types
+from argparse import Namespace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from agent_runner import config, schedule
-from agent_runner.cli import serve_cmd
+from agent_runner.cli import _build_parser, serve_cmd
+from tests._test_helpers import make_toml
 
 
 def _cfg(pause):
@@ -78,3 +81,39 @@ def test_gate_interrupted_by_stop(tmp_path):
     )
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["schedule_paused"]
+
+
+def _toml_with_always_pause(tmp_path):
+    """A config whose pause window covers every minute of every day, so the
+    schedule gate would pause on any clock — isolating the --ignore-schedule
+    bypass from the wall clock."""
+    cfg_path = make_toml(tmp_path)
+    with cfg_path.open("a", encoding="utf-8") as f:
+        f.write('[schedule]\npause_windows = ["00:00-24:00"]\n')
+    return cfg_path
+
+
+def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
+    """serve --ignore-schedule runs the round with no schedule_paused emitted,
+    even though the configured pause window is active for the entire day."""
+    cfg_path = _toml_with_always_pause(tmp_path)
+    log_dir = tmp_path / "logs"
+    ran = []
+    monkeypatch.setattr(
+        subprocess, "run", lambda *_a, **_k: ran.append(1) or type("R", (), {"returncode": 0})()
+    )
+
+    args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
+    rc = serve_cmd.cmd(args)
+
+    assert rc == 0
+    assert ran  # the round subprocess was invoked despite the always-on pause window
+    assert "schedule_paused" not in [e["event"] for e in _events(log_dir)]
+
+
+def test_ignore_schedule_defaults_to_false():
+    """Without the flag, args.ignore_schedule is False so the gate stays armed."""
+    args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml"])
+    assert args.ignore_schedule is False
+    args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml", "--ignore-schedule"])
+    assert args.ignore_schedule is True
