@@ -22,6 +22,7 @@ from agent_runner.config import (
     PluginsConfig,
     PromptConfig,
     RuntimeConfig,
+    ScheduleConfig,
     VcsConfig,
 )
 from agent_runner.defenses import catalog
@@ -45,6 +46,7 @@ _SECTIONS: list[tuple[str, type, list[tuple[str, type]]]] = [
     ("monitor", MonitorConfig, [("monitor.host_health", MonitorHostHealthConfig)]),
     ("phases", PhasesConfig, []),
     ("plugins", PluginsConfig, []),
+    ("schedule", ScheduleConfig, []),
 ]
 
 

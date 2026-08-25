@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from agent_runner import schedule
+
 _VALID_INJECTION_MODES: frozenset[str] = frozenset({"prepend", "file", "none"})
 _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commit"})
 _VALID_TRANSIENT_ERROR_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
@@ -169,6 +171,17 @@ class MonitorConfig:
 
 
 @dataclass(frozen=True)
+class ScheduleConfig:
+    timezone: str | None = None  # IANA name; None = host local time
+    run_windows: tuple[schedule.Window, ...] = ()
+    pause_windows: tuple[schedule.Window, ...] = ()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.run_windows or self.pause_windows)
+
+
+@dataclass(frozen=True)
 class Config:
     agent: AgentConfig
     runtime: RuntimeConfig
@@ -177,6 +190,7 @@ class Config:
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     phases: PhasesConfig = field(default_factory=PhasesConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
+    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
 
 def _require(d: dict, *path: str) -> object:
@@ -355,6 +369,29 @@ def _parse_fresh_eyes_every_n(runtime_d: dict) -> int | None:
     if raw is None:
         return None
     return _require_positive_int(raw, field="runtime.fresh_eyes_every_n")
+
+
+def _parse_schedule(schedule_d: dict) -> ScheduleConfig:
+    tz = schedule_d.get("timezone")
+    if tz is not None:
+        tz = str(tz)
+        if not schedule.valid_timezone(tz):
+            raise ConfigError(f"schedule.timezone: unknown IANA zone {tz!r}")
+
+    def _parse_list(key: str) -> tuple[schedule.Window, ...]:
+        out = []
+        for w in schedule_d.get(key, []):
+            try:
+                out.append(schedule.parse_window(str(w)))
+            except ValueError as e:
+                raise ConfigError(f"schedule.{key}: {e}") from e
+        return tuple(out)
+
+    return ScheduleConfig(
+        timezone=tz,
+        run_windows=_parse_list("run_windows"),
+        pause_windows=_parse_list("pause_windows"),
+    )
 
 
 def load_config(toml_path: Path) -> Config:
@@ -571,6 +608,8 @@ def load_config(toml_path: Path) -> Config:
     disable = list(plugins_raw.pop("disable", []))
     plugins = PluginsConfig(disable=disable, raw=plugins_raw)
 
+    schedule_cfg = _parse_schedule(raw.get("schedule", {}))
+
     cfg = Config(
         agent=agent,
         runtime=runtime,
@@ -579,6 +618,7 @@ def load_config(toml_path: Path) -> Config:
         monitor=monitor,
         phases=phases_cfg,
         plugins=plugins,
+        schedule=schedule_cfg,
     )
 
     # Honor [plugins] disable — must happen after registries are populated by

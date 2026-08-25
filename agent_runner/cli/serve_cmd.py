@@ -17,6 +17,7 @@ import sys
 import time
 from pathlib import Path
 
+from agent_runner import schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
 from agent_runner._throttle import reset_counters as _reset_counters
@@ -30,6 +31,8 @@ from agent_runner.api import (
     emit_round_logs_prune_deferred,
     emit_round_substrate_after,
     emit_round_substrate_before,
+    emit_schedule_paused,
+    emit_schedule_resumed,
     emit_stop_file_detected,
     post_round_decision,
 )
@@ -56,6 +59,58 @@ def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> i
     if effective is not None and effective < 1:
         raise ValueError(f"--max-rounds must be positive integer, got {effective}")
     return effective
+
+
+def _maybe_pause_for_schedule(
+    cfg,
+    log_dir,
+    stop,
+    *,
+    now_fn=schedule.now_in_zone,
+    sleep_fn=time.sleep,
+    chunk_s: int = 30,
+) -> bool:
+    """If the current time is outside the run schedule, pause until it opens.
+
+    Returns True if a pause was entered (caller should ``continue`` so the
+    top-of-loop guards re-run), False if runnable now. During a pause, sleeps
+    in <= chunk_s slices so SIGTERM / SIGINT (which set stop["requested"]) lands
+    within one slice.
+
+    We do NOT check the self-terminate sentinel here: no round runs during a
+    pause, so no new sentinel can appear, and any pre-existing one already broke
+    the loop at its top before this gate. schedule_resumed is emitted ONLY when
+    the window actually opens — an interrupted pause (stop) is a termination, not
+    a resume, and correctly leaves schedule_paused as the newest event."""
+    sched = cfg.schedule
+    if not sched.enabled:
+        return False
+    run_w = list(sched.run_windows)
+    pause_w = list(sched.pause_windows)
+    decision = schedule.evaluate(
+        run_windows=run_w, pause_windows=pause_w, now_local=now_fn(sched.timezone)
+    )
+    if not decision.paused:
+        return False
+
+    started = time.monotonic()
+    emit_schedule_paused(
+        log_dir,
+        active_window=decision.active_window or "",
+        resume_at=decision.resume_at.isoformat() if decision.resume_at else "",
+        timezone=sched.timezone or "local",
+    )
+    window_opened = False
+    while not stop["requested"]:
+        if not schedule.evaluate(
+            run_windows=run_w, pause_windows=pause_w, now_local=now_fn(sched.timezone)
+        ).paused:
+            window_opened = True
+            break
+        sleep_fn(chunk_s)
+    if window_opened:
+        emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
+    return True
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:
@@ -101,6 +156,11 @@ def add_parser(sub, parent) -> None:
     p = sub.add_parser("serve", parents=[parent], help="Long-running supervisor loop")
     p.add_argument("--once", action="store_true", help="Run a single round then exit (debug)")
     _add_max_rounds_arg(p)
+    p.add_argument(
+        "--ignore-schedule",
+        action="store_true",
+        help="Run rounds regardless of [schedule] pause/run windows (testing / catch-up)",
+    )
     p.set_defaults(func=cmd)
 
 
@@ -177,6 +237,10 @@ def cmd(args) -> int:
                     max_rounds=effective_max_rounds,
                 )
                 break
+            if not getattr(args, "ignore_schedule", False) and _maybe_pause_for_schedule(
+                cfg, log_dir, stop
+            ):
+                continue
             round_num = next_round_num(log_dir)
             git_head_before = compute_git_head(work_dir)
             paths_hash_before = compute_paths_hash(

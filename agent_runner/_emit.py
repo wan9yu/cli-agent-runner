@@ -26,6 +26,8 @@ __all__ = [
     "emit_round_progress",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
+    "emit_schedule_paused",
+    "emit_schedule_resumed",
     "emit_stop_file_detected",
     "emit_transient_error_backoff_capped",
     "emit_transient_error_detected",
@@ -83,6 +85,28 @@ def emit_stop_file_detected(
         content=content,
         rounds_completed=rounds_completed,
     )
+
+
+def emit_schedule_paused(
+    log_dir: Path, *, active_window: str, resume_at: str, timezone: str
+) -> None:
+    """Emit schedule_paused when the serve loop enters a configured pause window."""
+    from agent_runner.events import SCHEDULE_PAUSED, emit
+
+    emit(
+        log_dir,
+        SCHEDULE_PAUSED,
+        active_window=active_window,
+        resume_at=resume_at,
+        timezone=timezone,
+    )
+
+
+def emit_schedule_resumed(log_dir: Path, *, paused_for_s: int) -> None:
+    """Emit schedule_resumed when the serve loop exits a pause window."""
+    from agent_runner.events import SCHEDULE_RESUMED, emit
+
+    emit(log_dir, SCHEDULE_RESUMED, paused_for_s=paused_for_s)
 
 
 def emit_round_substrate_before(

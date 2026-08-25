@@ -24,6 +24,7 @@ ALLOWED_SERVE_IMPORTS = {
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
+    ("agent_runner", {"schedule"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     (
@@ -39,6 +40,8 @@ ALLOWED_SERVE_FROM = [
             "emit_round_substrate_before",
             "emit_round_substrate_after",
             "emit_fresh_eyes_round_triggered",
+            "emit_schedule_paused",
+            "emit_schedule_resumed",
             "post_round_decision",
         },
     ),

@@ -103,6 +103,14 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 |---|---|---|
 | `disable` | `list[str]` | [] |
 | `raw` | `dict[str, Any]` | {} |
+
+### `[schedule]`
+
+| Field | Type | Default |
+|---|---|---|
+| `timezone` | `str \| None` | None |
+| `run_windows` | `tuple[schedule.Window, ...]` | () |
+| `pause_windows` | `tuple[schedule.Window, ...]` | () |
 <!-- /gen:config-schema -->
 
 ### `agent.prompt_delivery`

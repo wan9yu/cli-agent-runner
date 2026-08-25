@@ -121,6 +121,7 @@ vcs
 monitor
 phases
 plugins
+schedule
 
 # agent_runner.config.MonitorConfig
 auth_fail_patterns
@@ -175,6 +176,11 @@ fresh_eyes_every_n
 dry_run
 max_grace_after_result_s
 grace_kill_ignore_patterns
+
+# agent_runner.config.ScheduleConfig
+timezone
+run_windows
+pause_windows
 
 # agent_runner.config.VcsConfig
 stash_idempotency_s
@@ -232,6 +238,16 @@ log_dir
 deleted
 deferred
 existing
+
+# agent_runner.schedule.PauseDecision
+paused
+resume_at
+active_window
+
+# agent_runner.schedule.Window
+start_min
+end_min
+label
 
 # agent_runner.startup_check.CheckResult
 name

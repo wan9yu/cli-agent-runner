@@ -226,6 +226,8 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `round_substrate_after`
 - `round_substrate_before`
 - `round_timeout_kill`
+- `schedule_paused`
+- `schedule_resumed`
 - `serve_startup_hook_failed`
 - `service_upgrade_rollback_failed`
 - `service_upgrade_rolled_back`
