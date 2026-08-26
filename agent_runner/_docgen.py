@@ -234,40 +234,49 @@ def _render_preset(name: str) -> str:
     return "```toml\n" + body.rstrip() + "\n```"
 
 
-RENDERERS: dict[str, Callable[[], str]] = {
-    "defenses-table": render_defenses_table,
-    "detector-list": render_detector_list,
-    "event-kinds": render_event_kinds_list,
-    "config-schema": render_config_schema_table,
-    "verb-table": render_verb_table,
-    "migrate-transforms": _render_migrate_transforms,
+class Renderer(typing.NamedTuple):
+    """A gen block's renderer paired with the code SSOT it renders from.
+
+    Source lives beside the callable at the registration site — the same paired
+    shape as ``_SECTIONS`` — so a block can never exist without declaring its
+    provenance; the gap is unrepresentable, not caught at render time.
+    """
+
+    fn: Callable[[], str]
+    source: str
+
+
+RENDERERS: dict[str, Renderer] = {
+    "defenses-table": Renderer(render_defenses_table, "agent_runner/defenses.py catalog()"),
+    "detector-list": Renderer(
+        render_detector_list,
+        "agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS",
+    ),
+    "event-kinds": Renderer(render_event_kinds_list, "agent_runner/events.py KNOWN_EVENT_KINDS"),
+    "config-schema": Renderer(render_config_schema_table, "agent_runner/config.py dataclasses"),
+    "verb-table": Renderer(render_verb_table, "agent_runner/cli argparse subparsers"),
+    "migrate-transforms": Renderer(
+        _render_migrate_transforms, "agent_runner/migrations.py MIGRATIONS"
+    ),
 }
 RENDERERS.update(
     {
-        f"flags-{v}": functools.partial(_render_verb_flags, v)
+        f"flags-{v}": Renderer(
+            functools.partial(_render_verb_flags, v),
+            f"agent_runner/cli {v} argparse flags",
+        )
         for v in ("init", "monitor", "serve", "migrate")
     }
 )
-RENDERERS.update({f"preset-{n}": functools.partial(_render_preset, n) for n in _preset_names()})
-
-_SOURCES: dict[str, str] = {
-    "config-schema": "agent_runner/config.py dataclasses",
-    "defenses-table": "agent_runner/defenses.py catalog()",
-    "detector-list": "agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS",
-    "event-kinds": "agent_runner/events.py KNOWN_EVENT_KINDS",
-    "migrate-transforms": "agent_runner/migrations.py MIGRATIONS",
-    "verb-table": "agent_runner/cli argparse subparsers",
-}
-
-
-def _source_for(name: str) -> str:
-    if name in _SOURCES:
-        return _SOURCES[name]
-    if name.startswith("preset-"):
-        return f"agent_runner/presets/{name[len('preset-') :]}.toml"
-    if name.startswith("flags-"):
-        return f"agent_runner/cli {name[len('flags-') :]} argparse flags"
-    raise KeyError(f"no source declared for gen block {name!r} — add it to _SOURCES")
+RENDERERS.update(
+    {
+        f"preset-{n}": Renderer(
+            functools.partial(_render_preset, n),
+            f"agent_runner/presets/{n}.toml",
+        )
+        for n in _preset_names()
+    }
+)
 
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")
@@ -292,8 +301,9 @@ def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
                 raise ValueError(
                     f"{md.name}: unknown gen marker {name!r} — valid names: {sorted(RENDERERS)}"
                 )
+            r = RENDERERS[name]
             try:
-                body = f"<!-- source: {_source_for(name)} -->\n{RENDERERS[name]()}"
+                body = f"<!-- source: {r.source} -->\n{r.fn()}"
                 text = replace_block(text, name, body)
             except ValueError as e:
                 raise ValueError(f"{md.name}: {e}") from e

@@ -16,15 +16,13 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from pathlib import Path
 
 from agent_runner import config
+from tests.invariants._docs import ROOT, doc_files
 
-_ROOT = Path(__file__).resolve().parents[2]
-# Scope: docs/*.md + docs/recipes/*.md. Intentionally NOT scanned: docs/migrations/
-# (legitimately states old defaults as history) and repo-root README.md (no default
-# literals today). Extend the glob only with a matching scope decision.
-_DOCS = sorted((_ROOT / "docs").glob("*.md")) + sorted((_ROOT / "docs/recipes").glob("*.md"))
+# Scope (docs/*.md + docs/recipes/*.md) lives in tests.invariants._docs. Intentionally
+# NOT scanned: docs/migrations/ (legitimately states old defaults as history) and
+# repo-root README.md (no default literals today).
 _AUTHORED = re.compile(r"<!--\s*authored:")
 # The cue is the WORD "default"/"defaults" (case-insensitive — catches "Default behavior").
 # Do NOT add an `= <literal>` alternative: it matches inline TOML enum snippets
@@ -61,7 +59,7 @@ def _prose_lines(text: str) -> list[tuple[int, str]]:
 def test_no_undeclared_config_default_in_prose():
     fields = _config_field_names()
     offenders: list[str] = []
-    for doc in _DOCS:
+    for doc in doc_files():
         lines = _prose_lines(doc.read_text(encoding="utf-8"))
         for idx, (lineno, line) in enumerate(lines):
             prev = lines[idx - 1][1] if idx > 0 else ""
@@ -71,7 +69,7 @@ def test_no_undeclared_config_default_in_prose():
             if _AUTHORED.search(line) or _AUTHORED.search(prev):
                 continue
             if any(f in line for f in fields) and _DEFAULT_CUE.search(line):
-                offenders.append(f"{doc.relative_to(_ROOT)}:{lineno}: {line.strip()[:100]}")
+                offenders.append(f"{doc.relative_to(ROOT)}:{lineno}: {line.strip()[:100]}")
     assert not offenders, (
         "Undeclared config-default fact(s) in prose — move to code (gen:config-schema), "
         "delete the duplicate, or declare with `<!-- authored: reason -->`:\n"
