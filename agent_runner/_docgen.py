@@ -235,10 +235,7 @@ RENDERERS: dict[str, Callable[[], str]] = {
     "verb-table": render_verb_table,
 }
 RENDERERS.update(
-    {
-        f"flags-{v}": functools.partial(_render_verb_flags, v)
-        for v in ("init", "monitor", "serve", "events")
-    }
+    {f"flags-{v}": functools.partial(_render_verb_flags, v) for v in ("init", "monitor", "serve")}
 )
 RENDERERS.update({f"preset-{n}": functools.partial(_render_preset, n) for n in _preset_names()})
 
