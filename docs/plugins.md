@@ -543,115 +543,30 @@ detector. Other plugin detectors and all builtins still run normally.
 }
 ```
 
-### Worked example: project-specific monitor detector with plugin-emitted exempt flag
+### Worked example: a post_round_hook that parses the round log
 
-This example shows the full pattern for a project-specific monitor detector
-that filters out rounds the plugin marks as exempt by some project rule.
-Covers supervisory needs like "stuck role detection" (count git commits per
-round) and "wall-time trend" (compare recent avg vs older avg).
-
-**The shape**: a plugin emits a custom event for exempt rounds; a custom
-monitor detector reads recent events, builds the exempt set, and applies its
-own detection logic only on non-exempt rounds.
-
-**Plugin file** (`myproject_agent_plugin/__init__.py`):
+The common project-specific pattern is a `PostRoundHook` that reads the merged
+round log after each round and records or emits something. The whole contract
+is three lines — a class with a unique `name` and an `after_round` method:
 
 ```python
-"""Example project-specific plugin: detect stuck rounds, exempt short rounds."""
+class RoundLogCounter:
+    name = "example_round_log_counter"
 
-from __future__ import annotations
-
-from agent_runner.api_types import Alert, ProjectState
-from agent_runner.events import emit, now_iso_ms, register_event_kind
-from agent_runner.hooks import HookContext, register_post_round_hook
-from agent_runner.monitor import register_detector
-
-# Register the kind this plugin emits (events.py invariant). The stuck signal is
-# an Alert, not an event — detectors return Alerts and register no kind.
-register_event_kind("myproject_round_exempt", source="myproject_agent_plugin")
-
-
-class _ExemptHook:
-    """PostRoundHook that flags short rounds as exempt from stuck detection."""
-
-    name = "myproject_exempt"
-
-    def after_round(self, ctx: HookContext, result) -> None:
-        # Project rule: rounds under 60s are exempt (e.g. nothing-to-do iters)
-        if result.duration_s < 60:
-            emit(
-                ctx.log_dir, "myproject_round_exempt", round_num=ctx.round_num, reason="short_round"
-            )
-
-
-class _StuckRoundDetector:
-    """3+ consecutive non-exempt rounds with no commit -> stuck."""
-
-    name = "myproject_stuck_round"
-    severity = "warning"
-    auto_action = "none"
-
-    def detect(self, state: ProjectState) -> Alert | None:
-        exempt = {
-            e["round_num"]
-            for e in state.recent_events
-            if e.get("event") == "myproject_round_exempt"
-        }
-        rounds_ended = [
-            e
-            for e in state.recent_events
-            if e.get("event") == "round_end" and e.get("round_num") not in exempt
-        ]
-        if len(rounds_ended) < 3:
-            return None
-        nums = sorted({e["round_num"] for e in rounds_ended[-3:]})
-
-        # Project-specific: real plugin would shell to `git log --grep`
-        if sum(_count_commits_for_rounds(nums).values()) > 0:
-            return None
-        return Alert(
-            severity=self.severity,
-            detector=self.name,
-            message=f"3 non-exempt rounds (round_nums={nums}) produced no commits",
-            context={"round_nums": nums},
-            ts=now_iso_ms(),
-            auto_action=self.auto_action,
-        )
-
-
-def _count_commits_for_rounds(round_nums: list[int]) -> dict[int, int]:
-    """Stub: real plugin would shell out to `git log` or read a sidecar file."""
-    return {n: 0 for n in round_nums}
-
-
-register_post_round_hook(_ExemptHook())
-register_detector(_StuckRoundDetector())
+    def after_round(self, ctx, result):  # ctx.agent_log_path is the round log
+        ...
 ```
 
-**Plugin registration** (`pyproject.toml`):
+Register it with `register_post_round_hook(RoundLogCounter())` (or a
+`agent_runner.post_round_hooks` entry point). A runnable, tested reference —
+the minimal plugin plus a test asserting `after_round` fires with a real
+`HookContext` — lives in `tests/unit/test_example_plugin.py`; copy from there
+rather than from a snippet that never runs.
 
-```toml
-[project.entry-points."agent_runner.post_round_hooks"]
-myproject_exempt = "myproject_agent_plugin:_ExemptHook"
-
-[project.entry-points."agent_runner.detectors"]
-myproject_stuck = "myproject_agent_plugin:_StuckRoundDetector"
-```
-
-**The pattern in 3 lines**:
-
-1. PostRoundHook emits `<plugin>_round_exempt` events for exempt rounds.
-2. A `Detector` reads `state.recent_events`, builds the exempt set, filters out
-   exempt rounds, applies its own logic.
-3. `detect(state)` returns an `Alert` when the condition fires, else `None`.
-
-The same shape covers other project-specific signals: count git commits per
-round (no-commit-rounds-stuck detection), avg recent vs older round
-duration (wall-time-trend detection for context bloat), etc. Project-specific
-semantics live in the plugin — agent-runner core stays agent-agnostic.
-
-(Adjust import paths, function names, and exact API surface to match what
-your codebase exposes — this is a template, not a literal must-compile snippet.)
+The same `name` + `after_round` shape covers other signals: emit a custom
+event for exempt rounds (register the kind first), count git commits per round,
+or compare recent vs older round duration. Project-specific semantics live in
+the plugin — agent-runner core stays agent-agnostic.
 
 ## DirtyHandler — custom dirty-tree policy (0.2.0+)
 
@@ -822,45 +737,12 @@ JSON surface only — it is not reachable via `--select`.
 
 ## Plugin tests + consumer pytest collision
 
-Consumer projects often have their own `tests/` directory. If your plugin
-also has tests (e.g. `tools/my_agent_plugin/tests/`), pytest's testpaths
-walk can find both and fail with `ModuleNotFoundError` when the same
-package name lives in two locations.
-
-Two recommended patterns:
-
-### Pattern A — plugin tests inside the plugin package
-
-Plugin author owns this:
-
-```
-my_agent_plugin/
-├── __init__.py
-├── core.py
-└── tests/
-    ├── __init__.py
-    └── test_core.py
-```
-
-In `my_agent_plugin/pyproject.toml`:
+If your plugin ships its own `tests/` and the consumer project has one too,
+pytest's collection walk can find both and fail with `ModuleNotFoundError`
+when the same package name lives in two locations. Scope collection to your
+plugin's tests in its `pyproject.toml`:
 
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["my_agent_plugin/tests"]
 ```
-
-This scopes pytest collection to your plugin's tests when running locally.
-
-### Pattern B — consumer ignores your plugin in their pytest config
-
-Consumer owns this:
-
-```toml
-# In the consumer project's pytest.ini or pyproject.toml:
-[tool.pytest.ini_options]
-addopts = ["--ignore=tools/my_agent_plugin"]
-```
-
-Both work. Pattern A is preferable for plugin authors (no consumer
-configuration needed); Pattern B is for cases where the consumer integrates
-a plugin they don't own.
