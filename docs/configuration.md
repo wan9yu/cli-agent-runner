@@ -20,6 +20,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 ## TOML schema
 
 <!-- gen:config-schema -->
+<!-- source: agent_runner/config.py dataclasses -->
 ### `[agent]`
 
 | Field | Type | Default |

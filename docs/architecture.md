@@ -54,6 +54,7 @@ surfacing everywhere.
 ## Defense roster
 
 <!-- gen:defenses-table -->
+<!-- source: agent_runner/defenses.py catalog() -->
 | Defense | Codifies | Guarded by |
 |---|---|---|
 | `round_timeout_s` | R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger | `tests/unit/test_agent_runtime.py` |
@@ -85,6 +86,7 @@ Three categories by `auto_action`:
 API quota / writing to a near-full disk).
 
 <!-- gen:detector-list -->
+<!-- source: agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS -->
 - `anomaly_repetitive_active`
 - `disk_critical` — **auto-stop**
 - `disk_warning`
@@ -178,6 +180,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 ## Known event kinds
 
 <!-- gen:event-kinds -->
+<!-- source: agent_runner/events.py KNOWN_EVENT_KINDS -->
 - `agent_auth_error_detected`
 - `agent_exit`
 - `agent_network_blip`

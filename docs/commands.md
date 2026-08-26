@@ -7,6 +7,7 @@ are shared between `peek` and `watch`.
 ## At a glance
 
 <!-- gen:verb-table -->
+<!-- source: agent_runner/cli argparse subparsers -->
 | Verb | Description |
 |---|---|
 | `init` | Scaffold agent-runner project files |
@@ -37,6 +38,7 @@ appends `logs/` to `.gitignore`. By default also creates a git commit.
 Flags:
 
 <!-- gen:flags-init -->
+<!-- source: agent_runner/cli init argparse flags -->
 - `--preset {aider,claude,codewhale,gemini,kimi,pi}` — Which agent CLI preset to scaffold (default: claude)
 - `--force` — Overwrite existing toml
 - `--commit` — git commit the new files (default)
@@ -89,6 +91,7 @@ Long-running supervisor loop. Traps SIGTERM (graceful stop) and SIGINT
 Flags:
 
 <!-- gen:flags-serve -->
+<!-- source: agent_runner/cli serve argparse flags -->
 - `--once` — Run a single round then exit (debug)
 - `--max-rounds N` — Stop after N round completions (overrides [runtime] max_rounds in config)
 - `--ignore-schedule` — Run rounds regardless of [schedule] pause/run windows (testing / catch-up)
@@ -178,6 +181,7 @@ configuration.md).
 Flags:
 
 <!-- gen:flags-monitor -->
+<!-- source: agent_runner/cli monitor argparse flags -->
 - `--host SSH-ALIAS` — Remote ssh alias — supported with --mode events only: agent-runner manages the ssh, resumes with --since after a drop, and kills the ssh process group on exit. Detection modes run on the host itself.
 - `--interval SECONDS` — Poll interval (default 30s)
 - `--kind K[,K2,...]` — Event kinds to relay (--host --mode events only). Default: every kind this client knows — built-ins plus locally installed plugin kinds. A kind that exists only on the remote must be named here.
@@ -226,6 +230,7 @@ automatically are reported as `MANUAL:` lines for you to fix by hand. A config
 with nothing to change is left untouched.
 
 <!-- gen:flags-migrate -->
+<!-- source: agent_runner/cli migrate argparse flags -->
 - `--dry-run` — Show changes without writing the file
 <!-- /gen:flags-migrate -->
 
@@ -238,6 +243,7 @@ change remains, `2` when the config cannot be read or is not valid TOML.
 The transforms `migrate` applies (generated from the registry):
 
 <!-- gen:migrate-transforms -->
+<!-- source: agent_runner/migrations.py MIGRATIONS -->
 - runtime.rate_limit_action → runtime.transient_error_action
 - vcs.orphan_action → vcs.dirty_action
 - runtime.round_timeout_per_phase (removed 0.1.16) must be moved manually to [phases.<name>] round_timeout_s

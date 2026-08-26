@@ -250,6 +250,26 @@ RENDERERS.update(
 )
 RENDERERS.update({f"preset-{n}": functools.partial(_render_preset, n) for n in _preset_names()})
 
+_SOURCES: dict[str, str] = {
+    "config-schema": "agent_runner/config.py dataclasses",
+    "defenses-table": "agent_runner/defenses.py catalog()",
+    "detector-list": "agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS",
+    "event-kinds": "agent_runner/events.py KNOWN_EVENT_KINDS",
+    "migrate-transforms": "agent_runner/migrations.py MIGRATIONS",
+    "verb-table": "agent_runner/cli argparse subparsers",
+}
+
+
+def _source_for(name: str) -> str:
+    if name in _SOURCES:
+        return _SOURCES[name]
+    if name.startswith("preset-"):
+        return f"agent_runner/presets/{name[len('preset-') :]}.toml"
+    if name.startswith("flags-"):
+        return f"agent_runner/cli {name[len('flags-') :]} argparse flags"
+    raise KeyError(f"no source declared for gen block {name!r} — add it to _SOURCES")
+
+
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")
 
 
@@ -273,7 +293,8 @@ def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
                     f"{md.name}: unknown gen marker {name!r} — valid names: {sorted(RENDERERS)}"
                 )
             try:
-                text = replace_block(text, name, RENDERERS[name]())
+                body = f"<!-- source: {_source_for(name)} -->\n{RENDERERS[name]()}"
+                text = replace_block(text, name, body)
             except ValueError as e:
                 raise ValueError(f"{md.name}: {e}") from e
         out[md] = text
