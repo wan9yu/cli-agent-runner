@@ -112,17 +112,13 @@ operators set custom names).
 `PostRoundHook` additionally receives a `RoundResult` (`from agent_runner.api_types import RoundResult`).
 Its field set is stable across 0.1.x (additions only).
 
-### End-to-end ContextEnricher example
+### ContextEnricher
 
-```toml
-# my_plugin/pyproject.toml
-[project.entry-points."agent_runner.context_enrichers"]
-current_branch = "my_plugin.enrichers"
-```
+A ContextEnricher returns this plugin's slice of round context. The runner merges
+each return value into the round's context dict under the enricher's own `name`,
+so two enrichers can never collide:
 
 ```python
-# my_plugin/enrichers.py
-import subprocess
 from agent_runner.hooks import HookContext, register_context_enricher
 
 
@@ -130,33 +126,19 @@ class CurrentBranchEnricher:
     name = "current_branch"
 
     def enrich(self, ctx: HookContext) -> dict:
-        out = subprocess.run(
-            ["git", "-C", str(ctx.work_dir), "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return {"branch": out.stdout.strip() or "(detached)"}
+        return {"branch": _current_branch(ctx.work_dir)}
 
 
-# Module-top side effect: entry_point load imports this module, which
-# triggers the registration.
-register_context_enricher(CurrentBranchEnricher())
+register_context_enricher(CurrentBranchEnricher())  # module-top side effect
 ```
 
-After installation, each round's `round-context.json` gains a `current_branch` key:
+Register the module under the `agent_runner.context_enrichers` entry-point group
+(see [Entry-points groups](#entry-points-groups)). The merged context then carries
+a `current_branch` key whose value is `{"branch": "main"}`, alongside every other
+enricher's namespaced slice.
 
-```json
-{
-  "round_num": 42,
-  "started_at": "...",
-  "current_branch": {"branch": "main"}
-}
-```
-
-The agent reads it just like any other context field. Other enrichers' slices live under
-their own `name` keys — collisions are structurally impossible because the runner
-stitches each return value to `base_context[enricher.name]`.
+Runnable reference: `tests/integration/test_context_enricher_namespacing.py::test_given_two_enrichers_when_stitched_then_both_namespaced`
+registers two enrichers and asserts the exact namespaced shape of the merged dict.
 
 ### Failure isolation
 

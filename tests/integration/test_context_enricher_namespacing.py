@@ -1,4 +1,12 @@
-"""Two ContextEnrichers produce two namespaced slices via runner's stitch helper."""
+"""Runnable reference for docs/plugins.md § ContextEnricher.
+
+Each registered ContextEnricher returns a ``dict`` slice; the runner merges it
+into the round's context dict under the enricher's own ``name`` key, so two
+enrichers never collide. This test registers two real enrichers and asserts the
+exact shape of that MERGED dict as produced by ``runner._stitch_enricher_slices``
+-- it verifies the in-memory namespacing contract, not any ``round-context.json``
+file on disk.
+"""
 
 from __future__ import annotations
 
