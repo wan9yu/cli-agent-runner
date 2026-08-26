@@ -156,6 +156,13 @@ def render_event_kinds_list() -> str:
     return "\n".join(f"- `{k}`" for k in sorted(KNOWN_EVENT_KINDS))
 
 
+def _render_migrate_transforms() -> str:
+    """Bullet list of the transforms `agent-runner migrate` applies, from the registry."""
+    from agent_runner.migrations import MIGRATIONS
+
+    return "\n".join(f"- {m.describe}" for m in MIGRATIONS)
+
+
 def _subparser_action() -> argparse.Action:
     """The single ``_SubParsersAction`` on the top-level parser."""
     from agent_runner.cli import _build_parser
@@ -233,6 +240,7 @@ RENDERERS: dict[str, Callable[[], str]] = {
     "event-kinds": render_event_kinds_list,
     "config-schema": render_config_schema_table,
     "verb-table": render_verb_table,
+    "migrate-transforms": _render_migrate_transforms,
 }
 RENDERERS.update(
     {

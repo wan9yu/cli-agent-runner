@@ -240,9 +240,16 @@ with nothing to change is left untouched.
 `--dry-run` prints the same report without writing the file or the backup.
 
 Exit codes: `0` when the config is clean or fully migrated, `1` when a manual
-change remains, `2` when the config cannot be read or is not valid TOML. See
-[migrations/0.2.8.md](migrations/0.2.8.md) for the exact transforms; `upgrade`
-runs this migration automatically (§ runbook "Upgrading agent-runner").
+change remains, `2` when the config cannot be read or is not valid TOML.
+`upgrade` runs this migration automatically (§ runbook "Upgrading agent-runner").
+
+The transforms `migrate` applies (generated from the registry):
+
+<!-- gen:migrate-transforms -->
+- runtime.rate_limit_action → runtime.transient_error_action
+- vcs.orphan_action → vcs.dirty_action
+- runtime.round_timeout_per_phase (removed 0.1.16) must be moved manually to [phases.<name>] round_timeout_s
+<!-- /gen:migrate-transforms -->
 
 ## 中文摘要
 
