@@ -737,6 +737,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_agent_usage_recorded,
     emit_anomaly_repetitive_tool,
     emit_config_broken,
+    emit_config_migrated,
     emit_crash_loop,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,

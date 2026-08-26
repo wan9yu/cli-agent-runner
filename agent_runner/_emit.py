@@ -17,6 +17,7 @@ __all__ = [
     "emit_agent_auth_error_detected",
     "emit_agent_usage_recorded",
     "emit_anomaly_repetitive_tool",
+    "emit_config_migrated",
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
     "emit_rate_limit_stop",
@@ -70,6 +71,15 @@ def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path
     except OSError:
         reason = ""
     emit(log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
+
+
+def emit_config_migrated(
+    log_dir: Path, *, applied: list[str], manual: list[str], path: str
+) -> None:
+    """Emit config_migrated when `migrate`/`upgrade` rewrites the config."""
+    from agent_runner.events import CONFIG_MIGRATED, emit
+
+    emit(log_dir, CONFIG_MIGRATED, applied=applied, manual=manual, path=path)
 
 
 def emit_stop_file_detected(

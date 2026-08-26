@@ -199,6 +199,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `agent_usage_recorded`
 - `anomaly_repetitive_tool`
 - `config_broken`
+- `config_migrated`
 - `crash_loop`
 - `dirty_auto_committed`
 - `dirty_commit_failed`

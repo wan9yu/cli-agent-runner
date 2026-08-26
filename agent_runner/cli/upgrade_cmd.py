@@ -16,13 +16,14 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 import agent_runner
-from agent_runner import __version__, api, events
+from agent_runner import __version__, api, events, migrations
 from agent_runner.api_types import ServiceMode
 from agent_runner.cli.common import cfg_from_args, fail, info
-from agent_runner.config import Config
+from agent_runner.config import Config, ConfigError
 
 
 def add_parser(sub, parent) -> None:
@@ -48,11 +49,28 @@ def add_parser(sub, parent) -> None:
         help="Upgrade the package + smoke only; do not stop/start the service "
         "(you restart it yourself).",
     )
+    p.add_argument(
+        "--no-migrate",
+        action="store_true",
+        help="Skip automatic config migration during upgrade",
+    )
     p.set_defaults(func=cmd)
 
 
 def cmd(args) -> int:
+    cfg_path = Path(args.config)
+    applied, manual = _migrate_config_file(cfg_path, no_migrate=getattr(args, "no_migrate", False))
+    if manual:
+        return fail(
+            "config needs manual migration before upgrade:\n  "
+            + "\n  ".join(manual)
+            + "\nfix it (or run `agent-runner migrate`) then retry"
+        )  # aborts BEFORE any stop/pip — fail fast
     cfg = _try_load_cfg(args)
+    if applied and cfg is not None:
+        api.emit_config_migrated(
+            cfg.runtime.log_dir, applied=applied, manual=[], path=str(cfg_path)
+        )
     return _run_upgrade(
         cfg,
         target=args.target,
@@ -61,11 +79,34 @@ def cmd(args) -> int:
     )
 
 
+def _migrate_config_file(cfg_path: Path, *, no_migrate: bool) -> tuple[list[str], list[str]]:
+    """Auto-migrate the raw config BEFORE load_config (which rejects old keys).
+    Applies auto transforms in place (with .bak); returns (applied, manual).
+    Manual-only transforms are returned, not applied."""
+    if no_migrate or not cfg_path.exists():
+        return [], []
+    text = cfg_path.read_text(encoding="utf-8")
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return [], []  # broken TOML — let the normal load path report it
+    result = migrations.run_migrations(text, parsed)
+    if result.applied:
+        cfg_path.with_suffix(cfg_path.suffix + ".bak").write_text(text, encoding="utf-8")
+        cfg_path.write_text(result.new_text, encoding="utf-8")
+    return result.applied, result.manual
+
+
 def _try_load_cfg(args) -> Config | None:
-    """Load the project config if present; None when absent (package-only)."""
+    """Load the project config if present; None when absent (package-only).
+
+    Also degrades to None on a ConfigError (a still-un-migratable legacy config):
+    the package-only path is a safe fallback, and crashing `upgrade` with a
+    traceback over a removed key would be worse than upgrading without a restart.
+    """
     try:
         return cfg_from_args(args)
-    except FileNotFoundError:
+    except (FileNotFoundError, ConfigError):
         return None
 
 
