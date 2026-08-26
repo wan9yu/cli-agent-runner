@@ -10,11 +10,13 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
+import importlib.resources
 import re
 import typing
 from collections.abc import Callable
 from pathlib import Path
 
+from agent_runner.cli.init_cmd import _preset_names
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -213,6 +215,18 @@ def render_verb_table() -> str:
     return "\n".join(rows)
 
 
+def _render_preset(name: str) -> str:
+    """Fenced TOML block quoting a shipped ``agent_runner/presets/<name>.toml``.
+
+    The preset file is the SSOT; the recipe doc block is a verbatim mirror so a
+    flag or auth-hint edit in the preset can never drift from its recipe.
+    """
+    body = (importlib.resources.files("agent_runner.presets") / f"{name}.toml").read_text(
+        encoding="utf-8"
+    )
+    return "```toml\n" + body.rstrip() + "\n```"
+
+
 RENDERERS: dict[str, Callable[[], str]] = {
     "defenses-table": render_defenses_table,
     "detector-list": render_detector_list,
@@ -226,6 +240,7 @@ RENDERERS.update(
         for v in ("init", "monitor", "serve", "events")
     }
 )
+RENDERERS.update({f"preset-{n}": functools.partial(_render_preset, n) for n in _preset_names()})
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")
 
@@ -239,7 +254,9 @@ def render(docs_dir: Path, *, write: bool = True) -> dict[Path, str]:
     Raises ``ValueError`` when a marker references an unknown renderer name.
     """
     out: dict[Path, str] = {}
-    for md in sorted(docs_dir.glob("*.md")):
+    # Top-level docs plus recipes/. NOT rglob: migrations/ is frozen history and
+    # internal/ is gitignored — neither should be regenerated.
+    for md in sorted(docs_dir.glob("*.md")) + sorted((docs_dir / "recipes").glob("*.md")):
         text = md.read_text(encoding="utf-8")
         for match in _GEN_OPEN.finditer(text):
             name = match.group(1)
