@@ -618,9 +618,10 @@ DirtyOutcome(kind="stashed", ref="<stash-sha>")
 DirtyOutcome(kind="committed", ref="<commit-sha>")
 ```
 
-### Minimal override recipe
+### Override recipe
 
-**1. Disable the bundled default:**
+Disable the bundled default, then register your own handler under the
+`agent_runner.dirty_handler_hooks` entry-point group (see [Entry-points groups](#entry-points-groups)):
 
 ```toml
 # agent-runner.toml
@@ -628,57 +629,10 @@ DirtyOutcome(kind="committed", ref="<commit-sha>")
 disable = ["default_dirty_handler"]
 ```
 
-**2. Declare the entry point:**
-
-```toml
-# your_plugin/pyproject.toml
-[project.entry-points."agent_runner.dirty_handler_hooks"]
-my_dirty_handler = "your_plugin.dirty:MyDirtyHandler"
-```
-
-**3. Implement and register:**
-
-```python
-# your_plugin/dirty.py
-from agent_runner.api_types import DirtyOutcome
-from agent_runner.hooks import HookContext, register_dirty_handler
-
-
-class MyDirtyHandler:
-    name = "my_dirty_handler"
-    priority = 10  # ascending; only matters when multiple handlers coexist
-
-    def handle_dirty(self, ctx: HookContext, dirty_files) -> DirtyOutcome | None:
-        # Return None to pass to the next handler.
-        # Return a DirtyOutcome to claim the result and stop dispatch.
-        return DirtyOutcome(kind="ignored")
-
-
-# Module-top side effect — fires at entry_point load time.
-register_dirty_handler(MyDirtyHandler())
-```
-
-### Using core git primitives
-
-Handlers may call the public `api` primitives:
-
-```python
-from agent_runner import api
-
-# Stash — returns a StashRef (with .sha) or None if nothing to stash
-ref = api.stash_orphan(
-    ctx.work_dir,
-    round_num=ctx.round_num,
-    phase=ctx.phase,
-    idempotency_s=ctx.vcs.stash_idempotency_s if ctx.vcs else 5,
-    log_dir=ctx.log_dir,
-)
-outcome = DirtyOutcome(kind="ignored") if ref is None else DirtyOutcome(kind="stashed", ref=ref.sha)
-
-# Auto-commit — returns commit SHA or "" (nothing staged); raises AutoCommitError on failure
-sha = api.try_auto_commit(ctx.work_dir, ctx.round_num, ctx.phase, log_dir=ctx.log_dir)
-```
-
+Runnable, tested reference: `tests/unit/test_example_dirty_handler.py` — a custom
+handler whose `DirtyOutcome` wins over the bundled default's stash (lower
+`priority` runs first and stops dispatch). Handlers may call the public `api`
+primitives (`api.stash_orphan`, `api.try_auto_commit`) to do the actual VCS work;
 `ctx.vcs` exposes `dirty_action` and `stash_idempotency_s` from `[vcs]` config
 (populated by the runner when dispatching dirty handlers; `None` in other contexts).
 
