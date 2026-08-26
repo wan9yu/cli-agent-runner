@@ -42,26 +42,20 @@ plugin/prompt-layer code can consume.
 
 ### 1. `max_rounds` (0.1.21) — bound the lineage
 
-```toml
-[runtime]
-max_rounds = 30
-```
-
-Or via CLI: `agent-runner serve --max-rounds 30`. Hard cap on round count.
-The simplest mitigation: confabulation risk grows superlinearly with
-lineage length; bounding it at 30-50 rounds eliminates most of the
-practical exposure.
+Hard cap on round count — the simplest mitigation, since confabulation risk
+grows superlinearly with lineage length; bounding it at 30-50 rounds
+eliminates most of the practical exposure. Config, the `--max-rounds` CLI flag,
+and the bounded-job walkthrough live in `docs/runbook.md` § Bounded runs
+(`### Bounded job pattern (max_rounds)`); proven by
+`tests/unit/test_config_max_rounds.py` and `tests/integration/test_bounded_run.py`.
 
 ### 2. `stop_file` (0.1.21) — operator graceful pause
 
-```toml
-[runtime]
-stop_file = "~/agent-runner-stop"
-```
-
-`touch ~/agent-runner-stop` between rounds → supervisor finishes current
-round → emits `stop_file_detected` → exits cleanly. Lets operators halt
-runaway lineages without killing in-flight work.
+`touch` the file between rounds → supervisor finishes the current round →
+emits `stop_file_detected` → exits cleanly, letting operators halt runaway
+lineages without killing in-flight work. Config and workflow live in
+`docs/runbook.md` § Operator graceful pause (`### Operator graceful pause
+(stop_file)`); proven by `tests/unit/test_config_stop_file.py`.
 
 ### 3. `substrate_fingerprint_paths` (0.1.22) — raw data for detection
 
@@ -95,38 +89,14 @@ project-specific (depends on memo format, claim conventions, etc.).
 
 ### 4. `fresh_eyes_every_n` (0.1.22) — periodic context refresh signal
 
-```toml
-[runtime]
-fresh_eyes_every_n = 50
-```
-
-Every 50th round, `AGENT_RUNNER_FRESH_EYES=1` is injected into the round
-subprocess env. The round also emits `fresh_eyes_round_triggered` event.
-
-**The framework does not construct fresh-eyes prompt content** — it only
-provides the signal. A typical consumer:
-
-```python
-# Pre-round hook that swaps prompt context on fresh-eyes rounds
-def before_round(ctx):
-    if os.environ.get("AGENT_RUNNER_FRESH_EYES") == "1":
-        # Swap the prompt file to a "fresh-eyes" variant
-        # that contains ONLY original task spec + current substrate state,
-        # excluding chat-room / accumulated narrative
-        cfg.prompt.file = "prompts/fresh-eyes.md"
-```
-
-Or in the agent's own prompt template (using your preferred templating
-tool — agent-runner does not preprocess prompt files itself, but
-operators commonly run a Jinja2 / similar templating pass beforehand):
-
-```jinja2
-{% if env.AGENT_RUNNER_FRESH_EYES == "1" %}
-You are doing a fresh-eyes round. Ignore prior memos and chat-room
-context. Re-evaluate progress against the ORIGINAL task spec only.
-Re-run `wc -l`, `git log`, etc. before making any numeric claims.
-{% endif %}
-```
+Every Nth round sets `AGENT_RUNNER_FRESH_EYES=1` on the round subprocess and
+emits `fresh_eyes_round_triggered`. **The framework does not construct
+fresh-eyes prompt content** — it only provides the signal; the operator's
+prompt layer decides what a fresh-eyes round means (swap the prompt file in a
+pre-round hook, or branch on the env var in a templated prompt). The env-var
+contract is the `AGENT_RUNNER_FRESH_EYES` row in `docs/plugins.md`'s round
+subprocess env-contract table; proven by
+`tests/integration/test_fresh_eyes_signal.py`.
 
 ### 5. `agent_usage_recorded` (0.1.24+) — per-round token + cost data
 

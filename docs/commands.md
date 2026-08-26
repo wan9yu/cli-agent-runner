@@ -112,12 +112,8 @@ back to package-only mode automatically.
 `--no-restart` forces package-only even on a systemd --user host (upgrade the
 package now, restart your service yourself).
 
-Smoke scope: the orchestrated path runs `--version` **and** `peek --json
---config <path>` in a fresh subprocess, so the new code parses your TOML; the
-package-only path runs `--version` alone and never reads your config. Neither
-runs a round or invokes hooks/detectors, and a plugin that fails to import is a
-`UserWarning`, not a smoke failure — for a breaking version, self-check first
-(see `docs/runbook.md` § "What the smoke covers").
+Smoke scope (what each path validates, and how to self-check before a breaking
+upgrade): see `docs/runbook.md` § "What the smoke covers".
 
 Operator walkthrough (per-deployment decision table, rollback, failure modes,
 postmortem trail): see `docs/runbook.md` § "Upgrading agent-runner".

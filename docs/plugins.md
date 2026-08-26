@@ -55,8 +55,6 @@ from agent_runner.events import register_event_kind
 
 STAGE_ADVANCED = "my_workflow_stage_advanced"
 
-# Module-top side effect: entry_point load imports this module, which
-# triggers the registration.
 register_event_kind(STAGE_ADVANCED, source="my-plugin@1.0")
 ```
 
@@ -129,7 +127,7 @@ class CurrentBranchEnricher:
         return {"branch": _current_branch(ctx.work_dir)}
 
 
-register_context_enricher(CurrentBranchEnricher())  # module-top side effect
+register_context_enricher(CurrentBranchEnricher())
 ```
 
 Register the module under the `agent_runner.context_enrichers` entry-point group
@@ -477,8 +475,6 @@ class MyDetector:
         )
 
 
-# Module-top side effect: entry_point load imports this module, which
-# triggers the registration.
 register_detector(MyDetector())
 ```
 
@@ -641,7 +637,7 @@ between rounds.
 # my_plugin/__init__.py
 from agent_runner.vcs_state import register_plugin_owned_paths
 
-# Module-top side effect — must register before the first round runs.
+# Must register before the first round runs.
 register_plugin_owned_paths(
     [
         "proposals/",  # trailing slash → prefix match

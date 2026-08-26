@@ -116,7 +116,6 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 ### `agent.prompt_delivery`
 
 Type: string, one of `"argv"`, `"stdin"`
-Default: `"argv"`
 
 Controls how the assembled prompt reaches the agent subprocess. `"argv"`
 (default, unchanged behavior) substitutes the prompt into
@@ -139,9 +138,6 @@ prompt_arg_template = ["-p"]   # remove {prompt} — no longer substituted into 
 ```
 
 ### `runtime.round_log_retention`
-
-Type: int (>= 0)
-Default: `0`
 
 **Pruning is opt-in. `0` — the default — never prunes anything.** Round logs
 accumulate for as long as the deployment runs, and agent-runner deletes none of
@@ -199,7 +195,6 @@ than a backlog awaiting a decision.
 ### `vcs.dirty_action`
 
 Type: string, one of `"stash"`, `"ignore"`, `"auto_commit"`
-Default: `"stash"`
 
 Controls supervisor behavior when round subprocess exits with a dirty
 working tree. This config is read by the bundled `default_dirty_handler` plugin
