@@ -21,13 +21,51 @@ what GitHub Actions runs on every push and PR.
 1. Open an issue first for non-trivial changes — saves wasted work on both sides.
 2. Branch off `main`. Keep PRs focused; one logical change per PR.
 3. **TDD encouraged**: write the failing test first, then the implementation.
-4. Every public API change needs a `docs/*.md` update or invariant test.
+4. Every public API change needs a home for each new fact — see
+   [Where does this fact go?](#where-does-this-fact-go) below.
 5. Run `./build.sh check` locally before pushing.
 6. Conventional Commits: `feat:` / `fix:` / `docs:` / `refactor:` / `test:` /
    `chore:` / `ci:` / `build:` / `perf:`. Subjects in English, imperative mood.
    CI (`lint-commits` job) and `tests/invariants/test_no_ai_signatures.py`
    reject auto-generated trailers and robot signatures — keep messages
    human-authored.
+
+## Where does this fact go?
+
+Before you write a sentence into a doc, run it through these four questions in
+order. The first one that matches is the fact's home — put it there and nowhere
+else. This is mechanical: a contributor (or an AI) should reach the same answer
+without judgment.
+
+1. **Is it enumerable/mechanical?** A default, enum, flag, count, schema,
+   transform, or preset. → It lives in **code as data**. The doc gets a
+   `gen:` block that renders it (see the generated regions in `docs/*.md`,
+   filled by `./build.sh docs`) or it gets nothing. Never hand-copy the value
+   into prose.
+
+2. **Is it a behavioral claim?** "X happens when Y." → It lives in a **test**.
+   The doc may name that test — the path is data, and a named test that goes
+   red is a self-correcting reference. Prose that asserts behavior no test
+   pins is a claim waiting to rot.
+
+3. **Is it judgment, rationale, or narrative?** Why a design is the way it is,
+   a trade-off, a walkthrough. → It's **authored prose**; write it. If that
+   prose must name an owned fact (e.g. a config default) to make its point,
+   declare it inline with `<!-- authored: reason; SSOT <source> -->` so the
+   mention is a reviewed choice, not silent drift.
+
+4. **None of the above?** → **Delete it.** A fact with no home is upkeep with
+   no reader.
+
+The corollary: **a fact stated twice is a bug with a delay timer.** The two
+copies will diverge; the only question is when. Derive one from the other, or
+delete one.
+
+This isn't only convention. `tests/invariants/test_authored_facts_declared.py`
+enforces (1) and (3) for config defaults today: a known config field named
+alongside a default literal in prose fails the gate unless it carries an
+`<!-- authored: reason -->` declaration. The linter's scope grows over time —
+more owned facts, more of this procedure, mechanically enforced.
 
 ## Migration docs
 
