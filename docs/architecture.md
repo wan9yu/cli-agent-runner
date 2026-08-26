@@ -113,22 +113,9 @@ with no client in the loop. `monitor --host` is therefore rejected for
 The one remote mode is an event **relay**: `monitor --host X --mode events`
 (`agent_runner/remote_relay.py`) runs on the client, spawns
 `ssh X -- agent-runner events --tail --kind …`, and passes the remote's JSONL
-through unmodified. It is a transport, and carries no detector logic.
-
-Its transient-failure tolerance reuses the `[monitor]
-remote_failure_tolerance_s` window (default 90s, 0 disables reconnection).
-Backoff is 1s → 2s → 4s → ... → 30s. Each ssh exit emits a
-`monitor_remote_blip`; if the window expires without a relayed line, a
-`monitor_remote_giveup` is emitted and the relay exits 1 (a service manager
-restarts it). The two-event scheme makes postmortem grep cleaner than a single
-event with a `final=true` flag. Both events are written to the CLIENT's log dir:
-they describe that machine's link, not the supervised project's health.
-
-Reconnects pass `--since <last relayed ts>` so the gap is replayed
-(at-least-once), and the failure clock resets only on a relayed line — a
-connection that comes up and immediately dies is still an outage. The ssh child
-runs in its own process group, torn down SIGTERM → grace → SIGKILL on interrupt,
-give-up and every reconnect, so no orphaned ssh/sleep tree survives a drop.
+through unmodified. It is a transport, and carries no detector logic — the
+reconnect, give-up and process-group mechanics live in
+`docs/runbook.md` § "Remote event relay & SSH trust".
 
 ## Plugin injection: two paths
 

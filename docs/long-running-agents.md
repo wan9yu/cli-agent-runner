@@ -210,39 +210,12 @@ Long lineages that share an account with production scheduling will
 trigger throttling. agent-runner auto-detects and backs off (0.1.20+
 for 5h quota; 0.1.23+ also covers 5xx server outages, 429 model overloads,
 and 408 timeouts via the unified `transient_error_*` event family), but
-the underlying problem is unbounded lineage on a shared resource.
+the underlying problem is unbounded lineage on a shared resource. Subscribe to
+`transient_error_detected` and filter by `classification == "rate_limit_account"`
+for 5h-quota events specifically.
 
-**Transient-error events (0.1.23+)**: what was the `rate_limit_rejected`
-event family is now `transient_error_detected` with a `classification`
-field (`rate_limit_account`, `rate_limit_model`, `api_transient_5xx`,
-`api_timeout`). The same back-off mechanism covers all 4 classifications.
-The legacy `rate_limit_rejected` aliases were removed in 0.1.29 — subscribe
-to `transient_error_detected` (filter by `classification == "rate_limit_account"`
-if you only want 5h-quota events).
-
-## Writing post_round_hook plugins
-
-### Reading agent stdout from a plugin
-
-Use `ctx.agent_log_path` (added in 0.1.25). This points to the agent's
-round log (`log_dir/rounds/R<N>-<timestamp>.log`) — the agent's **merged
-stdout+stderr**, merged deliberately so auth/network error text emitted on
-stderr stays detectable. Parse it as JSONL that may contain non-JSON lines
-(per-line `json.loads` in try/except, as the built-in plugins do). Do NOT
-compute the path from `ctx.log_dir + round_num` — historical naming
-conventions in that directory are subject to change.
-
-```python
-def after_round(self, ctx: HookContext, result: Any) -> None:
-    log_path = ctx.agent_log_path
-    if log_path is None or not log_path.exists():
-        return
-    # parse log_path for agent JSONL output ...
-```
-
-The `None` guard is required: the field defaults to `None` for backward
-compatibility with manually-constructed HookContext instances in unit tests.
-In production, the supervisor always populates it.
+For writing a `post_round_hook` that parses the round log, see
+`docs/plugins.md` § "Worked example: a post_round_hook that parses the round log".
 
 ## Related primitives
 

@@ -203,14 +203,10 @@ Detection is rejected remotely by design: the detectors read the supervised
 host's logs and stop its service, so they must run there (see
 [runbook.md](runbook.md) § "Remote event relay & SSH trust").
 
-Relay behavior: stdout is the remote's JSONL, unmodified. Each ssh exit emits
-`monitor_remote_blip` and reconnects with `--since <last relayed ts>` so the gap
-is replayed (at-least-once — the boundary event may repeat). An outage longer
-than `[monitor] remote_failure_tolerance_s` (default 90s) emits
-`monitor_remote_giveup` and exits 1. Those two events go to the **client's**
-`log_dir` — they describe this machine's link, not the remote project. The ssh
-process group is killed (SIGTERM → grace → SIGKILL) on Ctrl-C, on give-up and
-before each reconnect.
+Relay behavior — reconnect-with-`--since`, the `[monitor]
+remote_failure_tolerance_s` (default 90s) give-up deadline, and ssh
+process-group teardown — is documented in
+[runbook.md](runbook.md) § "Remote event relay & SSH trust".
 
 ```bash
 agent-runner monitor                       # local anomaly mode

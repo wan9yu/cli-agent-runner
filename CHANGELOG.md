@@ -150,7 +150,7 @@ See `docs/migrations/0.2.md`.
 ### Security
 - Grace-kill child-process fields (`live_children` / `ignored_children` in `round_grace_extended` / `round_grace_kill`) no longer store raw command lines — only the executable basename + pid (and, for ignored children, which ignore-pattern matched). This structurally prevents secrets passed in a child's arguments from reaching `events-*.jsonl`. The field shape changed from a list of strings to a list of objects.
 - Free-text event excerpts that can carry agent output — `transient_error_detected.raw`, `hook_failed.error_message`/`traceback`, `serve_startup_hook_failed.exc_msg` — are now best-effort redacted (auth headers, tokens, credential URLs, `KEY=value` secrets, known key-prefixes, JWT, PEM).
-- Pre-0.1.40 `events-*.jsonl` may contain unredacted argv/excerpts — see `docs/migrations/0.1.40.md`.
+- Pre-0.1.40 `events-*.jsonl` may contain unredacted argv/excerpts.
 
 ### Changed
 - Docs: `configuration.md` `[monitor.host_health]` example points to the generated schema table instead of restating default values.
@@ -206,7 +206,7 @@ See `docs/migrations/0.2.md`.
 ## [0.1.35] - 2026-05-20
 
 ### Removed
-- `claude_rate_limit_detector` plugin alias (0.1.20-era back-compat layer after the 0.1.23 rename to `claude_error_detector`). Hard-cut at both entry-point and config-mapping layers. See `docs/migrations/0.1.35.md` for the 1-line TOML migration.
+- `claude_rate_limit_detector` plugin alias (0.1.20-era back-compat layer after the 0.1.23 rename to `claude_error_detector`). Hard-cut at both entry-point and config-mapping layers.
 
 ## [0.1.34] - 2026-05-20
 
@@ -218,8 +218,6 @@ See `docs/migrations/0.2.md`.
 ### Removed
 - `peek --select events.<kind>` selector (mis-placed in state-snapshot verb). Use `events --kind <kind>` instead. 1-line `s///` migration.
 
-See `docs/migrations/0.1.34.md`.
-
 ## [0.1.33] - 2026-05-19
 
 ### Added
@@ -227,8 +225,6 @@ See `docs/migrations/0.1.34.md`.
 - Exp backoff for estimated-class transient errors (`rate_limit_model` / `api_transient_5xx` / `api_timeout`): consecutive failures multiply the wait `2^N` capped at 32× and 30 minutes absolute. Server-authoritative `rate_limit_account` unchanged.
 - `transient_error_backoff_capped` event gains `original_reset_at_epoch`, `applied_reset_at_epoch`, `consecutive_count`, `capped_by_absolute_max` fields for backoff-curve observability.
 - `docs/thesis.md` names the server-authoritative vs estimated reset principle.
-
-See `docs/migrations/0.1.33.md`.
 
 ## [0.1.32] - 2026-05-18
 
@@ -238,8 +234,6 @@ See `docs/migrations/0.1.33.md`.
 - `[monitor.host_health]` config section — `mem_avail_min_mb` / `disk_warning_pct` / `disk_critical_pct` thresholds for `mem_pressure` / `disk_warning` / `disk_critical` detectors. Defaults preserve prior behavior.
 - New monitor detector `anomaly_repetitive_active` (notify) — alerts when `anomaly_repetitive_tool` events fire in recent rounds. Detector count 10 → 11.
 
-See `docs/migrations/0.1.32.md`.
-
 ## [0.1.31] - 2026-05-18
 
 ### Added
@@ -247,8 +241,6 @@ See `docs/migrations/0.1.32.md`.
 - `[monitor] anomaly_repetitive_window` + `anomaly_repetitive_threshold` — claude plugin emits `anomaly_repetitive_tool` event when same (tool, target) appears ≥threshold times in window-sized tool stream. Specific scar pattern; both 0 = disabled.
 - `[runtime] dry_run` boolean exposed via `HookContext.dry_run` for plugin authors to skip side-effect actions when set.
 - Documentation: TOML changes require daemon restart (no hot-reload); phase rotation indexing clarification.
-
-See `docs/migrations/0.1.31.md`.
 
 ## [0.1.30] - 2026-05-18
 
@@ -261,8 +253,6 @@ See `docs/migrations/0.1.31.md`.
 - Layer 2 serve-loop LOC invariant — guards the README "thin loop" claim (current ~120 LOC).
 - `docs/thesis.md` — project non-goals SSOT for feature-request evaluation.
 - README + runbook callouts for SSH trust boundary of `monitor --host`.
-
-See `docs/migrations/0.1.30.md`.
 
 ## [0.1.29] - 2026-05-17
 
@@ -277,8 +267,6 @@ See `docs/migrations/0.1.30.md`.
 - Legacy event aliases: `rate_limit_rejected`, `rate_limit_recovered`, `rate_limit_backoff_capped` — use `transient_error_*` equivalents.
 - Legacy API exports: `emit_rate_limit_rejected`, `emit_rate_limit_recovered`, `emit_rate_limit_backoff_capped`.
 - Config alias `runtime.rate_limit_action` — use `runtime.transient_error_action`. Removed configs now error with migration hint.
-
-See `docs/migrations/0.1.29.md`.
 
 ## [0.1.28] - 2026-05-17
 
@@ -305,10 +293,8 @@ See `docs/plugins.md` under `claude_error_detector` for the `agent_usage_recorde
   Affects supervisors consuming transient_error_detected.
 
 ### Added
-- docs/migrations/0.1.27.md: supervisor usage guide for transient_error_detected event
+- Supervisor usage guide for transient_error_detected event
   (4-bucket dispatch table + back-off recipe).
-
-See `docs/migrations/0.1.27.md`.
 
 ## [0.1.26] - 2026-05-17
 
@@ -322,8 +308,6 @@ See `docs/migrations/0.1.27.md`.
   `gemini_error_detector` plugin can parse output. Existing scaffolds
   need manual TOML edit; round log format changes (text → JSONL).
 
-See `docs/migrations/0.1.26.md`.
-
 ## [0.1.25] - 2026-05-17
 
 - **Hotfix**: built-in `claude_error_detector` and `gemini_error_detector`
@@ -333,8 +317,6 @@ See `docs/migrations/0.1.26.md`.
   `HookContext.agent_log_path` field populated by the supervisor.
 - `HookContext.agent_log_path: Path | None = None` (additive). 3rd-party
   plugin authors reading `ctx.log_dir / "round-{N}.log"` should migrate.
-
-See `docs/migrations/0.1.25.md`.
 
 ## [0.1.24] - 2026-05-17
 
@@ -348,8 +330,6 @@ See `docs/migrations/0.1.25.md`.
   unattended operation (gemini CLI refuses headless runs in untrusted
   dirs). Existing scaffolds need manual edit.
 
-See `docs/migrations/0.1.24.md`.
-
 ## [0.1.23] - 2026-05-17
 
 - Generalized claude error handling: new `transient_error_*` event family
@@ -361,8 +341,6 @@ See `docs/migrations/0.1.24.md`.
   aliases (deprecated; removed 0.1.24). DeprecationWarning on use.
 - Plugin `claude_rate_limit_detector` renamed to `claude_error_detector`
   (entry-point alias preserved).
-
-See `docs/migrations/0.1.23.md`.
 
 ## [0.1.22] - 2026-05-16
 
@@ -376,8 +354,6 @@ See `docs/migrations/0.1.23.md`.
 - New `docs/long-running-agents.md`: hazards + 4 primitives + framework
   abstraction boundary.
 
-See `docs/migrations/0.1.22.md`.
-
 ## [0.1.21] - 2026-05-16
 
 - `[runtime] max_rounds = N` + `--max-rounds N` CLI flag: supervisor
@@ -387,8 +363,6 @@ See `docs/migrations/0.1.22.md`.
   pauses between rounds and exits cleanly. Requires explicit
   `systemctl start` to resume.
 - 2 new events: `max_rounds_reached`, `stop_file_detected`.
-
-See `docs/migrations/0.1.21.md`.
 
 ## [0.1.20] - 2026-05-16
 
@@ -402,8 +376,6 @@ See `docs/migrations/0.1.21.md`.
 - `peek --json` schema bumped 1.8 → 1.9 (additive `rate_limit` field).
 - New monitor detector `rate_limit_active` (warning, no auto-stop).
 
-See `docs/migrations/0.1.20.md`.
-
 ## [0.1.19] - 2026-05-15
 
 - `agent-runner install` derives `ExecStart` via `shutil.which`; fixes
@@ -415,15 +387,12 @@ See `docs/migrations/0.1.20.md`.
 - New `gemini` preset: `agent-runner init --preset gemini` scaffolds
   for Gemini CLI (uses `--yolo` for unattended operation).
 
-See `docs/migrations/0.1.19.md`.
-
 ## [0.1.18] - 2026-05-15
 
 ### ⚠️ Breaking
 
 - `vcs.orphan_action` removed (deprecated in 0.1.17). TOML using the
   old key raises `ValueError` with migration hint. Use `vcs.dirty_action`.
-  See `docs/migrations/0.1.17.md`.
 
 ## [0.1.17] - 2026-05-15
 
@@ -436,13 +405,11 @@ See `docs/migrations/0.1.19.md`.
 - New round subprocess env vars `AGENT_RUNNER_ROUND_NUM` and
   `AGENT_RUNNER_PHASE`.
 
-See `docs/migrations/0.1.17.md`.
-
 ## [0.1.16] - 2026-05-14
 
 ### ⚠️ Breaking changes
 
-- **`runtime.round_timeout_per_phase` dict syntax removed**. Use `[phases.<name>] round_timeout_s = X` sub-table instead. Migration recipe in `docs/migrations/0.1.16.md`. Rationale: the dict syntax scaled poorly (N² as more per-phase fields would land); the sub-table is a one-time generalization that accommodates any per-phase field including the new `prompt.files`.
+- **`runtime.round_timeout_per_phase` dict syntax removed**. Use `[phases.<name>] round_timeout_s = X` sub-table instead. Rationale: the dict syntax scaled poorly (N² as more per-phase fields would land); the sub-table is a one-time generalization that accommodates any per-phase field including the new `prompt.files`.
 - **`Config.phases` type changed** from `list[str] | None` to `PhasesConfig` dataclass with `.list: list[str] | None` and `.overrides: dict[str, PhaseOverride]`. Code reading `cfg.phases` as a list directly must update to `cfg.phases.list`. Internal callers and plugins are advised to check this access pattern.
 
 ### Added
@@ -456,7 +423,7 @@ See `docs/migrations/0.1.17.md`.
 
 ### Migration notes
 
-- Replace `runtime.round_timeout_per_phase = { dev = 3600, qa = 900 }` with `[phases.dev] round_timeout_s = 3600` + `[phases.qa] round_timeout_s = 900` sub-tables. See `docs/migrations/0.1.16.md` for full recipe.
+- Replace `runtime.round_timeout_per_phase = { dev = 3600, qa = 900 }` with `[phases.dev] round_timeout_s = 3600` + `[phases.qa] round_timeout_s = 900` sub-tables.
 - Code reading `cfg.phases` (e.g. iterating phase names) must update to `cfg.phases.list`.
 - `prompt.file = "x.md"` continues to work unchanged; no migration required unless adopting multi-file concat.
 

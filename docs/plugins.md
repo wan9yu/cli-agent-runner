@@ -563,6 +563,12 @@ the minimal plugin plus a test asserting `after_round` fires with a real
 `HookContext` — lives in `tests/unit/test_example_plugin.py`; copy from there
 rather than from a snippet that never runs.
 
+`ctx.agent_log_path` is the round's **merged stdout+stderr** (auth/network
+errors on stderr stay parseable); parse it as JSONL that may contain non-JSON
+lines. Guard for `None` (unset on manually-constructed `HookContext` in tests),
+and do not recompute the path from `ctx.log_dir` + round number — the naming
+convention under that directory is not a stable contract.
+
 The same `name` + `after_round` shape covers other signals: emit a custom
 event for exempt rounds (register the kind first), count git commits per round,
 or compare recent vs older round duration. Project-specific semantics live in
