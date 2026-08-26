@@ -20,6 +20,7 @@ from agent_runner.cli import (
     events_cmd,
     init_cmd,
     install_cmd,
+    migrate_cmd,
     monitor_cmd,
     peek_cmd,
     round_cmd,
@@ -69,6 +70,7 @@ def _build_parser() -> argparse.ArgumentParser:
     serve_cmd.add_parser(sub, parent)
     round_cmd.add_parser(sub, parent)
     upgrade_cmd.add_parser(sub, parent)
+    migrate_cmd.add_parser(sub, parent)
 
     return parser
 

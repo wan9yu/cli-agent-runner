@@ -24,6 +24,7 @@ are shared between `peek` and `watch`.
 | `serve` | Long-running supervisor loop |
 | `round` | Run one round and exit |
 | `upgrade` | Package upgrade with service-mode gate: orchestrated stop/start for systemd --user; package-only otherwise |
+| `migrate` | Rewrite removed/renamed fields in agent-runner.toml to current form |
 <!-- /gen:verb-table -->
 
 ## Lifecycle
@@ -222,7 +223,7 @@ agent-runner monitor --host pi --mode events --kind round_end,oauth_fail | jq -c
 
 ## 中文摘要
 
-15 个动词，完整列表见上方动词表（自动生成）。
+16 个动词，完整列表见上方动词表（自动生成）。
 
 观察类三视角（peek/watch/monitor）中，`--round / --log / --events / --select` 下钻参数仅 peek 与 watch 共用；monitor 不接受这些下钻参数（`--json` 三者皆可）。
 

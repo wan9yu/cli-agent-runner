@@ -90,7 +90,9 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
     """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
     offenders: list[str] = []
     for f in (PKG / "cli").glob("*_cmd.py"):
-        if f.name in ("round_cmd.py", "serve_cmd.py", "events_cmd.py"):
+        # round/serve/events run the loop directly; migrate rewrites config file
+        # text on disk and never touches the api/runner surface.
+        if f.name in ("round_cmd.py", "serve_cmd.py", "events_cmd.py", "migrate_cmd.py"):
             continue
         text = f.read_text()
         # Accept "from agent_runner import api" (standalone or merged with other names)

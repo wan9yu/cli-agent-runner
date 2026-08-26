@@ -44,7 +44,7 @@ agent-runner monitor              # live anomaly detection
 
 Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 
-## 15 verbs
+## 16 verbs
 
 | Lifecycle | Observation |
 |---|---|

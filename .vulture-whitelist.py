@@ -232,6 +232,16 @@ stash_idempotency_s
 # agent_runner.lifecycle.PIDFile
 path
 
+# agent_runner.migrations.Migration
+detect
+apply
+describe
+
+# agent_runner.migrations.MigrationResult
+new_text
+applied
+manual
+
 # agent_runner.monitor.LocalSource
 log_dir
 
