@@ -118,7 +118,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 Type: string, one of `"argv"`, `"stdin"`
 
 Controls how the assembled prompt reaches the agent subprocess. `"argv"`
-(default, unchanged behavior) substitutes the prompt into
+(the original behavior) substitutes the prompt into
 `prompt_arg_template` and passes it as a command-line argument. `"stdin"`
 writes the prompt to the subprocess's stdin instead — it never appears in
 argv, which avoids a `pkill -f <token>` self-kill if the agent's own cleanup

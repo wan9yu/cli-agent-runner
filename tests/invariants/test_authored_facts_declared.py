@@ -6,7 +6,11 @@ DECLARED with `<!-- authored: <reason> -->` so it's a reviewed choice, not silen
 Scope (v1, deliberately narrow, high-signal): a known config field name appearing on a
 prose line together with a default literal, OUTSIDE fenced code blocks and generated
 regions. Config examples live in ```toml blocks (excluded); generated schema lives in
-gen: regions (excluded). Extend with more checks (flags, enum value-sets) later."""
+gen: regions (excluded). Extend with more checks (flags, enum value-sets) later.
+
+Known v1 limitation: the check is line-based, so a sentence whose field name and
+"default" wrap onto different lines is not caught (a silent-PASS, never a silent-fire).
+A v2 could scan a small line-window; v1 accepts the gap deliberately."""
 
 from __future__ import annotations
 

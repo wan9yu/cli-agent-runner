@@ -346,8 +346,7 @@ payload fields are the keyword arguments of `emit_agent_usage_recorded`:
 
 gemini omits the cache/cost fields: `cost_usd` is `None` and
 `cache_creation_tokens` is `0`. The supervisor reads `transient_error_detected`
-on the next dispatch cycle and applies the configured `transient_error_action`
-(default `back_off`).
+on the next dispatch cycle and applies the configured `transient_error_action`.
 
 No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.
