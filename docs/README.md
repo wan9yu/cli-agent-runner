@@ -8,23 +8,28 @@ across restarts via JSON files; defenses (timeout, process-group reap,
 orphan-stash, smoke-check, monitor auto-stop) catch the recurring failure
 modes.
 
-## Reading order
+## Charter — one job per doc
 
-| Page | Purpose |
+Each doc owns exactly one responsibility. The charter line is that contract:
+content added outside a doc's charter is reviewable drift — flag it in review and
+move it to the doc whose charter it belongs to (see the decision procedure in
+[../CONTRIBUTING.md](../CONTRIBUTING.md)). Read top-to-bottom for onboarding.
+
+| Page | Single responsibility (charter) |
 |---|---|
-| [quickstart.md](quickstart.md) | 5-minute install + first round |
-| [commands.md](commands.md) | Full CLI verb reference |
-| [configuration.md](configuration.md) | `agent-runner.toml` schema |
-| [runbook.md](runbook.md) | Operator runbook + troubleshooting |
-| [architecture.md](architecture.md) | Three-layer model + defense catalog |
-| [events.md](events.md) | Event-kind catalog + JSONL schema |
-| [plugins.md](plugins.md) | Plugin-author reference — hooks, detectors, contracts |
-| [thesis.md](thesis.md) | Explicit non-goals — what agent-runner is NOT |
-| [long-running-agents.md](long-running-agents.md) | Context rot, fresh eyes, long-lineage runs |
-| [recipes/aider.md](recipes/aider.md) | aider walkthrough |
-| [recipes/codewhale.md](recipes/codewhale.md) | codewhale walkthrough |
-| [recipes/kimi.md](recipes/kimi.md) | Kimi Code CLI + running Kimi K3 via the claude preset |
-| [recipes/pi.md](recipes/pi.md) | Pi Coding Agent + Kimi K3 via a Moonshot provider |
+| [quickstart.md](quickstart.md) | The one executable happy path — install + first round |
+| [commands.md](commands.md) | Verb reference — prose glue around generated flags/verbs |
+| [configuration.md](configuration.md) | TOML semantics around the generated schema |
+| [runbook.md](runbook.md) | Operator narrative: procedures, symptom→action |
+| [architecture.md](architecture.md) | Three-layer model + generated defense/detector rosters |
+| [events.md](events.md) | JSONL event-schema contract + version discriminator |
+| [plugins.md](plugins.md) | Plugin-author contract: protocols + one worked example per hook |
+| [thesis.md](thesis.md) | Non-goals + rejection rationale — what agent-runner is NOT |
+| [long-running-agents.md](long-running-agents.md) | Context-rot essay: fresh eyes, long-lineage runs |
+| [recipes/aider.md](recipes/aider.md) | Per-CLI walkthrough — aider |
+| [recipes/codewhale.md](recipes/codewhale.md) | Per-CLI walkthrough — codewhale |
+| [recipes/kimi.md](recipes/kimi.md) | Per-CLI walkthrough — Kimi Code CLI + Kimi K3 via the claude preset |
+| [recipes/pi.md](recipes/pi.md) | Per-CLI walkthrough — Pi Coding Agent + Kimi K3 via a Moonshot provider |
 
 ## 中文导读
 
