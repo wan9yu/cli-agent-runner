@@ -35,9 +35,12 @@ appends `logs/` to `.gitignore`. By default also creates a git commit.
 
 Flags:
 
-- `--preset {claude,aider,gemini,codewhale,kimi,pi}` — agent CLI preset to scaffold (default: `claude`)
-- `--force` — overwrite an existing `agent-runner.toml`
-- `--no-commit` — skip the initial git commit
+<!-- gen:flags-init -->
+- `--preset {aider,claude,codewhale,gemini,kimi,pi}` — Which agent CLI preset to scaffold (default: claude)
+- `--force` — Overwrite existing toml
+- `--commit` — git commit the new files (default)
+- `--no-commit` — Skip git commit
+<!-- /gen:flags-init -->
 
 ```bash
 agent-runner init                      # default: claude preset, commit
@@ -82,6 +85,14 @@ can also invoke directly to debug.
 
 Long-running supervisor loop. Traps SIGTERM (graceful stop) and SIGINT
 (graceful). Writes `serve.pid`. `--once` runs a single round then exits (debug).
+
+Flags:
+
+<!-- gen:flags-serve -->
+- `--once` — Run a single round then exit (debug)
+- `--max-rounds N` — Stop after N round completions (overrides [runtime] max_rounds in config)
+- `--ignore-schedule` — Run rounds regardless of [schedule] pause/run windows (testing / catch-up)
+<!-- /gen:flags-serve -->
 
 ### `agent-runner upgrade [--target VERSION] [--no-restart] [--config PATH]`
 
@@ -170,18 +181,14 @@ configuration.md).
 
 Flags:
 
-- `--mode {anomaly,narrate,events,http}` — output mode (default: `anomaly`). `narrate`
-  streams a human-readable narrative; `events` streams raw event JSON; `http` serves
-  a local progress page.
-- `--port PORT` — HTTP port for `--mode http` (default: `8765`, local-only).
-- `--host SSH-ALIAS` — stream a remote host's events over a managed ssh relay.
-  Supported with `--mode events` only.
-- `--kind K[,K2,...]` — kinds to relay (relay only). Default: every kind this
-  client knows — built-ins plus locally installed plugin kinds. A kind that
-  exists only on the remote must be named explicitly.
-- `--remote-config PATH` — config path **on the remote host** (relay only).
-  Omitted by default, so the remote resolves `./agent-runner.toml` in the ssh
-  landing directory.
+<!-- gen:flags-monitor -->
+- `--host SSH-ALIAS` — Remote ssh alias — supported with --mode events only: agent-runner manages the ssh, resumes with --since after a drop, and kills the ssh process group on exit. Detection modes run on the host itself.
+- `--interval SECONDS` — Poll interval (default 30s)
+- `--kind K[,K2,...]` — Event kinds to relay (--host --mode events only). Default: every kind this client knows — built-ins plus locally installed plugin kinds. A kind that exists only on the remote must be named here.
+- `--mode {anomaly,narrate,events,http}` — anomaly (default): alert-only; narrate: human-readable event stream; events: JSONL event stream; http: browser progress page
+- `--port PORT` — HTTP port for --mode http (default 8765, local-only)
+- `--remote-config PATH` — Config path ON THE REMOTE HOST for the relayed events command (--host --mode events only). Default: omit --config entirely, so the remote resolves ./agent-runner.toml in the ssh landing directory.
+<!-- /gen:flags-monitor -->
 
 Mode × `--host` matrix:
 

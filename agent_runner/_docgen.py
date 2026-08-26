@@ -7,7 +7,9 @@ renderer registry so the substitution rule is testable in isolation.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
+import functools
 import re
 import typing
 from collections.abc import Callable
@@ -152,18 +154,53 @@ def render_event_kinds_list() -> str:
     return "\n".join(f"- `{k}`" for k in sorted(KNOWN_EVENT_KINDS))
 
 
-def render_verb_table() -> str:
-    """Walk the argparse subparsers and render a verb table."""
+def _subparser_action() -> argparse.Action:
+    """The single ``_SubParsersAction`` on the top-level parser."""
     from agent_runner.cli import _build_parser
 
     parser = _build_parser()
-    # Find the sub-parsers action — there's exactly one.
-    sub_action = next(a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction")
+    return next(a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction")
+
+
+def _subparser_choices() -> dict[str, argparse.ArgumentParser]:
+    """Map ``verb -> subparser`` for the CLI, the SSOT both verb renderers use."""
+    return _subparser_action().choices
+
+
+def _render_verb_flags(verb: str) -> str:
+    """Bullet list of a verb's own option flags, from its argparse subparser.
+
+    Parent-inherited ``--config`` / ``--json`` carry ``help=SUPPRESS`` on the
+    shared parent and are filtered here, so only verb-specific flags render.
+    """
+    choices = _subparser_choices()
+    lines: list[str] = []
+    for act in choices[verb]._actions:
+        if not act.option_strings:  # positionals
+            continue
+        if isinstance(act, argparse._HelpAction):  # -h/--help
+            continue
+        if act.help is argparse.SUPPRESS:  # parent --config/--json
+            continue
+        name = max(act.option_strings, key=len)
+        if act.choices:
+            val = " {" + ",".join(map(str, act.choices)) + "}"
+        elif act.metavar:
+            val = f" {act.metavar}"
+        else:
+            val = ""
+        lines.append(f"- `{name}{val}` — {act.help}")
+    return "\n".join(lines)
+
+
+def render_verb_table() -> str:
+    """Walk the argparse subparsers and render a verb table."""
+    sub_action = _subparser_action()
     rows = [
         "| Verb | Description |",
         "|---|---|",
     ]
-    for verb, _sp in sub_action.choices.items():
+    for verb in sub_action.choices:
         # Argparse stores help text via `sub_action._choices_actions` indexed by add order.
         help_text = (
             next(
@@ -183,6 +220,12 @@ RENDERERS: dict[str, Callable[[], str]] = {
     "config-schema": render_config_schema_table,
     "verb-table": render_verb_table,
 }
+RENDERERS.update(
+    {
+        f"flags-{v}": functools.partial(_render_verb_flags, v)
+        for v in ("init", "monitor", "serve", "events")
+    }
+)
 
 _GEN_OPEN = re.compile(r"<!-- gen:([a-z0-9-]+) -->")
 
