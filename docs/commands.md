@@ -68,13 +68,12 @@ Stops and disables both units, then deletes the unit files and reloads systemd.
 
 ### `agent-runner start | stop | kill | restart | status`
 
-| Verb | Semantics | Notes |
-|---|---|---|
-| `start` | systemctl start (or spawn `serve` if no unit) | idempotent |
-| `stop` | **graceful** (default): SIGTERM → wait for current round → exit | up to ROUND_TIMEOUT |
-| `kill` | **force**: SIGTERM → 5s grace → SIGKILL | use only when stuck |
-| `restart [--force]` | stop + start (`--force` uses kill semantics) | |
-| `status [--json]` | service mode, active state, pid, uptime | |
+Verb descriptions are in the verb table above; the operator nuances not captured
+there:
+
+- `start` is idempotent.
+- `stop` waits up to `round_timeout_s` for the current round.
+- `kill` (and `restart --force`) is for a stuck round only — 5s grace then SIGKILL.
 
 ### `agent-runner round`
 
