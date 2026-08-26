@@ -223,7 +223,7 @@ agent-runner monitor --host pi --mode events --kind round_end,oauth_fail | jq -c
 
 ## Maintenance
 
-### agent-runner migrate [--dry-run]
+### `agent-runner migrate [--dry-run]`
 
 `migrate` rewrites removed and renamed fields in `agent-runner.toml` to their
 current form so a config written for an older release loads on the current one.

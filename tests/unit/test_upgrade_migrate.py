@@ -53,6 +53,23 @@ def test_manual_transform_reported(tmp_path):
     assert applied == [] and len(manual) == 1
 
 
+def test_mixed_auto_and_manual_writes_nothing(tmp_path):
+    """A config with BOTH an auto rename and a manual transform is report-only:
+    the upgrade aborts, so _migrate_config_file must leave the file byte-for-byte
+    unchanged and write no `.bak` (never mutate a config on a doomed upgrade)."""
+    body = (
+        _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
+        + 'rate_limit_action = "skip"\n'
+        + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
+    )
+    cfg = _cfg(tmp_path, body)
+    before = cfg.read_bytes()
+    applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+    assert applied == [] and len(manual) == 1
+    assert cfg.read_bytes() == before  # file untouched
+    assert not (tmp_path / "agent-runner.toml.bak").exists()
+
+
 def test_try_load_cfg_returns_none_on_unmigratable(tmp_path):
     """Defense-in-depth: a config that still carries a removed key after any
     auto-migration must degrade to the package-only path (None), not crash

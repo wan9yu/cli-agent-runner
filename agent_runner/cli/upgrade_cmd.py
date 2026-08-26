@@ -81,8 +81,13 @@ def cmd(args) -> int:
 
 def _migrate_config_file(cfg_path: Path, *, no_migrate: bool) -> tuple[list[str], list[str]]:
     """Auto-migrate the raw config BEFORE load_config (which rejects old keys).
-    Applies auto transforms in place (with .bak); returns (applied, manual).
-    Manual-only transforms are returned, not applied."""
+
+    Only mutates when the migration is COMPLETE. If any transform needs a manual
+    fix, the caller aborts the upgrade — so we write NOTHING (no `.bak`, no
+    rewrite) and return ``([], manual)`` report-only, leaving the file untouched
+    for the user to run `agent-runner migrate` and re-upgrade. Only when there is
+    no manual remainder do we write the `.bak` + rewrite and return the applied
+    changes."""
     if no_migrate or not cfg_path.exists():
         return [], []
     text = cfg_path.read_text(encoding="utf-8")
@@ -91,10 +96,13 @@ def _migrate_config_file(cfg_path: Path, *, no_migrate: bool) -> tuple[list[str]
     except tomllib.TOMLDecodeError:
         return [], []  # broken TOML — let the normal load path report it
     result = migrations.run_migrations(text, parsed)
+    if result.manual:
+        return [], result.manual  # doomed upgrade → don't mutate the config
     if result.applied:
         cfg_path.with_suffix(cfg_path.suffix + ".bak").write_text(text, encoding="utf-8")
         cfg_path.write_text(result.new_text, encoding="utf-8")
-    return result.applied, result.manual
+        return result.applied, []
+    return [], []
 
 
 def _try_load_cfg(args) -> Config | None:
@@ -106,7 +114,10 @@ def _try_load_cfg(args) -> Config | None:
     """
     try:
         return cfg_from_args(args)
-    except (FileNotFoundError, ConfigError):
+    except FileNotFoundError:
+        return None
+    except ConfigError:
+        info("config did not load; proceeding with a package-only upgrade (no restart)")
         return None
 
 
