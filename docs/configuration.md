@@ -141,7 +141,8 @@ prompt_arg_template = ["-p"]   # remove {prompt} — no longer substituted into 
 
 **Pruning is opt-in. `0` — the default — never prunes anything.** Round logs
 accumulate for as long as the deployment runs, and agent-runner deletes none of
-them unless you ask it to.
+them unless you ask it to. Must be `>= 0`; a negative value is rejected at
+config load.
 
 The knob governs both round-log families:
 
