@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-08-25
+
+### Added
+- `agent-runner migrate [--dry-run]` rewrites removed/renamed fields in `agent-runner.toml` to their current form, keeping a `.bak`; reports fields needing a manual change.
+- `upgrade` auto-migrates the config before the package/service step and emits a `config_migrated` event; a config needing a manual change aborts the run before it stops the service. `--no-migrate` skips it.
+
+### Changed
+- Removed-field `ConfigError` messages now point to `agent-runner migrate`.
+
+See `docs/migrations/0.2.8.md`.
+
 ## [0.2.7] - 2026-08-25
 
 ### Added

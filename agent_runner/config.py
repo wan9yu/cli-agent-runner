@@ -444,14 +444,14 @@ def load_config(toml_path: Path) -> Config:
     if "round_timeout_per_phase" in runtime_d:
         raise ConfigError(
             "runtime.round_timeout_per_phase removed in 0.1.16; "
-            "use [phases.<name>] round_timeout_s = X"
+            "use [phases.<name>] round_timeout_s = X. Run `agent-runner migrate`."
         )
 
     if runtime_d.get("rate_limit_action") is not None:
         raise ConfigError(
             "runtime.rate_limit_action was removed in 0.1.29; use "
             "runtime.transient_error_action (same allowed values: "
-            "back_off / skip / stop)."
+            "back_off / skip / stop). Run `agent-runner migrate`."
         )
 
     transient_error_action_raw = runtime_d.get("transient_error_action")
@@ -543,7 +543,9 @@ def load_config(toml_path: Path) -> Config:
     )
     vcs_d = raw.get("vcs", {})
     if "orphan_action" in vcs_d:
-        raise ConfigError("vcs.orphan_action removed in 0.1.18; use vcs.dirty_action")
+        raise ConfigError(
+            "vcs.orphan_action removed in 0.1.18; use vcs.dirty_action. Run `agent-runner migrate`."
+        )
     dirty_action = str(vcs_d.get("dirty_action", "stash"))
     if dirty_action not in _VALID_DIRTY_ACTIONS:
         raise ConfigError(

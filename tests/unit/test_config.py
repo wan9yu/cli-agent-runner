@@ -1832,3 +1832,25 @@ def test_given_invalid_auth_fail_pattern_when_loaded_then_raises(tmp_path: Path)
         load_config(toml)
     assert "monitor.auth_fail_patterns" in str(exc.value)
     assert "invalid regex" in str(exc.value)
+
+
+def test_removed_field_error_points_to_migrate(tmp_path):
+    """Removed-field ConfigErrors must direct users to `agent-runner migrate`."""
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path}/logs"\n'
+        'rate_limit_action = "back_off"\n\n'
+        "[prompt]\n"
+        f'file = "{tmp_path}/p.md"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
+    with pytest.raises(ConfigError, match="agent-runner migrate"):
+        load_config(toml)

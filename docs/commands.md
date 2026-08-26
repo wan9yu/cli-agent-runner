@@ -221,6 +221,29 @@ agent-runner monitor --host pi --mode events  # relay pi's event stream here
 agent-runner monitor --host pi --mode events --kind round_end,oauth_fail | jq -c
 ```
 
+## Maintenance
+
+### agent-runner migrate [--dry-run]
+
+`migrate` rewrites removed and renamed fields in `agent-runner.toml` to their
+current form so a config written for an older release loads on the current one.
+It reads the config resolved from `--config` (default `./agent-runner.toml`),
+applies each known transform, writes the result in place with a `.bak` backup of
+the original, and prints one line per change. Fields that cannot be rewritten
+automatically are reported as `MANUAL:` lines for you to fix by hand. A config
+with nothing to change is left untouched.
+
+<!-- gen:flags-migrate -->
+- `--dry-run` — Show changes without writing the file
+<!-- /gen:flags-migrate -->
+
+`--dry-run` prints the same report without writing the file or the backup.
+
+Exit codes: `0` when the config is clean or fully migrated, `1` when a manual
+change remains, `2` when the config cannot be read or is not valid TOML. See
+[migrations/0.2.8.md](migrations/0.2.8.md) for the exact transforms; `upgrade`
+runs this migration automatically (§ runbook "Upgrading agent-runner").
+
 ## 中文摘要
 
 16 个动词，完整列表见上方动词表（自动生成）。

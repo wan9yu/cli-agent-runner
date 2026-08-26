@@ -204,6 +204,15 @@ Whichever path: a long-running supervisor only loads the new code **after it
 restarts** — that's why every non-`--user` path ends in a restart you run. The
 three paths are detailed below.
 
+Before touching the package or service, `upgrade` migrates your
+`agent-runner.toml` to the current form: fields renamed or removed in an earlier
+release are rewritten in place, the original is kept as a `.bak`, and a
+`config_migrated` event records what changed. A config that needs a change
+`upgrade` cannot make automatically aborts the run **before** it stops the
+service or installs anything — fix it (or run `agent-runner migrate`) and retry.
+Pass `--no-migrate` to skip this step, or run `agent-runner migrate` standalone
+at any time (see [commands.md](commands.md) § "agent-runner migrate").
+
 ### Path 1 — systemd --user service (installed via `agent-runner install`)
 
     agent-runner upgrade --target <version>
