@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Removed-field `ConfigError` messages now point to `agent-runner migrate`.
 
-See `docs/migrations/0.2.8.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.7] - 2026-08-25
 
@@ -26,7 +26,7 @@ See `docs/migrations/0.2.8.md`.
 ### Fixed
 - Monitor no longer raises `supervisor_stale` during an intentional schedule pause (suppressed until `resume_at` plus one staleness window).
 
-See `docs/migrations/0.2.7.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.6] - 2026-07-28
 
@@ -39,7 +39,7 @@ See `docs/migrations/0.2.7.md`.
 ### Added
 - `round_logs_prune_deferred` event — emitted on every prune attempt the bulk guard defers, carrying `directory`, `existing`, `keep`, `would_delete` and a hint naming `runtime.round_log_retention`. Resolve by raising retention above the backlog or deleting the files yourself; the guard never blocks a round. Retention `0` emits nothing.
 
-See `docs/migrations/0.2.6.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.5] - 2026-07-27
 
@@ -50,7 +50,7 @@ See `docs/migrations/0.2.6.md`.
 ### Removed
 - The polling remote monitor (`RemoteSource`, `run_remote_command`, `MonitorRemoteError`, auto-stop over ssh) — it read remote paths on the local filesystem and was already failing loud since 0.2.4. Detection is on-host by design; remote observation is the relay above. `monitor.on_alert` lost its `host` parameter and `monitor_auto_stop_triggered` its `host` field; `monitor_auto_stop_failed` now reports a failed *local* stop (previously a failed ssh stop) instead of crashing the monitor loop.
 
-See `docs/migrations/0.2.5.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.4] - 2026-07-27
 
@@ -67,7 +67,7 @@ See `docs/migrations/0.2.5.md`.
 - Startup validation resolves the agent command exactly as the spawn does (child's PATH — `[agent.env]` may override it — and `work_dir` base); `PWD` now stays pinned to `work_dir` even if `[agent.env]` sets it. The stdout+stderr merge is now pinned by a behavioral test, not just prose.
 - Generated serve systemd units now set `KillMode=mixed`: with systemd's default `control-group`, `systemctl stop` SIGTERMed the whole cgroup — agent child included — making the graceful round drain structurally ineffective. Existing installs: re-run `agent-runner install` (or add a drop-in) to pick this up.
 
-See `docs/migrations/0.2.4.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.3] - 2026-07-26
 
@@ -79,7 +79,7 @@ See `docs/migrations/0.2.4.md`.
 - The agent subprocess now runs in `runtime.work_dir` (`cwd=` on spawn). Previously it inherited the supervisor's cwd and only launch conventions (systemd `WorkingDirectory=`, relative `--config`) kept the two aligned — fatal for agent CLIs with no working-directory flag of their own (e.g. `pi`). The startup check now also validates a relative `agent.command[0]` against `work_dir`, matching where it executes.
 - Plugin round-log tail window widened 50 → 200 lines: a stderr burst after the agent's terminal JSONL event could evict it from the scan window, silently dropping usage/transient classification. The round log's merged stdout+stderr contract is now documented (`HookContext.agent_log_path`, `docs/long-running-agents.md`) — the merge is deliberate; auth/network detection reads stderr text from it.
 
-See `docs/migrations/0.2.3.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.2] - 2026-07-18
 
@@ -102,7 +102,7 @@ See `docs/migrations/0.2.3.md`.
 ### Added
 - Housekeeping: the build gate runs `vulture` (dead-code scan, whitelist auto-generated from `@dataclass` fields); `AGENT_RUNNER_FRESH_EYES` is now a documented, tested round-subprocess env-var contract; `SECURITY.md` gains a threat model (agent-runner is a supervisor, not a sandbox).
 
-See `docs/migrations/0.2.2.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.1] - 2026-07-16
 
@@ -113,7 +113,7 @@ See `docs/migrations/0.2.2.md`.
 ### Fixed
 - A signal-killed round is no longer misclassified as `agent_network_blip` when its log happens to contain a network-error string; signal deaths are terminations, not network blips.
 
-See `docs/migrations/0.2.1.md`.
+See `docs/migrations/0.2.md`.
 
 ## [0.2.0] - 2026-07-02
 
@@ -121,7 +121,7 @@ See `docs/migrations/0.2.1.md`.
 - Dirty-tree handling is now pluggable. The clean-exit-dirty policy moved out of core into a `dirty_handler` hook; `stash` / `ignore` / `auto_commit` now ship as the bundled, default-on `default_dirty_handler` plugin. **No behavior or config change for existing users** — `[vcs] dirty_action` works exactly as before.
 
 ### Added
-- `dirty_handler` plugin seam (4th lifecycle hook) + `DirtyOutcome` on `RoundResult`; `stash_orphan` / `try_auto_commit` are now public `api` primitives. Consumers can fully own dirty-tree policy — see `docs/migrations/0.2.0.md`.
+- `dirty_handler` plugin seam (4th lifecycle hook) + `DirtyOutcome` on `RoundResult`; `stash_orphan` / `try_auto_commit` are now public `api` primitives. Consumers can fully own dirty-tree policy — see `docs/migrations/0.2.md`.
 - `dirty_auto_committed` event (emitted when a handler auto-commits).
 
 ## [0.1.42] - 2026-06-25
@@ -295,7 +295,7 @@ See `docs/migrations/0.1.29.md`.
 - `agent_runner.api_types.ThrottleState` dead alias (0.1.23 back-compat; deprecation window
   passed; switch to `TransientErrorState`).
 
-See `docs/migrations/0.1.28.md`.
+See `docs/plugins.md` under `claude_error_detector` for the `agent_usage_recorded` payload schema.
 
 ## [0.1.27] - 2026-05-17
 

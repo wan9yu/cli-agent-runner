@@ -345,10 +345,29 @@ event with `classification` ∈ {`rate_limit_account`, `rate_limit_model`,
 `round_num`, `raw` (≤200 chars).
 
 Per round (regardless of error state), also emits `agent_usage_recorded`
-with token/cost/duration data extracted from the claude result event —
-see `docs/migrations/0.1.28.md` for the full payload schema. The
-supervisor reads `transient_error_detected` on the next dispatch cycle
-and applies the configured `transient_error_action` (default `back_off`).
+with token/cost/duration data extracted from the claude result event. The
+payload fields are the keyword arguments of `emit_agent_usage_recorded`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `agent` | `str` | CLI name (`claude`, `gemini`, …) |
+| `model` | `str` | model id used for the round |
+| `round_num` | `int` | 1-based round number |
+| `input_tokens` | `int` | net non-cached input |
+| `output_tokens` | `int` | generated tokens |
+| `cached_tokens` | `int` | cache-read input tokens |
+| `cost_usd` | `float \| None` | round cost, or `None` when the CLI omits it |
+| `duration_ms` | `int` | round wall time |
+| `models_breakdown` | `dict \| None` | per-model split on multi-model rounds |
+| `cache_creation_tokens` | `int` | cache-write tokens (claude only) |
+| `tool_call_count` | `int` | tool invocations in the round |
+| `phase` | `str` | phase label, empty when unphased |
+| `success` | `bool` | supervisor clean-exit predicate |
+
+gemini omits the cache/cost fields: `cost_usd` is `None` and
+`cache_creation_tokens` is `0`. The supervisor reads `transient_error_detected`
+on the next dispatch cycle and applies the configured `transient_error_action`
+(default `back_off`).
 
 No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.

@@ -31,23 +31,22 @@ what GitHub Actions runs on every push and PR.
 
 ## Migration docs
 
-A `docs/migrations/<version>.md` guide is written **only** when a release:
+Migration guidance is primarily the executable `agent-runner migrate` command
+(which rewrites removed/renamed config fields — its transform list is generated
+into `docs/commands.md` from the registry) plus `CHANGELOG.md`. Between them
+they carry a config rewrite and per-version notes; a doc that only restates the
+changelog is upkeep with no reader.
 
-- makes a **breaking change** — a removed or renamed public symbol, or a
-  config that used to load and now does not; or
-- **requires operator action** — a TOML edit, a manual recovery step, or a
-  data/format migration.
+`docs/migrations/0.2.md` is the one surviving guide: it collects the few manual
+steps a config rewrite can't do (recovery procedures, a systemd regen, a mode
+switch). Keep the relevant CHANGELOG entries terse and link it
+(`See docs/migrations/0.2.md.`).
 
-Otherwise `CHANGELOG.md` carries the whole story; a guide that only restates
-the changelog is upkeep with no reader. When a guide does exist, keep the
-CHANGELOG entry terse and link it (`See docs/migrations/<version>.md.`).
-
-0.2.2 is the first release written under this policy: it removes two public
-symbols — the `detector_helpers` module and the `cancel` verb — so it ships a
-guide. Existing `docs/migrations/` files are history: append-only, never
-rewritten or deleted, including ones this policy would not have produced.
-Correct a shipped guide with a dated `**Correction (<version>)**:` note, not
-an edit in place.
+Migration guides are **not** append-only. A per-version guide is pruned once its
+content becomes executable (`migrate`), generated (the transform list),
+consolidated (into `0.2.md`), or purely archival — its live referrers retargeted
+in the same change so no dead pointer remains. When you consolidate, correct a
+carried-over step in place rather than preserving the original wording.
 
 ## Architecture / docs
 

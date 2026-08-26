@@ -1,8 +1,9 @@
 """Invariant: every user-facing config error is a ConfigError.
 
 ConfigError's own docstring promises it for "a removed or invalid field", and
-docs/configuration.md:179/181, CHANGELOG.md:354 and docs/migrations/0.2.1.md:48
-all tell operators to expect it — but it was raised at 1 of 26 sites. Since
+docs/configuration.md (§ ConfigError promise and § agent.prompt_delivery) and
+CHANGELOG.md all tell operators to expect it — but it was raised at 1 of 26
+sites. Since
 ConfigError subclasses ValueError and nothing catches ValueError from
 load_config, promotion is a widening: no caller can observe the difference
 except by asking for the more specific class, which the docs already do.
@@ -62,7 +63,7 @@ def test_given_config_error_when_inspected_then_subclasses_value_error() -> None
 def test_given_stdin_delivery_with_prompt_token_when_loaded_then_config_error(
     tmp_path: Path,
 ) -> None:
-    """docs/migrations/0.2.1.md:48 states ConfigError at startup for this config."""
+    """docs/configuration.md § agent.prompt_delivery pins ConfigError at startup here."""
     from agent_runner.config import ConfigError, load_config
 
     cfg_path = write_min_config(

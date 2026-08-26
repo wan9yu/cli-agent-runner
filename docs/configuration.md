@@ -124,8 +124,19 @@ Controls how the assembled prompt reaches the agent subprocess. `"argv"`
 writes the prompt to the subprocess's stdin instead — it never appears in
 argv, which avoids a `pkill -f <token>` self-kill if the agent's own cleanup
 commands happen to match a token drawn from its prompt. The `claude` preset
-defaults to `"stdin"`; existing configs are unchanged. See
-`docs/migrations/0.2.1.md` to adopt on an existing config.
+defaults to `"stdin"`; existing configs are unchanged.
+
+To adopt `"stdin"` on an existing config, two edits are required together —
+`prompt_delivery = "stdin"` does **not** remove `{prompt}` for you, and load
+rejects the combination of `"stdin"` with a `{prompt}` placeholder still present
+(`ConfigError` at startup, since the prompt is piped to stdin, not placed in
+argv):
+
+```toml
+[agent]
+prompt_delivery = "stdin"
+prompt_arg_template = ["-p"]   # remove {prompt} — no longer substituted into argv
+```
 
 ### `runtime.round_log_retention`
 
@@ -201,7 +212,7 @@ working tree. This config is read by the bundled `default_dirty_handler` plugin
 | `"auto_commit"` | Supervisor commits with subject `agent-runner auto-commit: R<N> <phase>`. No push. On success, emits `dirty_auto_committed`. On failure, emits `dirty_commit_failed`, leaves tree dirty. |
 
 To replace this policy entirely, disable the bundled plugin and register your own
-`DirtyHandler` — see `docs/plugins.md` and `docs/migrations/0.2.0.md`.
+`DirtyHandler` — see `docs/plugins.md`.
 
 ## `[agent.env]` (optional)
 
