@@ -57,7 +57,7 @@ The `anomaly_repetitive_active` detector (added 0.1.32) is the live example:
 it raises a **notify-level** alert when the claude plugin emits
 `anomaly_repetitive_tool` events above a fixed threshold within a window — a
 specific signature, not N-σ. It runs under the opt-in `monitor` and is
-promotable to an auto-stop via `monitor.auto_stop_on`; it is not a default
+promotable to an auto-stop via `monitor.auto_stop_on`; it is not an automatic
 hard-stop.
 `max_grace_after_result_s` (0.1.31, refined 0.1.38) is another: a fixed
 grace after the `result` event, the subprocess is killed only if its

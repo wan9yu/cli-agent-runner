@@ -335,8 +335,8 @@ hand-rolled loop gets wrong:
   first connect passes no `--since` — streaming starts from now.
 - **A deadline, not an infinite retry.** Each ssh exit emits a
   `monitor_remote_blip` and retries with escalating backoff (1s → 2s → … → 30s).
-  If the link stays down past `[monitor] remote_failure_tolerance_s` (default
-  90s) the relay emits `monitor_remote_giveup`, prints the last ssh diagnostic
+  If the link stays down past `[monitor] remote_failure_tolerance_s`
+  the relay emits `monitor_remote_giveup`, prints the last ssh diagnostic
   to stderr and exits 1 — so a service manager restarts it instead of a dead
   loop pretending to watch. The failure clock resets on the first relayed
   *line*, not on a successful connect. ssh's own stderr never reaches stdout;
@@ -422,10 +422,11 @@ can act on. It cannot distinguish a dead host from a dead network, so pair it
 with an uptime/ping check, or a scheduled `ssh <host> agent-runner peek --json`
 that alerts when the command or its `last_event_ts` goes stale.
 
+<!-- authored: derived supervisor_stale default; SSOT agent_runner/config.py -->
 The `supervisor_stale` threshold defaults to `round_timeout_s * 1.5`. Override
 with `[monitor] supervisor_stale_threshold_s = N` for projects whose legitimate
 cadence — very short rounds with occasional long legitimate gaps, or phase
-overrides that raise `round_timeout_s` — does not fit the derived default. Set
+overrides that raise `round_timeout_s` — does not fit the derived threshold. Set
 to `0` to disable the detector entirely.
 
 ## Live event stream (machine-readable)
@@ -481,6 +482,7 @@ active round's log — `tail -F {log_dir}/round-current.log` for live view.
 The same family naming applies to the agent's own transcripts in
 `{log_dir}/rounds/R<N>-<timestamp>.log`, one file per round.
 
+<!-- authored: canonical round_log_retention=0 default; SSOT agent_runner/config.py -->
 **Neither family is pruned by default (0.2.6+).** `runtime.round_log_retention`
 defaults to `0`, which means never prune; both families grow for as long as the
 deployment runs. That growth is watched by `disk_warning` (90%) and
@@ -534,7 +536,7 @@ agent-runner monitor --mode http --port 8765 --config /path/to/agent-runner.toml
 
 Open `http://localhost:8765/` to see a 5-section page (auto-refresh 5s):
 1. Round-level state (round_num, phase, last outcome, duration)
-2. High-level narrative (last 50 lines of `runtime.narrative_file`, default `log_dir/narrative.md`)
+2. High-level narrative (last 50 lines of `runtime.narrative_file`, default `log_dir/narrative.md`) <!-- authored: default narrative_file path; SSOT agent_runner/config.py -->
 3. Recent events (last 20)
 4. Round stdout/stderr tail (last 50 lines)
 5. Self-termination flag status
@@ -655,10 +657,10 @@ host-safety needs are already in-core. Detector rows require a running
 | Operator need | What exists | Notes |
 |---|---|---|
 | Never two supervisors on one project | `flock_concurrency` defense — exclusive `flock` on `{log_dir}/agent-runner.lock` | A second `serve` fails fast naming the holder's PID, lock age, and cmdline. No cron-overlap guard of your own needed |
-| Runaway round | `[runtime] round_timeout_s` (default 1800) | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_timeout_s` |
+| Runaway round | `[runtime] round_timeout_s` (default 1800) <!-- authored: default round_timeout_s; SSOT agent_runner/config.py --> | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_timeout_s` |
 | Cap the agent process itself | `[agent.env]` | Passed verbatim into the round subprocess env and takes precedence over the inherited `os.environ`, so e.g. `NODE_OPTIONS = "--max-old-space-size=384"` reaches a Node-based CLI |
-| Host memory pressure | `mem_pressure` detector | Fires when host-wide `mem_available_mb` < `[monitor.host_health] mem_avail_min_mb` (default 200). Warning severity, **notify-only — it never auto-stops**. Whole-host figure, not the agent's share |
-| Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health]` |
+| Host memory pressure | `mem_pressure` detector | Fires when host-wide `mem_available_mb` < `[monitor.host_health] mem_avail_min_mb` (default 200). Warning severity, **notify-only — it never auto-stops**. Whole-host figure, not the agent's share <!-- authored: default mem_avail_min_mb; SSOT agent_runner/config.py --> |
+| Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health]` <!-- authored: disk_critical ships in the default auto_stop_on set; SSOT agent_runner/config.py --> |
 | Auth burn (401 loop) | `oauth_fail` detector, auto-stops by default | Fires at ≥20% of a **fixed 10-event window** of `agent_exit` records. Under 10 exits it cannot fire at all, so a host that starts with bad credentials burns its first ~10 rounds before the stop lands. Two evidence paths: a round carrying `agent_auth_error_detected` (a plugin read the failure out of the CLI's own structured output — this is how pi's 401 becomes visible despite pi exiting 0), or the log-tail text heuristic, which still requires a **nonzero** agent exit as its false-positive shield |
 | Token / cost accounting | `agent_usage_recorded` events in `events-*.jsonl` | Raw per-round records; rollups and budget alerts are the consumer's job. Emitted by the `claude_error_detector` / `gemini_error_detector` / `codewhale_error_detector` / `pi_error_detector` plugins. kimi's plugin classifies transient errors but emits no usage, because the Kimi Code CLI exposes no token counters in its stream-json output, so kimi rounds produce no usage events |
 
@@ -864,6 +866,7 @@ The built-in `claude_error_detector` classifies transient errors into
 - `api_transient_5xx` — server outage (500/502/503/504/529). 60s default.
 - `api_timeout` — 408 timeout. 30s default.
 
+<!-- authored: default transient_error_action; SSOT agent_runner/config.py -->
 **Default behavior (`transient_error_action = "back_off"`):**
 
 The supervisor sleeps until `reset_at_epoch` (plus a 5–30s jitter),

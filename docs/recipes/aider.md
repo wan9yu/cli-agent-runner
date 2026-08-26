@@ -105,8 +105,9 @@ command = ["aider", "--model", "deepseek/deepseek-coder", "--yes-always", "--no-
 - **Large diffs in stdout** — aider's `--no-stream` is line-buffered but still
   prints the full diff per turn. The per-round agent transcript
   (`~/.agent-runner/<project>/logs/rounds/R<N>-*.log`) can grow to ~MB for large
-  refactors. Nothing prunes them by default (`[runtime] round_log_retention`
-  is `0` — never prune); set a positive count to cap the file *count* per
+  refactors. These transcripts are never pruned unless you opt in via
+  `[runtime] round_log_retention` (see [runbook.md](../runbook.md) log
+  retention); set a positive count to cap the file *count* per
   family, pruned by round number at the start of each round. The per-file size
   is never capped, so size your retention against actual file sizes if disk is
   tight. The separate serve-wrapper logs (`log_dir/round-*.log`) share the same

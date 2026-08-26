@@ -126,7 +126,7 @@ Operators sometimes conflate them. The flags are independent.
 
 Before each round, the supervisor writes `round-context.json` to `{log_dir}/round-context.json`
 with phase, round_num, plugin-provided context fields (from ContextEnricher), and
-recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended
+recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended <!-- authored: documents the shipped inject_context default; SSOT agent_runner/config.py -->
 to the agent's prompt file.
 
 To disable this path: `[prompt] inject_context = false`.
