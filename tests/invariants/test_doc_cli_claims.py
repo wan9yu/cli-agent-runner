@@ -15,8 +15,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Docs that hand an operator a copy-pasteable command line.
-_CLI_DOCS = ("docs/commands.md", "docs/runbook.md", "docs/quickstart.md")
+# Docs that hand an operator a copy-pasteable command line. The recipes/ dir is
+# globbed in so every `agent-runner …` example in a per-agent recipe is pinned
+# against argparse too.
+_CLI_DOCS = ("docs/commands.md", "docs/runbook.md", "docs/quickstart.md") + tuple(
+    f"docs/recipes/{p.name}" for p in sorted((REPO / "docs/recipes").glob("*.md"))
+)
 
 # `agent-runner <verb> --flag ...` inside fenced blocks or prose. A leading
 # `--` is matched by [a-z-]+ too; those verbs simply miss the choices lookup.

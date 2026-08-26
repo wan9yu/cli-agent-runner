@@ -64,8 +64,8 @@ def test_given_documented_owned_path_patterns_when_matched_then_table_is_true() 
 
 
 def test_given_architecture_doc_when_read_then_no_false_flag_symmetry_claim() -> None:
-    """architecture.md claimed peek/watch/monitor share drill-down flags.
-    monitor's parser has none of them; argparse exits 2."""
+    """architecture.md AND commands.md claimed peek/watch/monitor share drill-down
+    flags. monitor's parser has none of them; argparse exits 2."""
     from agent_runner.cli import _build_parser
 
     parser = _build_parser()
@@ -80,4 +80,16 @@ def test_given_architecture_doc_when_read_then_no_false_flag_symmetry_claim() ->
     assert "All three accept the same drill-down flags" not in text, (
         "architecture.md still claims monitor accepts peek's drill-down flags; "
         f"monitor accepts only {sorted(monitor_flags)}"
+    )
+
+    cmds = (REPO / "docs/commands.md").read_text(encoding="utf-8")
+    assert "shared between `peek` and `watch`" in cmds, (
+        "commands.md no longer scopes drill-down flags to peek and watch"
+    )
+    assert "monitor 不接受这些下钻参数" in cmds, (
+        "commands.md's 中文摘要 no longer excludes monitor from the drill-down flags"
+    )
+    assert "三视角对称，全部共用" not in cmds, (
+        "commands.md revived the false claim that all observation verbs share the "
+        f"drill-down flags; monitor accepts only {sorted(monitor_flags)}"
     )

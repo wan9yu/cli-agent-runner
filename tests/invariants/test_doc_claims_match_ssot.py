@@ -14,6 +14,7 @@ from agent_runner import defenses
 from agent_runner.builtin_plugins._constants import _5XX_STATUSES, _TAIL_LINES
 from agent_runner.cli import _build_parser
 from agent_runner.config import (
+    _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
     _VALID_DIRTY_ACTIONS,
     _VALID_INJECTION_MODES,
     _VALID_PROMPT_DELIVERY,
@@ -31,6 +32,15 @@ def _verb_count() -> int:
     return len({c for a in subs for c in a.choices})
 
 
+def _monitor_interval_default() -> int:
+    """The monitor poll cadence — api.monitor_loop's interval_s default."""
+    import inspect
+
+    from agent_runner.api import monitor_loop
+
+    return inspect.signature(monitor_loop).parameters["interval_s"].default
+
+
 def test_doc_counts_match_ssot(tmp_path) -> None:
     from agent_runner.cli.init_cmd import _preset_names
 
@@ -39,6 +49,8 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
     defs = len(defenses.catalog(cfg))
     verbs = _verb_count()
     presets = len(_preset_names())
+    monitor_interval = _monitor_interval_default()
+    remote_tol = _DEFAULT_REMOTE_FAILURE_TOLERANCE_S
 
     # (file, regex with ONE int capture group, expected value)
     registry = [
@@ -51,6 +63,8 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/architecture.md", r"(\d+) presets ship", presets),
         ("docs/commands.md", r"Runs the (\d+) detectors", detectors),
         ("docs/commands.md", r"(\d+) 个动词", verbs),
+        ("docs/commands.md", r"at a default (\d+)s interval", monitor_interval),
+        ("docs/commands.md", r"remote_failure_tolerance_s` \(default (\d+)s\)", remote_tol),
         ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),
         ("docs/plugins.md", r"last (\d+) JSON lines", _TAIL_LINES),
     ]

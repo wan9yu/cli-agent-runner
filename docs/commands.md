@@ -224,7 +224,7 @@ agent-runner monitor --host pi --mode events --kind round_end,oauth_fail | jq -c
 
 15 个动词，完整列表见上方动词表（自动生成）。
 
-观察类（peek/watch/monitor）三视角对称，全部共用 `--round / --log / --events / --select / --json` 下钻参数。
+观察类三视角（peek/watch/monitor）中，`--round / --log / --events / --select` 下钻参数仅 peek 与 watch 共用；monitor 不接受这些下钻参数（`--json` 三者皆可）。
 
 服务停止两动词：`stop` 优雅、`kill` 强制。
 

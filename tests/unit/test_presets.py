@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import importlib.resources
+import re
 import tomllib
+from pathlib import Path
 
 import pytest
 
 from tests._test_helpers import PRESET_NAMES
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 def test_given_preset_names_when_compared_to_shipped_dir_then_match() -> None:
@@ -197,6 +201,25 @@ def test_given_codewhale_preset_when_parsed_then_uses_exec_stream_json() -> None
 def test_given_codewhale_preset_when_parsed_then_no_agent_env_block() -> None:
     text = _preset_text("codewhale").replace("{project}", "test-project")
     assert "env" not in tomllib.loads(text)["agent"]
+
+
+def test_given_pi_recipe_command_block_when_parsed_then_matches_pi_preset() -> None:
+    """docs/recipes/pi.md's example `command` is the pi preset with PROVIDER/MODEL
+    resolved to our documented Kimi K3 default — pinned against presets/pi.toml."""
+    pi_md = (REPO / "docs/recipes/pi.md").read_text(encoding="utf-8")
+    doc_cmd = None
+    for block in re.findall(r"```toml\n(.*?)```", pi_md, re.DOTALL):
+        parsed = tomllib.loads(block)
+        if "command" in parsed:
+            doc_cmd = parsed["command"]
+            break
+    assert doc_cmd is not None, "pi.md has no ```toml``` block defining `command`"
+
+    preset = tomllib.loads(_preset_text("pi").replace("{project}", "test-project"))
+    expected = [
+        tok.replace("PROVIDER/MODEL", "moonshot/kimi-k3") for tok in preset["agent"]["command"]
+    ]
+    assert doc_cmd == expected, f"pi.md command {doc_cmd} != resolved preset command {expected}"
 
 
 def test_given_pi_preset_when_parsed_then_includes_no_approve() -> None:
