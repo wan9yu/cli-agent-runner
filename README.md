@@ -51,7 +51,8 @@ Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 | `init` / `install` / `uninstall` | `peek` — state snapshot |
 | `start` / `stop` / `kill` | `watch` — peek in a refresh loop |
 | `restart` / `status` | `monitor` — 11 detectors, alerts, auto-stop |
-| `round` / `serve` / `upgrade` | `events` — query / stream events.jsonl |
+| `round` / `serve` | `events` — query / stream events.jsonl |
+| `upgrade` / `migrate` | |
 
 Verb reference: [`docs/commands.md`](docs/commands.md).
 

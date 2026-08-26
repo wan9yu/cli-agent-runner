@@ -42,6 +42,17 @@ def test_manual_transform_detected_not_applied():
     assert r.new_text == text  # manual transforms never touch the text
 
 
+def test_rename_with_target_key_present_is_not_adopted():
+    # Both the deprecated key AND the target key are set: a blind rename would
+    # produce two `dirty_action` lines (invalid TOML). The rewrite must be
+    # rejected and routed to manual, leaving the text untouched.
+    text = '[vcs]\norphan_action = "ignore"\ndirty_action = "stash"\n'
+    r = _run(text)
+    assert r.applied == []
+    assert len(r.manual) == 1 and "remove the deprecated" in r.manual[0]
+    assert r.new_text == text  # invalid rewrite was not adopted
+
+
 def test_current_config_is_noop():
     text = '[runtime]\ntransient_error_action = "back_off"\n[vcs]\ndirty_action = "stash"\n'
     r = _run(text)

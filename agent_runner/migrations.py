@@ -6,6 +6,7 @@ raw text so comments and formatting are preserved — no TOML writer dependency.
 from __future__ import annotations
 
 import re
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -70,7 +71,19 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
             # dotted-key `runtime.rate_limit_action = ...` at top level) —
             # route to manual so we never report "applied" on an unchanged file.
             manual.append(m.describe)
-        else:
-            new_text = rewritten
-            applied.append(m.describe)
+            continue
+        try:
+            tomllib.loads(rewritten)
+        except tomllib.TOMLDecodeError:
+            # The rename would collide with a target key that is already present
+            # (e.g. both `orphan_action` and `dirty_action` set), producing a
+            # duplicate assignment — invalid TOML. Never adopt it; hand the user
+            # a manual instruction instead so `migrate`/`upgrade` don't corrupt
+            # the file and then traceback on the next load.
+            manual.append(
+                m.describe + " (target key already present — remove the deprecated key manually)"
+            )
+            continue
+        new_text = rewritten
+        applied.append(m.describe)
     return MigrationResult(new_text=new_text, applied=applied, manual=manual)

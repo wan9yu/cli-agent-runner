@@ -46,6 +46,18 @@ def test_manual_transform_exits_1(tmp_path):
     assert rc == 1  # human action still needed
 
 
+def test_duplicate_key_rename_exits_1_and_leaves_file(tmp_path):
+    # Both the deprecated and target keys present: the rename would duplicate a
+    # key, so it must NOT be applied — migrate reports the manual step (exit 1)
+    # and writes nothing (no rewrite, no .bak).
+    original = '[vcs]\norphan_action = "ignore"\ndirty_action = "stash"\n'
+    cfg = _write(tmp_path, original)
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1
+    assert cfg.read_text() == original  # untouched
+    assert not (tmp_path / "agent-runner.toml.bak").exists()
+
+
 def test_broken_toml_exits_2(tmp_path):
     cfg = _write(tmp_path, "[runtime\n not toml")
     assert migrate_cmd.cmd(_args(cfg)) == 2

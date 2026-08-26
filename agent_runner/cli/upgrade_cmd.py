@@ -108,15 +108,16 @@ def _migrate_config_file(cfg_path: Path, *, no_migrate: bool) -> tuple[list[str]
 def _try_load_cfg(args) -> Config | None:
     """Load the project config if present; None when absent (package-only).
 
-    Also degrades to None on a ConfigError (a still-un-migratable legacy config):
-    the package-only path is a safe fallback, and crashing `upgrade` with a
-    traceback over a removed key would be worse than upgrading without a restart.
+    Also degrades to None on a ConfigError (a still-un-migratable legacy config)
+    or a broken-TOML file: the package-only path is a safe fallback, and crashing
+    `upgrade` with a traceback over a removed key or a syntax error would be worse
+    than upgrading without a restart.
     """
     try:
         return cfg_from_args(args)
     except FileNotFoundError:
         return None
-    except ConfigError:
+    except (ConfigError, tomllib.TOMLDecodeError):
         info("config did not load; proceeding with a package-only upgrade (no restart)")
         return None
 

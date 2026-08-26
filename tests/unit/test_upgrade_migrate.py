@@ -81,3 +81,11 @@ def test_try_load_cfg_returns_none_on_unmigratable(tmp_path):
     cfg = _cfg(tmp_path, body)
     args = argparse.Namespace(config=cfg)
     assert upgrade_cmd._try_load_cfg(args) is None
+
+
+def test_try_load_cfg_returns_none_on_broken_toml(tmp_path):
+    """A syntactically broken config must degrade to package-only (None), not
+    escape as a raw TOMLDecodeError traceback."""
+    cfg = _cfg(tmp_path, "[runtime\n not toml")
+    args = argparse.Namespace(config=cfg)
+    assert upgrade_cmd._try_load_cfg(args) is None
