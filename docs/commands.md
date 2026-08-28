@@ -247,6 +247,7 @@ The transforms `migrate` applies (generated from the registry):
 - runtime.rate_limit_action → runtime.transient_error_action
 - vcs.orphan_action → vcs.dirty_action
 - runtime.round_timeout_per_phase (removed 0.1.16) must be moved manually to [phases.<name>] round_timeout_s
+- flat round_timeout_s/disable_pre_round_hooks under [phases.<name>] should move under a nested [phases.<name>.runtime] sub-table (the flat form still works as an alias)
 <!-- /gen:migrate-transforms -->
 
 ## 中文摘要

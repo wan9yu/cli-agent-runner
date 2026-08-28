@@ -25,6 +25,23 @@ class MigrationResult:
     manual: list[str]
 
 
+# Flat override fields that also live under a nested [phases.<name>.runtime]
+# sub-table. The flat form is a permanent alias, so this is guidance only.
+_PHASE_RUNTIME_FLAT_FIELDS = ("round_timeout_s", "disable_pre_round_hooks")
+
+
+def _has_flat_phase_override(parsed: dict) -> bool:
+    """True if a flat runtime override sits directly under a [phases.<name>]
+    table. The phase-name sub-tables are the entries of [phases] other than the
+    reserved `list`/`phase_policy` keys."""
+    for name, sub in parsed.get("phases", {}).items():
+        if name in ("list", "phase_policy") or not isinstance(sub, dict):
+            continue
+        if any(fld in sub for fld in _PHASE_RUNTIME_FLAT_FIELDS):
+            return True
+    return False
+
+
 def _rename_key(old: str, new: str) -> Callable[[str], str]:
     """Rename a bare TOML assignment `old = ...` to `new = ...`, preserving indent,
     spacing, value, and inline comment. Anchored to line-start assignments, so a
@@ -50,6 +67,15 @@ MIGRATIONS: list[Migration] = [
         describe=(
             "runtime.round_timeout_per_phase (removed 0.1.16) must be moved "
             "manually to [phases.<name>] round_timeout_s"
+        ),
+    ),
+    Migration(
+        detect=_has_flat_phase_override,
+        apply=None,
+        describe=(
+            "flat round_timeout_s/disable_pre_round_hooks under [phases.<name>] "
+            "should move under a nested [phases.<name>.runtime] sub-table "
+            "(the flat form still works as an alias)"
         ),
     ),
 ]

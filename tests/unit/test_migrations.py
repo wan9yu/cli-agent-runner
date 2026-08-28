@@ -57,3 +57,27 @@ def test_current_config_is_noop():
     text = '[runtime]\ntransient_error_action = "back_off"\n[vcs]\ndirty_action = "stash"\n'
     r = _run(text)
     assert r.applied == [] and r.manual == [] and r.new_text == text
+
+
+def test_flat_phase_override_detected_as_manual():
+    # A flat round_timeout_s directly under [phases.a] must be reported for a
+    # manual move under [phases.a.runtime] — never rewritten (a header rename
+    # would silently re-parent sibling sub-tables like prompt.files).
+    text = 'phases.list = ["a"]\n[phases.a]\nround_timeout_s = 900\n'
+    r = _run(text)
+    assert r.applied == []
+    assert len(r.manual) == 1 and "[phases.<name>.runtime]" in r.manual[0]
+    assert r.new_text == text  # manual transforms never touch the text
+
+
+def test_flat_phase_disable_hooks_detected():
+    text = 'phases.list = ["a"]\n[phases.a]\ndisable_pre_round_hooks = true\n'
+    r = _run(text)
+    assert r.applied == []
+    assert len(r.manual) == 1 and "[phases.<name>.runtime]" in r.manual[0]
+
+
+def test_nested_phase_runtime_is_not_flagged():
+    text = 'phases.list = ["a"]\n[phases.a.runtime]\nround_timeout_s = 900\n'
+    r = _run(text)
+    assert r.applied == [] and r.manual == [] and r.new_text == text
