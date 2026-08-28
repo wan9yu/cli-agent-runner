@@ -218,6 +218,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `round_substrate_before`
 - `round_timeout_kill`
 - `schedule_paused`
+- `schedule_phase_skipped`
 - `schedule_resumed`
 - `serve_startup_hook_failed`
 - `service_upgrade_rollback_failed`

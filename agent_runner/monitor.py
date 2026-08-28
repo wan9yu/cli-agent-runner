@@ -528,6 +528,7 @@ def latest_schedule_state(events: list[dict[str, Any]]) -> dict[str, Any] | None
         "paused": True,
         "resume_at": newest.get("resume_at", ""),
         "active_window": newest.get("active_window", ""),
+        "phase": newest.get("phase", ""),
     }
 
 

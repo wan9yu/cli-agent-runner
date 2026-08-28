@@ -15,7 +15,21 @@ def test_latest_schedule_state_paused():
         "paused": True,
         "resume_at": "2026-08-22T12:00:00+08:00",
         "active_window": "09:00-12:00",
+        "phase": "",  # no phase on a legacy (non-phase-aware) pause
     }
+
+
+def test_latest_schedule_state_surfaces_phase():
+    events = [
+        {
+            "ts": "2026-08-22T10:00:00.000Z",
+            "event": "schedule_paused",
+            "resume_at": "2026-08-22T12:00:00+08:00",
+            "active_window": "09:00-12:00",
+            "phase": "planning",
+        },
+    ]
+    assert monitor.latest_schedule_state(events)["phase"] == "planning"
 
 
 def test_latest_schedule_state_resumed_is_none():

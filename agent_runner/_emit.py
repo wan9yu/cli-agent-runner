@@ -28,6 +28,7 @@ __all__ = [
     "emit_round_substrate_after",
     "emit_round_substrate_before",
     "emit_schedule_paused",
+    "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
     "emit_stop_file_detected",
     "emit_transient_error_backoff_capped",
@@ -98,17 +99,35 @@ def emit_stop_file_detected(
 
 
 def emit_schedule_paused(
-    log_dir: Path, *, active_window: str, resume_at: str, timezone: str
+    log_dir: Path, *, active_window: str, resume_at: str, timezone: str, phase: str = ""
 ) -> None:
-    """Emit schedule_paused when the serve loop enters a configured pause window."""
+    """Emit schedule_paused when the serve loop enters a configured pause window.
+
+    ``phase`` is the phase the supervisor is waiting for on a phase-aware pause;
+    it is omitted from the payload when empty so the legacy (non-phase) pause
+    stays byte-identical to 0.2.7."""
     from agent_runner.events import SCHEDULE_PAUSED, emit
+
+    fields = {"active_window": active_window, "resume_at": resume_at, "timezone": timezone}
+    if phase:
+        fields["phase"] = phase
+    emit(log_dir, SCHEDULE_PAUSED, **fields)
+
+
+def emit_schedule_phase_skipped(
+    log_dir: Path, *, round_num: int, skipped: list[str], chosen: str | None, active_window: str
+) -> None:
+    """Emit schedule_phase_skipped when phase_policy=skip steps over closed phases
+    to reach the first runnable one this round."""
+    from agent_runner.events import SCHEDULE_PHASE_SKIPPED, emit
 
     emit(
         log_dir,
-        SCHEDULE_PAUSED,
+        SCHEDULE_PHASE_SKIPPED,
+        round_num=round_num,
+        skipped=skipped,
+        chosen=chosen,
         active_window=active_window,
-        resume_at=resume_at,
-        timezone=timezone,
     )
 
 

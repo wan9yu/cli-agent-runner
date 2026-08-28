@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_runner import schedule
+from agent_runner import phase_select, schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state
 from agent_runner._throttle import reset_counters as _reset_counters
@@ -32,6 +32,7 @@ from agent_runner.api import (
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_schedule_paused,
+    emit_schedule_phase_skipped,
     emit_schedule_resumed,
     emit_stop_file_detected,
     post_round_decision,
@@ -121,6 +122,110 @@ def _maybe_pause_for_schedule(
     if window_opened:
         emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
     return True
+
+
+# Sentinel returned by _select_and_gate: "we paused; caller should `continue`".
+_PAUSED_CONTINUE = object()
+
+
+def _phase_aware(cfg) -> bool:
+    """True when per-phase scheduling governs this round selection.
+
+    Both triggers (``phase_policy = "skip"``, any ``[phases.<name>.schedule]``)
+    are new 0.2.9 syntax, so no pre-0.2.9 config is phase-aware — those take the
+    unmodified legacy pause path and stay byte-identical."""
+    return bool(cfg.phases.list) and (
+        cfg.phases.phase_policy == "skip"
+        or any(ov.schedule is not None for ov in cfg.phases.overrides.values())
+    )
+
+
+def _pause_until_selectable(
+    cfg,
+    log_dir,
+    stop,
+    round_num,
+    *,
+    now_fn=schedule.now_in_zone,
+    sleep_fn=time.sleep,
+    chunk_s: int = 30,
+) -> None:
+    """Phase-aware analogue of _maybe_pause_for_schedule: idle until any candidate
+    phase's window opens. Same chunked (<= chunk_s) sleep and stop / stop_file
+    break semantics; polls with schedule.should_run (not select_phase) to keep the
+    resume scan out of the 30s poll. Always returns after pause/stop — the caller
+    ``continue``s unconditionally and re-selects from the loop top."""
+    sel = phase_select.select_phase(cfg, round_num, now_fn=now_fn)
+    candidates = [
+        (p, cfg.profile_for(p).schedule) for p in phase_select.candidate_phases(cfg, round_num)
+    ]
+    timezone = candidates[0][1].timezone
+    for _p, sched in candidates:  # payload tz = the min-resume candidate's zone
+        resume = schedule.next_resume_at(
+            now_fn(sched.timezone),
+            run_windows=sched.run_windows,
+            pause_windows=sched.pause_windows,
+        )
+        if resume is not None and resume == sel.resume_at:
+            timezone = sched.timezone
+            break
+    started = time.monotonic()
+    emit_schedule_paused(
+        log_dir,
+        active_window=sel.active_window or "",
+        resume_at=sel.resume_at.isoformat() if sel.resume_at else "",
+        timezone=timezone or "local",
+        phase=candidates[0][0] or "",
+    )
+    stop_file = cfg.runtime.stop_file
+    window_opened = False
+    while not stop["requested"]:
+        if stop_file is not None and stop_file.exists():
+            break
+        if any(
+            schedule.should_run(
+                now_fn(sched.timezone),
+                run_windows=sched.run_windows,
+                pause_windows=sched.pause_windows,
+            )
+            for _p, sched in candidates
+        ):
+            window_opened = True
+            break
+        sleep_fn(chunk_s)
+    if window_opened:
+        emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
+
+
+def _select_and_gate(cfg, args, log_dir, stop, round_num):
+    """Resolve the phase to launch this round, gating on schedule.
+
+    Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
+    --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
+    paused and should ``continue`` from the loop top."""
+    if args.ignore_schedule:
+        return None  # rotation self-resolves in the round; no --phase, no gate
+    if not _phase_aware(cfg):
+        if _maybe_pause_for_schedule(cfg, log_dir, stop):
+            return _PAUSED_CONTINUE
+        return None
+    # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
+    # schedule.now_in_zone; a default arg would capture the original at import.
+    sel = phase_select.select_phase(cfg, round_num, now_fn=schedule.now_in_zone)
+    if sel.paused:
+        _pause_until_selectable(
+            cfg, log_dir, stop, round_num, now_fn=schedule.now_in_zone, sleep_fn=time.sleep
+        )
+        return _PAUSED_CONTINUE
+    if sel.skipped:
+        emit_schedule_phase_skipped(
+            log_dir,
+            round_num=round_num,
+            skipped=sel.skipped,
+            chosen=sel.phase,
+            active_window=sel.active_window or "",
+        )
+    return sel.phase
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:
@@ -247,9 +352,10 @@ def cmd(args) -> int:
                     max_rounds=effective_max_rounds,
                 )
                 break
-            if not args.ignore_schedule and _maybe_pause_for_schedule(cfg, log_dir, stop):
-                continue
             round_num = next_round_num(log_dir)
+            phase_arg = _select_and_gate(cfg, args, log_dir, stop, round_num)
+            if phase_arg is _PAUSED_CONTINUE:
+                continue
             git_head_before = compute_git_head(work_dir)
             paths_hash_before = compute_paths_hash(
                 work_dir, cfg.runtime.substrate_fingerprint_paths
@@ -272,20 +378,18 @@ def cmd(args) -> int:
                 )
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = time.monotonic()
+            round_argv = [
+                sys.executable,
+                "-m",
+                "agent_runner.cli",
+                "--config",
+                str(args.config),
+                "round",
+            ]
+            if phase_arg is not None:
+                round_argv += ["--phase", phase_arg]
             with round_log_path.open("w") as f:
-                r = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "agent_runner.cli",
-                        "--config",
-                        str(args.config),
-                        "round",
-                    ],
-                    env=round_env,
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                )
+                r = subprocess.run(round_argv, env=round_env, stdout=f, stderr=subprocess.STDOUT)
             round_duration_s = time.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             git_head_after = compute_git_head(work_dir)

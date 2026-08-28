@@ -736,6 +736,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_schedule_paused,
+    emit_schedule_phase_skipped,
     emit_schedule_resumed,
     emit_stop_file_detected,
     emit_transient_error_backoff_capped,

@@ -254,6 +254,13 @@ manual
 # agent_runner.monitor.LocalSource
 log_dir
 
+# agent_runner.phase_select.Selection
+phase
+paused
+resume_at
+skipped
+active_window
+
 # agent_runner.round_log.PruneOutcome
 deleted
 deferred
