@@ -189,6 +189,67 @@ agent-runner serve --config /etc/agent-runner.toml --ignore-schedule
 `agent-runner round` (a manual one-shot round) is never gated by `[schedule]`, so
 you can always drive a single round by hand irrespective of the schedule.
 
+## Mixed-model rotation (0.2.9+)
+
+Run each round under a different model — to spread load across providers, keep a
+cheaper model on the routine phases, or hold each provider to its own off-peak
+window. `[phases.<name>.agent]` gives each phase its own agent command, and
+`[phases.<name>.schedule]` its own windows; `phase_policy` decides what happens
+when the rotation lands on a phase whose window is shut. Field-level semantics
+(the four sub-tables, `agent` merges / `schedule` replaces, the never-overridable
+list) are in `docs/configuration.md` (`[phases.<name>]`).
+
+```toml
+[agent]
+command = ["codewhale", "exec", "--auto", "--output-format", "stream-json"]
+prompt_arg_template = ["{prompt}"]
+
+[runtime]
+work_dir = "/srv/research"
+log_dir = "logs"
+round_timeout_s = 1800
+
+[phases]
+list = ["deepseek", "glm", "qwen"]
+phase_policy = "skip"             # closed window → try the next phase, don't idle
+
+[phases.deepseek.schedule]
+timezone = "Asia/Shanghai"
+pause_windows = ["Mon-Fri 09:00-18:00"]   # DeepSeek peak hours
+
+[phases.glm.agent]
+command = ["glm-cli", "run"]      # swaps command only; inherits prompt_arg_template
+
+[phases.glm.runtime]
+round_timeout_s = 3600            # heavier synthesis pass
+
+[phases.qwen.agent]
+command = ["qwen-cli", "chat"]
+```
+
+**Choosing the policy:**
+
+- `phase_policy = "wait"` — the rotation is fixed. Round N always runs its
+  rotation phase; if that phase's window is shut, the supervisor idle-sleeps
+  until it opens. Use this when each phase is a distinct job that must run in
+  order (diverge before converge), not an interchangeable worker.
+- `phase_policy = "skip"` — the rotation is a preference order. A round whose
+  phase is shut steps forward to the first phase that is open now and runs that
+  instead. Use this when the phases are interchangeable providers and you care
+  about keeping a round moving, not about which model ran it.
+
+**What you observe under `skip`:**
+
+- Each round that steps over one or more phases emits `schedule_phase_skipped`
+  (`round_num`, `skipped`, `chosen`, `active_window`) — the skipped names and the
+  phase actually chosen. A round that runs its first-choice phase emits nothing
+  extra.
+- If every phase's window is shut, the supervisor pauses exactly as an off-peak
+  `[schedule]` does — `schedule_paused` / `schedule_resumed`, `peek` showing the
+  pause — and resumes at the earliest window-open across the phases.
+- Per-round attribution: `peek` and the round events carry the `phase` that ran,
+  so the transcript shows which model each round used.
+
 ## Upgrading agent-runner
 
 `upgrade` detects the deployment topology and takes the safe path for it. Pick

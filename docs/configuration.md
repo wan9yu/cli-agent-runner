@@ -286,43 +286,125 @@ counter: round N runs `phases.list[(N - 1) % len(phases.list)]`. Unset
 > This is by design (rotation is deterministic on `round_num`). If you need a
 > specific starting phase, ensure the starting `round_num` matches.
 
-## `[phases.<name>]` per-phase sub-tables (0.1.16+)
+## `[phases.<name>]` per-phase profiles (0.2.9+)
 
-Each phase can carry its own overrides for up to three fields. The phase name
-must appear in `phases.list` (typo catcher); unknown fields are rejected at
-config load.
+Each phase in `phases.list` can carry its own sub-tables that override the base
+config for the rounds that run under it. The supervisor resolves a **profile**
+per round — `(agent, runtime, schedule, prompt files)` — by starting from the
+base `[agent]` / `[runtime]` / `[schedule]` / `[prompt]` and layering the
+phase's overrides on top. A phase with no sub-tables runs the base config
+unchanged, so existing configs are byte-for-byte unaffected.
 
-**Whitelisted per-phase fields:**
+The phase name must appear in `phases.list` (typo catcher); unknown fields and
+unknown sub-tables are rejected at config load.
 
-| Field | Type | Overrides |
+### The four sub-tables
+
+| Sub-table | Overrides | Fields accepted |
 |---|---|---|
-| `round_timeout_s` | `int` | `runtime.round_timeout_s` |
-| `disable_pre_round_hooks` | `bool` | `runtime.disable_pre_round_hooks` |
-| `prompt.files` | `list[str]` | `prompt.files` |
+| `[phases.<name>.agent]` | `[agent]` | any `[agent]` field; field-merged onto the base `[agent]`, then validated (so the `stdin` + `{prompt}` cross-check runs on the merged result) |
+| `[phases.<name>.runtime]` | `[runtime]` | `round_timeout_s`, `disable_pre_round_hooks` only |
+| `[phases.<name>.schedule]` | `[schedule]` | any `[schedule]` field; **replaces** the global windows wholesale |
+| `[phases.<name>.prompt]` | `[prompt]` | `files` only |
+
+**`agent` merges; `schedule` replaces.** A per-phase `[...agent]` merges key by
+key onto the base `[agent]` — unset fields inherit — so a phase can swap only
+`command` and keep the shared `prompt_arg_template` and `env`. A per-phase
+`[...schedule]` replaces the base windows entirely; set `pause_windows = []` to
+make one phase run around the clock even while the global schedule pauses. A
+per-phase schedule that omits `timezone` inherits the global one.
+
+**Flat aliases.** `round_timeout_s`, `disable_pre_round_hooks`, and
+`prompt.files` may also be written directly under `[phases.<name>]` (the
+pre-0.2.9 form). They are permanent aliases for the matching `runtime` / `prompt`
+sub-table fields. Setting both a flat field and its `[phases.<name>.runtime]`
+twin is a config error — use one.
+
+### Never overridable per phase
+
+A profile only re-points the four surfaces above. Everything else is read from
+the base config regardless of phase:
+
+- **`runtime.work_dir` / `runtime.log_dir`** — one working tree and one log
+  directory per deployment; a phase cannot relocate them. `[phases.<name>.runtime]`
+  accepts only `round_timeout_s` and `disable_pre_round_hooks`; any other runtime
+  key there is rejected at load.
+- the rest of `[runtime]` (`restart_delay_s`, `round_log_retention`,
+  `transient_error_action`, `max_rounds`, `stop_file`, …), and all of `[vcs]`,
+  `[monitor]`, and `[plugins]` — global only.
+- `[prompt]` fields other than `files` (`context_injection_mode`,
+  `inject_context`, `concat_separator`, …).
+
+### `phase_policy` — `wait` vs `skip`
+
+When a phase carries its own `[...schedule]`, the rotation can land on a phase
+whose window is closed. `[phases] phase_policy` chooses what serve does then
+(the generated schema table above lists its value):
+
+- **`wait`** — run only this round's rotation phase. If its window is closed,
+  serve idle-sleeps until that phase's window opens, then runs it. The rotation
+  never advances past a closed phase, so round N always maps to the same phase.
+- **`skip`** — step forward through the rotation to the first phase whose window
+  is open right now, and run that phase this round. The stepped-over phases emit
+  `schedule_phase_skipped` (fields: `round_num`, `skipped`, `chosen`,
+  `active_window`). If no phase is runnable, serve pauses as `wait` does.
+
+`phase_policy` matters only alongside per-phase schedules: with a single global
+`[schedule]` (or none) the rotation has nothing to skip and both values behave
+identically. `agent-runner round` is never gated — a manual round runs its named
+phase regardless of any window.
+
+### Example: mixed-model rotation
+
+Rotate three providers so each round runs under a different model, each phase
+honoring its own provider's off-peak window. The base `[agent]` runs DeepSeek
+via codewhale; the `glm` and `qwen` phases swap the whole `command` and inherit
+the shared `prompt_arg_template`:
 
 ```toml
+[agent]
+command = ["codewhale", "exec", "--auto", "--output-format", "stream-json"]
+prompt_arg_template = ["{prompt}"]
+
 [runtime]
-round_timeout_s = 1800           # fallback for unconfigured phases
+work_dir = "/srv/research"
+log_dir = "logs"
+round_timeout_s = 1800            # base budget for phases that set none
 
 [phases]
-list = ["dev", "qa", "product"]
+list = ["deepseek", "glm", "qwen"]
+phase_policy = "skip"             # a closed provider window yields to the next phase
 
-[phases.dev]
-round_timeout_s = 3600           # implementation work, longer budget
-prompt.files = ["_common.md", "dev.md"]
+[phases.deepseek.schedule]
+timezone = "Asia/Shanghai"
+pause_windows = ["Mon-Fri 09:00-18:00"]   # skip DeepSeek's peak-price hours
 
-[phases.qa]
-round_timeout_s = 1200           # test review, tighter budget
-disable_pre_round_hooks = true   # audit phase: no hook pollution
-prompt.files = ["_common.md", "qa.md"]
+[phases.glm.agent]
+command = ["glm-cli", "run"]      # different provider CLI; inherits prompt_arg_template
 
-[phases.product]
-round_timeout_s = 1200           # docs writing, tighter budget
-prompt.files = ["_common.md", "product.md"]
+[phases.glm.runtime]
+round_timeout_s = 3600            # GLM runs the heavier synthesis pass
+
+[phases.glm.schedule]
+pause_windows = []                # no off-peak constraint — always runnable
+
+[phases.qwen.agent]
+command = ["qwen-cli", "chat"]
+
+[phases.qwen.prompt]
+files = ["prompts/_common.md", "prompts/qwen.md"]
 ```
 
-Unconfigured phases (and configs without `[phases]`) keep using the global
-`runtime.round_timeout_s`.
+Under `phase_policy = "skip"`, a round that lands on `deepseek` during its
+Mon–Fri peak window steps to `glm` (always open) and runs that instead, emitting
+`schedule_phase_skipped`. Under `wait`, the same round idle-sleeps until
+DeepSeek's window reopens rather than advancing. A `docs/runbook.md`
+("Mixed-model rotation") recipe walks the operational side.
+
+> **Migration from the pre-0.2.9 flat form**: flat `round_timeout_s` /
+> `disable_pre_round_hooks` under `[phases.<name>]` still work as aliases;
+> `agent-runner migrate` reports (it does not rewrite) the option to nest them
+> under `[phases.<name>.runtime]`. See `docs/migrations/0.2.md`.
 
 > **Migration from 0.1.15**: `runtime.round_timeout_per_phase` dict syntax is
 > removed.

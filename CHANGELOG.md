@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-08-28
+
+### Added
+- Per-phase profiles: `[phases.<name>.agent]` and `[phases.<name>.schedule]` join the existing runtime/prompt overrides, so each phase resolves its own `(agent, runtime, schedule, prompt files)`. A phase's `[...agent]` field-merges onto the base `[agent]` (swap just `command`, inherit the rest); its `[...schedule]` replaces the global windows wholesale. Runs each phase under its own model — see the mixed-model rotation recipe.
+- `[phases.<name>.runtime]` nested sub-table for `round_timeout_s` / `disable_pre_round_hooks`; the flat `[phases.<name>]` form stays as a permanent alias. Setting both twins is a config error.
+- `[phases] phase_policy` (`wait` | `skip`): on a per-phase schedule, `wait` idle-sleeps until this round's phase opens; `skip` steps the rotation forward to the first open phase and runs it. `schedule_phase_skipped` event (`round_num`, `skipped`, `chosen`, `active_window`) records the stepped-over phases.
+- `agent-runner migrate` reports (does not rewrite) flat per-phase runtime overrides that can move under `[phases.<name>.runtime]`.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.8] - 2026-08-25
 
 ### Added
