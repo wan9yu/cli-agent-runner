@@ -408,6 +408,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
+    profile = cfg.profile_for(phase)
     resolved_rt = resolve_runtime_for_phase(cfg, phase)
     timeout_s = resolved_rt.round_timeout_s
     started_at = now_iso_ms()
@@ -447,8 +448,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         project=cfg.runtime.work_dir.resolve().name or "default",
         round_num=round_num,
         phase=phase,
-        agent_name=cfg.agent.name or (cfg.agent.command[0] if cfg.agent.command else None),
-        agent_binary=Path(cfg.agent.command[0]).name if cfg.agent.command else None,
+        agent_name=profile.agent.name
+        or (profile.agent.command[0] if profile.agent.command else None),
+        agent_binary=Path(profile.agent.command[0]).name if profile.agent.command else None,
         agent_log_path=log_path,
         dry_run=cfg.runtime.dry_run,
         anomaly_repetitive_window=cfg.monitor.anomaly_repetitive_window,
@@ -476,7 +478,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
-    _agent_binary = Path(cfg.agent.command[0]).name if cfg.agent.command else None
+    _agent_binary = Path(profile.agent.command[0]).name if profile.agent.command else None
     # metrics.jsonl has its own event namespace; it merely spells round_start /
     # round_end the same way events.py does. Not an events.py kind.
     metrics.log_metrics(
@@ -515,14 +517,14 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         )
 
     result = agent_runtime.run(
-        command=cfg.agent.command,
-        prompt_arg_template=cfg.agent.prompt_arg_template,
+        command=profile.agent.command,
+        prompt_arg_template=profile.agent.prompt_arg_template,
         prompt=prompt,
-        prompt_delivery=cfg.agent.prompt_delivery,
+        prompt_delivery=profile.agent.prompt_delivery,
         timeout_s=timeout_s,
         work_dir=cfg.runtime.work_dir,
         log_path=log_path,
-        env_extra={**framework_env, **dict(cfg.agent.env)},
+        env_extra={**framework_env, **dict(profile.agent.env)},
         max_grace_after_result_s=cfg.runtime.max_grace_after_result_s,
         progress_callback=_progress_emit,
         progress_interval_s=cfg.monitor.round_progress_interval_s,

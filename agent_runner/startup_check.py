@@ -7,9 +7,10 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent_runner import agent_runtime
-from agent_runner.config import Config
+from agent_runner.config import AgentConfig, Config
 
 ESCAPE_HATCH_ENV = "AGENT_RUNNER_SKIP_STARTUP_CHECK"
 
@@ -41,23 +42,21 @@ def _check_log_dir(cfg: Config) -> CheckResult:
         )
 
 
-def _check_agent_cli(cfg: Config) -> CheckResult:
-    if not cfg.agent.command:
-        return CheckResult("agent_cli_in_path", False, "agent.command is empty")
-    cli = cfg.agent.command[0]
+def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckResult:
+    if not agent.command:
+        return CheckResult(name, False, "agent.command is empty")
+    cli = agent.command[0]
     # Validate with the exact resolution the spawn uses (agent_runtime owns
     # the model): slash-containing commands resolve against work_dir (the
     # child's cwd); bare names use the CHILD's PATH ([agent.env] may set it).
-    resolved = agent_runtime.resolve_exec_target(
-        cli, cfg.runtime.work_dir, env_path=cfg.agent.env.get("PATH")
-    )
+    resolved = agent_runtime.resolve_exec_target(cli, work_dir, env_path=agent.env.get("PATH"))
     if resolved is None:
         relative = "/" in cli
         return CheckResult(
-            "agent_cli_in_path",
+            name,
             False,
             reason=(
-                f"{cli!r} not found or not executable under {cfg.runtime.work_dir}"
+                f"{cli!r} not found or not executable under {work_dir}"
                 if relative
                 else f"{cli!r} not found on PATH"
             ),
@@ -67,7 +66,7 @@ def _check_agent_cli(cfg: Config) -> CheckResult:
                 else f"install {cli} or set agent.command[0] to its absolute path"
             ),
         )
-    return CheckResult("agent_cli_in_path", True)
+    return CheckResult(name, True)
 
 
 def _check_work_dir_is_git(cfg: Config) -> CheckResult:
@@ -143,15 +142,29 @@ def _check_config_loaded(cfg: Config) -> CheckResult:
 CHECKS: list[Callable[[Config], CheckResult]] = [
     _check_config_loaded,
     _check_log_dir,
-    _check_agent_cli,
     _check_work_dir_is_git,
     _check_prompt_file,
     _check_prompt_smoke,
 ]
 
 
+def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
+    """Validate ``command[0]`` for EVERY profile the runner might launch — the
+    base agent plus each phase's own agent — so a bad phase agent fails at boot
+    instead of silent-burning the round it would have run. Each profile keeps
+    its own env PATH (`[phases.<name>.agent].env` may differ from the base's).
+    """
+    phase_list = cfg.phases.list if cfg.phases is not None else None
+    results: list[CheckResult] = []
+    for phase in [None, *(phase_list or [])]:
+        profile = cfg.profile_for(phase)
+        name = "agent_cli_in_path" if phase is None else f"agent_cli_in_path:{phase}"
+        results.append(_check_agent_target(profile.agent, cfg.runtime.work_dir, name))
+    return results
+
+
 def run_battery(cfg: Config) -> list[CheckResult]:
     """Run all checks. Returns empty list if escape hatch env is set."""
     if os.environ.get(ESCAPE_HATCH_ENV, "").lower() in ("1", "true", "yes", "on"):
         return []
-    return [check(cfg) for check in CHECKS]
+    return [check(cfg) for check in CHECKS] + _agent_cli_checks(cfg)
