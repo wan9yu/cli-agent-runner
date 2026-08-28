@@ -258,6 +258,8 @@ log_dir
 phase
 paused
 resume_at
+resume_phase
+resume_timezone
 skipped
 active_window
 

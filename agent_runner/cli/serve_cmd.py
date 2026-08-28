@@ -62,6 +62,20 @@ def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> i
     return effective
 
 
+def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
+    """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
+    ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
+    stop / stop_file break returns False — the pause was interrupted, not resumed).
+    Shared by both pause entry points; only the runnable predicate differs."""
+    while not stop["requested"]:
+        if stop_file is not None and stop_file.exists():
+            return False
+        if runnable_fn():
+            return True
+        sleep_fn(chunk_s)
+    return False
+
+
 def _maybe_pause_for_schedule(
     cfg,
     log_dir,
@@ -101,25 +115,19 @@ def _maybe_pause_for_schedule(
         resume_at=decision.resume_at.isoformat() if decision.resume_at else "",
         timezone=sched.timezone or "local",
     )
-    stop_file = cfg.runtime.stop_file
-    window_opened = False
-    while not stop["requested"]:
-        if stop_file is not None and stop_file.exists():
-            # Operator stop_file dropped mid-pause: break without emitting
-            # schedule_resumed (the window did not open). The serve loop's
-            # top-of-loop stop_file check then emits stop_file_detected and exits.
-            break
-        # #3: should_run (not evaluate) avoids the 8-day next_resume_at scan on
-        # every poll; should_run is the negation of the pre-loop paused decision.
-        if schedule.should_run(
+    # #3: should_run (not evaluate) avoids the 8-day next_resume_at scan on every
+    # poll; a stop / stop_file break returns False (interrupted, not resumed).
+    if _pause_poll(
+        stop,
+        cfg.runtime.stop_file,
+        lambda: schedule.should_run(
             now_fn(sched.timezone),
             run_windows=sched.run_windows,
             pause_windows=sched.pause_windows,
-        ):
-            window_opened = True
-            break
-        sleep_fn(chunk_s)
-    if window_opened:
+        ),
+        sleep_fn,
+        chunk_s,
+    ):
         emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
     return True
 
@@ -145,55 +153,43 @@ def _pause_until_selectable(
     log_dir,
     stop,
     round_num,
+    sel,
     *,
     now_fn=schedule.now_in_zone,
     sleep_fn=time.sleep,
     chunk_s: int = 30,
 ) -> None:
     """Phase-aware analogue of _maybe_pause_for_schedule: idle until any candidate
-    phase's window opens. Same chunked (<= chunk_s) sleep and stop / stop_file
-    break semantics; polls with schedule.should_run (not select_phase) to keep the
-    resume scan out of the 30s poll. Always returns after pause/stop — the caller
-    ``continue``s unconditionally and re-selects from the loop top."""
-    sel = phase_select.select_phase(cfg, round_num, now_fn=now_fn)
+    phase's window opens. ``sel`` is the paused Selection already computed by the
+    caller — its ``resume_*`` fields (all describing the earliest-opening candidate)
+    make the schedule_paused payload coherent without recomputing. Polls with
+    ``schedule.should_run`` to keep the resume scan out of the 30s poll. Always
+    returns after pause/stop — the caller ``continue``s and re-selects from the top."""
     candidates = [
         (p, cfg.profile_for(p).schedule) for p in phase_select.candidate_phases(cfg, round_num)
     ]
-    timezone = candidates[0][1].timezone
-    for _p, sched in candidates:  # payload tz = the min-resume candidate's zone
-        resume = schedule.next_resume_at(
-            now_fn(sched.timezone),
-            run_windows=sched.run_windows,
-            pause_windows=sched.pause_windows,
-        )
-        if resume is not None and resume == sel.resume_at:
-            timezone = sched.timezone
-            break
     started = time.monotonic()
     emit_schedule_paused(
         log_dir,
         active_window=sel.active_window or "",
         resume_at=sel.resume_at.isoformat() if sel.resume_at else "",
-        timezone=timezone or "local",
-        phase=candidates[0][0] or "",
+        timezone=sel.resume_timezone or "local",
+        phase=sel.resume_phase or "",
     )
-    stop_file = cfg.runtime.stop_file
-    window_opened = False
-    while not stop["requested"]:
-        if stop_file is not None and stop_file.exists():
-            break
-        if any(
+    if _pause_poll(
+        stop,
+        cfg.runtime.stop_file,
+        lambda: any(
             schedule.should_run(
                 now_fn(sched.timezone),
                 run_windows=sched.run_windows,
                 pause_windows=sched.pause_windows,
             )
             for _p, sched in candidates
-        ):
-            window_opened = True
-            break
-        sleep_fn(chunk_s)
-    if window_opened:
+        ),
+        sleep_fn,
+        chunk_s,
+    ):
         emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
 
 
@@ -214,7 +210,7 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num):
     sel = phase_select.select_phase(cfg, round_num, now_fn=schedule.now_in_zone)
     if sel.paused:
         _pause_until_selectable(
-            cfg, log_dir, stop, round_num, now_fn=schedule.now_in_zone, sleep_fn=time.sleep
+            cfg, log_dir, stop, round_num, sel, now_fn=schedule.now_in_zone, sleep_fn=time.sleep
         )
         return _PAUSED_CONTINUE
     if sel.skipped:

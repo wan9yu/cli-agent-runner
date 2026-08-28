@@ -154,9 +154,17 @@ def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
     instead of silent-burning the round it would have run. Each profile keeps
     its own env PATH (`[phases.<name>.agent].env` may differ from the base's).
     """
-    phase_list = cfg.phases.list if cfg.phases is not None else None
+    # Base agent once, plus each phase that actually OVERRIDES the agent — a phase
+    # with no [phases.<name>.agent] reuses the base command (already checked), so
+    # re-validating it would just re-run resolve_exec_target on the identical target.
+    phases = cfg.phases
+    overriding = (
+        [p for p in (phases.list or []) if (ov := phases.overrides.get(p)) and ov.agent]
+        if phases is not None
+        else []
+    )
     results: list[CheckResult] = []
-    for phase in [None, *(phase_list or [])]:
+    for phase in [None, *overriding]:
         profile = cfg.profile_for(phase)
         name = "agent_cli_in_path" if phase is None else f"agent_cli_in_path:{phase}"
         results.append(_check_agent_target(profile.agent, cfg.runtime.work_dir, name))

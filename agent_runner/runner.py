@@ -29,7 +29,7 @@ from agent_runner import (
     vcs_state,
 )
 from agent_runner.agent_runtime import signal_name
-from agent_runner.api import _primary_prompt_file, resolve_runtime_for_phase
+from agent_runner.api import _primary_prompt_file
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult, TransientErrorState
 from agent_runner.config import Config
@@ -409,7 +409,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     round_num = (prev_status.round_num if prev_status else 0) + 1
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
     profile = cfg.profile_for(phase)
-    resolved_rt = resolve_runtime_for_phase(cfg, phase)
+    resolved_rt = profile.runtime  # profile already merged the per-phase runtime override
     timeout_s = resolved_rt.round_timeout_s
     started_at = now_iso_ms()
 

@@ -122,6 +122,11 @@ ignore_names = [
     # SSOT: stdlib BaseHTTPRequestHandler.log_message override; called by the
     # framework's request-logging path, not from project code.
     "log_message",
+    # Public back-compat shim over cfg.profile_for(phase).runtime. The runner now
+    # reads profile.runtime directly (one profile_for per round, not two); this
+    # helper survives only for external callers + its own tests, so vulture sees
+    # no in-package caller. Keep it — dropping it would break the public API.
+    "resolve_runtime_for_phase",
 ]
 
 [tool.coverage.run]
