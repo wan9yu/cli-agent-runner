@@ -144,14 +144,23 @@ disk_critical_pct
 round_timeout_s
 disable_pre_round_hooks
 prompt_files
+agent
+schedule
 
 # agent_runner.config.PhasesConfig
 list
 overrides
+phase_policy
 
 # agent_runner.config.PluginsConfig
 disable
 raw
+
+# agent_runner.config.Profile
+agent
+runtime
+schedule
+prompt_files
 
 # agent_runner.config.PromptConfig
 file

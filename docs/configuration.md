@@ -97,6 +97,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 |---|---|---|
 | `list` | `list[str] \| None` | None |
 | `overrides` | `dict[str, PhaseOverride]` | {} |
+| `phase_policy` | `Literal['wait', 'skip']` | 'wait' |
 
 ### `[plugins]`
 

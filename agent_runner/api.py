@@ -650,9 +650,9 @@ def assemble_prompt(
 
     # Determine files list (per-phase override → global files → single-file fallback)
     files: list[Path]
-    override = cfg.phases.overrides.get(phase) if phase is not None else None
-    if override is not None and override.prompt_files is not None:
-        files = override.prompt_files
+    prof = cfg.profile_for(phase)
+    if prof.prompt_files is not None:
+        files = prof.prompt_files
     elif cfg.prompt.files:
         files = cfg.prompt.files
     elif cfg.prompt.file is not None:
@@ -676,25 +676,12 @@ def assemble_prompt(
 def resolve_runtime_for_phase(cfg: Config, phase_name: str | None) -> RuntimeConfig:
     """Return effective RuntimeConfig for the given phase.
 
-    Merges base ``cfg.runtime`` with ``cfg.phases.overrides[phase_name]`` (if
-    present). ``None`` phase_name returns base unchanged. Unknown phase_name
-    silently returns base — config-load is responsible for typo catching;
-    this function is defensive.
+    Thin wrapper over ``cfg.profile_for(phase_name).runtime``. ``None``
+    phase_name returns base unchanged. Unknown phase_name silently returns base
+    — config-load is responsible for typo catching; this is defensive. Kept as a
+    public helper: imported by runner.
     """
-    base = cfg.runtime
-    if phase_name is None:
-        return base
-    override = cfg.phases.overrides.get(phase_name)
-    if override is None:
-        return base
-    updates = {}
-    if override.round_timeout_s is not None:
-        updates["round_timeout_s"] = override.round_timeout_s
-    if override.disable_pre_round_hooks is not None:
-        updates["disable_pre_round_hooks"] = override.disable_pre_round_hooks
-    if not updates:
-        return base
-    return dataclasses.replace(base, **updates)
+    return cfg.profile_for(phase_name).runtime
 
 
 def read_round_num(log_dir: Path) -> int:

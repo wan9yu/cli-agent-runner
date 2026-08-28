@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -70,6 +71,8 @@ class PhaseOverride:
     round_timeout_s: int | None = None
     disable_pre_round_hooks: bool | None = None
     prompt_files: list[Path] | None = None
+    agent: AgentConfig | None = None
+    schedule: ScheduleConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,7 @@ class PhasesConfig:
 
     list: list[str] | None = None
     overrides: dict[str, PhaseOverride] = field(default_factory=dict)
+    phase_policy: Literal["wait", "skip"] = "wait"
 
 
 @dataclass(frozen=True)
@@ -182,6 +186,23 @@ class ScheduleConfig:
 
 
 @dataclass(frozen=True)
+class Profile:
+    """Fully-resolved per-phase execution profile.
+
+    Produced by :meth:`Config.profile_for`: the base config with a phase's
+    overrides applied. ``prompt_files`` is ``None`` when the phase sets no
+    ``[phases.<name>].prompt`` override (the caller derives files from
+    ``cfg.prompt``); an explicit ``prompt.files = []`` stays ``[]`` — distinct
+    from ``None``.
+    """
+
+    agent: AgentConfig
+    runtime: RuntimeConfig
+    schedule: ScheduleConfig
+    prompt_files: list[Path] | None
+
+
+@dataclass(frozen=True)
 class Config:
     agent: AgentConfig
     runtime: RuntimeConfig
@@ -191,6 +212,33 @@ class Config:
     phases: PhasesConfig = field(default_factory=PhasesConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+
+    def profile_for(self, phase: str | None) -> Profile:
+        """Resolve the effective execution profile for a phase.
+
+        ``None`` phase (or an unknown phase with no override) returns the base
+        agent/runtime/schedule by identity — matching the no-override early
+        return of the old ``resolve_runtime_for_phase``, so existing configs are
+        behavior-neutral. A per-phase ``[phases.<name>.schedule]`` with no
+        ``timezone`` inherits the global timezone at resolve time.
+        """
+        ov = self.phases.overrides.get(phase) if phase is not None else None
+        if ov is None:
+            return Profile(self.agent, self.runtime, self.schedule, None)
+        runtime = self.runtime
+        rt_updates: dict[str, Any] = {}
+        if ov.round_timeout_s is not None:
+            rt_updates["round_timeout_s"] = ov.round_timeout_s
+        if ov.disable_pre_round_hooks is not None:
+            rt_updates["disable_pre_round_hooks"] = ov.disable_pre_round_hooks
+        if rt_updates:
+            runtime = dataclasses.replace(runtime, **rt_updates)
+        sched = self.schedule
+        if ov.schedule is not None:
+            sched = ov.schedule
+            if ov.schedule.timezone is None and self.schedule.timezone is not None:
+                sched = dataclasses.replace(ov.schedule, timezone=self.schedule.timezone)
+        return Profile(ov.agent or self.agent, runtime, sched, ov.prompt_files)
 
 
 def _require(d: dict, *path: str) -> object:
@@ -292,8 +340,46 @@ _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
         "round_timeout_s",
         "disable_pre_round_hooks",
         "prompt",
+        "agent",
+        "runtime",
+        "schedule",
     }
 )
+
+# Keys allowed under [phases.<name>.runtime] — the flat-alias twins.
+_PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_timeout_s", "disable_pre_round_hooks"})
+
+# Field names of AgentConfig — the keys a [phases.<name>.agent] sub-table may
+# set (merged onto the base [agent] table before validation).
+_AGENT_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(AgentConfig))
+
+
+def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
+    """Parse + validate an [agent] table (or a merged per-phase agent table).
+
+    ``field_prefix`` names the table in error messages (e.g. ``"[agent]"`` or
+    ``"[phases.b.agent]"``). The prompt_delivery validity check and the
+    stdin/``{prompt}`` cross-check run here so a per-phase agent override is
+    validated on the MERGED result, not just the base [agent] table.
+    """
+    prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
+    prompt_arg_template = list(_require(agent_d, "prompt_arg_template"))
+    if prompt_delivery not in _VALID_PROMPT_DELIVERY:
+        raise ConfigError(
+            f'invalid {field_prefix} prompt_delivery {prompt_delivery!r}: use "argv" or "stdin"'
+        )
+    if prompt_delivery == "stdin" and any("{prompt}" in a for a in prompt_arg_template):
+        raise ConfigError(
+            f"stdin delivery: remove {{prompt}} from {field_prefix} prompt_arg_template "
+            "(the prompt is piped to stdin, not placed in argv)"
+        )
+    return AgentConfig(
+        command=list(_require(agent_d, "command")),
+        prompt_arg_template=prompt_arg_template,
+        name=agent_d.get("name"),
+        env={str(k): str(v) for k, v in agent_d.get("env", {}).items()},
+        prompt_delivery=prompt_delivery,  # type: ignore[arg-type]  # narrowed above
+    )
 
 
 def _parse_phase_overrides(
@@ -302,15 +388,18 @@ def _parse_phase_overrides(
     project_name: str,
     *,
     work_dir: Path,
+    agent_d: dict[str, Any],
 ) -> dict[str, PhaseOverride]:
     """Parse [phases.<name>] sub-tables from raw TOML dict.
 
     Each sub-table is keyed by phase name (must appear in phases.list). Allowed
-    fields are validated; unknown fields raise. Returns {phase_name: PhaseOverride}.
+    fields are validated; unknown fields raise. ``agent_d`` is the base [agent]
+    table — a per-phase ``agent`` sub-table field-merges onto it and the merged
+    result is validated. Returns {phase_name: PhaseOverride}.
     """
     overrides: dict[str, PhaseOverride] = {}
     for key, value in phases_d.items():
-        if key == "list":
+        if key in ("list", "phase_policy"):
             continue
         if not isinstance(value, dict):
             continue
@@ -324,23 +413,52 @@ def _parse_phase_overrides(
         if unknown:
             raise ConfigError(
                 f"unknown per-phase field(s) under [phases.{phase_name}]: {sorted(unknown)}; "
-                f"allowed: round_timeout_s, disable_pre_round_hooks, prompt.files"
+                f"allowed: round_timeout_s, disable_pre_round_hooks, prompt.files, "
+                f"agent, runtime, schedule"
             )
-        round_timeout_s = (
-            _require_positive_int(
+
+        # runtime: flat aliases (round_timeout_s/disable_pre_round_hooks) and/or
+        # a nested [phases.<name>.runtime] sub-table. Setting both twins raises.
+        runtime_sub = value.get("runtime")
+        if runtime_sub is not None and not isinstance(runtime_sub, dict):
+            raise ConfigError(f"[phases.{phase_name}.runtime] must be a table")
+        runtime_sub = runtime_sub or {}
+        unknown_rt = set(runtime_sub.keys()) - _PHASE_RUNTIME_ALLOWED_FIELDS
+        if unknown_rt:
+            raise ConfigError(
+                f"unknown field(s) under [phases.{phase_name}.runtime]: {sorted(unknown_rt)}; "
+                f"allowed: round_timeout_s, disable_pre_round_hooks"
+            )
+        for fld in _PHASE_RUNTIME_ALLOWED_FIELDS:
+            if fld in value and fld in runtime_sub:
+                raise ConfigError(
+                    f"[phases.{phase_name}] set both the flat field and "
+                    f"[phases.{phase_name}.runtime].{fld}; use one"
+                )
+
+        # A field resolves from the nested [...runtime] sub-table, else the flat
+        # alias (the twin case already raised above), so nested-first is safe.
+        round_timeout_s = None
+        if "round_timeout_s" in runtime_sub:
+            round_timeout_s = _require_positive_int(
+                runtime_sub["round_timeout_s"], field=f"phases.{phase_name}.runtime.round_timeout_s"
+            )
+        elif "round_timeout_s" in value:
+            round_timeout_s = _require_positive_int(
                 value["round_timeout_s"], field=f"phases.{phase_name}.round_timeout_s"
             )
-            if "round_timeout_s" in value
-            else None
-        )
-        disable_hooks = (
-            _require_bool(
+        disable_hooks = None
+        if "disable_pre_round_hooks" in runtime_sub:
+            disable_hooks = _require_bool(
+                runtime_sub["disable_pre_round_hooks"],
+                field=f"phases.{phase_name}.runtime.disable_pre_round_hooks",
+            )
+        elif "disable_pre_round_hooks" in value:
+            disable_hooks = _require_bool(
                 value["disable_pre_round_hooks"],
                 field=f"phases.{phase_name}.disable_pre_round_hooks",
             )
-            if "disable_pre_round_hooks" in value
-            else None
-        )
+
         prompt_files = None
         if "prompt" in value:
             prompt_sub = value["prompt"]
@@ -349,10 +467,34 @@ def _parse_phase_overrides(
             prompt_files = [
                 _expand_and_resolve(str(p), project_name, work_dir) for p in prompt_sub["files"]
             ]
+
+        phase_agent = None
+        if "agent" in value:
+            agent_sub = value["agent"]
+            if not isinstance(agent_sub, dict):
+                raise ConfigError(f"[phases.{phase_name}.agent] must be a table")
+            unknown_agent = set(agent_sub.keys()) - _AGENT_ALLOWED_FIELDS
+            if unknown_agent:
+                raise ConfigError(
+                    f"unknown field(s) under [phases.{phase_name}.agent]: "
+                    f"{sorted(unknown_agent)}; allowed: {sorted(_AGENT_ALLOWED_FIELDS)}"
+                )
+            merged = {**agent_d, **agent_sub}
+            phase_agent = _parse_agent(merged, field_prefix=f"[phases.{phase_name}.agent]")
+
+        phase_schedule = None
+        if "schedule" in value:
+            sched_sub = value["schedule"]
+            if not isinstance(sched_sub, dict):
+                raise ConfigError(f"[phases.{phase_name}.schedule] must be a table")
+            phase_schedule = _parse_schedule(sched_sub)
+
         overrides[phase_name] = PhaseOverride(
             round_timeout_s=round_timeout_s,
             disable_pre_round_hooks=disable_hooks,
             prompt_files=prompt_files,
+            agent=phase_agent,
+            schedule=phase_schedule,
         )
     return overrides
 
@@ -404,24 +546,7 @@ def load_config(toml_path: Path) -> Config:
         raw = tomllib.load(f)
 
     agent_d = raw.get("agent", {})
-    prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
-    prompt_arg_template = list(_require(agent_d, "prompt_arg_template"))
-    if prompt_delivery not in _VALID_PROMPT_DELIVERY:
-        raise ConfigError(
-            f'invalid [agent] prompt_delivery {prompt_delivery!r}: use "argv" or "stdin"'
-        )
-    if prompt_delivery == "stdin" and any("{prompt}" in a for a in prompt_arg_template):
-        raise ConfigError(
-            "stdin delivery: remove {prompt} from [agent] prompt_arg_template "
-            "(the prompt is piped to stdin, not placed in argv)"
-        )
-    agent = AgentConfig(
-        command=list(_require(agent_d, "command")),
-        prompt_arg_template=prompt_arg_template,
-        name=agent_d.get("name"),
-        env={str(k): str(v) for k, v in agent_d.get("env", {}).items()},
-        prompt_delivery=prompt_delivery,
-    )
+    agent = _parse_agent(agent_d, field_prefix="[agent]")
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
     # A relative work_dir anchors to the config file's directory, not the loading
     # process's cwd — `--config /abs/proj/agent-runner.toml` must drive /abs/proj
@@ -435,10 +560,19 @@ def load_config(toml_path: Path) -> Config:
     # Phases first — needed for per-phase round_timeout validation below.
     phases_d = raw.get("phases", {})
     phases_list = list(phases_d["list"]) if "list" in phases_d else None
+    phase_policy = str(phases_d.get("phase_policy", "wait"))
+    if phase_policy not in ("wait", "skip"):
+        raise ConfigError(
+            f"[phases] phase_policy: {phase_policy!r} not in allowed values ['skip', 'wait']"
+        )
     phases_overrides = _parse_phase_overrides(
-        phases_d, phases_list, project_name, work_dir=work_dir
+        phases_d, phases_list, project_name, work_dir=work_dir, agent_d=agent_d
     )
-    phases_cfg = PhasesConfig(list=phases_list, overrides=phases_overrides)
+    phases_cfg = PhasesConfig(
+        list=phases_list,
+        overrides=phases_overrides,
+        phase_policy=phase_policy,  # type: ignore[arg-type]  # narrowed above
+    )
 
     runtime_d = raw.get("runtime", {})
     if "round_timeout_per_phase" in runtime_d:
