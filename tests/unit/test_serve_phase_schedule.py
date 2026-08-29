@@ -288,3 +288,26 @@ def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
     assert out is serve_cmd._PAUSED_CONTINUE
     assert spy.get("called") and spy["throttled_phases"] == frozenset({"a"})
     assert spy["wake_epoch"] == reset_at
+
+
+def test_skip_around_clear_emits_one_recovered(monkeypatch, tmp_path):
+    """A throttle that cleared via skip-around (reset_at already past, no
+    breadcrumb) emits exactly one transient_error_recovered at loop top, with
+    the detected event's classification/agent."""
+    _capture_run(monkeypatch)
+    # reset_at in the PAST → _check_throttle_state None → pending_recovered fires.
+    _seed_throttle(
+        tmp_path / "logs",
+        phase="a",
+        reset_at=int(time.time() - 60),
+        classification="rate_limit_model",
+        agent="deepseek-cli",
+    )
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    rc = serve_cmd.cmd(_args(cfg_path))
+    assert rc == 0
+    rec = [e for e in _events(tmp_path / "logs") if e["event"] == "transient_error_recovered"]
+    assert len(rec) == 1
+    assert rec[0]["classification"] == "rate_limit_model"
+    assert rec[0]["agent"] == "deepseek-cli"
+    assert rec[0]["throttled_for_s"] >= 0

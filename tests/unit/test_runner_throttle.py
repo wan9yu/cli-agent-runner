@@ -8,6 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+def _iso(epoch: int) -> str:
+    from datetime import UTC, datetime
+
+    return datetime.fromtimestamp(epoch, UTC).isoformat()
+
+
 def _write_events(log_dir: Path, events: list[dict]):
     """Write events to monthly events file."""
     from datetime import UTC, datetime
@@ -65,6 +71,63 @@ def test_check_throttle_state_carries_phase(tmp_path):
     )
     state = _check_throttle_state(tmp_path)
     assert state is not None and state.phase == "deepseek"
+
+
+def _detected(reset_at, *, ts="2026-05-16T00:00:00Z", agent="claude", cls="rate_limit_account"):
+    return {
+        "event": "transient_error_detected",
+        "ts": ts,
+        "agent": agent,
+        "reset_at_epoch": reset_at,
+        "classification": cls,
+        "round_num": 42,
+    }
+
+
+def test_pending_recovered_fires_when_throttle_cleared_without_breadcrumb(tmp_path):
+    from agent_runner._throttle import pending_recovered
+
+    now = int(time.time())
+    _write_events(tmp_path, [_detected(now - 60, ts=_iso(now - 300), agent="deepseek")])
+    pending = pending_recovered(tmp_path)
+    assert pending is not None
+    classification, agent, throttled_for_s = pending
+    assert agent == "deepseek"
+    assert classification == "rate_limit_account"
+    assert throttled_for_s >= 250  # ~300s since detected ts
+
+
+def test_pending_recovered_none_while_still_throttled(tmp_path):
+    from agent_runner._throttle import pending_recovered
+
+    _write_events(tmp_path, [_detected(int(time.time() + 3600))])
+    assert pending_recovered(tmp_path) is None
+
+
+def test_pending_recovered_none_when_recovered_already_emitted(tmp_path):
+    """Dedup guard: the back-off path already left a recovered → stay quiet."""
+    from agent_runner._throttle import pending_recovered
+
+    _write_events(
+        tmp_path,
+        [
+            _detected(int(time.time() - 60)),
+            {
+                "event": "transient_error_recovered",
+                "ts": "2026-05-16T00:01:00Z",
+                "agent": "claude",
+                "throttled_for_s": 60,
+                "classification": "rate_limit_account",
+            },
+        ],
+    )
+    assert pending_recovered(tmp_path) is None
+
+
+def test_pending_recovered_none_with_no_events(tmp_path):
+    from agent_runner._throttle import pending_recovered
+
+    assert pending_recovered(tmp_path) is None
 
 
 def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_path):

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +18,11 @@ from agent_runner.api_types import TransientErrorState
 from agent_runner.events import TRANSIENT_ERROR_DETECTED, TRANSIENT_ERROR_RECOVERED
 
 
-def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
-    """Scan events.jsonl tail for latest unmatched transient error.
-
-    Reads `transient_error_detected` / `transient_error_recovered` event names.
-    Returns TransientErrorState if currently throttled (reset still in future,
-    no matching recovered after). Restart-safe.
-    """
+def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
+    """The most recent ``transient_error_detected`` with no
+    ``transient_error_recovered`` after it (reverse tail scan), or None.
+    Shared by :func:`_check_throttle_state` (still-throttled?) and
+    :func:`pending_recovered` (cleared-without-a-breadcrumb?)."""
     candidates = sorted(log_dir.glob("events-*.jsonl"))
     if not candidates:
         return None
@@ -38,16 +37,23 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
             events.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-
-    latest_detected: dict[str, Any] | None = None
     for ev in reversed(events):
         kind = ev.get("event")
         if kind == TRANSIENT_ERROR_RECOVERED:
             return None
         if kind == TRANSIENT_ERROR_DETECTED:
-            latest_detected = ev
-            break
+            return ev
+    return None
 
+
+def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
+    """Scan events.jsonl tail for latest unmatched transient error.
+
+    Reads `transient_error_detected` / `transient_error_recovered` event names.
+    Returns TransientErrorState if currently throttled (reset still in future,
+    no matching recovered after). Restart-safe.
+    """
+    latest_detected = _latest_unrecovered_detected(log_dir)
     if latest_detected is None:
         return None
     reset_at = int(latest_detected.get("reset_at_epoch", 0))
@@ -62,6 +68,42 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
         agent=str(latest_detected.get("agent", "unknown")),
         since_round=int(latest_detected.get("round_num", 0)),
         phase=str(latest_detected.get("phase", "")),
+    )
+
+
+def _throttled_for_s(ts: Any) -> int:
+    """Seconds since a detected event's ``ts`` (best-effort; 0 if unparseable)."""
+    if not ts:
+        return 0
+    try:
+        detected = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return 0
+    return max(0, int(time.time() - detected.timestamp()))
+
+
+def pending_recovered(log_dir: Path) -> tuple[str, str, int] | None:
+    """``(classification, agent, throttled_for_s)`` iff a transient throttle
+    cleared WITHOUT a recovered breadcrumb — the latest
+    ``transient_error_detected`` has ``reset_at <= now`` and NO
+    ``transient_error_recovered`` after it.
+
+    This is the throttle-aware-skip path: the loop rotated to a healthy phase
+    instead of calling ``_apply_back_off`` (which emits its own recovered), so
+    the multi-hour throttle would otherwise close with no breadcrumb. Being
+    events-derived, it is restart-safe AND never double-emits — once the caller
+    emits recovered, that event sits after the detected one and the predicate
+    goes quiet. Returns None while still throttled (reset in the future) or when
+    the back-off path already left a recovered."""
+    latest_detected = _latest_unrecovered_detected(log_dir)
+    if latest_detected is None:
+        return None
+    if int(latest_detected.get("reset_at_epoch", 0)) > time.time():
+        return None  # still throttled — not a clear transition
+    return (
+        str(latest_detected.get("classification", "rate_limit_account")),
+        str(latest_detected.get("agent", "unknown")),
+        _throttled_for_s(latest_detected.get("ts")),
     )
 
 

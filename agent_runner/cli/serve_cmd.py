@@ -19,7 +19,7 @@ from pathlib import Path
 
 from agent_runner import phase_select, schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
-from agent_runner._throttle import _check_throttle_state
+from agent_runner._throttle import _check_throttle_state, pending_recovered
 from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
     check_self_terminated_sentinel,
@@ -35,6 +35,7 @@ from agent_runner.api import (
     emit_schedule_phase_skipped,
     emit_schedule_resumed,
     emit_stop_file_detected,
+    emit_transient_error_recovered,
     post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
@@ -206,6 +207,19 @@ def _pause_until_selectable(
         emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
 
 
+def _maybe_emit_recovered(log_dir) -> None:
+    """Emit ``transient_error_recovered`` iff a throttle cleared via skip-around
+    (rotation, no back-off sleep) and so left no breadcrumb. Events-derived +
+    dedup-safe (see ``pending_recovered``): the back-off path already emits its
+    own recovered, so this stays quiet there and never double-emits."""
+    pending = pending_recovered(log_dir)
+    if pending is not None:
+        classification, agent, throttled_for_s = pending
+        emit_transient_error_recovered(
+            log_dir, classification=classification, agent=agent, throttled_for_s=throttled_for_s
+        )
+
+
 def _gate_throttle(cfg, args, log_dir, throttle) -> str:
     """Decide what an active throttle means for this round.
 
@@ -219,8 +233,9 @@ def _gate_throttle(cfg, args, log_dir, throttle) -> str:
     gate: a recorded phase, a skip-policy phase-aware config, and no
     ``--ignore-schedule`` (which must still back off globally)."""
     if throttle is None:
-        # No active throttle — supervisor counters reset; next failure restarts
-        # the exp-backoff curve from 1×.
+        # No active throttle — emit the recovered breadcrumb if a skip-around
+        # throttle just cleared without one, then reset the exp-backoff counters.
+        _maybe_emit_recovered(log_dir)
         _reset_counters()
         return "proceed"
     if (
