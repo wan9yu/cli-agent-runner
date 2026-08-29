@@ -60,6 +60,7 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner._throttle",
         {
+            "_active_throttles",
             "_apply_back_off",
             "_check_throttle_state",
             "_interruptible_sleep",

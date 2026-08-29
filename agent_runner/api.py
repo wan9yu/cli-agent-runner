@@ -445,7 +445,7 @@ def peek(
     )
     recent_blips = _recent_events_of_kind(parsed_events, AGENT_NETWORK_BLIP, _RECENT_BLIPS_LIMIT)
 
-    from agent_runner._throttle import _check_throttle_state
+    from agent_runner._throttle import _active_throttles, _check_throttle_state
 
     throttle = _check_throttle_state(log_dir)
     rate_limit: RateLimitState | None = None
@@ -456,6 +456,7 @@ def peek(
             agent=throttle.agent,
             since_round=throttle.since_round,
             phase=throttle.phase,
+            throttled_agents=tuple(sorted(_active_throttles(log_dir))),
         )
     raw_service = status(project if project is not None else work_dir)
     svc = dataclasses.replace(raw_service, rate_limit=rate_limit)

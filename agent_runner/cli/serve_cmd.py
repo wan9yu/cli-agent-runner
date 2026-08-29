@@ -21,6 +21,7 @@ from typing import Literal
 from agent_runner import phase_select, schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
+    _active_throttles,
     _apply_back_off,
     _check_throttle_state,
     _interruptible_sleep,
@@ -239,13 +240,12 @@ def _pause_until_selectable(
 
 
 def _maybe_emit_recovered(log_dir) -> None:
-    """Emit ``transient_error_recovered`` iff a throttle cleared via skip-around
-    (rotation, no back-off sleep) and so left no breadcrumb. Events-derived +
-    dedup-safe (see ``pending_recovered``): the back-off path already emits its
-    own recovered, so this stays quiet there and never double-emits."""
-    pending = pending_recovered(log_dir)
-    if pending is not None:
-        classification, agent, throttled_for_s = pending
+    """Emit ``transient_error_recovered`` for every agent whose throttle cleared via
+    skip-around (rotation, no back-off sleep) and so left no breadcrumb. Per-agent, so
+    one agent recovering while a sibling is still throttled still gets its breadcrumb.
+    Events-derived + dedup-safe (see ``pending_recovered``): the back-off path already
+    emits its own recovered, so this stays quiet there and never double-emits."""
+    for agent, classification, throttled_for_s in pending_recovered(log_dir):
         emit_transient_error_recovered(
             log_dir, classification=classification, agent=agent, throttled_for_s=throttled_for_s
         )
@@ -262,28 +262,17 @@ def _skip_around(cfg, args) -> bool:
     return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
 
 
-def _gate_throttle(cfg, args, log_dir, throttle, stop) -> Literal["proceed", "break", "defer"]:
-    """Decide what an active throttle means for this round.
+def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
+    """Legacy single-throttle gate for the NON-skip regime (wait / back_off / stop).
 
     Returns ``"break"`` (stop the loop — throttle action is ``stop``, or a SIGTERM
-    landed mid-back-off), ``"defer"`` (a skip-around config will route around the
-    throttled phase — the caller passes ``throttle`` into :func:`_select_and_gate`),
-    or ``"proceed"`` (run normally: no throttle, or the legacy global back-off / skip
-    already applied here).
-
-    ``defer`` (and the recovered breadcrumb) are the only new-in-0.2.10 behavior;
-    both are gated on :func:`_skip_around` so every pre-0.2.10 and
-    ``--ignore-schedule`` path keeps the unchanged global gate and event stream."""
+    landed mid-back-off) or ``"proceed"`` (no throttle, or back_off already applied and
+    resumed). The skip-policy regime uses :func:`_throttle_skip_context` instead, so
+    this never sees a skip-around config — it neither defers nor emits a skip
+    breadcrumb, keeping every pre-0.2.11 non-skip path byte-identical."""
     if throttle is None:
-        # No active throttle. Only a skip-around config emits the breadcrumb (a
-        # legacy config never routed around a throttle, so it has none to close and
-        # must stay byte-identical to 0.2.9). Then reset the exp-backoff counters.
-        if _skip_around(cfg, args):
-            _maybe_emit_recovered(log_dir)
         _reset_counters()
         return "proceed"
-    if throttle.phase and _skip_around(cfg, args):
-        return "defer"
     action = cfg.runtime.transient_error_action
     if action == "back_off":
         # Emits transient_error_recovered on resume; returns True (→ break) if a
@@ -293,13 +282,63 @@ def _gate_throttle(cfg, args, log_dir, throttle, stop) -> Literal["proceed", "br
     elif action == "stop":
         emit_rate_limit_stop(log_dir)
         return "break"
-    # "skip": proceed to normal launch
+    # "skip" transient_error_action (distinct from phase_policy=skip): normal launch.
     return "proceed"
 
 
-def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
-    """Resolve the phase to launch this round, gating on schedule (and, when
-    ``throttle`` is passed, on which phase is currently throttled).
+def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
+    """Skip-policy throttle handling (multi-agent). Emits recovered breadcrumbs for any
+    agent that cleared (even while siblings remain throttled), resets the exp-backoff
+    counters when nothing is throttled, and returns ``(throttled_phases, wake_epoch)``
+    for :func:`_select_and_gate`.
+
+    Rate limits are per-provider, so selection routes around EVERY phase whose agent —
+    the binary basename of ``command[0]``, which is the detector's ``agent`` label — is
+    throttled. ``wake_epoch`` is the earliest reset among the blocking agents, so an
+    all-throttled round wakes when the first one clears."""
+    active = _active_throttles(log_dir)
+    _maybe_emit_recovered(log_dir)  # per-agent, dedup-safe — runs even if throttles remain
+    if not active:
+        _reset_counters()
+    throttled: set[str] = set()
+    wake: int | None = None
+    for phase in cfg.phases.list:
+        st = active.get(Path(cfg.profile_for(phase).agent.command[0]).name)
+        if st is not None:
+            throttled.add(phase)
+            wake = st.reset_at_epoch if wake is None else min(wake, st.reset_at_epoch)
+    return frozenset(throttled), wake
+
+
+def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int | None] | str:
+    """Per-round throttle decision → ``(throttled_phases, wake_epoch)`` for selection,
+    or the string ``"break"`` to stop the loop.
+
+    Skip-policy configs route around every throttled agent's phases
+    (:func:`_throttle_skip_context`); every other config takes the legacy
+    single-throttle gate (wait / back_off / stop), which handles the throttle here and
+    returns an empty throttled-phase set."""
+    if _skip_around(cfg, args):
+        return _throttle_skip_context(cfg, log_dir)
+    throttle = _check_throttle_state(log_dir)
+    if _gate_throttle(cfg, log_dir, throttle, stop) == "break":
+        return "break"
+    return frozenset(), None
+
+
+def _select_and_gate(
+    cfg,
+    args,
+    log_dir,
+    stop,
+    round_num,
+    *,
+    throttled_phases: frozenset[str] = frozenset(),
+    wake_epoch: int | None = None,
+):
+    """Resolve the phase to launch this round, gating on schedule and on
+    ``throttled_phases`` — the phases whose agent is currently throttled, injected by
+    :func:`_round_throttle_gate` (empty for every non-skip config).
 
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
@@ -310,20 +349,18 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
         if _maybe_pause_for_schedule(cfg, log_dir, stop):
             return _PAUSED_CONTINUE
         return None
-    throttled = frozenset({throttle.phase}) if throttle is not None else frozenset()
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
     sel = phase_select.select_phase(
-        cfg, round_num, throttled_phases=throttled, now_fn=schedule.now_in_zone
+        cfg, round_num, throttled_phases=throttled_phases, now_fn=schedule.now_in_zone
     )
     if sel.paused:
-        # A throttle that leaves NOTHING runnable (every phase throttled or
-        # window-closed) with transient_error_action="stop" halts the loop;
-        # otherwise pause until the EARLIER of a sibling window opening or the
-        # throttle resetting (wake_epoch), chunked + SIGTERM-responsive, then
-        # re-select. Without a throttle it is the plain window pause (wake_epoch
-        # None, throttled empty) — one call serves both.
-        if throttle is not None and cfg.runtime.transient_error_action == "stop":
+        # Nothing runnable (every phase throttled or window-closed). With throttled
+        # phases AND transient_error_action="stop", halt; otherwise pause until the
+        # EARLIER of a sibling window opening or a throttle resetting (wake_epoch),
+        # chunked + SIGTERM-responsive, then re-select. Empty throttled_phases + None
+        # wake is the plain window pause — one call serves both.
+        if throttled_phases and cfg.runtime.transient_error_action == "stop":
             emit_rate_limit_stop(log_dir)
             stop["requested"] = True
             return _PAUSED_CONTINUE
@@ -333,8 +370,8 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
             stop,
             round_num,
             sel,
-            throttled_phases=throttled,
-            wake_epoch=throttle.reset_at_epoch if throttle is not None else None,
+            throttled_phases=throttled_phases,
+            wake_epoch=wake_epoch,
             # Explicit call-time lookup (not the import-bound default) so tests can
             # monkeypatch schedule.now_in_zone; the clock default is a stable object
             # whose .sleep tests mutate in place, so it needs no call-time passing.
@@ -462,10 +499,10 @@ def cmd(args) -> int:
         while not stop["requested"]:
             if check_self_terminated_sentinel(log_dir):
                 break
-            throttle = _check_throttle_state(log_dir)
-            gate = _gate_throttle(cfg, args, log_dir, throttle, stop)
+            gate = _round_throttle_gate(cfg, args, log_dir, stop)
             if gate == "break":
                 break
+            throttled_phases, wake_epoch = gate
             if stop_file is not None and stop_file.exists():
                 try:
                     content = stop_file.read_text(encoding="utf-8", errors="replace")[:200]
@@ -492,7 +529,8 @@ def cmd(args) -> int:
                 log_dir,
                 stop,
                 round_num,
-                throttle=throttle if gate == "defer" else None,
+                throttled_phases=throttled_phases,
+                wake_epoch=wake_epoch,
             )
             if phase_arg is _PAUSED_CONTINUE:
                 continue
@@ -540,7 +578,10 @@ def cmd(args) -> int:
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r.returncode,
                 duration_s=round_duration_s,
-                throttle_active=_check_throttle_state(log_dir) is not None,
+                # Crash-loop breaker excuses a fast exit only when THE AGENT THAT JUST
+                # RAN is throttled — a sibling agent's throttle must not mask its crash.
+                throttle_active=Path(cfg.profile_for(phase_arg).agent.command[0]).name
+                in _active_throttles(log_dir),
                 consecutive=consecutive_crashes,
                 restart_delay_s=cfg.runtime.restart_delay_s,
             )

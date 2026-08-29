@@ -49,6 +49,9 @@ class RateLimitState:
     agent: str
     since_round: int
     phase: str = ""  # which rotation phase is throttled ("" = no [phases])
+    # All agents (binary basenames) currently throttled — plural view for multi-provider
+    # rotations. The scalar fields above stay the "latest" throttle for back-compat.
+    throttled_agents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

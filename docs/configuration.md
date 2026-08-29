@@ -401,11 +401,14 @@ Under `phase_policy = "skip"`, a round that lands on `deepseek` during its
 Mon–Fri peak window steps to `glm` (always open) and runs that instead, emitting
 `schedule_phase_skipped`. Since 0.2.10 `skip` also steps over a phase whose
 provider is currently **throttled** (rate-limited / erroring), not just one whose
-window is shut — so a rate-limited `deepseek` yields to `glm` without the whole
-loop sleeping on the throttle (the global back-off applies only when every phase
-is throttled or window-closed). Under `wait`, the same round idle-sleeps until
-DeepSeek's window reopens rather than advancing. A `docs/runbook.md`
-("Mixed-model rotation") recipe walks the operational side.
+window is shut. Since 0.2.11 the throttle is keyed on the **agent** (the binary
+basename of `command[0]`, matching the detector's label), not the phase: every
+phase sharing a throttled agent is stepped over together, so two phases both
+running `claude` won't hammer a rate-limited key, while a phase on a healthy
+provider keeps running. serve idle-pauses (waking at the earliest reset) only when
+*every* candidate is throttled or window-closed. Under `wait`, the same round
+idle-sleeps until DeepSeek's window reopens rather than advancing. A
+`docs/runbook.md` ("Mixed-model rotation") recipe walks the operational side.
 
 > **Migration from the pre-0.2.9 flat form**: flat `round_timeout_s` /
 > `disable_pre_round_hooks` under `[phases.<name>]` still work as aliases;

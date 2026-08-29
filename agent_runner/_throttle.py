@@ -29,6 +29,19 @@ from agent_runner.events import (
 _NO_TRANSIENT = object()
 
 
+def _iter_events(path: Path):
+    """Yield parsed event dicts from a JSONL file; skip blank / corrupt lines."""
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
 def _scan_events_for_transient(path: Path):
     """The file's LAST transient event: the detected dict, ``None`` (latest was a
     recovered), or ``_NO_TRANSIENT`` (no transient event in the file).
@@ -39,28 +52,20 @@ def _scan_events_for_transient(path: Path):
     can be thousands of lines back; a bounded tail would scroll it out and make the
     supervisor forget the throttle mid-window."""
     latest: Any = _NO_TRANSIENT
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            kind = ev.get("event")
-            if kind == TRANSIENT_ERROR_DETECTED:
-                latest = ev
-            elif kind == TRANSIENT_ERROR_RECOVERED:
-                latest = None
+    for ev in _iter_events(path):
+        kind = ev.get("event")
+        if kind == TRANSIENT_ERROR_DETECTED:
+            latest = ev
+        elif kind == TRANSIENT_ERROR_RECOVERED:
+            latest = None
     return latest
 
 
 def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
     """The most recent ``transient_error_detected`` with no
-    ``transient_error_recovered`` after it, or None. Shared by
-    :func:`_check_throttle_state` (still-throttled?) and :func:`pending_recovered`
-    (cleared-without-a-breadcrumb?).
+    ``transient_error_recovered`` after it, or None. Used by
+    :func:`_check_throttle_state` (still-throttled?) — the single-throttle "latest"
+    view kept for the non-skip (wait / back_off / stop) paths and peek.
 
     Scans the newest monthly ``events-*.jsonl`` and, only if it holds no transient
     event yet, the previous month's — so a throttle that spans a month boundary
@@ -71,6 +76,53 @@ def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
         if result is not _NO_TRANSIENT:
             return result  # a detected dict, or None (latest transient was recovered)
     return None
+
+
+def _latest_transient_per_agent(log_dir: Path) -> dict[str, Any]:
+    """Per agent label, the last transient event across the newest TWO monthly files:
+    the ``detected`` dict, or ``None`` if the latest was a ``recovered``.
+
+    Unlike :func:`_latest_unrecovered_detected` (which early-exits at the first file
+    holding any transient), this always merges BOTH files per agent — a throttle for
+    agent A in the old file must not be masked by agent B's event in the newer one.
+    Iterates old-then-new so the newest event per agent wins."""
+    latest: dict[str, Any] = {}
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
+        for ev in _iter_events(path):
+            kind = ev.get("event")
+            if kind == TRANSIENT_ERROR_DETECTED:
+                latest[str(ev.get("agent", "unknown"))] = ev
+            elif kind == TRANSIENT_ERROR_RECOVERED:
+                latest[str(ev.get("agent", "unknown"))] = None
+    return latest
+
+
+def _active_throttles(
+    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
+) -> dict[str, TransientErrorState]:
+    """Currently-active throttles keyed by AGENT label (binary basename), one entry
+    per agent whose latest transient event is an unrecovered ``detected`` with its
+    reset still in the future.
+
+    Rate limits are per-provider (per API key / agent binary), not per-phase — so the
+    serve skip-policy routes around EVERY phase sharing a throttled agent while a
+    healthy agent's phase keeps running. Restart-safe (events-derived)."""
+    now = clock.epoch()
+    active: dict[str, TransientErrorState] = {}
+    for agent, detected in _latest_transient_per_agent(log_dir).items():
+        if detected is None:
+            continue
+        reset_at = int(detected.get("reset_at_epoch", 0))
+        if reset_at <= now:
+            continue
+        active[agent] = TransientErrorState(
+            reset_at_epoch=reset_at,
+            classification=str(detected.get("classification", "rate_limit_account")),
+            agent=agent,
+            since_round=int(detected.get("round_num", 0)),
+            phase=str(detected.get("phase", "")),
+        )
+    return active
 
 
 def _check_throttle_state(
@@ -119,30 +171,32 @@ def _throttled_for_s(ts: Any, *, clock: Clock = SYSTEM_CLOCK) -> int:
     return max(0, int(clock.epoch() - detected.timestamp()))
 
 
-def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> tuple[str, str, int] | None:
-    """``(classification, agent, throttled_for_s)`` iff a transient throttle
-    cleared WITHOUT a recovered breadcrumb — the latest
-    ``transient_error_detected`` has ``reset_at <= now`` and NO
-    ``transient_error_recovered`` after it.
+def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tuple[str, str, int]]:
+    """One ``(agent, classification, throttled_for_s)`` per agent whose throttle
+    cleared WITHOUT a recovered breadcrumb — its latest transient event is a
+    ``detected`` with ``reset_at <= now`` and NO ``transient_error_recovered`` after.
 
-    This is the throttle-aware-skip path: the loop rotated to a healthy phase
-    instead of calling ``_apply_back_off`` (which emits its own recovered), so
-    the multi-hour throttle would otherwise close with no breadcrumb. Being
-    events-derived, it is restart-safe AND never double-emits — once the caller
-    emits recovered, that event sits after the detected one and the predicate
-    goes quiet. Returns None while still throttled (reset in the future) or when
-    the back-off path already left a recovered."""
+    This is the throttle-aware-skip path: the loop rotated to a healthy phase instead
+    of calling ``_apply_back_off`` (which emits its own recovered), so a multi-hour
+    throttle would otherwise close with no breadcrumb. Events-derived → restart-safe
+    AND never double-emits: once the caller emits recovered, that event sits after the
+    detected one and the agent drops out. Per-agent, so an agent that cleared is
+    reported even while a sibling is still throttled (overlapping recovery); an empty
+    list means nothing cleared (all still throttled, or the back-off path already left
+    a recovered)."""
     now = clock.epoch()
-    latest_detected = _latest_unrecovered_detected(log_dir)
-    if latest_detected is None:
-        return None
-    if int(latest_detected.get("reset_at_epoch", 0)) > now:
-        return None  # still throttled — not a clear transition
-    return (
-        str(latest_detected.get("classification", "rate_limit_account")),
-        str(latest_detected.get("agent", "unknown")),
-        _throttled_for_s(latest_detected.get("ts"), clock=clock),
-    )
+    cleared: list[tuple[str, str, int]] = []
+    for agent, detected in _latest_transient_per_agent(log_dir).items():
+        if detected is None or int(detected.get("reset_at_epoch", 0)) > now:
+            continue  # None = latest was a recovered; > now = still throttled
+        cleared.append(
+            (
+                agent,
+                str(detected.get("classification", "rate_limit_account")),
+                _throttled_for_s(detected.get("ts"), clock=clock),
+            )
+        )
+    return cleared
 
 
 # Module-level supervisor state — bucket → consecutive-failure count.

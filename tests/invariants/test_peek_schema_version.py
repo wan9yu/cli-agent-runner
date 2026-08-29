@@ -13,6 +13,11 @@ import sys
 from pathlib import Path
 
 
+def _ver(s: str) -> tuple[int, ...]:
+    """Parse a dotted version to an int tuple — string ``>=`` mis-orders "1.10" < "1.9"."""
+    return tuple(int(x) for x in s.split("."))
+
+
 def test_given_peek_json_when_emitted_then_includes_schema_version(tmp_path: Path) -> None:
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
@@ -63,8 +68,8 @@ def test_given_peek_json_when_emitted_then_includes_schema_version(tmp_path: Pat
     payload = json.loads(result.stdout)
 
     assert "schema_version" in payload, f"missing schema_version: keys={list(payload)}"
-    assert payload["schema_version"] >= "1.9", (
-        f"schema_version regressed: got {payload['schema_version']!r}, expected >= '1.9'"
+    assert _ver(payload["schema_version"]) >= _ver("1.10"), (
+        f"schema_version regressed: got {payload['schema_version']!r}, expected >= '1.10'"
     )
     assert "plugins" in payload
     assert isinstance(payload["plugins"], dict)

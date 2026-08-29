@@ -225,7 +225,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     )
     emit(state, json_mode=True)
     out = json.loads(capsys.readouterr().out)
-    assert out["schema_version"] == "1.9"
+    assert out["schema_version"] == "1.10"
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
     assert "owned_paths" in out["plugins"]
@@ -457,6 +457,7 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     assert state.service.rate_limit.throttled_until_epoch == future
     assert state.service.rate_limit.limit_type == "rate_limit_account"
     assert state.service.rate_limit.since_round == 42
+    assert state.service.rate_limit.throttled_agents == ("claude",)  # plural view
 
 
 def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(

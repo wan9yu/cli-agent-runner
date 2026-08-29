@@ -92,21 +92,17 @@ def test_pending_recovered_fires_when_throttle_cleared_without_breadcrumb(tmp_pa
     now = 1_700_000_000
     _write_events(tmp_path, [_detected(now - 60, ts=_iso(now - 300), agent="deepseek")])
     pending = pending_recovered(tmp_path, clock=FakeClock(epoch=float(now)))
-    assert pending is not None
-    classification, agent, throttled_for_s = pending
-    assert agent == "deepseek"
-    assert classification == "rate_limit_account"
-    assert throttled_for_s == 300  # exact: now - detected ts, injected clock
+    assert pending == [("deepseek", "rate_limit_account", 300)]  # (agent, cls, throttled_for_s)
 
 
-def test_pending_recovered_none_while_still_throttled(tmp_path):
+def test_pending_recovered_empty_while_still_throttled(tmp_path):
     from agent_runner._throttle import pending_recovered
 
     _write_events(tmp_path, [_detected(int(time.time() + 3600))])
-    assert pending_recovered(tmp_path) is None
+    assert pending_recovered(tmp_path) == []
 
 
-def test_pending_recovered_none_when_recovered_already_emitted(tmp_path):
+def test_pending_recovered_empty_when_recovered_already_emitted(tmp_path):
     """Dedup guard: the back-off path already left a recovered → stay quiet."""
     from agent_runner._throttle import pending_recovered
 
@@ -123,13 +119,79 @@ def test_pending_recovered_none_when_recovered_already_emitted(tmp_path):
             },
         ],
     )
-    assert pending_recovered(tmp_path) is None
+    assert pending_recovered(tmp_path) == []
 
 
-def test_pending_recovered_none_with_no_events(tmp_path):
+def test_pending_recovered_empty_with_no_events(tmp_path):
     from agent_runner._throttle import pending_recovered
 
-    assert pending_recovered(tmp_path) is None
+    assert pending_recovered(tmp_path) == []
+
+
+def test_pending_recovered_overlapping_one_clears_while_other_active(tmp_path):
+    """Agent A cleared (reset past) while agent B still throttled (reset future):
+    A is reported for its breadcrumb, B is not."""
+    from agent_runner._throttle import pending_recovered
+
+    now = 1_700_000_000
+    _write_events(
+        tmp_path,
+        [
+            _detected(now - 60, ts=_iso(now - 200), agent="claude"),  # cleared
+            _detected(now + 3600, ts=_iso(now - 100), agent="gemini"),  # still throttled
+        ],
+    )
+    pending = pending_recovered(tmp_path, clock=FakeClock(epoch=float(now)))
+    assert pending == [("claude", "rate_limit_account", 200)]
+
+
+def test_active_throttles_keys_by_agent_multiple(tmp_path):
+    from agent_runner._throttle import _active_throttles
+
+    now = 1_700_000_000
+    _write_events(
+        tmp_path,
+        [
+            _detected(now + 3600, agent="claude", cls="rate_limit_account"),
+            _detected(now + 1800, agent="gemini", cls="rate_limit_model"),
+            _detected(now - 60, agent="codewhale"),  # reset passed → not active
+        ],
+    )
+    active = _active_throttles(tmp_path, clock=FakeClock(epoch=float(now)))
+    assert set(active) == {"claude", "gemini"}
+    assert active["gemini"].reset_at_epoch == now + 1800
+
+
+def test_active_throttles_latest_per_agent_recovered_clears(tmp_path):
+    """A recovered after a detected for the same agent clears that agent."""
+    from agent_runner._throttle import _active_throttles
+
+    now = 1_700_000_000
+    _write_events(
+        tmp_path,
+        [
+            _detected(now + 3600, agent="claude"),
+            {"event": "transient_error_recovered", "agent": "claude", "throttled_for_s": 10},
+        ],
+    )
+    assert _active_throttles(tmp_path, clock=FakeClock(epoch=float(now))) == {}
+
+
+def test_active_throttles_spans_month_boundary_merged_per_agent(tmp_path):
+    """Agent A's detected in the OLD monthly file + agent B's in the NEW file → both
+    active (per-agent scan must not early-exit at the first file with any transient)."""
+    from agent_runner._throttle import _active_throttles
+
+    now = 1_700_000_000
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "events-2026-04.jsonl").write_text(
+        json.dumps(_detected(now + 3600, agent="claude")) + "\n"
+    )
+    (tmp_path / "events-2026-05.jsonl").write_text(
+        json.dumps(_detected(now + 1800, agent="gemini")) + "\n"
+    )
+    active = _active_throttles(tmp_path, clock=FakeClock(epoch=float(now)))
+    assert set(active) == {"claude", "gemini"}
 
 
 def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_path):

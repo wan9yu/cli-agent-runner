@@ -58,6 +58,7 @@ limit_type
 agent
 since_round
 phase
+throttled_agents
 
 # agent_runner.api_types.RoundResult
 round_num

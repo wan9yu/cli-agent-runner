@@ -223,28 +223,74 @@ def _seed_throttle(log_dir, *, phase, reset_at=None, classification="rate_limit_
         )
 
 
-def test_throttled_phase_skips_to_healthy_sibling(monkeypatch, tmp_path):
+_TWO_AGENTS = (
+    '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'
+    '[phases.a.agent]\ncommand = ["claude"]\n'
+    '[phases.b.agent]\ncommand = ["gemini"]\n'
+)
+
+
+def test_throttled_agent_skips_to_healthy_sibling(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
-    _seed_throttle(tmp_path / "logs", phase="a")  # a throttled, b healthy
-    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    _seed_throttle(tmp_path / "logs", phase="a", agent="claude")  # claude throttled, gemini healthy
+    cfg_path = _cfg_path(tmp_path, _TWO_AGENTS)
     rc = serve_cmd.cmd(_args(cfg_path))
     assert rc == 0
-    assert _phase_of(argvs[0]) == "b"  # rotated past throttled a
+    assert _phase_of(argvs[0]) == "b"  # rotated past claude-throttled a
     skip = [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
     assert skip and skip[0]["skipped"] == ["a"] and skip[0]["chosen"] == "b"
 
 
-def test_defer_does_not_apply_global_back_off(monkeypatch, tmp_path):
-    """A throttled phase under skip rotates to a sibling WITHOUT the global sleep."""
+def test_skip_around_does_not_apply_global_back_off(monkeypatch, tmp_path):
+    """A throttled agent under skip rotates to a healthy-agent sibling WITHOUT the sleep."""
     argvs = _capture_run(monkeypatch)
     called = []
     monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
-    _seed_throttle(tmp_path / "logs", phase="a")
-    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    _seed_throttle(tmp_path / "logs", phase="a", agent="claude")
+    cfg_path = _cfg_path(tmp_path, _TWO_AGENTS)
     rc = serve_cmd.cmd(_args(cfg_path))
     assert rc == 0
     assert _phase_of(argvs[0]) == "b"
     assert called == []  # rotation handled it; no back-off
+
+
+def test_shared_agent_throttle_skips_all_its_phases(tmp_path):
+    """Two phases sharing ONE throttled agent are BOTH skipped — no hammering the
+    rate-limited provider (the phase→agent re-key fix)."""
+    from agent_runner.config import load_config
+
+    reset_at = int(time.time() + 3600)
+    _seed_throttle(tmp_path / "logs", phase="a", agent="claude", reset_at=reset_at)
+    cfg = load_config(
+        _cfg_path(
+            tmp_path,
+            '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'
+            '[phases.a.agent]\ncommand = ["claude"]\n'
+            '[phases.b.agent]\ncommand = ["claude"]\n',
+        )
+    )
+    throttled, wake = serve_cmd._throttle_skip_context(cfg, tmp_path / "logs")
+    assert throttled == frozenset({"a", "b"})
+    assert wake == reset_at
+
+
+def test_two_agents_throttled_third_agent_runs(monkeypatch, tmp_path):
+    """Two agents throttled → both their phases skipped; a third healthy agent runs."""
+    argvs = _capture_run(monkeypatch)
+    _seed_throttle(tmp_path / "logs", phase="a", agent="claude")
+    _seed_throttle(tmp_path / "logs", phase="b", agent="gemini")
+    cfg_path = _cfg_path(
+        tmp_path,
+        '[phases]\nlist = ["a","b","c"]\nphase_policy = "skip"\n'
+        '[phases.a.agent]\ncommand = ["claude"]\n'
+        '[phases.b.agent]\ncommand = ["gemini"]\n'
+        '[phases.c.agent]\ncommand = ["codewhale"]\n',
+    )
+    rc = serve_cmd.cmd(_args(cfg_path))
+    assert rc == 0
+    assert _phase_of(argvs[0]) == "c"
+    skip = [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
+    assert skip and set(skip[0]["skipped"]) == {"a", "b"} and skip[0]["chosen"] == "c"
 
 
 def test_ignore_schedule_throttle_still_backs_off(monkeypatch, tmp_path):
@@ -262,19 +308,11 @@ def test_ignore_schedule_throttle_still_backs_off(monkeypatch, tmp_path):
 
 
 def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
-    """When every phase is throttled, _select_and_gate pauses (does not launch),
-    excluding the throttled phase from the window poll and waking at reset_at."""
-    from agent_runner.api_types import TransientErrorState
+    """When every candidate phase is throttled, _select_and_gate pauses (does not
+    launch), excluding the throttled phases from the window poll and waking at reset_at."""
     from agent_runner.config import load_config
 
     reset_at = int(time.time() + 3600)
-    throttle = TransientErrorState(
-        reset_at_epoch=reset_at,
-        classification="rate_limit_model",
-        agent="x",
-        since_round=1,
-        phase="a",
-    )
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
     spy = {}
     monkeypatch.setattr(
@@ -284,7 +322,13 @@ def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
     )
     stop = {"requested": False}
     out = serve_cmd._select_and_gate(
-        cfg, _args(tmp_path), tmp_path / "logs", stop, 1, throttle=throttle
+        cfg,
+        _args(tmp_path),
+        tmp_path / "logs",
+        stop,
+        1,
+        throttled_phases=frozenset({"a"}),
+        wake_epoch=reset_at,
     )
     assert out is serve_cmd._PAUSED_CONTINUE
     assert spy.get("called") and spy["throttled_phases"] == frozenset({"a"})
@@ -328,18 +372,21 @@ def test_legacy_skip_action_emits_no_recovered_breadcrumb(monkeypatch, tmp_path)
     assert rec == []  # legacy path stays silent
 
 
-def test_empty_phase_throttle_under_skip_takes_legacy_back_off(monkeypatch, tmp_path):
-    """A throttle with phase="" (pre-0.2.10 detection, or a round run without
-    --phase) cannot be routed around, so `throttle.phase and ...` is falsey and the
-    config falls back to the global back-off — not a rotation."""
-    _capture_run(monkeypatch)
+def test_skip_ignores_throttle_for_unused_agent(monkeypatch, tmp_path):
+    """Under skip, a throttle whose agent maps to no configured phase is ignored: the
+    round runs normally — skip never applies the global back-off, and no phase is
+    skipped. The join is by agent, so the detected event's phase field is irrelevant."""
+    argvs = _capture_run(monkeypatch)
     called = []
     monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
-    _seed_throttle(tmp_path / "logs", phase="", reset_at=int(time.time() + 3600))
+    _seed_throttle(
+        tmp_path / "logs", phase="", agent="unused-agent", reset_at=int(time.time() + 3600)
+    )
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
     rc = serve_cmd.cmd(_args(cfg_path))
     assert rc == 0
-    assert called == [True]  # empty phase → not defer → legacy back-off
+    assert _phase_of(argvs[0]) == "a"  # nothing throttled for our agents → normal rotation
+    assert called == []  # skip never applies the global back-off
     assert not [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
 
 
