@@ -60,6 +60,25 @@ def test_given_three_of_ten_rounds_timed_out_when_detect_then_returns_warning_al
     assert a.context["rate"] >= 0.2
 
 
+def test_given_grace_kills_when_detect_timeout_rate_then_not_counted() -> None:
+    """A grace-kill sets timed_out but is not a hung round — it must not inflate
+    the timeout rate (0.2.11)."""
+    events = []
+    for i in range(10):
+        events.append(_ev("round_start", round_num=i))
+        events.append(
+            _ev(
+                "agent_exit",
+                round_num=i,
+                timed_out=(i < 4),  # 4/10 have timed_out set...
+                exit_code=-15 if i < 4 else 0,
+                exit_cause="grace_kill" if i < 4 else "clean",  # ...but all are grace-kills
+            )
+        )
+        events.append(_ev("round_end", round_num=i))
+    assert detect_timeout_rate(events, window=10, threshold=0.2) is None  # 0 real timeouts
+
+
 def test_given_one_of_ten_rounds_timed_out_when_detect_then_no_alert() -> None:
     events = []
     for i in range(10):

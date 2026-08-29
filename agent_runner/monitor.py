@@ -136,7 +136,9 @@ def detect_timeout_rate(
     recent = _last_n_round_exits(events, window)
     if len(recent) < window:
         return None
-    timed = sum(1 for e in recent if e.get("timed_out"))
+    # A grace-kill sets timed_out too but is NOT a hung round (agent produced a
+    # result then lingered) — exclude it so the rate reflects real timeouts.
+    timed = sum(1 for e in recent if e.get("timed_out") and e.get("exit_cause") != "grace_kill")
     rate = timed / len(recent)
     if rate < threshold:
         return None

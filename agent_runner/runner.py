@@ -224,9 +224,13 @@ def _round_context_for_prompt(
 def _exit_cause(result: agent_runtime.RunResult) -> str:
     """Classify a round's exit for the ``agent_exit`` event.
 
-    Precedence: timeout > signal:<NAME> > clean > error. Timeout wins even
-    when agent-runner signal-killed the process to enforce the timeout.
+    Precedence: grace_kill > timeout > signal:<NAME> > clean > error. A grace-kill
+    (the agent produced a result then lingered) sets timed_out too, but it is NOT a
+    hung round — distinguishing it keeps the timeout-rate metric honest and lets
+    the round still dispatch its (completed) dirty work.
     """
+    if result.killed_for_grace:
+        return "grace_kill"
     if result.timed_out:
         return "timeout"
     s = signal_name(result.exit_code)
@@ -556,7 +560,10 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         events.emit(log_dir, events.DIRTY_DETECTED, round_num=round_num, files=dirty[:20])
 
     dirty_outcome = None
-    if dirty and result.ok:
+    if dirty and (result.ok or result.killed_for_grace):
+        # A grace-kill means the agent produced its result then lingered — the work
+        # is done, so its dirty tree must still be dispatched (the lingering-CLI
+        # users grace-kill targets are exactly who need this).
         dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, log_dir=log_dir)
     elif not dirty:
         context_store.clear_orphan_state(log_dir)
