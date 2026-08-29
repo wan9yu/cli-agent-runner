@@ -274,6 +274,21 @@ def test_shared_agent_throttle_skips_all_its_phases(tmp_path):
     assert wake == reset_at
 
 
+def test_ran_agent_throttled_precise_and_fallback(tmp_path):
+    """throttle_active keys on the agent that ran: precise when serve chose the phase,
+    agent-agnostic ("any throttled") when the round self-rotated (phase_arg None) — so a
+    non-base agent's throttle under --ignore-schedule is not misread as a crash."""
+    from agent_runner.config import load_config
+
+    _seed_throttle(tmp_path / "logs", phase="b", agent="gemini")  # gemini throttled, claude healthy
+    cfg = load_config(_cfg_path(tmp_path, _TWO_AGENTS))  # a→claude, b→gemini
+    # phase_arg set: check that exact agent
+    assert serve_cmd._ran_agent_throttled(cfg, "b", tmp_path / "logs") is True  # gemini
+    assert serve_cmd._ran_agent_throttled(cfg, "a", tmp_path / "logs") is False  # claude healthy
+    # phase_arg None (round self-rotated): fall back to "any agent throttled"
+    assert serve_cmd._ran_agent_throttled(cfg, None, tmp_path / "logs") is True
+
+
 def test_two_agents_throttled_third_agent_runs(monkeypatch, tmp_path):
     """Two agents throttled → both their phases skipped; a third healthy agent runs."""
     argvs = _capture_run(monkeypatch)

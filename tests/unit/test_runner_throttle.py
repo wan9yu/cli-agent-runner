@@ -277,6 +277,37 @@ def test_interruptible_sleep_returns_true_when_stop_preset():
     assert clock.slept == []
 
 
+def test_interruptible_sleep_terminates_when_sleep_is_noop():
+    """Regression: a no-op sleep whose monotonic never advances (a test patching only
+    time.sleep) must NOT busy-spin — the count-down loop terminates after
+    ceil(total/chunk) slices instead of looping until a real deadline."""
+    from agent_runner._throttle import _interruptible_sleep
+
+    class _FrozenNoopClock:
+        def __init__(self):
+            self.calls = 0
+
+        def epoch(self):
+            return 0.0
+
+        def monotonic(self):
+            return 0.0  # never advances — the old deadline loop would spin forever
+
+        def sleep(self, _s):
+            self.calls += 1  # no-op: does not advance time
+
+        def now_utc(self):
+            raise NotImplementedError
+
+        def now_in_zone(self, _tz):
+            raise NotImplementedError
+
+    clock = _FrozenNoopClock()
+    interrupted = _interruptible_sleep(70.0, {"requested": False}, clock=clock, chunk_s=30)
+    assert interrupted is False
+    assert clock.calls == 3  # 30 + 30 + 10 → remaining 0; no infinite loop
+
+
 def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp_path):
     """When reset_at_epoch implies sleep > 8h, cap and emit transient_error_backoff_capped."""
     from agent_runner._throttle import _apply_back_off

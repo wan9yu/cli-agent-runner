@@ -460,6 +460,58 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     assert state.service.rate_limit.throttled_agents == ("claude",)  # plural view
 
 
+def test_given_sibling_recovered_when_peek_then_still_throttled_agent_surfaces(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """peek must not drop rate_limit to null when the newest transient event is a
+    sibling agent's recovered while another agent is still throttled — the scalar
+    global-latest view is None there, but throttled_agents must still list the active
+    agent (the multi-provider case the field exists for)."""
+    import time
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    future = int(time.time() + 3600)
+    past = int(time.time() - 60)
+    rows = [
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:00:00Z",
+            "agent": "claude",
+            "reset_at_epoch": future,
+            "classification": "rate_limit_account",
+            "round_num": 7,
+        },
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:01:00Z",
+            "agent": "gemini",
+            "reset_at_epoch": past,
+            "classification": "rate_limit_model",
+            "round_num": 8,
+        },
+        {
+            "event": "transient_error_recovered",
+            "ts": "2026-05-16T00:02:00Z",
+            "agent": "gemini",
+            "throttled_for_s": 60,
+            "classification": "rate_limit_model",
+        },
+    ]
+    (log_dir / "events-2026-05.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    state = api.peek(tmp_git_repo)
+    assert state.service.rate_limit is not None  # not dropped to null
+    assert state.service.rate_limit.throttled_agents == ("claude",)
+    assert state.service.rate_limit.agent == "claude"
+    assert state.service.rate_limit.throttled_until_epoch == future
+
+
 def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -286,19 +286,22 @@ _BACK_OFF_JITTER_MAX_S = 30
 def _interruptible_sleep(
     total_s: float, stop: dict[str, bool], *, clock: Clock = SYSTEM_CLOCK, chunk_s: int = 30
 ) -> bool:
-    """Sleep ``total_s`` in ``<= chunk_s`` monotonic slices; return True iff
-    ``stop["requested"]`` cut it short. The deadline is measured on the monotonic
-    clock (immune to an NTP step); each slice is capped at the remaining time so a
-    short delay never overshoots. Shared by the serve restart delay and
-    :func:`_apply_back_off` so a SIGTERM lands within one chunk either way."""
-    deadline = clock.monotonic() + total_s
-    while True:
+    """Sleep ``total_s`` in ``<= chunk_s`` slices, re-checking ``stop`` at each
+    boundary; return True iff ``stop["requested"]`` cut it short. Shared by the serve
+    restart delay and :func:`_apply_back_off` so a SIGTERM lands within one chunk.
+
+    Counts down the *intended* nap per slice rather than measuring a wall/monotonic
+    deadline: NTP-step immune (no clock read for the deadline) AND does not busy-spin
+    when ``clock.sleep`` is a no-op (a test patching ``time.sleep`` runs it instantly
+    instead of looping until real time advances)."""
+    remaining = float(total_s)
+    while remaining > 0:
         if stop["requested"]:
             return True
-        remaining = deadline - clock.monotonic()
-        if remaining <= 0:
-            return False
-        clock.sleep(min(float(chunk_s), remaining))
+        nap = min(float(chunk_s), remaining)
+        clock.sleep(nap)
+        remaining -= nap
+    return False
 
 
 def _apply_back_off(

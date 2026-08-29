@@ -448,6 +448,13 @@ def peek(
     from agent_runner._throttle import _active_throttles, _check_throttle_state
 
     throttle = _check_throttle_state(log_dir)
+    active = _active_throttles(log_dir)
+    if throttle is None and active:
+        # The global-latest scalar view can be None while a sibling agent is still
+        # throttled (the newest transient event is another agent's recovered). Fall
+        # back to the active throttle that clears LAST so the scalar fields stay
+        # coherent and the plural throttled_agents view is not dropped to null.
+        throttle = max(active.values(), key=lambda s: s.reset_at_epoch)
     rate_limit: RateLimitState | None = None
     if throttle is not None:
         rate_limit = RateLimitState(
@@ -456,7 +463,7 @@ def peek(
             agent=throttle.agent,
             since_round=throttle.since_round,
             phase=throttle.phase,
-            throttled_agents=tuple(sorted(_active_throttles(log_dir))),
+            throttled_agents=tuple(sorted(active)),
         )
     raw_service = status(project if project is not None else work_dir)
     svc = dataclasses.replace(raw_service, rate_limit=rate_limit)

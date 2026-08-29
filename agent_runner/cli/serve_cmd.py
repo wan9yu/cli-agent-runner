@@ -310,6 +310,21 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     return frozenset(throttled), wake
 
 
+def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
+    """Was the agent that JUST ran throttled? — so the crash-loop breaker excuses a
+    fast throttle-induced exit rather than counting it as a crash.
+
+    When serve chose the phase (``phase_arg`` set) we check that exact agent. When the
+    round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
+    serve does NOT know which agent ran, so fall back to "any agent throttled" — the
+    pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
+    being misread as a crash (a false ``crash_loop`` permanent stop)."""
+    active = _active_throttles(log_dir)
+    if phase_arg is None:
+        return bool(active)
+    return Path(cfg.profile_for(phase_arg).agent.command[0]).name in active
+
+
 def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int | None] | str:
     """Per-round throttle decision → ``(throttled_phases, wake_epoch)`` for selection,
     or the string ``"break"`` to stop the loop.
@@ -578,10 +593,9 @@ def cmd(args) -> int:
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r.returncode,
                 duration_s=round_duration_s,
-                # Crash-loop breaker excuses a fast exit only when THE AGENT THAT JUST
-                # RAN is throttled — a sibling agent's throttle must not mask its crash.
-                throttle_active=Path(cfg.profile_for(phase_arg).agent.command[0]).name
-                in _active_throttles(log_dir),
+                # Crash-loop breaker excuses a fast exit only when the agent that just
+                # ran is throttled (agent-agnostic when the round self-rotated the phase).
+                throttle_active=_ran_agent_throttled(cfg, phase_arg, log_dir),
                 consecutive=consecutive_crashes,
                 restart_delay_s=cfg.runtime.restart_delay_s,
             )
