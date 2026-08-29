@@ -15,6 +15,7 @@ from pathlib import Path
 import psutil
 
 from agent_runner.api_types import ServiceMode
+from agent_runner.context_store import atomic_write_json
 
 
 @dataclass(frozen=True)
@@ -23,14 +24,15 @@ class PIDFile:
 
     def write(self, pid: int) -> None:
         """Record the pid plus its process start-time as an identity token, so a
-        later read can tell "the serve I started" from a recycled PID."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        later read can tell "the serve I started" from a recycled PID. Written
+        atomically (tmp + rename) so a concurrent ``stop``/``kill`` read never sees a
+        torn file."""
         payload: dict[str, object] = {"pid": pid}
         try:
             payload["create_time"] = psutil.Process(pid).create_time()
         except psutil.Error:
             pass  # token is best-effort; a read without it falls back to unverified
-        self.path.write_text(json.dumps(payload))
+        atomic_write_json(self.path, payload)
 
     def read(self) -> int | None:
         """Return the recorded pid ONLY if it still names the same process (matching

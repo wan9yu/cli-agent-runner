@@ -34,6 +34,15 @@ class AgentConfig:
     env: dict[str, str] = field(default_factory=dict)
     prompt_delivery: Literal["argv", "stdin"] = "argv"
 
+    @property
+    def binary(self) -> str | None:
+        """The agent's identity for throttle-skip and hook/metrics joins: the basename
+        of ``command[0]``, which is exactly the label a detector stamps on
+        ``transient_error_detected``. ``None`` only if ``command`` is empty. This is the
+        real join key (unlike the cosmetic, optional ``name``), defined once here so
+        serve and runner don't each re-spell ``Path(command[0]).name``."""
+        return Path(self.command[0]).name if self.command else None
+
 
 @dataclass(frozen=True)
 class RuntimeConfig:

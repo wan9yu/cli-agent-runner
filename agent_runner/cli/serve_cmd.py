@@ -303,7 +303,7 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     throttled: set[str] = set()
     wake: int | None = None
     for phase in cfg.phases.list:
-        st = active.get(Path(cfg.profile_for(phase).agent.command[0]).name)
+        st = active.get(cfg.profile_for(phase).agent.binary)
         if st is not None:
             throttled.add(phase)
             wake = st.reset_at_epoch if wake is None else min(wake, st.reset_at_epoch)
@@ -322,7 +322,7 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
     active = _active_throttles(log_dir)
     if phase_arg is None:
         return bool(active)
-    return Path(cfg.profile_for(phase_arg).agent.command[0]).name in active
+    return cfg.profile_for(phase_arg).agent.binary in active
 
 
 def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int | None] | str:

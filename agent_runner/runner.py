@@ -399,7 +399,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         phase=phase,
         agent_name=profile.agent.name
         or (profile.agent.command[0] if profile.agent.command else None),
-        agent_binary=Path(profile.agent.command[0]).name if profile.agent.command else None,
+        agent_binary=profile.agent.binary,
         agent_log_path=log_path,
         dry_run=cfg.runtime.dry_run,
         anomaly_repetitive_window=cfg.monitor.anomaly_repetitive_window,
@@ -427,7 +427,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
-    _agent_binary = Path(profile.agent.command[0]).name if profile.agent.command else None
+    _agent_binary = profile.agent.binary
     # metrics.jsonl has its own event namespace; it merely spells round_start /
     # round_end the same way events.py does. Not an events.py kind.
     metrics.log_metrics(
