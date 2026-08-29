@@ -68,7 +68,15 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
         f"WorkingDirectory={cfg.runtime.work_dir}\n"
         f"ExecStart={script_path} serve "
         f"--config {_config_path(cfg)}\n"
-        f"Restart=always\n"
+        # on-failure (not always) so a deliberate give-up stop — config_broken (78)
+        # or crash_loop (75), both in RestartPreventExitStatus — stays stopped and
+        # visibly failed, while an unexpected supervisor crash (any other non-zero)
+        # still recovers. Clean stops (max_rounds/stop_file/sentinel/SIGTERM → 0)
+        # never restart.
+        f"Restart=on-failure\n"
+        # 78 = api.PERMANENT_CONFIG_EXIT, 75 = api.CRASH_LOOP_EXIT (literal here to
+        # avoid an api→service_unit→api import cycle; pinned by test_service_unit).
+        f"RestartPreventExitStatus=78 75\n"
         f"RestartSec=3\n"
         f"KillMode=mixed\n"
         f"KillSignal=SIGTERM\n"

@@ -54,8 +54,18 @@ def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path
     cfg = _cfg(tmp_path)
     script_path = tmp_path / ".venv" / "bin" / "agent-runner"
     body = render_serve_unit(cfg, script_path=script_path)
-    for needle in ("[Unit]", "[Service]", "[Install]", "Restart=always", "KillSignal=SIGTERM"):
+    from agent_runner.api import CRASH_LOOP_EXIT, PERMANENT_CONFIG_EXIT
+
+    for needle in (
+        "[Unit]",
+        "[Service]",
+        "[Install]",
+        "Restart=on-failure",
+        f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT}",
+        "KillSignal=SIGTERM",
+    ):
         assert needle in body, f"missing {needle!r} in unit body"
+    assert "Restart=always" not in body  # a deliberate stop must not auto-restart
 
 
 def test_given_serve_unit_when_rendered_then_timeout_includes_grace(tmp_path: Path) -> None:

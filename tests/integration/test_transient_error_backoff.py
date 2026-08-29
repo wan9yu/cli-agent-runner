@@ -11,6 +11,7 @@ supervisor loop: _check_throttle_state + action dispatch.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -65,6 +66,7 @@ def test_given_5xx_detected_event_when_serve_skip_then_no_sleep(tmp_path: Path):
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
     duration = time.time() - start
@@ -100,6 +102,7 @@ def test_given_transient_error_action_stop_when_5xx_detected_then_terminates_ear
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"

@@ -26,8 +26,8 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     monkeypatch.setattr(subprocess, "run", fake_run)
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
-    # serve broke the loop (returned) rather than respawning the broken config,
-    # and recorded why.
-    assert rc == 0
+    # serve broke the loop (returned the give-up exit code) rather than respawning
+    # the broken config, and recorded why.
+    assert rc == PERMANENT_CONFIG_EXIT
     kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
     assert "config_broken" in kinds

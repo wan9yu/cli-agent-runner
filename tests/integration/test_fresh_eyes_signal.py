@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -39,6 +40,7 @@ def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
@@ -68,6 +70,7 @@ def test_given_no_fresh_eyes_config_when_rounds_run_then_no_trigger_events(
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"

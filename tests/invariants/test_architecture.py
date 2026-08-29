@@ -30,6 +30,8 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.api",
         {
+            "CRASH_LOOP_EXIT",
+            "PERMANENT_CONFIG_EXIT",
             "check_self_terminated_sentinel",
             "emit_config_broken",
             "emit_crash_loop",

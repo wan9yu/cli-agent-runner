@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.api import CRASH_LOOP_THRESHOLD, PERMANENT_CONFIG_EXIT, post_round_decision
+from agent_runner.api import (
+    CRASH_LOOP_EXIT,
+    CRASH_LOOP_THRESHOLD,
+    PERMANENT_CONFIG_EXIT,
+    post_round_decision,
+)
 from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
@@ -43,7 +48,7 @@ def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
-    assert rc == 0
+    assert rc == CRASH_LOOP_EXIT
     crash = [e for e in read_events_for_current_month(log_dir) if e.get("event") == "crash_loop"]
     assert len(crash) == 1
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD

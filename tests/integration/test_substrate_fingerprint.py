@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ def test_given_round_runs_when_substrate_emitted_then_before_and_after_present(
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
@@ -61,6 +63,7 @@ def test_given_paths_config_when_round_runs_then_paths_hash_populated(tmp_path: 
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
@@ -109,6 +112,7 @@ def test_given_git_repo_when_round_runs_then_git_head_populated(tmp_path: Path):
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=20,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"

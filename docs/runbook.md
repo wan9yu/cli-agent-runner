@@ -134,11 +134,12 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 ### systemd unit pattern recommendations
 
 ```ini
-# Prod (infinite supervisor) — current default
+# Prod (infinite supervisor) — current default (0.2.11+)
 [Service]
 ExecStart=... serve --config /etc/agent-runner.toml
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartPreventExitStatus=78 75   # config_broken (78) / crash_loop (75) stay stopped
+RestartSec=3
 
 # Bounded job
 [Service]
@@ -746,9 +747,11 @@ emits `hook_failed` and the round proceeds anyway. A wrapper script around
 
 ### Serve stopped on its own (`crash_loop` / `config_broken`)
 
-**Symptom:** `serve` exited cleanly (code 0) but did little or no work. Two
-always-on defenses stop the loop rather than respawn a doomed round forever — so
-systemd `Restart=on-failure` does **not** bring it back; intervention is needed.
+**Symptom:** `serve` exited with a give-up code (`config_broken` → 78,
+`crash_loop` → 75) but did little or no work. Two always-on defenses stop the loop
+rather than respawn a doomed round forever — and because those codes are in the
+unit's `RestartPreventExitStatus`, systemd `Restart=on-failure` does **not** bring
+it back (the unit shows *failed*); intervention is needed.
 
 | Event | Trigger | Fix |
 |---|---|---|

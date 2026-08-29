@@ -22,6 +22,8 @@ from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import _check_throttle_state, pending_recovered
 from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
+    CRASH_LOOP_EXIT,
+    PERMANENT_CONFIG_EXIT,
     check_self_terminated_sentinel,
     emit_config_broken,
     emit_crash_loop,
@@ -404,6 +406,10 @@ def cmd(args) -> int:
     work_dir = cfg.runtime.work_dir
     rounds_completed = 0
     consecutive_crashes = 0  # b12: consecutive UNKNOWN short crashes (crash-loop breaker)
+    # Give-up stops (config_broken/crash_loop) return a distinct non-zero code the
+    # systemd unit lists in RestartPreventExitStatus so they stay stopped; every
+    # other stop (sentinel/stop_file/max_rounds/SIGTERM/once) is a clean exit 0.
+    exit_code = 0
 
     try:
         pid_file.write(os.getpid())
@@ -501,6 +507,7 @@ def cmd(args) -> int:
             )
             if action == "config_broken":
                 emit_config_broken(log_dir, reason="startup battery permanent failure")
+                exit_code = PERMANENT_CONFIG_EXIT
                 break
             if action == "crash_loop":
                 emit_crash_loop(
@@ -509,10 +516,11 @@ def cmd(args) -> int:
                     exit_code=r.returncode,
                     log_path=round_log_path,
                 )
+                exit_code = CRASH_LOOP_EXIT
                 break
             if args.once or stop["requested"]:
                 break
             SYSTEM_CLOCK.sleep(delay)
     finally:
         pid_file.unlink()
-    return 0
+    return exit_code

@@ -52,6 +52,13 @@ from agent_runner.service_unit import (
 # facade without coupling to runner (runner imports api, not the reverse).
 PERMANENT_CONFIG_EXIT = 78
 
+# Exit code serve returns when the crash-loop breaker trips (a give-up stop, like
+# config_broken). Distinct from 78 so `systemctl status` / SuccessExitStatus can
+# tell the two "needs intervention" stops apart. 75 = EX_TEMPFAIL (sysexits).
+# The systemd unit lists both in RestartPreventExitStatus so a deliberate stop
+# stays stopped (and visibly failed) while an unexpected supervisor crash restarts.
+CRASH_LOOP_EXIT = 75
+
 # Crash-loop circuit breaker (b12). The serve loop escalates the restart delay
 # on consecutive UNKNOWN short crashes (non-zero exit, short duration, no
 # classified transient) and STOPS after CRASH_LOOP_THRESHOLD of them — the Run 6
