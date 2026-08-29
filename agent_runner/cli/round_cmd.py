@@ -21,5 +21,10 @@ def add_parser(sub, parent) -> None:
 
 def cmd(args) -> int:
     cfg = cfg_from_args(args)
-    run_one_round(cfg, phase_override=args.phase)
-    return 0
+    result = run_one_round(cfg, phase_override=args.phase)
+    # Surface a real agent crash as a non-zero exit so serve's crash-loop breaker
+    # (which keys on this subprocess's returncode) can count it. A grace-kill (agent
+    # produced a result then lingered) or a timeout (long, not a short crash) is NOT
+    # a crash → 0. Never returns the serve-reserved 78 / 75.
+    crashed = result.exit_code != 0 and not result.killed_for_grace and not result.timed_out
+    return 1 if crashed else 0
