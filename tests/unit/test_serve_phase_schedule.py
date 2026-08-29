@@ -410,6 +410,34 @@ def test_pause_wakes_at_wake_epoch(tmp_path):
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
+def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
+    """Drive the real pause loop with the shared FakeClock: its sleep() advances
+    virtual epoch AND monotonic, so the loop wakes deterministically once the
+    injected clock crosses wake_epoch (no monkeypatch, no real sleep)."""
+    from agent_runner.config import load_config
+    from tests._clock import FakeClock
+
+    cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    clock = FakeClock(epoch=1000.0)
+    stop = {"requested": False}
+    serve_cmd._pause_until_selectable(
+        cfg,
+        tmp_path / "logs",
+        stop,
+        1,
+        _paused_sel(),
+        throttled_phases=frozenset({"a"}),
+        wake_epoch=1025,  # 25s ahead; chunked sleeps advance the FakeClock to it
+        now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        now_epoch_fn=clock.epoch,
+        sleep_fn=clock.sleep,
+        chunk_s=10,
+    )
+    assert clock.slept == [10, 10, 10]  # 1000→1030 crosses 1025
+    assert clock.epoch() == 1030.0 and clock.monotonic() == 30.0  # sleep advanced both
+    assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
+
+
 def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
     """min(window, reset_at): a non-throttled sibling whose window is open resumes
     the loop before the far-future throttle reset."""

@@ -13,9 +13,9 @@ from zoneinfo import ZoneInfo
 
 
 class FakeClock:
-    def __init__(self, epoch: float = 1_700_000_000.0, *, monotonic: float = 0.0):
+    def __init__(self, epoch: float = 1_700_000_000.0):
         self._epoch = epoch
-        self._mono = monotonic
+        self._mono = 0.0
         self.slept: list[float] = []
 
     # --- Clock surface -------------------------------------------------------

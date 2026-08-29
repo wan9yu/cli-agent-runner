@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import re
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
-import time
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 
@@ -329,7 +328,7 @@ def stash_orphan(
     existing = _recent_orphan_for_round(repo, round_num, idempotency_s)
     if existing is not None:
         return replace(existing, reused=True)
-    ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+    ts = SYSTEM_CLOCK.now_utc().strftime("%Y-%m-%dT%H:%M:%S")
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
     exclude = _log_dir_exclude_pathspec(repo, log_dir)

@@ -587,7 +587,6 @@ def _tail_events_jsonl(
     appears, it is picked up from byte 0.
     """
     import json as _json
-    import time as _time
 
     seen_positions: dict[Path, int] = {}
     if start_at_now:
@@ -621,7 +620,7 @@ def _tail_events_jsonl(
                     any_new = True
                 seen_positions[path] = f.tell()
         if not any_new:
-            _time.sleep(poll_interval_s)
+            SYSTEM_CLOCK.sleep(poll_interval_s)
 
 
 def _primary_prompt_file(cfg: Config) -> Path | None:
