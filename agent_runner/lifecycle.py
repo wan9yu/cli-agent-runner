@@ -7,9 +7,12 @@ project is managed by systemd-user or a plain serve process.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
 
 from agent_runner.api_types import ServiceMode
 
@@ -19,14 +22,43 @@ class PIDFile:
     path: Path
 
     def write(self, pid: int) -> None:
+        """Record the pid plus its process start-time as an identity token, so a
+        later read can tell "the serve I started" from a recycled PID."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(str(pid))
+        payload: dict[str, object] = {"pid": pid}
+        try:
+            payload["create_time"] = psutil.Process(pid).create_time()
+        except psutil.Error:
+            pass  # token is best-effort; a read without it falls back to unverified
+        self.path.write_text(json.dumps(payload))
 
     def read(self) -> int | None:
+        """Return the recorded pid ONLY if it still names the same process (matching
+        start-time), else None — so ``stop``/``kill`` never signal a recycled PID
+        after a crash-without-cleanup. A legacy bare-int file (no token) is returned
+        unverified for back-compat and upgraded on the next write."""
         try:
-            return int(self.path.read_text().strip())
-        except (FileNotFoundError, ValueError):
+            raw = self.path.read_text().strip()
+        except FileNotFoundError:
             return None
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if isinstance(data, int):
+            return data  # legacy bare-int format: unverified
+        if not isinstance(data, dict) or not isinstance(data.get("pid"), int):
+            return None
+        pid = data["pid"]
+        recorded = data.get("create_time")
+        if recorded is None:
+            return pid  # write couldn't capture a token; best-effort unverified
+        try:
+            if abs(psutil.Process(pid).create_time() - recorded) < 1.0:
+                return pid
+        except psutil.Error:
+            pass
+        return None  # process gone, or a different (recycled) process now holds the PID
 
     def unlink(self) -> None:
         self.path.unlink(missing_ok=True)

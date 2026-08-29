@@ -35,6 +35,29 @@ def test_given_pid_file_when_corrupt_then_read_returns_none(tmp_path: Path) -> N
     assert PIDFile(p).read() is None
 
 
+def test_live_pid_with_matching_token_reads_back(tmp_path: Path) -> None:
+    pf = PIDFile(tmp_path / "p.pid")
+    pf.write(os.getpid())  # captures this process's real start-time
+    assert pf.read() == os.getpid()  # token matches the live process
+
+
+def test_recycled_pid_with_mismatched_token_reads_none(tmp_path: Path) -> None:
+    """Same PID, different process (OS recycled it after a crash) → the start-time
+    token won't match, so read() reports it as not-running (no stray signal)."""
+    import json
+
+    p = tmp_path / "p.pid"
+    p.write_text(json.dumps({"pid": os.getpid(), "create_time": 1.0}))  # bogus old start-time
+    assert PIDFile(p).read() is None
+
+
+def test_legacy_bare_int_reads_unverified(tmp_path: Path) -> None:
+    """A pre-0.2.11 bare-int file has no token → returned unverified (back-compat)."""
+    p = tmp_path / "p.pid"
+    p.write_text(str(os.getpid()))
+    assert PIDFile(p).read() == os.getpid()
+
+
 def test_given_running_pid_when_pid_alive_then_returns_true() -> None:
     assert pid_alive(os.getpid()) is True
 
