@@ -251,7 +251,7 @@ def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
 
 def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path):
     """Old call sites (only 4 kwargs) still work; new fields absent in payload.
-    Guards against breaking existing runner.py:_apply_back_off behavior.
+    Guards against breaking existing _throttle.py:_apply_back_off behavior.
     """
     import json
 

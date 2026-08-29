@@ -1,13 +1,17 @@
-"""Throttle state helpers — read events.jsonl tail for transient error state.
+"""Throttle state helpers — read events.jsonl tail for transient error state,
+and own the supervisor-side back-off sleep.
 
-Internal module. Callers: runner.py (serve loop back-off), api.py (peek).
-Separated from runner.py to satisfy the ouroboros defense: runner.py writes
-events.jsonl but must never read it back (§3 module boundary invariant).
+Internal module. Callers: cli/serve_cmd.py (throttle scan + back-off + restart
+delay), api.py (peek). The back-off lives here, NOT in runner.py, to satisfy the
+ouroboros defense: runner.py writes events.jsonl but must never read it back
+(§3 module boundary invariant), and back-off is driven by the events-derived
+throttle state this module scans.
 """
 
 from __future__ import annotations
 
 import json
+import random
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -218,3 +222,94 @@ def compute_adjusted_reset_at(
 def reset_counters() -> None:
     """Clear all bucket counters. Called by serve loop when no active throttle."""
     _consecutive_failures.clear()
+
+
+_BACK_OFF_CAP_S = 28800  # 8h — defensive cap; 1.6× the 5h-window
+_BACK_OFF_JITTER_MIN_S = 5
+_BACK_OFF_JITTER_MAX_S = 30
+
+
+def _interruptible_sleep(
+    total_s: float, stop: dict[str, bool], *, clock: Clock = SYSTEM_CLOCK, chunk_s: int = 30
+) -> bool:
+    """Sleep ``total_s`` in ``<= chunk_s`` monotonic slices; return True iff
+    ``stop["requested"]`` cut it short. The deadline is measured on the monotonic
+    clock (immune to an NTP step); each slice is capped at the remaining time so a
+    short delay never overshoots. Shared by the serve restart delay and
+    :func:`_apply_back_off` so a SIGTERM lands within one chunk either way."""
+    deadline = clock.monotonic() + total_s
+    while True:
+        if stop["requested"]:
+            return True
+        remaining = deadline - clock.monotonic()
+        if remaining <= 0:
+            return False
+        clock.sleep(min(float(chunk_s), remaining))
+
+
+def _apply_back_off(
+    log_dir: Path,
+    throttle: TransientErrorState,
+    *,
+    stop: dict[str, bool],
+    clock: Clock = SYSTEM_CLOCK,
+    chunk_s: int = 30,
+) -> bool:
+    """Sleep until adjusted reset_at + jitter, then emit recovered. Returns True iff
+    ``stop["requested"]`` was set before the sleep completed — an interrupted back-off,
+    where the caller must break WITHOUT treating the throttle as recovered: the reset
+    has not passed, so a recovered breadcrumb would poison restart-safe state.
+
+    The sleep is chunked and re-checks ``stop`` at each boundary (see
+    :func:`_interruptible_sleep`), so a SIGTERM lands within one chunk instead of after
+    a multi-hour window.
+
+    For estimated-class classifications (rate_limit_model / api_transient_5xx /
+    api_timeout), applies exp backoff on consecutive failures via
+    :func:`compute_adjusted_reset_at`. For server-authoritative rate_limit_account, the
+    original reset_at_epoch is used verbatim. The 8h cap is a last-line defense against a
+    malformed (far-future) reset epoch (e.g. a manual event with a far-future ts).
+    """
+    from agent_runner._emit import (
+        emit_transient_error_backoff_capped,
+        emit_transient_error_recovered,
+    )
+
+    adjusted_reset_at, _consecutive_count, _capped = compute_adjusted_reset_at(
+        classification=throttle.classification,
+        original_reset_at_epoch=throttle.reset_at_epoch,
+        agent=throttle.agent,
+        log_dir=log_dir,
+        clock=clock,
+    )
+
+    requested = (
+        adjusted_reset_at
+        - clock.epoch()
+        + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
+    )
+    if requested > _BACK_OFF_CAP_S:
+        # Defensive: malformed reset epoch. The exp-backoff layer caps at 30min, so
+        # legitimate flow never reaches this branch.
+        emit_transient_error_backoff_capped(
+            log_dir,
+            classification=throttle.classification,
+            agent=throttle.agent,
+            requested_sleep_s=int(requested),
+            applied_sleep_s=_BACK_OFF_CAP_S,
+        )
+        sleep_s = float(_BACK_OFF_CAP_S)
+    else:
+        sleep_s = max(requested, 0.0)
+
+    sleep_start = clock.epoch()
+    if _interruptible_sleep(sleep_s, stop, clock=clock, chunk_s=chunk_s):
+        return True  # SIGTERM during back-off — leave the throttle active, no breadcrumb
+
+    emit_transient_error_recovered(
+        log_dir,
+        classification=throttle.classification,
+        agent=throttle.agent,
+        throttled_for_s=int(clock.epoch() - sleep_start),
+    )
+    return False

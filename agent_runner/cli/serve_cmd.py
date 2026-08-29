@@ -20,7 +20,12 @@ from typing import Literal
 
 from agent_runner import phase_select, schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
-from agent_runner._throttle import _check_throttle_state, pending_recovered
+from agent_runner._throttle import (
+    _apply_back_off,
+    _check_throttle_state,
+    _interruptible_sleep,
+    pending_recovered,
+)
 from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
     CRASH_LOOP_EXIT,
@@ -51,7 +56,6 @@ from agent_runner.round_log import (
     next_round_num,
     prune_old_round_logs,
 )
-from agent_runner.runner import _apply_back_off
 
 
 def _acquire_serve_lock(log_dir: Path) -> int | None:
@@ -258,13 +262,14 @@ def _skip_around(cfg, args) -> bool:
     return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
 
 
-def _gate_throttle(cfg, args, log_dir, throttle) -> Literal["proceed", "break", "defer"]:
+def _gate_throttle(cfg, args, log_dir, throttle, stop) -> Literal["proceed", "break", "defer"]:
     """Decide what an active throttle means for this round.
 
-    Returns ``"break"`` (stop the loop), ``"defer"`` (a skip-around config will
-    route around the throttled phase — the caller passes ``throttle`` into
-    :func:`_select_and_gate`), or ``"proceed"`` (run normally: no throttle, or the
-    legacy global back-off / skip already applied here).
+    Returns ``"break"`` (stop the loop — throttle action is ``stop``, or a SIGTERM
+    landed mid-back-off), ``"defer"`` (a skip-around config will route around the
+    throttled phase — the caller passes ``throttle`` into :func:`_select_and_gate`),
+    or ``"proceed"`` (run normally: no throttle, or the legacy global back-off / skip
+    already applied here).
 
     ``defer`` (and the recovered breadcrumb) are the only new-in-0.2.10 behavior;
     both are gated on :func:`_skip_around` so every pre-0.2.10 and
@@ -281,7 +286,10 @@ def _gate_throttle(cfg, args, log_dir, throttle) -> Literal["proceed", "break", 
         return "defer"
     action = cfg.runtime.transient_error_action
     if action == "back_off":
-        _apply_back_off(log_dir, throttle)  # emits transient_error_recovered on resume
+        # Emits transient_error_recovered on resume; returns True (→ break) if a
+        # SIGTERM cut the back-off short, leaving the throttle active and no breadcrumb.
+        if _apply_back_off(log_dir, throttle, stop=stop):
+            return "break"
     elif action == "stop":
         emit_rate_limit_stop(log_dir)
         return "break"
@@ -455,7 +463,7 @@ def cmd(args) -> int:
             if check_self_terminated_sentinel(log_dir):
                 break
             throttle = _check_throttle_state(log_dir)
-            gate = _gate_throttle(cfg, args, log_dir, throttle)
+            gate = _gate_throttle(cfg, args, log_dir, throttle, stop)
             if gate == "break":
                 break
             if stop_file is not None and stop_file.exists():
@@ -488,6 +496,8 @@ def cmd(args) -> int:
             )
             if phase_arg is _PAUSED_CONTINUE:
                 continue
+            if stop["requested"]:
+                break  # SIGTERM landed during selection/back-off — don't spawn a round
             git_head_before = compute_git_head(work_dir)
             paths_hash_before = compute_paths_hash(
                 work_dir, cfg.runtime.substrate_fingerprint_paths
@@ -549,7 +559,8 @@ def cmd(args) -> int:
                 break
             if args.once or stop["requested"]:
                 break
-            SYSTEM_CLOCK.sleep(delay)
+            # Chunked so a SIGTERM during a long restart delay lands within one chunk.
+            _interruptible_sleep(delay, stop)
     finally:
         pid_file.unlink()
         _release_serve_lock(serve_lock_fd)

@@ -188,10 +188,37 @@ def test_given_no_events_when_check_then_returns_none(tmp_path):
     assert state is None
 
 
+def test_interruptible_sleep_chunks_without_overshoot_and_returns_false():
+    """Uninterrupted: sleeps in <= chunk_s slices summing to total, no overshoot."""
+    from agent_runner._throttle import _interruptible_sleep
+
+    clock = FakeClock(epoch=1_700_000_000.0)
+    interrupted = _interruptible_sleep(70.0, {"requested": False}, clock=clock, chunk_s=30)
+    assert interrupted is False
+    assert clock.slept == [30.0, 30.0, 10.0]  # final slice capped at the remainder
+
+
+def test_interruptible_sleep_short_delay_single_slice():
+    """A delay below one chunk sleeps exactly that delay (no chunk-sized overshoot)."""
+    from agent_runner._throttle import _interruptible_sleep
+
+    clock = FakeClock(epoch=1_700_000_000.0)
+    _interruptible_sleep(5.0, {"requested": False}, clock=clock, chunk_s=30)
+    assert clock.slept == [5.0]
+
+
+def test_interruptible_sleep_returns_true_when_stop_preset():
+    from agent_runner._throttle import _interruptible_sleep
+
+    clock = FakeClock(epoch=1_700_000_000.0)
+    assert _interruptible_sleep(100.0, {"requested": True}, clock=clock) is True
+    assert clock.slept == []
+
+
 def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp_path):
     """When reset_at_epoch implies sleep > 8h, cap and emit transient_error_backoff_capped."""
+    from agent_runner._throttle import _apply_back_off
     from agent_runner.api_types import TransientErrorState
-    from agent_runner.runner import _apply_back_off
 
     clock = FakeClock(epoch=1_700_000_000.0)
     far_future = int(clock.epoch() + 86400)  # 24h out
@@ -201,14 +228,85 @@ def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp
         agent="claude",
         since_round=42,
     )
-    with patch("agent_runner.api.emit_transient_error_backoff_capped") as mock_new_capped:
-        with patch("agent_runner.api.emit_transient_error_recovered") as mock_new_recovered:
-            _apply_back_off(tmp_path, throttle, clock=clock)
+    with patch("agent_runner._emit.emit_transient_error_backoff_capped") as mock_new_capped:
+        with patch("agent_runner._emit.emit_transient_error_recovered") as mock_new_recovered:
+            # chunk_s == cap so the capped sleep is one slice (not 960 × 30s chunks).
+            interrupted = _apply_back_off(
+                tmp_path, throttle, stop={"requested": False}, clock=clock, chunk_s=28800
+            )
+    assert interrupted is False
     # sleep should be capped — FakeClock records the requested sleep in .slept
     assert clock.slept
     assert clock.slept[0] <= 28800 + 30  # 8h cap + max jitter
     mock_new_capped.assert_called_once()
     mock_new_recovered.assert_called_once()
+
+
+def test_given_stop_set_mid_back_off_then_returns_true_and_no_recovered(tmp_path):
+    """A SIGTERM during a multi-hour back-off must land within one chunk and leave NO
+    recovered breadcrumb — the throttle is still active, so recovering would poison it."""
+    from agent_runner._throttle import _apply_back_off
+    from agent_runner.api_types import TransientErrorState
+
+    base = FakeClock(epoch=1_700_000_000.0)
+    stop = {"requested": False}
+
+    class _StopOnFirstSleep:
+        """Clock adapter that flips ``stop`` the moment the loop sleeps its first chunk,
+        simulating a SIGTERM arriving mid-window."""
+
+        def __init__(self, inner):
+            self._c = inner
+            self.slept: list[float] = []
+
+        def epoch(self):
+            return self._c.epoch()
+
+        def monotonic(self):
+            return self._c.monotonic()
+
+        def sleep(self, seconds):
+            self.slept.append(seconds)
+            self._c.sleep(seconds)
+            stop["requested"] = True
+
+        def now_utc(self):
+            return self._c.now_utc()
+
+        def now_in_zone(self, tz_name):
+            return self._c.now_in_zone(tz_name)
+
+    clock = _StopOnFirstSleep(base)
+    throttle = TransientErrorState(
+        reset_at_epoch=int(base.epoch() + 3600),  # 1h out
+        classification="rate_limit_account",
+        agent="claude",
+        since_round=1,
+    )
+    with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
+        interrupted = _apply_back_off(tmp_path, throttle, stop=stop, clock=clock, chunk_s=30)
+    assert interrupted is True
+    assert clock.slept == [30.0]  # exactly one 30s chunk, not the full hour
+    mock_recovered.assert_not_called()
+
+
+def test_given_stop_preset_when_back_off_then_returns_true_without_sleeping(tmp_path):
+    """stop already requested at entry → return True before any sleep or recovered emit."""
+    from agent_runner._throttle import _apply_back_off
+    from agent_runner.api_types import TransientErrorState
+
+    clock = FakeClock(epoch=1_700_000_000.0)
+    throttle = TransientErrorState(
+        reset_at_epoch=int(clock.epoch() + 3600),
+        classification="rate_limit_account",
+        agent="claude",
+        since_round=1,
+    )
+    with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
+        interrupted = _apply_back_off(tmp_path, throttle, stop={"requested": True}, clock=clock)
+    assert interrupted is True
+    assert clock.slept == []
+    mock_recovered.assert_not_called()
 
 
 def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
