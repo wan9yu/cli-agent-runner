@@ -452,3 +452,40 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
     )
     assert not clock.slept  # b's open window resumed immediately, before reset_at
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
+
+
+def test_second_serve_refused_when_lock_held(tmp_path, capsys):
+    """Loop-lifetime single-instance guard: a second serve refuses to start (exit 1)
+    while another holds the serve-scoped lock (0.2.11)."""
+    import fcntl
+    import os
+
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n')
+    log_dir = tmp_path / "logs"
+    fd = os.open(log_dir / "serve.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # stand in for the running serve
+    try:
+        rc = serve_cmd.cmd(_args(cfg_path))
+        assert rc == 1
+        assert "already running" in capsys.readouterr().err
+        assert not (log_dir / "serve.pid").exists()  # refused before writing its pid
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def test_serve_releases_lock_on_exit(tmp_path, monkeypatch):
+    """After a serve run exits, the lock is free for the next serve (once=True)."""
+    import fcntl
+    import os
+
+    _capture_run(monkeypatch)
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n')
+    assert serve_cmd.cmd(_args(cfg_path)) == 0
+    # lock is released → we can acquire it non-blocking
+    fd = os.open(tmp_path / "logs" / "serve.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # would raise if still held
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)

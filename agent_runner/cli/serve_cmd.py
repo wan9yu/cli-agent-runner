@@ -10,6 +10,7 @@ All real work delegated to `agent-runner round` (fresh import per round).
 
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import subprocess  # noqa: TID251
@@ -51,6 +52,27 @@ from agent_runner.round_log import (
     prune_old_round_logs,
 )
 from agent_runner.runner import _apply_back_off
+
+
+def _acquire_serve_lock(log_dir: Path) -> int | None:
+    """Take a loop-lifetime exclusive flock on ``serve.lock`` so two ``serve``
+    loops can't run on one project (the round-level ``agent-runner.lock`` only
+    covers a single round, in the child). Returns the held fd, or None if another
+    serve already holds it. The fd is closed by :func:`_release_serve_lock`, which
+    releases the flock; it must NOT leak into the round subprocess (Popen's default
+    close_fds=True keeps it out)."""
+    fd = os.open(log_dir / "serve.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _release_serve_lock(fd: int) -> None:
+    fcntl.flock(fd, fcntl.LOCK_UN)
+    os.close(fd)
 
 
 def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> int | None:
@@ -351,6 +373,16 @@ def _is_fresh_eyes_round(*, round_num: int, every_n: int | None) -> bool:
     return round_num % every_n == 0
 
 
+def _apply_fresh_eyes(cfg, log_dir, round_num: int, round_env: dict) -> None:
+    """Set the round's fresh-eyes env flag and emit the trigger event when due."""
+    fresh_eyes = _is_fresh_eyes_round(round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n)
+    round_env["AGENT_RUNNER_FRESH_EYES"] = "1" if fresh_eyes else "0"
+    if fresh_eyes:
+        emit_fresh_eyes_round_triggered(
+            log_dir, round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n
+        )
+
+
 def _add_max_rounds_arg(parser) -> None:
     parser.add_argument(
         "--max-rounds",
@@ -378,7 +410,13 @@ def cmd(args) -> int:
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    serve_lock_fd = _acquire_serve_lock(log_dir)
+    if serve_lock_fd is None:
+        print(f"agent-runner serve already running for {cfg.runtime.work_dir}", file=sys.stderr)
+        return 1
+
     if not run_serve_startup_hooks(cfg, log_dir):
+        _release_serve_lock(serve_lock_fd)
         return 1
 
     pid_file = PIDFile(log_dir / "serve.pid")
@@ -460,16 +498,7 @@ def cmd(args) -> int:
                 git_head=git_head_before,
                 paths_hash=paths_hash_before,
             )
-            fresh_eyes = _is_fresh_eyes_round(
-                round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n
-            )
-            round_env["AGENT_RUNNER_FRESH_EYES"] = "1" if fresh_eyes else "0"
-            if fresh_eyes:
-                emit_fresh_eyes_round_triggered(
-                    log_dir,
-                    round_num=round_num,
-                    every_n=cfg.runtime.fresh_eyes_every_n,
-                )
+            _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [
@@ -523,4 +552,5 @@ def cmd(args) -> int:
             SYSTEM_CLOCK.sleep(delay)
     finally:
         pid_file.unlink()
+        _release_serve_lock(serve_lock_fd)
     return exit_code

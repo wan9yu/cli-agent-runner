@@ -15,6 +15,7 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 ALLOWED_SERVE_IMPORTS = {
     "argparse",
+    "fcntl",
     "os",
     "sys",
     "signal",
