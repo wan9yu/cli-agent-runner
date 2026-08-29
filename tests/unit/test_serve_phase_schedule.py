@@ -311,3 +311,122 @@ def test_skip_around_clear_emits_one_recovered(monkeypatch, tmp_path):
     assert rec[0]["classification"] == "rate_limit_model"
     assert rec[0]["agent"] == "deepseek-cli"
     assert rec[0]["throttled_for_s"] >= 0
+
+
+def test_legacy_skip_action_emits_no_recovered_breadcrumb(monkeypatch, tmp_path):
+    """Byte-identical guard: a non-[phases] config with transient_error_action=skip
+    and a cleared throttle must NOT emit the 0.2.10 breadcrumb (0.2.9 emitted none)."""
+    _capture_run(monkeypatch)
+    _seed_throttle(tmp_path / "logs", phase="", reset_at=int(time.time() - 60))
+    cfg_path = make_toml_with_sections(tmp_path, runtime_extra='transient_error_action = "skip"\n')
+    rc = serve_cmd.cmd(
+        Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=False)
+    )
+    assert rc == 0
+    rec = [e for e in _events(tmp_path / "logs") if e["event"] == "transient_error_recovered"]
+    assert rec == []  # legacy path stays silent
+
+
+def test_empty_phase_throttle_under_skip_takes_legacy_back_off(monkeypatch, tmp_path):
+    """A throttle with phase="" (pre-0.2.10 detection, or a round run without
+    --phase) cannot be routed around, so `throttle.phase and ...` is falsey and the
+    config falls back to the global back-off — not a rotation."""
+    _capture_run(monkeypatch)
+    called = []
+    monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
+    _seed_throttle(tmp_path / "logs", phase="", reset_at=int(time.time() + 3600))
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    rc = serve_cmd.cmd(_args(cfg_path))
+    assert rc == 0
+    assert called == [True]  # empty phase → not defer → legacy back-off
+    assert not [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
+
+
+def _paused_sel():
+    from agent_runner.phase_select import Selection
+
+    return Selection(
+        phase=None,
+        paused=True,
+        resume_at=None,
+        resume_phase=None,
+        resume_timezone=None,
+        skipped=[],
+        active_window=None,
+    )
+
+
+def test_pause_excludes_throttled_from_window_poll(monkeypatch, tmp_path):
+    """Busy-spin guard: a throttled phase whose window is OPEN must be excluded
+    from the poll, so the loop actually sleeps instead of instant-resuming."""
+    from agent_runner.config import load_config
+
+    cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    stop = {"requested": False}
+    calls = []
+
+    def _sleep(_s):
+        calls.append(1)
+        if len(calls) >= 2:
+            stop["requested"] = True  # break the poll so the test terminates
+
+    serve_cmd._pause_until_selectable(
+        cfg,
+        tmp_path / "logs",
+        stop,
+        1,
+        _paused_sel(),
+        throttled_phases=frozenset({"a"}),  # a's window is always open, but throttled
+        wake_epoch=int(time.time()) + 3600,  # far future → window poll must sleep
+        now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        sleep_fn=_sleep,
+        chunk_s=1,
+    )
+    assert calls  # it slept — did NOT instant-resume on the throttled-but-open phase
+
+
+def test_pause_wakes_at_wake_epoch(tmp_path):
+    """The throttle's reset_at is an extra wake trigger even with no open window."""
+    from agent_runner.config import load_config
+
+    cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    stop = {"requested": False}
+    calls = []
+    serve_cmd._pause_until_selectable(
+        cfg,
+        tmp_path / "logs",
+        stop,
+        1,
+        _paused_sel(),
+        throttled_phases=frozenset({"a"}),
+        wake_epoch=int(time.time()) - 1,  # already past → resume immediately
+        now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        sleep_fn=lambda _s: calls.append(1),
+        chunk_s=1,
+    )
+    assert not calls  # woke on reset_at without sleeping
+    assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
+
+
+def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
+    """min(window, reset_at): a non-throttled sibling whose window is open resumes
+    the loop before the far-future throttle reset."""
+    from agent_runner.config import load_config
+
+    cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'))
+    stop = {"requested": False}
+    calls = []
+    serve_cmd._pause_until_selectable(
+        cfg,
+        tmp_path / "logs",
+        stop,
+        1,
+        _paused_sel(),
+        throttled_phases=frozenset({"a"}),  # b is not throttled and its window is open
+        wake_epoch=int(time.time()) + 3600,  # reset far away; window should win
+        now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        sleep_fn=lambda _s: calls.append(1),
+        chunk_s=1,
+    )
+    assert not calls  # b's open window resumed immediately, before reset_at
+    assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))

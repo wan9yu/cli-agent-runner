@@ -220,30 +220,37 @@ def _maybe_emit_recovered(log_dir) -> None:
         )
 
 
+def _skip_around(cfg, args) -> bool:
+    """True when this config routes around a throttled phase instead of the global
+    back-off: phase-aware ``phase_policy = "skip"`` and not ``--ignore-schedule``.
+
+    This is the ONLY mode that both defers a throttle to phase rotation AND emits
+    the events-derived recovered breadcrumb — so gating both on it keeps every
+    legacy path (no ``[phases]``, ``wait``, ``--ignore-schedule``) byte-identical
+    to 0.2.9, which emitted a recovered only from the back-off sleep."""
+    return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
+
+
 def _gate_throttle(cfg, args, log_dir, throttle) -> str:
     """Decide what an active throttle means for this round.
 
-    Returns ``"break"`` (stop the loop), ``"defer"`` (a ``phase_policy = "skip"``
-    rotation will route around the throttled phase — the caller passes ``throttle``
-    into :func:`_select_and_gate`), or ``"proceed"`` (run normally: no throttle, or
-    the legacy global back-off / skip already applied here).
+    Returns ``"break"`` (stop the loop), ``"defer"`` (a skip-around config will
+    route around the throttled phase — the caller passes ``throttle`` into
+    :func:`_select_and_gate`), or ``"proceed"`` (run normally: no throttle, or the
+    legacy global back-off / skip already applied here).
 
-    ``defer`` is the only new-in-0.2.10 branch and needs all four triggers, so
-    every pre-0.2.10 and ``--ignore-schedule`` path keeps the unchanged global
-    gate: a recorded phase, a skip-policy phase-aware config, and no
-    ``--ignore-schedule`` (which must still back off globally)."""
+    ``defer`` (and the recovered breadcrumb) are the only new-in-0.2.10 behavior;
+    both are gated on :func:`_skip_around` so every pre-0.2.10 and
+    ``--ignore-schedule`` path keeps the unchanged global gate and event stream."""
     if throttle is None:
-        # No active throttle — emit the recovered breadcrumb if a skip-around
-        # throttle just cleared without one, then reset the exp-backoff counters.
-        _maybe_emit_recovered(log_dir)
+        # No active throttle. Only a skip-around config emits the breadcrumb (a
+        # legacy config never routed around a throttle, so it has none to close and
+        # must stay byte-identical to 0.2.9). Then reset the exp-backoff counters.
+        if _skip_around(cfg, args):
+            _maybe_emit_recovered(log_dir)
         _reset_counters()
         return "proceed"
-    if (
-        throttle.phase
-        and _phase_aware(cfg)
-        and cfg.phases.phase_policy == "skip"
-        and not args.ignore_schedule
-    ):
+    if throttle.phase and _skip_around(cfg, args):
         return "defer"
     action = cfg.runtime.transient_error_action
     if action == "back_off":

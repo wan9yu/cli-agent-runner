@@ -9,40 +9,59 @@ from __future__ import annotations
 
 import json
 import time
-from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import TransientErrorState
 from agent_runner.events import TRANSIENT_ERROR_DETECTED, TRANSIENT_ERROR_RECOVERED
 
+# _scan_events_for_transient sentinel: file held no transient event at all
+# (distinct from "latest transient was a recovered" → None).
+_NO_TRANSIENT = object()
+
+
+def _scan_events_for_transient(path: Path):
+    """The file's LAST transient event: the detected dict, ``None`` (latest was a
+    recovered), or ``_NO_TRANSIENT`` (no transient event in the file).
+
+    Forward single-pass, O(1) memory — it keeps only the latest transient event,
+    never a 100-line tail. That matters for throttle-aware skip: the loop keeps
+    emitting rounds on healthy phases during a throttle, so the ``detected`` event
+    can be thousands of lines back; a bounded tail would scroll it out and make the
+    supervisor forget the throttle mid-window."""
+    latest: Any = _NO_TRANSIENT
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = ev.get("event")
+            if kind == TRANSIENT_ERROR_DETECTED:
+                latest = ev
+            elif kind == TRANSIENT_ERROR_RECOVERED:
+                latest = None
+    return latest
+
 
 def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
     """The most recent ``transient_error_detected`` with no
-    ``transient_error_recovered`` after it (reverse tail scan), or None.
-    Shared by :func:`_check_throttle_state` (still-throttled?) and
-    :func:`pending_recovered` (cleared-without-a-breadcrumb?)."""
+    ``transient_error_recovered`` after it, or None. Shared by
+    :func:`_check_throttle_state` (still-throttled?) and :func:`pending_recovered`
+    (cleared-without-a-breadcrumb?).
+
+    Scans the newest monthly ``events-*.jsonl`` and, only if it holds no transient
+    event yet, the previous month's — so a throttle that spans a month boundary
+    (detected in the old file, cleared in the new) is not orphaned."""
     candidates = sorted(log_dir.glob("events-*.jsonl"))
-    if not candidates:
-        return None
-    with candidates[-1].open() as f:
-        tail = deque(f, maxlen=100)
-    events: list[dict[str, Any]] = []
-    for line in tail:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    for ev in reversed(events):
-        kind = ev.get("event")
-        if kind == TRANSIENT_ERROR_RECOVERED:
-            return None
-        if kind == TRANSIENT_ERROR_DETECTED:
-            return ev
+    for path in reversed(candidates[-2:]):
+        result = _scan_events_for_transient(path)
+        if result is not _NO_TRANSIENT:
+            return result  # a detected dict, or None (latest transient was recovered)
     return None
 
 
@@ -79,6 +98,8 @@ def _throttled_for_s(ts: Any) -> int:
         detected = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return 0
+    if detected.tzinfo is None:
+        detected = detected.replace(tzinfo=UTC)  # events are UTC; don't read as local
     return max(0, int(time.time() - detected.timestamp()))
 
 
