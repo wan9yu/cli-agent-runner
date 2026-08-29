@@ -272,3 +272,36 @@ def test_live_children_matched_records_pattern_not_argv():
     finally:
         os.killpg(os.getpgid(p.pid), signal.SIGKILL)
         p.wait()
+
+
+def test_hard_wall_fires_on_monotonic_despite_epoch_warp(tmp_path):
+    """R1128 hard-wall is measured on monotonic time: a mid-round NTP step (an
+    epoch jump, routine on the RTC-less Pi fleet) must not disable or distort it.
+    Pre-fix the timeout compared epoch deltas — a backward warp made now-start<0
+    so the wall never fired."""
+    from tests._clock import FakeClock
+
+    script = _write_fake_script(tmp_path, "sleep 100\n")  # never produces a result
+    clock = FakeClock(epoch=1000.0)
+    warped: list[bool] = []
+
+    def _on_progress(_stats):
+        if not warped:
+            clock.warp_epoch(-3600)  # NTP steps the wall clock back an hour mid-round
+            warped.append(True)
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=2,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+        progress_callback=_on_progress,
+        progress_interval_s=1,
+        clock=clock,
+    )
+    assert result.timed_out is True  # hard-wall still fired (monotonic, NTP-immune)
+    assert warped  # the epoch warp really happened mid-round
+    assert 0 < result.duration_s < 60  # monotonic duration, not the -3600 epoch delta

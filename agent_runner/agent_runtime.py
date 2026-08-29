@@ -75,8 +75,10 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
         pass
-    deadline = clock.epoch() + REAP_GRACE_S
-    while clock.epoch() < deadline and proc.poll() is None:
+    deadline = (
+        clock.monotonic() + REAP_GRACE_S
+    )  # monotonic: an NTP step must not stretch/skip the reap
+    while clock.monotonic() < deadline and proc.poll() is None:
         clock.sleep(0.1)
     try:
         os.killpg(pgid, signal.SIGKILL)
@@ -215,7 +217,7 @@ def run(
     env = {**os.environ, **env_extra, "PWD": str(work_dir)}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
-    start = clock.epoch()
+    start = clock.monotonic()  # all round-duration/deadline math is monotonic (NTP-safe)
     last_progress_at = start
     proc = subprocess.Popen(
         argv,
@@ -248,13 +250,13 @@ def run(
     try:
         while True:
             ret = proc.poll()
-            now = clock.epoch()
+            now = clock.monotonic()  # duration / R1128 hard-wall / grace / interval — all monotonic
             if ret is not None:
                 duration = now - start
                 return RunResult(exit_code=ret, duration_s=duration, timed_out=False, pid=proc.pid)
             if now - start > timeout_s:
                 _kill_pgroup(proc, clock)
-                duration = clock.epoch() - start
+                duration = clock.monotonic() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
                 return RunResult(
                     exit_code=exit_code, duration_s=duration, timed_out=True, pid=proc.pid
@@ -279,7 +281,7 @@ def run(
                             grace_extended_emitted = True
                     else:
                         _kill_pgroup(proc, clock)
-                        duration = clock.epoch() - start
+                        duration = clock.monotonic() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
                         return RunResult(
                             exit_code=exit_code,
@@ -295,7 +297,7 @@ def run(
                     try:
                         st = log_path.stat()
                         log_size_kb = st.st_size // 1024
-                        last_write_age_s = max(0, int(now - st.st_mtime))
+                        last_write_age_s = max(0, int(clock.epoch() - st.st_mtime))
                     except OSError:
                         log_size_kb = 0
                         last_write_age_s = 0

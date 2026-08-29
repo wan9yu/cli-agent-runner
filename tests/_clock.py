@@ -41,3 +41,8 @@ class FakeClock:
     def advance(self, seconds: float) -> None:
         self._epoch += seconds
         self._mono += seconds
+
+    def warp_epoch(self, delta: float) -> None:
+        """Shift the WALL clock only (simulates an NTP step); monotonic unmoved —
+        so a deadline measured on monotonic must be unaffected."""
+        self._epoch += delta
