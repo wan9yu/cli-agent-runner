@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-08-29
+
+### Added
+- Throttle-aware skip: under `[phases] phase_policy = "skip"`, a phase whose provider is currently rate-limited/erroring is stepped over in the rotation — a healthy sibling runs instead of the whole loop sleeping on the throttle. No new config; the trigger is the existing `skip` policy.
+- `transient_error_detected` now carries the failing `phase`; `peek --json` `rate_limit` and the HTTP progress state surface which phase is throttled.
+- `transient_error_recovered` is emitted when a skip-around throttle clears (events-derived, restart-safe, no double-emit with the back-off path).
+
+### Notes
+- Only `skip` routes around a throttle; `wait`, `--ignore-schedule`, and non-`[phases]` configs keep the 0.2.9 global back-off. When every phase is throttled or window-closed, the loop waits until the earlier of a window opening or the throttle resetting.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.9] - 2026-08-28
 
 ### Added

@@ -399,7 +399,11 @@ files = ["prompts/_common.md", "prompts/qwen.md"]
 
 Under `phase_policy = "skip"`, a round that lands on `deepseek` during its
 Mon–Fri peak window steps to `glm` (always open) and runs that instead, emitting
-`schedule_phase_skipped`. Under `wait`, the same round idle-sleeps until
+`schedule_phase_skipped`. Since 0.2.10 `skip` also steps over a phase whose
+provider is currently **throttled** (rate-limited / erroring), not just one whose
+window is shut — so a rate-limited `deepseek` yields to `glm` without the whole
+loop sleeping on the throttle (the global back-off applies only when every phase
+is throttled or window-closed). Under `wait`, the same round idle-sleeps until
 DeepSeek's window reopens rather than advancing. A `docs/runbook.md`
 ("Mixed-model rotation") recipe walks the operational side.
 

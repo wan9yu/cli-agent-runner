@@ -249,6 +249,14 @@ command = ["qwen-cli", "chat"]
   pause — and resumes at the earliest window-open across the phases.
 - Per-round attribution: `peek` and the round events carry the `phase` that ran,
   so the transcript shows which model each round used.
+- **Throttle-aware skip (0.2.10):** a phase whose provider is currently throttled
+  (rate-limited / erroring) is stepped over just like a closed window —
+  `schedule_phase_skipped` records it and a healthy sibling runs, with no global
+  back-off. `active_window` is empty when a throttle (not a window) drove the skip.
+  If every phase is throttled or shut, the loop waits until the earlier of a window
+  opening or the throttle's `reset_at`; a `transient_error_recovered` breadcrumb
+  marks the clear. Only `skip` does this — `wait` and `--ignore-schedule` keep the
+  global back-off.
 
 ## Upgrading agent-runner
 
@@ -934,6 +942,11 @@ The supervisor sleeps until `reset_at_epoch` (plus a 5–30s jitter),
 then emits `transient_error_recovered` and resumes automatically. No
 operator action needed during back-off.
 
+**Under `phase_policy = "skip"` (0.2.10):** a throttle on one phase does not sleep
+the loop — the rotation steps past that phase to a healthy sibling, and the global
+back-off above applies only when every phase is throttled or window-closed. `wait`
+and `--ignore-schedule` keep the back-off behavior described here.
+
 **Forcing immediate stop instead:**
 
 ```toml
@@ -951,7 +964,8 @@ This causes the supervisor to emit `agent_self_terminated` with
 ```bash
 agent-runner peek --json | python3 -m json.tool | grep -A5 rate_limit
 # "rate_limit": null  → not throttled
-# "rate_limit": { "throttled_until_epoch": ... }  → throttled
+# "rate_limit": { "throttled_until_epoch": ..., "phase": "deepseek" }  → throttled
+#   (phase is "" when the config has no [phases])
 ```
 
 **Monitor alert:**
