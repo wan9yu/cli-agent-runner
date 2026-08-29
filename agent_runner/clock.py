@@ -1,7 +1,10 @@
 """Injectable clock — the ONE home of wall-clock / monotonic / sleep primitives.
 
-Every other module takes a :class:`Clock` (or reads the shared
-:data:`SYSTEM_CLOCK` for cosmetic timestamps); raw ``time.time()`` /
+Every other module either takes a :class:`Clock` parameter (logic paths — serve,
+throttle, runner, agent_runtime — so a test injects a ``FakeClock``) or reads the
+shared :data:`SYSTEM_CLOCK` directly (paths with no injection seam yet: event/
+metric timestamps, and the detector plugins' ``reset_at_epoch`` — those tests
+pin time by patching ``SYSTEM_CLOCK`` itself). Either way, raw ``time.time()`` /
 ``time.monotonic()`` / ``time.sleep()`` / ``datetime.now()`` must NOT appear
 anywhere else. Tests pass a ``FakeClock`` (``tests/_clock.py``) with advanceable
 virtual time to pin an exact instant instead of racing the wall clock. The
@@ -72,5 +75,5 @@ class RealClock:
 
 # Shared production instance. Used as the default for injectable functions (a
 # stable reference, so it is a safe parameter default) and read directly by the
-# cosmetic timestamp paths (events/metrics) that do not thread a clock.
+# paths that do not thread a clock (event/metric timestamps, detector reset_at).
 SYSTEM_CLOCK: Clock = RealClock()

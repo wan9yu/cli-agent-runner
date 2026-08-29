@@ -8,13 +8,17 @@ events.jsonl but must never read it back (§3 module boundary invariant).
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
-from agent_runner.events import TRANSIENT_ERROR_DETECTED, TRANSIENT_ERROR_RECOVERED
+from agent_runner.events import (
+    TRANSIENT_ERROR_DETECTED,
+    TRANSIENT_ERROR_RECOVERED,
+    parse_iso_ms,
+)
 
 # _scan_events_for_transient sentinel: file held no transient event at all
 # (distinct from "latest transient was a recovered" → None).
@@ -100,16 +104,15 @@ def _check_throttle_state(
 def _throttled_for_s(ts: Any, *, clock: Clock = SYSTEM_CLOCK) -> int:
     """Seconds since a detected event's ``ts`` (best-effort; 0 if unparseable).
     ``clock`` supplies now; inject a ``FakeClock`` for exact-value tests."""
-    now = clock.epoch()
     if not ts:
         return 0
     try:
-        detected = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        detected = parse_iso_ms(str(ts))  # events.py owns the Z→+00:00 workaround
     except (ValueError, TypeError):
         return 0
     if detected.tzinfo is None:
-        detected = detected.replace(tzinfo=UTC)  # events are UTC; don't read as local
-    return max(0, int(now - detected.timestamp()))
+        detected = detected.replace(tzinfo=UTC)  # hand-injected naive ts → treat as UTC
+    return max(0, int(clock.epoch() - detected.timestamp()))
 
 
 def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> tuple[str, str, int] | None:

@@ -15,6 +15,7 @@ import signal
 import subprocess  # noqa: TID251
 import sys
 from pathlib import Path
+from typing import Literal
 
 from agent_runner import phase_select, schedule
 from agent_runner._substrate import compute_git_head, compute_paths_hash
@@ -38,7 +39,7 @@ from agent_runner.api import (
     post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
-from agent_runner.clock import SYSTEM_CLOCK
+from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
@@ -67,7 +68,7 @@ def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
     """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
     ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
     stop / stop_file break returns False — the pause was interrupted, not resumed).
-    Shared by both pause entry points; only the runnable predicate differs."""
+    Shared by both pause entry points; only the runnable predicate + sleep differ."""
     while not stop["requested"]:
         if stop_file is not None and stop_file.exists():
             return False
@@ -159,8 +160,7 @@ def _pause_until_selectable(
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
     now_fn=schedule.now_in_zone,
-    now_epoch_fn=SYSTEM_CLOCK.epoch,
-    sleep_fn=SYSTEM_CLOCK.sleep,
+    clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
 ) -> None:
     """Phase-aware analogue of _maybe_pause_for_schedule: idle until any candidate
@@ -173,16 +173,16 @@ def _pause_until_selectable(
     ``throttled_phases`` are excluded from the window poll: a throttled phase's
     window is usually OPEN, so leaving it in would make ``should_run`` fire at once
     and busy-loop. ``wake_epoch`` (the throttle's reset_at) is an extra wake trigger
-    so an all-throttled round resumes when the throttle clears even though no
-    window ever opens; ``now_epoch_fn`` is the wall clock it is compared against
-    (defaults to the clock's ``epoch``; injected — like ``now_fn``/``sleep_fn`` — so
-    tests pin an exact wake instead of racing the real clock)."""
+    so an all-throttled round resumes when the throttle clears even though no window
+    ever opens. ``clock`` supplies epoch/sleep/monotonic (inject a ``FakeClock`` to
+    pin the wake); ``now_fn`` stays a separate seam — the tz-aware datetime the pure
+    schedule core needs, which tests monkeypatch by name."""
     candidates = [
         (p, cfg.profile_for(p).schedule)
         for p in phase_select.candidate_phases(cfg, round_num)
         if p not in throttled_phases
     ]
-    started = SYSTEM_CLOCK.monotonic()
+    started = clock.monotonic()
     emit_schedule_paused(
         log_dir,
         active_window=sel.active_window or "",
@@ -194,7 +194,7 @@ def _pause_until_selectable(
         stop,
         cfg.runtime.stop_file,
         lambda: (
-            (wake_epoch is not None and now_epoch_fn() >= wake_epoch)
+            (wake_epoch is not None and clock.epoch() >= wake_epoch)
             or any(
                 schedule.should_run(
                     now_fn(sched.timezone),
@@ -204,10 +204,10 @@ def _pause_until_selectable(
                 for _p, sched in candidates
             )
         ),
-        sleep_fn,
+        clock.sleep,
         chunk_s,
     ):
-        emit_schedule_resumed(log_dir, paused_for_s=int(SYSTEM_CLOCK.monotonic() - started))
+        emit_schedule_resumed(log_dir, paused_for_s=int(clock.monotonic() - started))
 
 
 def _maybe_emit_recovered(log_dir) -> None:
@@ -234,7 +234,7 @@ def _skip_around(cfg, args) -> bool:
     return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
 
 
-def _gate_throttle(cfg, args, log_dir, throttle) -> str:
+def _gate_throttle(cfg, args, log_dir, throttle) -> Literal["proceed", "break", "defer"]:
     """Decide what an active throttle means for this round.
 
     Returns ``"break"`` (stop the loop), ``"defer"`` (a skip-around config will
@@ -285,27 +285,15 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
         cfg, round_num, throttled_phases=throttled, now_fn=schedule.now_in_zone
     )
     if sel.paused:
-        if throttle is not None:
-            # Nothing runnable AND a throttle drove us here (every phase is
-            # throttled or window-closed). "stop" halts; otherwise wait until the
-            # EARLIER of a sibling window opening or the throttle resetting —
-            # chunked (SIGTERM-responsive); the loop re-reads throttle + re-selects
-            # on wake. skip-vs-back_off is moot (nothing is launchable now).
-            if cfg.runtime.transient_error_action == "stop":
-                emit_rate_limit_stop(log_dir)
-                stop["requested"] = True
-                return _PAUSED_CONTINUE
-            _pause_until_selectable(
-                cfg,
-                log_dir,
-                stop,
-                round_num,
-                sel,
-                throttled_phases=throttled,
-                wake_epoch=throttle.reset_at_epoch,
-                now_fn=schedule.now_in_zone,
-                sleep_fn=SYSTEM_CLOCK.sleep,
-            )
+        # A throttle that leaves NOTHING runnable (every phase throttled or
+        # window-closed) with transient_error_action="stop" halts the loop;
+        # otherwise pause until the EARLIER of a sibling window opening or the
+        # throttle resetting (wake_epoch), chunked + SIGTERM-responsive, then
+        # re-select. Without a throttle it is the plain window pause (wake_epoch
+        # None, throttled empty) — one call serves both.
+        if throttle is not None and cfg.runtime.transient_error_action == "stop":
+            emit_rate_limit_stop(log_dir)
+            stop["requested"] = True
             return _PAUSED_CONTINUE
         _pause_until_selectable(
             cfg,
@@ -313,8 +301,12 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
             stop,
             round_num,
             sel,
+            throttled_phases=throttled,
+            wake_epoch=throttle.reset_at_epoch if throttle is not None else None,
+            # Explicit call-time lookup (not the import-bound default) so tests can
+            # monkeypatch schedule.now_in_zone; the clock default is a stable object
+            # whose .sleep tests mutate in place, so it needs no call-time passing.
             now_fn=schedule.now_in_zone,
-            sleep_fn=SYSTEM_CLOCK.sleep,
         )
         return _PAUSED_CONTINUE
     if sel.skipped:

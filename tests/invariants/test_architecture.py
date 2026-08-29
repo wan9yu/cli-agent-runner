@@ -47,7 +47,7 @@ ALLOWED_SERVE_FROM = [
             "post_round_decision",
         },
     ),
-    ("agent_runner.clock", {"SYSTEM_CLOCK"}),
+    ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args"}),
     ("agent_runner.lifecycle", {"PIDFile"}),
     (

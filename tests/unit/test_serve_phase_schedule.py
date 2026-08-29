@@ -15,6 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from agent_runner.cli import serve_cmd
+from tests._clock import FakeClock
 from tests._test_helpers import make_toml_with_sections
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -356,20 +357,14 @@ def _paused_sel():
     )
 
 
-def test_pause_excludes_throttled_from_window_poll(monkeypatch, tmp_path):
+def test_pause_excludes_throttled_from_window_poll(tmp_path):
     """Busy-spin guard: a throttled phase whose window is OPEN must be excluded
     from the poll, so the loop actually sleeps instead of instant-resuming."""
     from agent_runner.config import load_config
 
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    clock = FakeClock(epoch=1000.0)  # one seam for epoch + sleep
     stop = {"requested": False}
-    calls = []
-
-    def _sleep(_s):
-        calls.append(1)
-        if len(calls) >= 2:
-            stop["requested"] = True  # break the poll so the test terminates
-
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -377,13 +372,12 @@ def test_pause_excludes_throttled_from_window_poll(monkeypatch, tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),  # a's window is always open, but throttled
-        wake_epoch=2000,  # never reached: injected clock is pinned below it
+        wake_epoch=1002,  # 2s ahead; sleeps advance the clock to it
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
-        now_epoch_fn=lambda: 1000.0,  # < wake_epoch → wake never fires; window excluded
-        sleep_fn=_sleep,
+        clock=clock,
         chunk_s=1,
     )
-    assert calls  # it slept — did NOT instant-resume on the throttled-but-open phase
+    assert clock.slept  # it slept — did NOT instant-resume on the throttled-but-open phase
 
 
 def test_pause_wakes_at_wake_epoch(tmp_path):
@@ -391,8 +385,8 @@ def test_pause_wakes_at_wake_epoch(tmp_path):
     from agent_runner.config import load_config
 
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    clock = FakeClock(epoch=1000.0)
     stop = {"requested": False}
-    calls = []
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -400,22 +394,21 @@ def test_pause_wakes_at_wake_epoch(tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),
-        wake_epoch=1000,  # injected clock is at 1000 → reset reached, resume at once
+        wake_epoch=1000,  # clock is at 1000 → reset already reached, resume at once
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
-        now_epoch_fn=lambda: 1000.0,
-        sleep_fn=lambda _s: calls.append(1),
+        clock=clock,
         chunk_s=1,
     )
-    assert not calls  # woke on reset_at without sleeping
+    assert not clock.slept  # woke on reset_at without sleeping
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
 def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
     """Drive the real pause loop with the shared FakeClock: its sleep() advances
     virtual epoch AND monotonic, so the loop wakes deterministically once the
-    injected clock crosses wake_epoch (no monkeypatch, no real sleep)."""
+    injected clock crosses wake_epoch (no monkeypatch, no real sleep). One clock
+    now drives epoch, sleep AND the monotonic-based paused_for_s."""
     from agent_runner.config import load_config
-    from tests._clock import FakeClock
 
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
     clock = FakeClock(epoch=1000.0)
@@ -429,8 +422,7 @@ def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
         throttled_phases=frozenset({"a"}),
         wake_epoch=1025,  # 25s ahead; chunked sleeps advance the FakeClock to it
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
-        now_epoch_fn=clock.epoch,
-        sleep_fn=clock.sleep,
+        clock=clock,
         chunk_s=10,
     )
     assert clock.slept == [10, 10, 10]  # 1000→1030 crosses 1025
@@ -444,8 +436,8 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
     from agent_runner.config import load_config
 
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'))
+    clock = FakeClock(epoch=1000.0)  # far below wake_epoch, so only b's window can resume
     stop = {"requested": False}
-    calls = []
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -453,11 +445,10 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),  # b is not throttled and its window is open
-        wake_epoch=9000,  # reset far away; injected clock stays below it so window wins
+        wake_epoch=9000,  # reset far away; clock stays below it so window wins
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
-        now_epoch_fn=lambda: 1000.0,  # << wake_epoch → only b's open window can resume
-        sleep_fn=lambda _s: calls.append(1),
+        clock=clock,
         chunk_s=1,
     )
-    assert not calls  # b's open window resumed immediately, before reset_at
+    assert not clock.slept  # b's open window resumed immediately, before reset_at
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
