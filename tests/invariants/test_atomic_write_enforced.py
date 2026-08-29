@@ -11,8 +11,10 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 def test_given_context_store_writers_when_scanned_then_use_atomic_helper() -> None:
     text = (PKG / "context_store.py").read_text()
     tree = ast.parse(text)
+    scanned = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name.startswith("write_"):
+            scanned += 1
             calls = [n for n in ast.walk(node) if isinstance(n, ast.Call)]
             call_names = []
             for c in calls:
@@ -23,3 +25,4 @@ def test_given_context_store_writers_when_scanned_then_use_atomic_helper() -> No
             assert "atomic_write_json" in call_names, (
                 f"{node.name} must call atomic_write_json — found calls: {call_names}"
             )
+    assert scanned > 0, "no write_* functions scanned in context_store.py"  # vacuity-guard

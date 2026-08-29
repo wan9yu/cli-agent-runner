@@ -10,8 +10,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 
 
@@ -101,21 +99,34 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_call_git_cli()
 
 
 def test_given_runner_module_when_scanned_then_does_not_read_events_jsonl() -> None:
-    """Ouroboros defense: runner writes events.jsonl but must never read it back."""
-    runner = PKG / "runner.py"
-    text = runner.read_text()
-    # Allow the literal "events.jsonl" only via emit() function calls (which write).
-    # Forbid any open()/read of events.jsonl files.
-    forbidden = ["events-", ".jsonl"]
-    for token in forbidden:
-        # OK if appears in metric/logger writers only via the events module — but runner.py
-        # itself should never glob/read the events.jsonl files.
-        if "glob(" in text and token in text:
-            for line_num, line in enumerate(text.splitlines(), 1):
-                if "glob" in line and "events" in line:
-                    pytest.fail(
-                        f"runner.py:{line_num} appears to read events files: {line.strip()}"
-                    )
+    """Ouroboros defense (argus rule #3): runner writes events.jsonl but must never
+    read it back. Strict since 0.2.11 — after the back-off moved to ``_throttle``,
+    runner imports ``_throttle`` in NEITHER form, never globs ``events-*.jsonl``, and
+    never opens an events file. The events-derived throttle state that drives back-off
+    is read only by ``_throttle`` (which serve, not runner, calls)."""
+    tree = ast.parse((PKG / "runner.py").read_text())
+    import_targets: list[str] = []
+    glob_patterns: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            import_targets += [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            import_targets.append(mod)
+            import_targets += [f"{mod}.{a.name}" for a in node.names]
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("glob", "rglob")
+        ):
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    glob_patterns.append(arg.value)
+    assert import_targets, "no imports scanned in runner.py"  # vacuity-guard
+    throttle_imports = [t for t in import_targets if "_throttle" in t]
+    assert throttle_imports == [], f"runner.py imports _throttle (ouroboros): {throttle_imports}"
+    events_globs = [g for g in glob_patterns if "events" in g]
+    assert events_globs == [], f"runner.py globs events files (ouroboros read): {events_globs}"
 
 
 def test_given_runner_module_when_scanned_then_only_imports_sibling_agent_runner_modules() -> None:
@@ -128,23 +139,23 @@ def test_given_runner_module_when_scanned_then_only_imports_sibling_agent_runner
 def test_given_run_one_round_when_inspected_then_has_no_event_triggered_branches() -> None:
     """§7 IMMUTABLE — runner cannot branch on prior round state to choose work.
 
-    Specifically: no `if/elif` whose condition reads from `prev_status.last_exit_code`
-    or `last_round_health` to switch to a different code path. Phase rotation by
-    round_num modulo phases.length is fine (pure function of counter).
-    """
-    runner = PKG / "runner.py"
-    tree = ast.parse(runner.read_text())
-    # Find run_one_round's outer structure
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "run_one_round":
-            for sub in ast.walk(node):
-                if isinstance(sub, ast.If):
-                    src = ast.unparse(sub.test)
-                    assert "last_exit_code" not in src, (
-                        "run_one_round branches on last_exit_code — violates §7 pure rotation"
-                    )
-                    assert "last_round_health" not in src, (
-                        "run_one_round branches on last_round_health — violates §7 pure rotation"
-                    )
-            return
-    pytest.fail("run_one_round not found in runner.py")
+    No `if/elif` whose condition reads `last_exit_code` or `last_round_health` to
+    switch code path. Phase rotation by round_num modulo len(phases) is fine (pure
+    counter). Scans EVERY function in runner.py — the real body is
+    `_run_one_round_inner`, which the old `run_one_round`-only scan skipped, so a
+    branch hidden there would have passed. Reading `prev.last_exit_code` to *build the
+    prompt context block* (a dict value, not an `if` test) is allowed — only `if`
+    conditions are inspected."""
+    tree = ast.parse((PKG / "runner.py").read_text())
+    funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+    assert any(f.name == "run_one_round" for f in funcs), (  # vacuity-guard
+        "run_one_round not found in runner.py — scan target vanished"
+    )
+    offenders: list[tuple[str, int, str]] = []
+    for fn in funcs:
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.If):
+                src = ast.unparse(sub.test)
+                if "last_exit_code" in src or "last_round_health" in src:
+                    offenders.append((fn.name, sub.lineno, src))
+    assert offenders == [], f"§7 violation — branch on prior round state: {offenders}"
