@@ -87,14 +87,14 @@ def _detected(reset_at, *, ts="2026-05-16T00:00:00Z", agent="claude", cls="rate_
 def test_pending_recovered_fires_when_throttle_cleared_without_breadcrumb(tmp_path):
     from agent_runner._throttle import pending_recovered
 
-    now = int(time.time())
+    now = 1_700_000_000
     _write_events(tmp_path, [_detected(now - 60, ts=_iso(now - 300), agent="deepseek")])
-    pending = pending_recovered(tmp_path)
+    pending = pending_recovered(tmp_path, now_epoch=float(now))
     assert pending is not None
     classification, agent, throttled_for_s = pending
     assert agent == "deepseek"
     assert classification == "rate_limit_account"
-    assert throttled_for_s >= 250  # ~300s since detected ts
+    assert throttled_for_s == 300  # exact: now - detected ts, injected clock
 
 
 def test_pending_recovered_none_while_still_throttled(tmp_path):
@@ -215,15 +215,16 @@ def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
     from agent_runner import _throttle
 
     _throttle.reset_counters()  # ensure clean state
-    original_reset = int(time.time()) + 60
+    now = 1_700_000_000.0  # injected clock → exact, no time.time() drift
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
-        original_reset_at_epoch=original_reset,
+        original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
+        now_epoch=now,
     )
-    # multiplier = 1 → applied_duration = base (60s) → applied_reset ≈ now + 60
-    assert abs(applied - original_reset) <= 1  # within 1s tolerance
+    # multiplier = 1 → applied_duration = base (60s) → applied_reset = now + 60
+    assert applied == int(now) + 60
     assert count == 1
     assert capped is False
 
@@ -233,23 +234,23 @@ def test_compute_adjusted_reset_at_second_failure_doubles(tmp_path):
     from agent_runner import _throttle
 
     _throttle.reset_counters()
-    now = int(time.time())
+    now = 1_700_000_000.0
     # First call increments counter to 1
     _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
-        original_reset_at_epoch=now + 60,
+        original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
     )
     # Second call: n=1 → multiplier=2 → applied_duration=120s
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
-        original_reset_at_epoch=now + 60,
+        original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
+        now_epoch=now,
     )
-    expected_applied = int(time.time()) + 120
-    assert abs(applied - expected_applied) <= 2  # 2s tolerance for time.time drift
+    assert applied == int(now) + 120  # exact via injected clock
     assert count == 2
     assert capped is False
 
@@ -260,26 +261,26 @@ def test_compute_adjusted_reset_at_sixth_plateaus_at_32x(tmp_path):
     from agent_runner import _throttle
 
     _throttle.reset_counters()
-    now = int(time.time())
+    now = 1_700_000_000.0
     # Pump counter to 5 (5 calls)
     for _ in range(5):
         _throttle.compute_adjusted_reset_at(
             classification="rate_limit_model",
-            original_reset_at_epoch=now + 60,
+            original_reset_at_epoch=int(now) + 60,
             agent="claude",
             log_dir=tmp_path,
         )
     # 6th call: n=5 → multiplier=32 → duration=60*32=1920s but capped at 1800
     applied_6, count_6, capped_6 = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
-        original_reset_at_epoch=now + 60,
+        original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
+        now_epoch=now,
     )
     assert count_6 == 6
     assert capped_6 is True  # 60*32=1920 > 1800
-    # applied ≈ now + 1800
-    assert abs(applied_6 - (int(time.time()) + 1800)) <= 2
+    assert applied_6 == int(now) + 1800  # capped, exact
 
 
 def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
@@ -287,24 +288,25 @@ def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
     from agent_runner import _throttle
 
     _throttle.reset_counters()
-    now = int(time.time())
+    now = 1_700_000_000.0
     # Force counter=5 → multiplier=32 → 30*32=960s, well under 1800 cap
     for _ in range(5):
         _throttle.compute_adjusted_reset_at(
             classification="api_timeout",
-            original_reset_at_epoch=now + 30,
+            original_reset_at_epoch=int(now) + 30,
             agent="claude",
             log_dir=tmp_path,
         )
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="api_timeout",
-        original_reset_at_epoch=now + 30,
+        original_reset_at_epoch=int(now) + 30,
         agent="claude",
         log_dir=tmp_path,
+        now_epoch=now,
     )
     assert count == 6
     assert capped is False  # 30*32=960 < 1800
-    assert abs(applied - (int(time.time()) + 960)) <= 2
+    assert applied == int(now) + 960  # exact
 
 
 def test_reset_counters_clears_all_buckets(tmp_path):

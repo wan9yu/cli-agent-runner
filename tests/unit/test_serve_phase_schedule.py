@@ -377,8 +377,9 @@ def test_pause_excludes_throttled_from_window_poll(monkeypatch, tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),  # a's window is always open, but throttled
-        wake_epoch=int(time.time()) + 3600,  # far future → window poll must sleep
+        wake_epoch=2000,  # never reached: injected clock is pinned below it
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        now_epoch_fn=lambda: 1000.0,  # < wake_epoch → wake never fires; window excluded
         sleep_fn=_sleep,
         chunk_s=1,
     )
@@ -399,8 +400,9 @@ def test_pause_wakes_at_wake_epoch(tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),
-        wake_epoch=int(time.time()) - 1,  # already past → resume immediately
+        wake_epoch=1000,  # injected clock is at 1000 → reset reached, resume at once
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        now_epoch_fn=lambda: 1000.0,
         sleep_fn=lambda _s: calls.append(1),
         chunk_s=1,
     )
@@ -423,8 +425,9 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
         1,
         _paused_sel(),
         throttled_phases=frozenset({"a"}),  # b is not throttled and its window is open
-        wake_epoch=int(time.time()) + 3600,  # reset far away; window should win
+        wake_epoch=9000,  # reset far away; injected clock stays below it so window wins
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
+        now_epoch_fn=lambda: 1000.0,  # << wake_epoch → only b's open window can resume
         sleep_fn=lambda _s: calls.append(1),
         chunk_s=1,
     )

@@ -159,6 +159,7 @@ def _pause_until_selectable(
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
     now_fn=schedule.now_in_zone,
+    now_epoch_fn=time.time,
     sleep_fn=time.sleep,
     chunk_s: int = 30,
 ) -> None:
@@ -173,7 +174,9 @@ def _pause_until_selectable(
     window is usually OPEN, so leaving it in would make ``should_run`` fire at once
     and busy-loop. ``wake_epoch`` (the throttle's reset_at) is an extra wake trigger
     so an all-throttled round resumes when the throttle clears even though no
-    window ever opens."""
+    window ever opens; ``now_epoch_fn`` is the wall clock it is compared against
+    (defaults to ``time.time``; injected — like ``now_fn``/``sleep_fn`` — so tests
+    pin an exact wake instead of racing the real clock)."""
     candidates = [
         (p, cfg.profile_for(p).schedule)
         for p in phase_select.candidate_phases(cfg, round_num)
@@ -191,7 +194,7 @@ def _pause_until_selectable(
         stop,
         cfg.runtime.stop_file,
         lambda: (
-            (wake_epoch is not None and time.time() >= wake_epoch)
+            (wake_epoch is not None and now_epoch_fn() >= wake_epoch)
             or any(
                 schedule.should_run(
                     now_fn(sched.timezone),

@@ -65,18 +65,25 @@ def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
     return None
 
 
-def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
+def _check_throttle_state(
+    log_dir: Path, *, now_epoch: float | None = None
+) -> TransientErrorState | None:
     """Scan events.jsonl tail for latest unmatched transient error.
 
     Reads `transient_error_detected` / `transient_error_recovered` event names.
     Returns TransientErrorState if currently throttled (reset still in future,
     no matching recovered after). Restart-safe.
+
+    ``now_epoch`` (defaults to ``time.time()``) is the wall clock the reset is
+    compared against — injected so tests pin an exact instant instead of racing
+    the real clock. Only the reset comparison uses it; the event scan is pure.
     """
+    now = time.time() if now_epoch is None else now_epoch
     latest_detected = _latest_unrecovered_detected(log_dir)
     if latest_detected is None:
         return None
     reset_at = int(latest_detected.get("reset_at_epoch", 0))
-    if reset_at <= time.time():
+    if reset_at <= now:
         return None  # Reset already passed without recovery emit; treat as recovered
 
     classification = str(latest_detected.get("classification", "rate_limit_account"))
@@ -90,8 +97,10 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
     )
 
 
-def _throttled_for_s(ts: Any) -> int:
-    """Seconds since a detected event's ``ts`` (best-effort; 0 if unparseable)."""
+def _throttled_for_s(ts: Any, *, now_epoch: float | None = None) -> int:
+    """Seconds since a detected event's ``ts`` (best-effort; 0 if unparseable).
+    ``now_epoch`` defaults to ``time.time()``; injected for exact-value tests."""
+    now = time.time() if now_epoch is None else now_epoch
     if not ts:
         return 0
     try:
@@ -100,10 +109,12 @@ def _throttled_for_s(ts: Any) -> int:
         return 0
     if detected.tzinfo is None:
         detected = detected.replace(tzinfo=UTC)  # events are UTC; don't read as local
-    return max(0, int(time.time() - detected.timestamp()))
+    return max(0, int(now - detected.timestamp()))
 
 
-def pending_recovered(log_dir: Path) -> tuple[str, str, int] | None:
+def pending_recovered(
+    log_dir: Path, *, now_epoch: float | None = None
+) -> tuple[str, str, int] | None:
     """``(classification, agent, throttled_for_s)`` iff a transient throttle
     cleared WITHOUT a recovered breadcrumb — the latest
     ``transient_error_detected`` has ``reset_at <= now`` and NO
@@ -116,15 +127,16 @@ def pending_recovered(log_dir: Path) -> tuple[str, str, int] | None:
     emits recovered, that event sits after the detected one and the predicate
     goes quiet. Returns None while still throttled (reset in the future) or when
     the back-off path already left a recovered."""
+    now = time.time() if now_epoch is None else now_epoch
     latest_detected = _latest_unrecovered_detected(log_dir)
     if latest_detected is None:
         return None
-    if int(latest_detected.get("reset_at_epoch", 0)) > time.time():
+    if int(latest_detected.get("reset_at_epoch", 0)) > now:
         return None  # still throttled — not a clear transition
     return (
         str(latest_detected.get("classification", "rate_limit_account")),
         str(latest_detected.get("agent", "unknown")),
-        _throttled_for_s(latest_detected.get("ts")),
+        _throttled_for_s(latest_detected.get("ts"), now_epoch=now),
     )
 
 
@@ -139,6 +151,7 @@ def compute_adjusted_reset_at(
     original_reset_at_epoch: int,
     agent: str,
     log_dir: Path,
+    now_epoch: float | None = None,
 ) -> tuple[int, int, bool]:
     """Apply exp backoff for estimated-class transient errors.
 
@@ -179,7 +192,8 @@ def compute_adjusted_reset_at(
     extended_duration = base * multiplier
     capped_by_absolute_max = extended_duration > _ABSOLUTE_CAP_S
     applied_duration = min(extended_duration, _ABSOLUTE_CAP_S)
-    applied_reset_at = int(time.time()) + applied_duration
+    now = time.time() if now_epoch is None else now_epoch
+    applied_reset_at = int(now) + applied_duration
 
     new_count = n + 1
     _consecutive_failures[classification] = new_count
