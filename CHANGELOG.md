@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-08-29
+
+### Changed
+- systemd `serve` unit now uses `Restart=on-failure` with `RestartPreventExitStatus=78 75`: a deliberate stop (sentinel / stop-file / max-rounds / SIGTERM) and a config give-up stay stopped, while a genuine crash still restarts. Re-render or hand-edit existing units.
+- Throttle-aware skip is keyed on the **agent** (binary basename of `command[0]`), not the phase: every phase sharing a rate-limited agent is stepped over together, so a multi-provider rotation no longer hammers one throttled key while a healthy provider keeps running.
+
+### Fixed
+- `round` exits non-zero on a genuine crash, so the crash-loop breaker (`crash_loop`, exit 75) sees crashes instead of a masked exit 0; a permanent config failure gives up with exit 78 (`config_broken`) instead of restart-looping.
+- Round deadlines and sleeps are measured on the monotonic clock — an NTP step no longer mis-fires or defers a hard-wall timeout.
+- Back-off and restart sleeps are chunked, so a SIGTERM lands within one chunk instead of after a multi-hour throttle window; an interrupted back-off leaves the throttle active (no false recovered).
+- A grace-killed round still dispatches its dirty work and is no longer miscounted as a timeout.
+- Only one `serve` loop runs per project (loop-lifetime lock); `serve.pid` records a start-time token so `stop`/`kill` never signals a recycled PID.
+
+### Notes
+- `peek --json` schema `1.10`: `rate_limit.throttled_agents` lists all currently-throttled agents. Additive; no config change.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.10] - 2026-08-29
 
 ### Added
