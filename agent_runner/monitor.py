@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -36,6 +35,7 @@ from agent_runner.api_types import (
     SystemMetrics,
 )
 from agent_runner.builtin_plugins._constants import _TAIL_LINES
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import _DEFAULT_AUTH_PATTERNS, _DEFAULT_AUTO_STOP_ON, PhaseOverride
 from agent_runner.context_store import read_json
 from agent_runner.events import (
@@ -381,7 +381,7 @@ def detect_rate_limit_active(
     """Fire warning alert if currently throttled (latest transient_error_detected
     has reset_at_epoch in future, no matching recovered after)."""
     if now is None:
-        now = time.time()
+        now = SYSTEM_CLOCK.epoch()
     for ev in reversed(events):
         kind = ev.get("event")
         if kind == TRANSIENT_ERROR_RECOVERED:
@@ -669,7 +669,7 @@ def run_all_detectors(
 ) -> list[Alert]:
     """Run all 11 detectors; returns alerts (empty = healthy)."""
     if now is None:
-        now = datetime.now(UTC)
+        now = SYSTEM_CLOCK.now_utc()
     compiled_auth_pats = (
         [re.compile(p, re.IGNORECASE) for p in auth_fail_patterns] if auth_fail_patterns else None
     )

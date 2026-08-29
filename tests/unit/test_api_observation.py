@@ -36,7 +36,7 @@ def _drive_monitor_loop_once(
 ) -> None:
     """Drive monitor_loop through one iteration without hanging on time.sleep."""
     with (
-        patch("agent_runner.api.time.sleep", side_effect=_StopLoopError),
+        patch("agent_runner.clock.SYSTEM_CLOCK.sleep", side_effect=_StopLoopError),
         patch("agent_runner.api._poll_once", return_value=[]),
     ):
         gen = api.monitor_loop(work_dir, host=host, interval_s=interval_s)

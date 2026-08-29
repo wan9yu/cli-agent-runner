@@ -12,9 +12,7 @@ import os
 import random
 import re
 import sys
-import time
 import traceback as tb_mod
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +30,7 @@ from agent_runner.agent_runtime import signal_name
 from agent_runner.api import _primary_prompt_file
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult, TransientErrorState
+from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.config import Config
 from agent_runner.events import (
     AGENT_NETWORK_BLIP,
@@ -46,7 +45,9 @@ _BACK_OFF_JITTER_MIN_S = 5
 _BACK_OFF_JITTER_MAX_S = 30
 
 
-def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
+def _apply_back_off(
+    log_dir: Path, throttle: TransientErrorState, *, clock: Clock = SYSTEM_CLOCK
+) -> None:
     """Sleep until adjusted reset_at + jitter; emit recovered (and capped if applicable).
 
     For estimated-class classifications (rate_limit_model / api_transient_5xx /
@@ -64,9 +65,10 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
         original_reset_at_epoch=throttle.reset_at_epoch,
         agent=throttle.agent,
         log_dir=log_dir,
+        clock=clock,
     )
 
-    now = time.time()
+    now = clock.epoch()
     requested = (
         adjusted_reset_at - now + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
     )
@@ -84,14 +86,14 @@ def _apply_back_off(log_dir: Path, throttle: TransientErrorState) -> None:
     else:
         sleep_s = max(requested, 0.0)
 
-    sleep_start = time.time()
-    time.sleep(sleep_s)
+    sleep_start = clock.epoch()
+    clock.sleep(sleep_s)
 
     api.emit_transient_error_recovered(
         log_dir,
         classification=throttle.classification,
         agent=throttle.agent,
-        throttled_for_s=int(time.time() - sleep_start),
+        throttled_for_s=int(clock.epoch() - sleep_start),
     )
 
 
@@ -149,7 +151,7 @@ def _format_holder_msg(lock_path: Path) -> str:
     age_s = ""
     try:
         started = parse_iso_ms(started_at)
-        age = (datetime.now(UTC) - started).total_seconds()
+        age = (SYSTEM_CLOCK.now_utc() - started).total_seconds()
         age_s = f"{age:.0f}s"
     except (ValueError, TypeError):
         age_s = "?"
@@ -440,7 +442,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             keep=cfg.runtime.round_log_retention,
             would_delete=pruned.deferred,
         )
-    log_path = rounds_dir / f"R{round_num}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.log"
+    log_path = rounds_dir / f"R{round_num}-{SYSTEM_CLOCK.now_utc().strftime('%Y%m%dT%H%M%S')}.log"
 
     hook_ctx = hooks.HookContext(
         work_dir=cfg.runtime.work_dir,

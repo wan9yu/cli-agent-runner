@@ -8,12 +8,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import psutil
 
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import now_iso_ms
 
 
@@ -80,7 +80,7 @@ def log_metrics(
     ``log_dir``'s partition (callers that wanted a different mount can reach
     for psutil directly — single-mount is the only real-world case so far).
     """
-    month = datetime.now(UTC).strftime("%Y-%m")
+    month = SYSTEM_CLOCK.now_utc().strftime("%Y-%m")
     path = log_dir / f"metrics-{month}.jsonl"
     payload: dict[str, Any] = {
         "ts": now_iso_ms(),

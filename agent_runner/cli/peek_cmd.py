@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 
 from agent_runner import api
 from agent_runner.cli.common import emit, fail, work_dir_from_args
+from agent_runner.clock import SYSTEM_CLOCK
 
 
 def _round_arg(s: str) -> int | str:
@@ -80,6 +80,6 @@ def cmd_watch(args) -> int:
         if rc != 0:
             return rc
         try:
-            time.sleep(args.interval)
+            SYSTEM_CLOCK.sleep(args.interval)
         except KeyboardInterrupt:
             return 0

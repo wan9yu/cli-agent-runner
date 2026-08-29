@@ -70,7 +70,7 @@ def _run(tmp_path, log, *, result=None, agent_name="kimi"):
     else:
         write_round_log(tmp_path, 1, log)
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
-        with patch(f"{_MOD}.time.time", return_value=1000):
+        with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
             KimiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name=agent_name),
                 result=result if result is not None else _failed_round(),

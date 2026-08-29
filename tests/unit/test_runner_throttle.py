@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from tests._clock import FakeClock
+
 
 def _iso(epoch: int) -> str:
     from datetime import UTC, datetime
@@ -89,7 +91,7 @@ def test_pending_recovered_fires_when_throttle_cleared_without_breadcrumb(tmp_pa
 
     now = 1_700_000_000
     _write_events(tmp_path, [_detected(now - 60, ts=_iso(now - 300), agent="deepseek")])
-    pending = pending_recovered(tmp_path, now_epoch=float(now))
+    pending = pending_recovered(tmp_path, clock=FakeClock(epoch=float(now)))
     assert pending is not None
     classification, agent, throttled_for_s = pending
     assert agent == "deepseek"
@@ -191,21 +193,20 @@ def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp
     from agent_runner.api_types import TransientErrorState
     from agent_runner.runner import _apply_back_off
 
-    far_future = int(time.time() + 86400)  # 24h out
+    clock = FakeClock(epoch=1_700_000_000.0)
+    far_future = int(clock.epoch() + 86400)  # 24h out
     throttle = TransientErrorState(
         reset_at_epoch=far_future,
         classification="rate_limit_account",
         agent="claude",
         since_round=42,
     )
-    with patch("agent_runner.runner.time.sleep") as mock_sleep:
-        with patch("agent_runner.api.emit_transient_error_backoff_capped") as mock_new_capped:
-            with patch("agent_runner.api.emit_transient_error_recovered") as mock_new_recovered:
-                _apply_back_off(tmp_path, throttle)
-    # sleep should be capped
-    assert mock_sleep.called
-    sleep_arg = mock_sleep.call_args[0][0]
-    assert sleep_arg <= 28800 + 30  # 8h cap + max jitter
+    with patch("agent_runner.api.emit_transient_error_backoff_capped") as mock_new_capped:
+        with patch("agent_runner.api.emit_transient_error_recovered") as mock_new_recovered:
+            _apply_back_off(tmp_path, throttle, clock=clock)
+    # sleep should be capped — FakeClock records the requested sleep in .slept
+    assert clock.slept
+    assert clock.slept[0] <= 28800 + 30  # 8h cap + max jitter
     mock_new_capped.assert_called_once()
     mock_new_recovered.assert_called_once()
 
@@ -221,7 +222,7 @@ def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
         original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
-        now_epoch=now,
+        clock=FakeClock(epoch=now),
     )
     # multiplier = 1 → applied_duration = base (60s) → applied_reset = now + 60
     assert applied == int(now) + 60
@@ -248,7 +249,7 @@ def test_compute_adjusted_reset_at_second_failure_doubles(tmp_path):
         original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
-        now_epoch=now,
+        clock=FakeClock(epoch=now),
     )
     assert applied == int(now) + 120  # exact via injected clock
     assert count == 2
@@ -276,7 +277,7 @@ def test_compute_adjusted_reset_at_sixth_plateaus_at_32x(tmp_path):
         original_reset_at_epoch=int(now) + 60,
         agent="claude",
         log_dir=tmp_path,
-        now_epoch=now,
+        clock=FakeClock(epoch=now),
     )
     assert count_6 == 6
     assert capped_6 is True  # 60*32=1920 > 1800
@@ -302,7 +303,7 @@ def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
         original_reset_at_epoch=int(now) + 30,
         agent="claude",
         log_dir=tmp_path,
-        now_epoch=now,
+        clock=FakeClock(epoch=now),
     )
     assert count == 6
     assert capped is False  # 30*32=960 < 1800

@@ -53,11 +53,9 @@ def test_given_two_emits_in_different_months_when_called_then_writes_to_separate
 ) -> None:
     april = datetime(2026, 4, 30, 23, 0, tzinfo=UTC)
     may = datetime(2026, 5, 1, 1, 0, tzinfo=UTC)
-    with patch("agent_runner.events.datetime") as m:
-        m.now.return_value = april
+    with patch("agent_runner.clock.SYSTEM_CLOCK.now_utc", return_value=april):
         emit(tmp_log_dir, "round_start", round_num=1)
-    with patch("agent_runner.events.datetime") as m:
-        m.now.return_value = may
+    with patch("agent_runner.clock.SYSTEM_CLOCK.now_utc", return_value=may):
         emit(tmp_log_dir, "round_start", round_num=2)
     assert (tmp_log_dir / "events-2026-04.jsonl").exists()
     assert (tmp_log_dir / "events-2026-05.jsonl").exists()

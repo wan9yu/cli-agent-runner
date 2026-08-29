@@ -41,13 +41,8 @@ def test_given_log_metrics_in_different_months_when_called_then_separate_files(
     """Same monthly-naming convention as events.jsonl."""
     from datetime import UTC, datetime
 
-    import agent_runner.metrics as m
+    from agent_runner.clock import SYSTEM_CLOCK
 
-    class FakeDt:
-        @staticmethod
-        def now(tz=None):
-            return datetime(2026, 4, 30, 23, 0, tzinfo=UTC)
-
-    monkeypatch.setattr(m, "datetime", FakeDt)
+    monkeypatch.setattr(SYSTEM_CLOCK, "now_utc", lambda: datetime(2026, 4, 30, 23, 0, tzinfo=UTC))
     log_metrics(tmp_log_dir, event="periodic")
     assert (tmp_log_dir / "metrics-2026-04.jsonl").exists()

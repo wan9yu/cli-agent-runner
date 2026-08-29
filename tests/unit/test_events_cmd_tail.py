@@ -58,7 +58,7 @@ def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_on
 
     # Rebind the module's own globals, never the shared stdlib modules: patching
     # json.loads / time.sleep process-wide would reach unrelated test machinery.
-    monkeypatch.setattr(events_cmd, "time", SimpleNamespace(sleep=fake_sleep))
+    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
     monkeypatch.setattr(
         events_cmd,
         "json",
@@ -96,7 +96,7 @@ def test_given_since_when_tailing_then_replay_then_live_lines_each_once(
         elif polls["n"] >= 3:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(events_cmd, "time", SimpleNamespace(sleep=fake_sleep))
+    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
     monkeypatch.setattr(
         events_cmd,
         "signal",

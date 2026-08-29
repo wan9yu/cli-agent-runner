@@ -155,7 +155,7 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
-            with patch(f"{_MOD}.time.time", return_value=1000):
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 GeminiErrorDetector().after_round(
                     make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
@@ -190,7 +190,7 @@ def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_l
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
-            with patch(f"{_MOD}.time.time", return_value=1000):
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 GeminiErrorDetector().after_round(
                     make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )

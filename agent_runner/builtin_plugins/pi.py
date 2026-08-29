@@ -57,7 +57,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import datetime
 from itertools import islice
 from pathlib import Path
@@ -74,6 +73,7 @@ from agent_runner.builtin_plugins._constants import (
     classify_transient_status,
     json_events,
 )
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.hooks import HookContext, register_post_round_hook
 
 _STATUS_RE = re.compile(r"^\s*(\d{3})\b")
@@ -118,7 +118,7 @@ class PiErrorDetector:
                     round_num=ctx.round_num,
                     classification=classification,
                     agent="pi",
-                    reset_at_epoch=int(time.time() + _BACK_OFF_DEFAULTS[classification]),
+                    reset_at_epoch=int(SYSTEM_CLOCK.epoch() + _BACK_OFF_DEFAULTS[classification]),
                     raw=str(error_text)[:_RAW_CAP],
                     phase=ctx.phase or "",
                 )

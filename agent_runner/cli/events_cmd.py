@@ -18,10 +18,10 @@ import argparse
 import json
 import signal
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import parse_iso_ms
 
 # Sentinel for "user did not explicitly set --window" so we can detect
@@ -160,7 +160,7 @@ def cmd_events(args) -> int:
 
 
 def _current_month_events_file(log_dir: Path) -> Path:
-    month = datetime.now(UTC).strftime("%Y-%m")
+    month = SYSTEM_CLOCK.now_utc().strftime("%Y-%m")
     return log_dir / f"events-{month}.jsonl"
 
 
@@ -308,6 +308,6 @@ def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = Non
                 elif size < last_size:
                     # File truncated / rotated underneath us; reset
                     last_size = 0
-            time.sleep(1.0)
+            SYSTEM_CLOCK.sleep(1.0)
     except KeyboardInterrupt:
         return 0

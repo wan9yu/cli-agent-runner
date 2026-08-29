@@ -213,7 +213,7 @@ def _run(tmp_path, events, result=None, agent_name="pi"):
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             with patch(f"{_MOD}.emit_agent_auth_error_detected") as auth_emit:
-                with patch(f"{_MOD}.time.time", return_value=1000):
+                with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                     PiErrorDetector().after_round(
                         make_hook_context(tmp_path, agent_name=agent_name),
                         result=result or _ok_round(),

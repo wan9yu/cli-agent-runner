@@ -7,7 +7,6 @@ agent_usage_recorded event families without any agent-runner core changes.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from agent_runner.builtin_plugins._constants import (
     classify_transient_status,
     json_events,
 )
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.hooks import HookContext, register_post_round_hook
 
 
@@ -84,7 +84,7 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
             out["transient_error"] = {
                 "classification": classification,
                 "agent": "gemini",
-                "reset_at_epoch": int(time.time() + duration),
+                "reset_at_epoch": int(SYSTEM_CLOCK.epoch() + duration),
                 "raw": raw,
             }
     return out

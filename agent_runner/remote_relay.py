@@ -36,7 +36,6 @@ import json
 import subprocess  # noqa: TID251 — the relay is the ssh spawner
 import sys
 import threading
-import time
 from collections import deque
 from collections.abc import Sequence
 from datetime import datetime
@@ -47,6 +46,7 @@ from typing import TextIO
 # processes: kill the session leader's whole group, SIGTERM → grace → SIGKILL.
 # Importing it keeps one implementation of "leave no orphan tree behind".
 from agent_runner.agent_runtime import _kill_pgroup
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import (
     KNOWN_EVENT_KINDS,
     MONITOR_REMOTE_BLIP,
@@ -218,7 +218,7 @@ def relay_remote_events(
             pump.join(timeout=1.0)
             error = "".join(stderr_tail).strip()
 
-            now = time.monotonic()
+            now = SYSTEM_CLOCK.monotonic()
             if blip_start is None:
                 blip_start = now
             attempt += 1
@@ -262,7 +262,7 @@ def relay_remote_events(
                 resume_since=last_ts,
                 next_sleep_s=sleep_s,
             )
-            time.sleep(sleep_s)
+            SYSTEM_CLOCK.sleep(sleep_s)
     except KeyboardInterrupt:
         return 0
     finally:

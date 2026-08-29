@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from agent_runner.clock import SYSTEM_CLOCK
 
 # Cross-module event-kind constants. Every module-level UPPER_CASE constant
 # whose value is a snake_case string is automatically collected into
@@ -158,7 +160,7 @@ def now_iso_ms() -> str:
 
     Shared helper — also used by metrics.py and runner.py for matching format.
     """
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return SYSTEM_CLOCK.now_utc().isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def parse_iso_ms(ts: str) -> datetime:
@@ -181,7 +183,7 @@ def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
     """
     if not _is_known(kind):
         raise ValueError(f"unknown event kind: {kind!r}")
-    now = datetime.now(UTC)
+    now = SYSTEM_CLOCK.now_utc()
     month = now.strftime("%Y-%m")
     ts = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     path = log_dir / f"events-{month}.jsonl"

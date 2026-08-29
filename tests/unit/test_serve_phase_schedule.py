@@ -102,7 +102,7 @@ def test_wait_pauses_on_rotation_window(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
     clock = _FlipClock()
     monkeypatch.setattr(serve_cmd.schedule, "now_in_zone", clock)
-    monkeypatch.setattr(serve_cmd.time, "sleep", lambda _s: setattr(clock, "opened", True))
+    monkeypatch.setattr(serve_cmd.SYSTEM_CLOCK, "sleep", lambda _s: setattr(clock, "opened", True))
     cfg_path = _cfg_path(
         tmp_path,
         '[schedule]\ntimezone = "Asia/Shanghai"\n'

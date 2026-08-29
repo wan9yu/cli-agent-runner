@@ -15,12 +15,13 @@ import shutil
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import threading
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import psutil
+
+from agent_runner.clock import SYSTEM_CLOCK, Clock
 
 REAP_GRACE_S = 5
 
@@ -68,15 +69,15 @@ def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str)
     return list(command) + [a.replace("{prompt}", prompt) for a in prompt_arg_template]
 
 
-def _kill_pgroup(proc: subprocess.Popen) -> None:
+def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     pgid = proc.pid
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
         pass
-    deadline = time.time() + REAP_GRACE_S
-    while time.time() < deadline and proc.poll() is None:
-        time.sleep(0.1)
+    deadline = clock.epoch() + REAP_GRACE_S
+    while clock.epoch() < deadline and proc.poll() is None:
+        clock.sleep(0.1)
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
@@ -173,6 +174,7 @@ def run(
     progress_interval_s: int = 0,
     on_grace_extended: Callable[[list[dict], list[dict]], None] | None = None,
     grace_kill_ignore_patterns: list[re.Pattern[str]] | None = None,
+    clock: Clock = SYSTEM_CLOCK,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
@@ -213,7 +215,7 @@ def run(
     env = {**os.environ, **env_extra, "PWD": str(work_dir)}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = log_path.open("w", encoding="utf-8")
-    start = time.time()
+    start = clock.epoch()
     last_progress_at = start
     proc = subprocess.Popen(
         argv,
@@ -246,13 +248,13 @@ def run(
     try:
         while True:
             ret = proc.poll()
-            now = time.time()
+            now = clock.epoch()
             if ret is not None:
                 duration = now - start
                 return RunResult(exit_code=ret, duration_s=duration, timed_out=False, pid=proc.pid)
             if now - start > timeout_s:
-                _kill_pgroup(proc)
-                duration = time.time() - start
+                _kill_pgroup(proc, clock)
+                duration = clock.epoch() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
                 return RunResult(
                     exit_code=exit_code, duration_s=duration, timed_out=True, pid=proc.pid
@@ -276,8 +278,8 @@ def run(
                                 on_grace_extended(live, ignored)
                             grace_extended_emitted = True
                     else:
-                        _kill_pgroup(proc)
-                        duration = time.time() - start
+                        _kill_pgroup(proc, clock)
+                        duration = clock.epoch() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
                         return RunResult(
                             exit_code=exit_code,
@@ -305,6 +307,6 @@ def run(
                         }
                     )
                     last_progress_at = now
-            time.sleep(0.2)
+            clock.sleep(0.2)
     finally:
         log_file.close()

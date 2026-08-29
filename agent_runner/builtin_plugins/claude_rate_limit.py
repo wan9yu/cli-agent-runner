@@ -14,7 +14,6 @@ rate-limit detector was generalized to multi-classification in 0.1.23
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +28,7 @@ from agent_runner.builtin_plugins._constants import (
     classify_transient_status,
     json_events,
 )
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.hooks import HookContext, register_post_round_hook
 
 
@@ -177,7 +177,7 @@ def _classify_transient_error(
         return {
             "classification": "rate_limit_account",
             "agent": "claude",
-            "reset_at_epoch": int(rate_limit_info.get("resetsAt", time.time() + 300)),
+            "reset_at_epoch": int(rate_limit_info.get("resetsAt", SYSTEM_CLOCK.epoch() + 300)),
             "raw": str((result_event or {}).get("result", ""))[:_RAW_CAP],
         }
     # rate_limit_event with null/other rateLimitType falls through to status-based
@@ -232,7 +232,7 @@ def _classify(classification: str, raw: str) -> dict[str, Any]:
     return {
         "classification": classification,
         "agent": "claude",
-        "reset_at_epoch": int(time.time() + duration),
+        "reset_at_epoch": int(SYSTEM_CLOCK.epoch() + duration),
         "raw": raw,
     }
 

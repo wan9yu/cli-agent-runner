@@ -14,7 +14,6 @@ import os
 import signal
 import subprocess  # noqa: TID251
 import sys
-import time
 from pathlib import Path
 
 from agent_runner import phase_select, schedule
@@ -39,6 +38,7 @@ from agent_runner.api import (
     post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
@@ -83,7 +83,7 @@ def _maybe_pause_for_schedule(
     stop,
     *,
     now_fn=schedule.now_in_zone,
-    sleep_fn=time.sleep,
+    sleep_fn=SYSTEM_CLOCK.sleep,
     chunk_s: int = 30,
 ) -> bool:
     """If the current time is outside the run schedule, pause until it opens.
@@ -109,7 +109,7 @@ def _maybe_pause_for_schedule(
     if not decision.paused:
         return False
 
-    started = time.monotonic()
+    started = SYSTEM_CLOCK.monotonic()
     emit_schedule_paused(
         log_dir,
         active_window=decision.active_window or "",
@@ -129,7 +129,7 @@ def _maybe_pause_for_schedule(
         sleep_fn,
         chunk_s,
     ):
-        emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
+        emit_schedule_resumed(log_dir, paused_for_s=int(SYSTEM_CLOCK.monotonic() - started))
     return True
 
 
@@ -159,8 +159,8 @@ def _pause_until_selectable(
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
     now_fn=schedule.now_in_zone,
-    now_epoch_fn=time.time,
-    sleep_fn=time.sleep,
+    now_epoch_fn=SYSTEM_CLOCK.epoch,
+    sleep_fn=SYSTEM_CLOCK.sleep,
     chunk_s: int = 30,
 ) -> None:
     """Phase-aware analogue of _maybe_pause_for_schedule: idle until any candidate
@@ -175,14 +175,14 @@ def _pause_until_selectable(
     and busy-loop. ``wake_epoch`` (the throttle's reset_at) is an extra wake trigger
     so an all-throttled round resumes when the throttle clears even though no
     window ever opens; ``now_epoch_fn`` is the wall clock it is compared against
-    (defaults to ``time.time``; injected — like ``now_fn``/``sleep_fn`` — so tests
-    pin an exact wake instead of racing the real clock)."""
+    (defaults to the clock's ``epoch``; injected — like ``now_fn``/``sleep_fn`` — so
+    tests pin an exact wake instead of racing the real clock)."""
     candidates = [
         (p, cfg.profile_for(p).schedule)
         for p in phase_select.candidate_phases(cfg, round_num)
         if p not in throttled_phases
     ]
-    started = time.monotonic()
+    started = SYSTEM_CLOCK.monotonic()
     emit_schedule_paused(
         log_dir,
         active_window=sel.active_window or "",
@@ -207,7 +207,7 @@ def _pause_until_selectable(
         sleep_fn,
         chunk_s,
     ):
-        emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
+        emit_schedule_resumed(log_dir, paused_for_s=int(SYSTEM_CLOCK.monotonic() - started))
 
 
 def _maybe_emit_recovered(log_dir) -> None:
@@ -304,11 +304,17 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
                 throttled_phases=throttled,
                 wake_epoch=throttle.reset_at_epoch,
                 now_fn=schedule.now_in_zone,
-                sleep_fn=time.sleep,
+                sleep_fn=SYSTEM_CLOCK.sleep,
             )
             return _PAUSED_CONTINUE
         _pause_until_selectable(
-            cfg, log_dir, stop, round_num, sel, now_fn=schedule.now_in_zone, sleep_fn=time.sleep
+            cfg,
+            log_dir,
+            stop,
+            round_num,
+            sel,
+            now_fn=schedule.now_in_zone,
+            sleep_fn=SYSTEM_CLOCK.sleep,
         )
         return _PAUSED_CONTINUE
     if sel.skipped:
@@ -467,7 +473,7 @@ def cmd(args) -> int:
                     every_n=cfg.runtime.fresh_eyes_every_n,
                 )
             round_log_path = log_dir / f"round-{round_num}.log"
-            round_started = time.monotonic()
+            round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [
                 sys.executable,
                 "-m",
@@ -480,7 +486,7 @@ def cmd(args) -> int:
                 round_argv += ["--phase", phase_arg]
             with round_log_path.open("w") as f:
                 r = subprocess.run(round_argv, env=round_env, stdout=f, stderr=subprocess.STDOUT)
-            round_duration_s = time.monotonic() - round_started
+            round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             git_head_after = compute_git_head(work_dir)
             paths_hash_after = compute_paths_hash(work_dir, cfg.runtime.substrate_fingerprint_paths)
@@ -514,7 +520,7 @@ def cmd(args) -> int:
                 break
             if args.once or stop["requested"]:
                 break
-            time.sleep(delay)
+            SYSTEM_CLOCK.sleep(delay)
     finally:
         pid_file.unlink()
     return 0

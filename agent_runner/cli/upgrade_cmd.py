@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import time
 import tomllib
 from pathlib import Path
 
@@ -23,6 +22,7 @@ import agent_runner
 from agent_runner import __version__, api, events, migrations
 from agent_runner.api_types import ServiceMode
 from agent_runner.cli.common import cfg_from_args, fail, info
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import Config, ConfigError
 
 
@@ -227,10 +227,10 @@ def _orchestrated_upgrade(
     service agent-runner installed (api.start works there)."""
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
-    t0 = time.monotonic()
+    t0 = SYSTEM_CLOCK.monotonic()
 
     info("stopping service...")
-    t_stop = time.monotonic()
+    t_stop = SYSTEM_CLOCK.monotonic()
     try:
         api.stop(cfg.runtime.work_dir)
     except Exception as e:  # noqa: BLE001 — service state unknown; must not proceed
@@ -238,11 +238,11 @@ def _orchestrated_upgrade(
             f"api.stop raised {type(e).__name__}: {str(e)[:150]}; "
             f"service state unknown — investigate before retrying upgrade"
         )
-    info(f"stopped ({time.monotonic() - t_stop:.1f}s)")
+    info(f"stopped ({SYSTEM_CLOCK.monotonic() - t_stop:.1f}s)")
 
     spec = "cli-agent-runner" if target is None else f"cli-agent-runner=={target}"
     info(f"installing {spec}...")
-    t_pip = time.monotonic()
+    t_pip = SYSTEM_CLOCK.monotonic()
     pip_result = _pip_install(spec)
     if pip_result.returncode != 0:
         return fail(
@@ -250,7 +250,7 @@ def _orchestrated_upgrade(
             f"{pip_result.stderr.strip()[:200]}; "
             f"service is stopped, run 'agent-runner start' to resume previous version"
         )
-    info(f"installed ({time.monotonic() - t_pip:.1f}s)")
+    info(f"installed ({SYSTEM_CLOCK.monotonic() - t_pip:.1f}s)")
 
     info("smoke check (--version + peek)...")
     rc_v, version_or_err = _smoke_version()
@@ -280,7 +280,7 @@ def _orchestrated_upgrade(
     info(f"smoke OK (now at {to_version})")
 
     info("starting service...")
-    t_start = time.monotonic()
+    t_start = SYSTEM_CLOCK.monotonic()
     try:
         api.start(cfg.runtime.work_dir)
     except Exception as e:  # noqa: BLE001 — new version installed but service stopped
@@ -290,9 +290,9 @@ def _orchestrated_upgrade(
             to_version,
             f"api.start raised after upgrade: {type(e).__name__}: {str(e)[:150]}",
         )
-    info(f"started ({time.monotonic() - t_start:.1f}s)")
+    info(f"started ({SYSTEM_CLOCK.monotonic() - t_start:.1f}s)")
 
-    elapsed = time.monotonic() - t0
+    elapsed = SYSTEM_CLOCK.monotonic() - t0
     events.emit(
         log_dir,
         events.SERVICE_UPGRADED,
@@ -417,7 +417,7 @@ def _rollback(
             f"api.start raised after rollback: {type(e).__name__}: {str(e)[:150]}",
         )
 
-    elapsed = time.monotonic() - started_at
+    elapsed = SYSTEM_CLOCK.monotonic() - started_at
     events.emit(
         log_dir,
         events.SERVICE_UPGRADE_ROLLED_BACK,

@@ -15,7 +15,6 @@ import shutil
 import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
 import sysconfig
-import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, Literal, TextIO
@@ -30,6 +29,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     select_path,
 )
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import Config, RuntimeConfig, load_config
 from agent_runner.lifecycle import (
     PIDFile,
@@ -323,13 +323,13 @@ def kill(project: str | Path) -> ServiceStatus:
     if pid is None:
         return status(project)
     send_signal_to_pid(pid, signal.SIGTERM)
-    deadline = time.time() + 5
+    deadline = SYSTEM_CLOCK.epoch() + 5
     alive = True
-    while time.time() < deadline:
+    while SYSTEM_CLOCK.epoch() < deadline:
         alive = pid_alive(pid)
         if not alive:
             break
-        time.sleep(0.1)
+        SYSTEM_CLOCK.sleep(0.1)
     if alive:
         send_signal_to_pid(pid, signal.SIGKILL)
     return ServiceStatus(mode=ServiceMode.PID_FILE, active=alive, pid=pid)
@@ -568,7 +568,7 @@ def _monitor_loop_iter(
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )
-        time.sleep(interval_s)
+        SYSTEM_CLOCK.sleep(interval_s)
 
 
 def _tail_events_jsonl(

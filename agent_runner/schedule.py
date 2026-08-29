@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from agent_runner.clock import SYSTEM_CLOCK
+
 _WINDOW_RE = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 _MINUTES_PER_DAY = 24 * 60
 _WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
@@ -164,10 +166,9 @@ def evaluate(
 
 
 def now_in_zone(tz_name: str | None) -> datetime:
-    """Timezone-aware now. tz_name None → host local time."""
-    if tz_name is None:
-        return datetime.now().astimezone()
-    return datetime.now(ZoneInfo(tz_name))
+    """Timezone-aware now (delegates to the clock — the sole wall-clock reader).
+    Kept as the ``now_fn`` default the pure schedule/phase-select callers inject."""
+    return SYSTEM_CLOCK.now_in_zone(tz_name)
 
 
 def valid_timezone(tz_name: str) -> bool:

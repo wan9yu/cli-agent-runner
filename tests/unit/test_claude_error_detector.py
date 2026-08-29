@@ -61,7 +61,7 @@ def test_given_5xx_error_when_classified_then_api_transient_5xx(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
+        with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
             ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     new_emit.assert_called_once()
     assert new_emit.call_args.kwargs["classification"] == "api_transient_5xx"
@@ -101,7 +101,7 @@ def test_given_429_without_rate_limit_event_then_classified_as_rate_limit_model(
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
+        with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
             ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     assert new_emit.call_args.kwargs["classification"] == "rate_limit_model"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1060  # now + 60s
@@ -118,7 +118,7 @@ def test_given_408_timeout_then_classified_as_api_timeout(tmp_path):
     with patch(
         "agent_runner.builtin_plugins.claude_rate_limit.emit_transient_error_detected"
     ) as new_emit:
-        with patch("agent_runner.builtin_plugins.claude_rate_limit.time.time", return_value=1000):
+        with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
             ClaudeErrorDetector().after_round(make_hook_context(tmp_path), result=make_run_result())
     assert new_emit.call_args.kwargs["classification"] == "api_timeout"
     assert new_emit.call_args.kwargs["reset_at_epoch"] == 1030  # now + 30s
@@ -279,7 +279,7 @@ def test_given_5xx_error_with_usage_when_after_round_then_emits_both_events(tmp_
     )
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
-            with patch(f"{_MOD}.time.time", return_value=1000):
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 ClaudeErrorDetector().after_round(
                     make_hook_context(tmp_path), result=make_run_result()
                 )
@@ -344,7 +344,7 @@ def test_given_claude_log_without_assistant_event_when_extracted_then_model_unkn
     )
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
-            with patch(f"{_MOD}.time.time", return_value=1000):
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 ClaudeErrorDetector().after_round(
                     make_hook_context(tmp_path), result=make_run_result()
                 )
@@ -489,7 +489,7 @@ def test_given_claude_round_failed_when_after_round_then_success_false(tmp_path)
     result = make_run_result(1)
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
-            with patch(f"{_MOD}.time.time", return_value=1000):
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 ClaudeErrorDetector().after_round(ctx, result)
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["success"] is False

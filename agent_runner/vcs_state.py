@@ -20,6 +20,8 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 
+from agent_runner.clock import SYSTEM_CLOCK
+
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
 # Two consumers honor it: detect_dirty_files() filters its return (not flagged as
 # orphan WIP) and _owned_exclude_specs() feeds stash_orphan()'s pathspec (not swept
@@ -280,7 +282,7 @@ def _recent_orphan_for_round(repo: Path, round_num: int, window_s: int) -> Stash
     sha, ct, msg = parsed
     if not msg.startswith(f"ORPHAN R{round_num}"):
         return None
-    if (time.time() - ct) > window_s:
+    if (SYSTEM_CLOCK.epoch() - ct) > window_s:
         return None
     return StashRef(sha=sha, message=msg)
 
