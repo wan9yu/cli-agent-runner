@@ -162,6 +162,7 @@ def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
         "throttled_until_iso": iso,
         "limit_type": throttle.classification,
         "since_round": throttle.since_round,
+        "phase": throttle.phase,
     }
 
 

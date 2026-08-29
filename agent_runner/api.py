@@ -448,6 +448,7 @@ def peek(
             limit_type=throttle.classification,
             agent=throttle.agent,
             since_round=throttle.since_round,
+            phase=throttle.phase,
         )
     raw_service = status(project if project is not None else work_dir)
     svc = dataclasses.replace(raw_service, rate_limit=rate_limit)

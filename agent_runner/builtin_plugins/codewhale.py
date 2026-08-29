@@ -43,7 +43,10 @@ class CodewhaleErrorDetector:
         parsed = _parse_codewhale_log(log_path)
         if parsed.get("transient_error"):
             emit_transient_error_detected(
-                ctx.log_dir, round_num=ctx.round_num, **parsed["transient_error"]
+                ctx.log_dir,
+                round_num=ctx.round_num,
+                phase=ctx.phase or "",
+                **parsed["transient_error"],
             )
         if parsed.get("usage"):
             emit_agent_usage_recorded(

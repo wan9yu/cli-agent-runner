@@ -188,8 +188,13 @@ def emit_transient_error_detected(
     reset_at_epoch: int,
     round_num: int,
     raw: str,
+    phase: str = "",
 ) -> None:
-    """Emit detection of a transient agent error (rate limit / 5xx / timeout)."""
+    """Emit detection of a transient agent error (rate limit / 5xx / timeout).
+
+    ``phase`` is the rotation phase the failing round ran under ("" when the
+    config has no ``[phases]``). It lets a ``phase_policy = "skip"`` serve loop
+    step over *this* phase while a healthy sibling keeps running."""
     from agent_runner._redact import redact_secrets
     from agent_runner.events import TRANSIENT_ERROR_DETECTED, emit
 
@@ -202,6 +207,7 @@ def emit_transient_error_detected(
         reset_at_epoch=reset_at_epoch,
         round_num=round_num,
         raw=raw,
+        phase=phase,
     )
 
 

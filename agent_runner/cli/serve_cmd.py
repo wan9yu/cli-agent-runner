@@ -155,6 +155,8 @@ def _pause_until_selectable(
     round_num,
     sel,
     *,
+    throttled_phases: frozenset[str] = frozenset(),
+    wake_epoch: int | None = None,
     now_fn=schedule.now_in_zone,
     sleep_fn=time.sleep,
     chunk_s: int = 30,
@@ -164,9 +166,17 @@ def _pause_until_selectable(
     caller — its ``resume_*`` fields (all describing the earliest-opening candidate)
     make the schedule_paused payload coherent without recomputing. Polls with
     ``schedule.should_run`` to keep the resume scan out of the 30s poll. Always
-    returns after pause/stop — the caller ``continue``s and re-selects from the top."""
+    returns after pause/stop — the caller ``continue``s and re-selects from the top.
+
+    ``throttled_phases`` are excluded from the window poll: a throttled phase's
+    window is usually OPEN, so leaving it in would make ``should_run`` fire at once
+    and busy-loop. ``wake_epoch`` (the throttle's reset_at) is an extra wake trigger
+    so an all-throttled round resumes when the throttle clears even though no
+    window ever opens."""
     candidates = [
-        (p, cfg.profile_for(p).schedule) for p in phase_select.candidate_phases(cfg, round_num)
+        (p, cfg.profile_for(p).schedule)
+        for p in phase_select.candidate_phases(cfg, round_num)
+        if p not in throttled_phases
     ]
     started = time.monotonic()
     emit_schedule_paused(
@@ -179,13 +189,16 @@ def _pause_until_selectable(
     if _pause_poll(
         stop,
         cfg.runtime.stop_file,
-        lambda: any(
-            schedule.should_run(
-                now_fn(sched.timezone),
-                run_windows=sched.run_windows,
-                pause_windows=sched.pause_windows,
+        lambda: (
+            (wake_epoch is not None and time.time() >= wake_epoch)
+            or any(
+                schedule.should_run(
+                    now_fn(sched.timezone),
+                    run_windows=sched.run_windows,
+                    pause_windows=sched.pause_windows,
+                )
+                for _p, sched in candidates
             )
-            for _p, sched in candidates
         ),
         sleep_fn,
         chunk_s,
@@ -193,8 +206,43 @@ def _pause_until_selectable(
         emit_schedule_resumed(log_dir, paused_for_s=int(time.monotonic() - started))
 
 
-def _select_and_gate(cfg, args, log_dir, stop, round_num):
-    """Resolve the phase to launch this round, gating on schedule.
+def _gate_throttle(cfg, args, log_dir, throttle) -> str:
+    """Decide what an active throttle means for this round.
+
+    Returns ``"break"`` (stop the loop), ``"defer"`` (a ``phase_policy = "skip"``
+    rotation will route around the throttled phase — the caller passes ``throttle``
+    into :func:`_select_and_gate`), or ``"proceed"`` (run normally: no throttle, or
+    the legacy global back-off / skip already applied here).
+
+    ``defer`` is the only new-in-0.2.10 branch and needs all four triggers, so
+    every pre-0.2.10 and ``--ignore-schedule`` path keeps the unchanged global
+    gate: a recorded phase, a skip-policy phase-aware config, and no
+    ``--ignore-schedule`` (which must still back off globally)."""
+    if throttle is None:
+        # No active throttle — supervisor counters reset; next failure restarts
+        # the exp-backoff curve from 1×.
+        _reset_counters()
+        return "proceed"
+    if (
+        throttle.phase
+        and _phase_aware(cfg)
+        and cfg.phases.phase_policy == "skip"
+        and not args.ignore_schedule
+    ):
+        return "defer"
+    action = cfg.runtime.transient_error_action
+    if action == "back_off":
+        _apply_back_off(log_dir, throttle)  # emits transient_error_recovered on resume
+    elif action == "stop":
+        emit_rate_limit_stop(log_dir)
+        return "break"
+    # "skip": proceed to normal launch
+    return "proceed"
+
+
+def _select_and_gate(cfg, args, log_dir, stop, round_num, *, throttle=None):
+    """Resolve the phase to launch this round, gating on schedule (and, when
+    ``throttle`` is passed, on which phase is currently throttled).
 
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
@@ -205,10 +253,35 @@ def _select_and_gate(cfg, args, log_dir, stop, round_num):
         if _maybe_pause_for_schedule(cfg, log_dir, stop):
             return _PAUSED_CONTINUE
         return None
+    throttled = frozenset({throttle.phase}) if throttle is not None else frozenset()
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
-    sel = phase_select.select_phase(cfg, round_num, now_fn=schedule.now_in_zone)
+    sel = phase_select.select_phase(
+        cfg, round_num, throttled_phases=throttled, now_fn=schedule.now_in_zone
+    )
     if sel.paused:
+        if throttle is not None:
+            # Nothing runnable AND a throttle drove us here (every phase is
+            # throttled or window-closed). "stop" halts; otherwise wait until the
+            # EARLIER of a sibling window opening or the throttle resetting —
+            # chunked (SIGTERM-responsive); the loop re-reads throttle + re-selects
+            # on wake. skip-vs-back_off is moot (nothing is launchable now).
+            if cfg.runtime.transient_error_action == "stop":
+                emit_rate_limit_stop(log_dir)
+                stop["requested"] = True
+                return _PAUSED_CONTINUE
+            _pause_until_selectable(
+                cfg,
+                log_dir,
+                stop,
+                round_num,
+                sel,
+                throttled_phases=throttled,
+                wake_epoch=throttle.reset_at_epoch,
+                now_fn=schedule.now_in_zone,
+                sleep_fn=time.sleep,
+            )
+            return _PAUSED_CONTINUE
         _pause_until_selectable(
             cfg, log_dir, stop, round_num, sel, now_fn=schedule.now_in_zone, sleep_fn=time.sleep
         )
@@ -315,20 +388,9 @@ def cmd(args) -> int:
             if check_self_terminated_sentinel(log_dir):
                 break
             throttle = _check_throttle_state(log_dir)
-            if throttle is not None:
-                action = cfg.runtime.transient_error_action
-                if action == "back_off":
-                    _apply_back_off(log_dir, throttle)
-                    # Fall through to normal launch
-                elif action == "skip":
-                    pass  # Proceed to normal launch
-                elif action == "stop":
-                    emit_rate_limit_stop(log_dir)
-                    break
-            else:
-                # No active throttle this round — supervisor counters can reset.
-                # Next failure (if any) restarts the exp backoff curve from 1×.
-                _reset_counters()
+            gate = _gate_throttle(cfg, args, log_dir, throttle)
+            if gate == "break":
+                break
             if stop_file is not None and stop_file.exists():
                 try:
                     content = stop_file.read_text(encoding="utf-8", errors="replace")[:200]
@@ -349,7 +411,14 @@ def cmd(args) -> int:
                 )
                 break
             round_num = next_round_num(log_dir)
-            phase_arg = _select_and_gate(cfg, args, log_dir, stop, round_num)
+            phase_arg = _select_and_gate(
+                cfg,
+                args,
+                log_dir,
+                stop,
+                round_num,
+                throttle=throttle if gate == "defer" else None,
+            )
             if phase_arg is _PAUSED_CONTINUE:
                 continue
             git_head_before = compute_git_head(work_dir)

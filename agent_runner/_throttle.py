@@ -61,6 +61,7 @@ def _check_throttle_state(log_dir: Path) -> TransientErrorState | None:
         classification=classification,
         agent=str(latest_detected.get("agent", "unknown")),
         since_round=int(latest_detected.get("round_num", 0)),
+        phase=str(latest_detected.get("phase", "")),
     )
 
 

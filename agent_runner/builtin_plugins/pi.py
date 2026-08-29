@@ -120,6 +120,7 @@ class PiErrorDetector:
                     agent="pi",
                     reset_at_epoch=int(time.time() + _BACK_OFF_DEFAULTS[classification]),
                     raw=str(error_text)[:_RAW_CAP],
+                    phase=ctx.phase or "",
                 )
             elif _is_auth_error(error_text):
                 # No transient classification on purpose — an auth failure is

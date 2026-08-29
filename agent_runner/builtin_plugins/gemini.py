@@ -38,7 +38,9 @@ class GeminiErrorDetector:
         parsed = _parse_gemini_log(log_path)
         if parsed.get("transient_error"):
             te = parsed["transient_error"]
-            emit_transient_error_detected(ctx.log_dir, round_num=ctx.round_num, **te)
+            emit_transient_error_detected(
+                ctx.log_dir, round_num=ctx.round_num, phase=ctx.phase or "", **te
+            )
         if parsed.get("usage"):
             emit_agent_usage_recorded(
                 ctx.log_dir,

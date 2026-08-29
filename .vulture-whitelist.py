@@ -57,6 +57,7 @@ throttled_until_epoch
 limit_type
 agent
 since_round
+phase
 
 # agent_runner.api_types.RoundResult
 round_num
@@ -106,6 +107,7 @@ reset_at_epoch
 classification
 agent
 since_round
+phase
 
 # agent_runner.config.AgentConfig
 command

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from argparse import Namespace
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -191,3 +192,99 @@ def test_ignore_schedule_bypasses_phase_gate(monkeypatch, tmp_path):
     assert rc == 0
     assert argvs and _phase_of(argvs[0]) is None
     assert "schedule_paused" not in [e["event"] for e in _events(tmp_path / "logs")]
+
+
+# --- 0.2.10 throttle-aware skip ------------------------------------------
+
+
+def _seed_throttle(log_dir, *, phase, reset_at=None, classification="rate_limit_model", agent="x"):
+    """Write a transient_error_detected event so _check_throttle_state sees an
+    active throttle on ``phase`` at serve loop top."""
+    from datetime import UTC, datetime
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    reset_at = reset_at if reset_at is not None else int(time.time() + 3600)
+    path = log_dir / f"events-{datetime.now(UTC).strftime('%Y-%m')}.jsonl"
+    with path.open("a") as f:
+        f.write(
+            json.dumps(
+                {
+                    "event": "transient_error_detected",
+                    "classification": classification,
+                    "agent": agent,
+                    "reset_at_epoch": reset_at,
+                    "round_num": 1,
+                    "phase": phase,
+                    "raw": "x",
+                }
+            )
+            + "\n"
+        )
+
+
+def test_throttled_phase_skips_to_healthy_sibling(monkeypatch, tmp_path):
+    argvs = _capture_run(monkeypatch)
+    _seed_throttle(tmp_path / "logs", phase="a")  # a throttled, b healthy
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    rc = serve_cmd.cmd(_args(cfg_path))
+    assert rc == 0
+    assert _phase_of(argvs[0]) == "b"  # rotated past throttled a
+    skip = [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
+    assert skip and skip[0]["skipped"] == ["a"] and skip[0]["chosen"] == "b"
+
+
+def test_defer_does_not_apply_global_back_off(monkeypatch, tmp_path):
+    """A throttled phase under skip rotates to a sibling WITHOUT the global sleep."""
+    argvs = _capture_run(monkeypatch)
+    called = []
+    monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
+    _seed_throttle(tmp_path / "logs", phase="a")
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    rc = serve_cmd.cmd(_args(cfg_path))
+    assert rc == 0
+    assert _phase_of(argvs[0]) == "b"
+    assert called == []  # rotation handled it; no back-off
+
+
+def test_ignore_schedule_throttle_still_backs_off(monkeypatch, tmp_path):
+    """--ignore-schedule keeps the 0.2.9 global back-off (defer must not fire)."""
+    argvs = _capture_run(monkeypatch)
+    called = []
+    monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
+    _seed_throttle(tmp_path / "logs", phase="a")
+    cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+    args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
+    rc = serve_cmd.cmd(args)
+    assert rc == 0
+    assert called == [True]  # global back-off, not rotation
+    assert _phase_of(argvs[0]) is None  # ignore-schedule appends no --phase
+
+
+def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
+    """When every phase is throttled, _select_and_gate pauses (does not launch),
+    excluding the throttled phase from the window poll and waking at reset_at."""
+    from agent_runner.api_types import TransientErrorState
+    from agent_runner.config import load_config
+
+    reset_at = int(time.time() + 3600)
+    throttle = TransientErrorState(
+        reset_at_epoch=reset_at,
+        classification="rate_limit_model",
+        agent="x",
+        since_round=1,
+        phase="a",
+    )
+    cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
+    spy = {}
+    monkeypatch.setattr(
+        serve_cmd,
+        "_pause_until_selectable",
+        lambda *a, **k: spy.update(k) or spy.update({"called": True}),
+    )
+    stop = {"requested": False}
+    out = serve_cmd._select_and_gate(
+        cfg, _args(tmp_path), tmp_path / "logs", stop, 1, throttle=throttle
+    )
+    assert out is serve_cmd._PAUSED_CONTINUE
+    assert spy.get("called") and spy["throttled_phases"] == frozenset({"a"})
+    assert spy["wake_epoch"] == reset_at

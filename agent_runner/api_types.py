@@ -48,6 +48,7 @@ class RateLimitState:
     limit_type: str
     agent: str
     since_round: int
+    phase: str = ""  # which rotation phase is throttled ("" = no [phases])
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ class TransientErrorState:
     classification: str
     agent: str
     since_round: int
+    phase: str = ""  # rotation phase the failing round ran under ("" = no [phases])
 
 
 @dataclass(frozen=True)

@@ -43,6 +43,28 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
     assert state.classification == "rate_limit_account"
     assert state.agent == "claude"
     assert state.since_round == 42
+    assert state.phase == ""  # no phase recorded → "" (back-compat)
+
+
+def test_check_throttle_state_carries_phase(tmp_path):
+    from agent_runner._throttle import _check_throttle_state
+
+    _write_events(
+        tmp_path,
+        [
+            {
+                "event": "transient_error_detected",
+                "ts": "2026-05-16T00:00:00Z",
+                "agent": "deepseek-cli",
+                "reset_at_epoch": int(time.time() + 3600),
+                "classification": "rate_limit_model",
+                "round_num": 7,
+                "phase": "deepseek",
+            }
+        ],
+    )
+    state = _check_throttle_state(tmp_path)
+    assert state is not None and state.phase == "deepseek"
 
 
 def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_path):

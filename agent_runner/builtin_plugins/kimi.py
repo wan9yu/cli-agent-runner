@@ -62,7 +62,9 @@ class KimiErrorDetector:
             return
         transient_error = _parse_kimi_log(log_path)
         if transient_error:
-            emit_transient_error_detected(ctx.log_dir, round_num=ctx.round_num, **transient_error)
+            emit_transient_error_detected(
+                ctx.log_dir, round_num=ctx.round_num, phase=ctx.phase or "", **transient_error
+            )
 
 
 def _parse_kimi_log(log_path: Path) -> dict[str, Any] | None:
