@@ -5,7 +5,9 @@
 The serve loop calls :func:`select_phase` once per round to decide which phase
 (if any) to launch, whether to pause, and — on a ``phase_policy = "skip"`` —
 which phases it stepped over. Statelessness is the contract: the result depends
-only on ``(round_num, now, cfg)`` — no status.json, no event history.
+only on ``(round_num, now, cfg, throttled_phases)`` — no status.json, no event
+history. ``throttled_phases`` is INJECTED by the serve layer (like ``now_fn``);
+the module never reads throttle/event state itself, which is what keeps it pure.
 """
 
 from __future__ import annotations
@@ -57,12 +59,26 @@ def candidate_phases(cfg, round_num: int) -> list[str | None]:
     return [phases[k0]]
 
 
-def select_phase(cfg, round_num: int, *, now_fn=schedule.now_in_zone) -> Selection:
+def select_phase(
+    cfg,
+    round_num: int,
+    *,
+    throttled_phases: frozenset[str] = frozenset(),
+    now_fn=schedule.now_in_zone,
+) -> Selection:
     """Pick the phase to run this round (or pause). Pure; clock via ``now_fn``.
+
+    A candidate is runnable iff its schedule window is open AND it is not in
+    ``throttled_phases`` (the serve layer injects the currently-throttled phase
+    so ``skip`` steps over a rate-limited provider just as it steps over a closed
+    window). A throttled phase owns no *window* resume — its resume is the
+    throttle's ``reset_at``, owned by serve — so it is stepped over WITHOUT
+    joining the earliest-opening ``best`` candidate.
 
     Each candidate's runnable check uses ``schedule.should_run`` (not ``evaluate``)
     to keep the multi-day resume scan out of the hot path; ``evaluate`` runs only
-    for a closed candidate, to compute its ``resume_at`` / window label.
+    for a window-closed (non-throttled) candidate, to compute its ``resume_at`` /
+    window label.
     """
     order = candidate_phases(cfg, round_num)
     skipped: list[str] = []
@@ -72,7 +88,8 @@ def select_phase(cfg, round_num: int, *, now_fn=schedule.now_in_zone) -> Selecti
     for i, phase in enumerate(order):
         sched = cfg.profile_for(phase).schedule
         now = now_fn(sched.timezone)
-        if schedule.should_run(
+        throttled = phase in throttled_phases
+        if not throttled and schedule.should_run(
             now, run_windows=sched.run_windows, pause_windows=sched.pause_windows
         ):
             return Selection(
@@ -84,14 +101,15 @@ def select_phase(cfg, round_num: int, *, now_fn=schedule.now_in_zone) -> Selecti
                 skipped=list(skipped),
                 active_window=rotation_window,  # rotation phase's closed window (why we skipped)
             )
-        decision = schedule.evaluate(
-            run_windows=sched.run_windows, pause_windows=sched.pause_windows, now_local=now
-        )
-        if i == 0:
-            rotation_window = decision.active_window
-        if decision.resume_at is not None and (best is None or decision.resume_at < best[0]):
-            # (B2) never-opening candidates return None and are dropped from the min.
-            best = (decision.resume_at, phase, decision.active_window, sched.timezone)
+        if not throttled:
+            decision = schedule.evaluate(
+                run_windows=sched.run_windows, pause_windows=sched.pause_windows, now_local=now
+            )
+            if i == 0:
+                rotation_window = decision.active_window
+            if decision.resume_at is not None and (best is None or decision.resume_at < best[0]):
+                # (B2) never-opening candidates return None and are dropped from the min.
+                best = (decision.resume_at, phase, decision.active_window, sched.timezone)
         skipped.append(phase)
     if best is None:
         return Selection(None, True, None, None, None, [], rotation_window)

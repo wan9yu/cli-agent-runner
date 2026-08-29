@@ -138,3 +138,54 @@ def test_round_num_rotates_starting_phase(tmp_path):
     assert phase_select.select_phase(cfg, 2, now_fn=_clock(10)).phase == "b"
     assert phase_select.select_phase(cfg, 3, now_fn=_clock(10)).phase == "c"
     assert phase_select.select_phase(cfg, 4, now_fn=_clock(10)).phase == "a"
+
+
+def _skip_cfg(tmp_path, phases=("a", "b"), extra=""):
+    lst = ",".join(f'"{p}"' for p in phases)
+    return _cfg(tmp_path, f'[phases]\nlist = [{lst}]\nphase_policy = "skip"\n{extra}')
+
+
+def test_skip_steps_over_throttled_phase(tmp_path):
+    cfg = _skip_cfg(tmp_path)  # both windows always open
+    sel = phase_select.select_phase(
+        cfg, 1, throttled_phases=frozenset({"a"}), now_fn=_clock(10)
+    )
+    assert sel.phase == "b"
+    assert sel.skipped == ["a"]
+    assert sel.paused is False
+
+
+def test_all_phases_throttled_pauses_no_window_resume(tmp_path):
+    cfg = _skip_cfg(tmp_path)
+    sel = phase_select.select_phase(
+        cfg, 1, throttled_phases=frozenset({"a", "b"}), now_fn=_clock(10)
+    )
+    assert sel.phase is None
+    assert sel.paused is True
+    assert sel.resume_at is None  # throttled phases own no window resume
+
+
+def test_throttled_plus_window_closed_resume_is_open_window(tmp_path):
+    # a throttled; b window-closed 09:00-12:00 -> paused, resume_at = b's 12:00 open.
+    cfg = _skip_cfg(tmp_path, extra='[phases.b.schedule]\npause_windows = ["09:00-12:00"]\n')
+    sel = phase_select.select_phase(
+        cfg, 1, throttled_phases=frozenset({"a"}), now_fn=_clock(10)
+    )
+    assert sel.phase is None
+    assert sel.paused is True
+    assert sel.resume_at is not None and sel.resume_at.hour == 12
+
+
+def test_empty_throttled_is_0_2_9_behavior(tmp_path):
+    cfg = _skip_cfg(tmp_path)
+    sel = phase_select.select_phase(cfg, 1, now_fn=_clock(10))
+    assert sel.phase == "a"
+    assert sel.skipped == []
+
+
+def test_throttled_determinism_same_inputs_same_output(tmp_path):
+    cfg = _skip_cfg(tmp_path)
+    t = frozenset({"a"})
+    a = phase_select.select_phase(cfg, 1, throttled_phases=t, now_fn=_clock(10))
+    b = phase_select.select_phase(cfg, 1, throttled_phases=t, now_fn=_clock(10))
+    assert (a.phase, a.paused, a.skipped) == (b.phase, b.paused, b.skipped)

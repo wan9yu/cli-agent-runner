@@ -1,10 +1,12 @@
 """Invariant: phase_select.select_phase is stateless.
 
-Its result must be a pure function of ``(cfg, round_num, now)`` — it must NOT
-read status.json, event history, or any on-disk supervisor state. If a future
-edit reaches for round-history to decide the phase, the selection stops being
-reconstructible from the config + clock alone (which is what makes serve and
-``round --phase`` agree), so this guards the source structurally.
+Its result must be a pure function of ``(cfg, round_num, now, throttled_phases)``
+— it must NOT read status.json, event history, or any on-disk supervisor state.
+The throttled set is INJECTED by the serve layer (like ``now_fn``); reading
+throttle state inside the module would break statelessness. If a future edit
+reaches for round-history to decide the phase, the selection stops being
+reconstructible from the config + clock + injected args alone (which is what
+makes serve and ``round --phase`` agree), so this guards the source structurally.
 """
 
 from __future__ import annotations
@@ -40,11 +42,12 @@ def test_select_phase_reads_no_supervisor_state() -> None:
 
 
 def test_select_phase_signature_is_cfg_round_clock() -> None:
-    """The public entry takes exactly (cfg, round_num, *, now_fn) — no log_dir /
-    status handle through which run-state could leak in."""
+    """The public entry takes exactly (cfg, round_num, *, throttled_phases, now_fn)
+    — no log_dir / status handle through which run-state could leak in. The
+    throttled set is a value injected by the caller, not read from disk."""
     import inspect
 
     from agent_runner import phase_select
 
     params = list(inspect.signature(phase_select.select_phase).parameters)
-    assert params == ["cfg", "round_num", "now_fn"], params
+    assert params == ["cfg", "round_num", "throttled_phases", "now_fn"], params
