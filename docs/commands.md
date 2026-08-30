@@ -97,7 +97,7 @@ Flags:
 - `--ignore-schedule` — Run rounds regardless of [schedule] pause/run windows (testing / catch-up)
 <!-- /gen:flags-serve -->
 
-### `agent-runner upgrade [--target VERSION] [--no-restart] [--config PATH]`
+### `agent-runner upgrade [--target VERSION] [--no-restart] [--no-migrate] [--config PATH]`
 
 Upgrade the agent-runner package. Behavior depends on the detected service mode:
 
@@ -114,6 +114,11 @@ back to package-only mode automatically.
 
 `--no-restart` forces package-only even on a systemd --user host (upgrade the
 package now, restart your service yourself).
+
+`--no-migrate` skips the automatic config migration that otherwise runs before
+the package step (`upgrade` migrates `agent-runner.toml` and emits
+`config_migrated`; a config needing a manual change aborts before the service is
+touched).
 
 Smoke scope (what each path validates, and how to self-check before a breaking
 upgrade): see `docs/runbook.md` § "What the smoke covers".

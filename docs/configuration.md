@@ -296,9 +296,10 @@ phase's overrides on top. A phase with no sub-tables runs the base config
 unchanged, so existing configs are byte-for-byte unaffected.
 
 The phase name must appear in `phases.list` (typo catcher); unknown top-level
-per-phase fields and unknown sub-tables are rejected at config load, and the
-`agent` / `runtime` / `schedule` sub-tables reject unknown keys. (`[phases.<name>.prompt]`
-reads only `files`.)
+per-phase fields and unknown sub-tables are rejected at config load. The `agent`
+and `runtime` sub-tables also reject unknown keys; `schedule` and `prompt` read
+only their known keys (`schedule`: `timezone` / `run_windows` / `pause_windows`;
+`prompt`: `files`).
 
 ### The four sub-tables
 

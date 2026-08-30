@@ -322,7 +322,8 @@ usage data:
 When a transient error is detected, emits a `transient_error_detected`
 event with `classification` ∈ {`rate_limit_account`, `rate_limit_model`,
 `api_transient_5xx`, `api_timeout`}, plus `agent`, `reset_at_epoch`,
-`round_num`, `raw` (≤200 chars).
+`round_num`, `raw` (≤200 chars), and `phase` (0.2.10 — the rotation phase the
+failing round ran under, `""` when the config has no `[phases]`).
 
 Per round (regardless of error state), also emits `agent_usage_recorded`
 with token/cost/duration data extracted from the claude result event. The
