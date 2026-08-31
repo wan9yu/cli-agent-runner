@@ -303,6 +303,23 @@ def _require_non_negative_int(value: Any, *, field: str) -> int:
     return value
 
 
+def _require_str_list(value: Any, *, field: str) -> list[str]:
+    """Validate a TOML value is a list (not a bare string or scalar) and return
+    its elements as strings. The bare-string case is the footgun this rejects:
+    ``command = "claude"`` would otherwise ``list()``-explode into
+    ``['c','l','a','u','d','e']``. Message names ``agent-runner migrate`` so a
+    rejected pre-0.2.12 config points straight at the fix."""
+    if isinstance(value, str):
+        raise ConfigError(
+            f"{field}: must be a list, not a bare string {value!r}; run `agent-runner migrate`"
+        )
+    if not isinstance(value, list):
+        raise ConfigError(
+            f"{field}: must be a list, got {type(value).__name__}; run `agent-runner migrate`"
+        )
+    return [str(x) for x in value]
+
+
 def _require_pct(value: Any, *, field: str) -> float:
     """Validate a TOML value is a percent in [0, 100]. Accepts int and float —
     TOML parses ``90`` as int and the shipped tuning tables recommend bare ints.
@@ -362,6 +379,18 @@ _PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_timeout_s", "disable_pre_round
 # set (merged onto the base [agent] table before validation).
 _AGENT_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(AgentConfig))
 
+# Keys allowed under the top-level [prompt] table.
+_PROMPT_ALLOWED_FIELDS = frozenset(
+    {
+        "file",
+        "files",
+        "inject_context",
+        "context_injection_mode",
+        "concat_separator",
+        "strip_yaml_frontmatter",
+    }
+)
+
 
 def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
     """Parse + validate an [agent] table (or a merged per-phase agent table).
@@ -372,7 +401,9 @@ def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
     validated on the MERGED result, not just the base [agent] table.
     """
     prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
-    prompt_arg_template = list(_require(agent_d, "prompt_arg_template"))
+    prompt_arg_template = _require_str_list(
+        _require(agent_d, "prompt_arg_template"), field=f"{field_prefix} prompt_arg_template"
+    )
     if prompt_delivery not in _VALID_PROMPT_DELIVERY:
         raise ConfigError(
             f'invalid {field_prefix} prompt_delivery {prompt_delivery!r}: use "argv" or "stdin"'
@@ -382,8 +413,13 @@ def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
             f"stdin delivery: remove {{prompt}} from {field_prefix} prompt_arg_template "
             "(the prompt is piped to stdin, not placed in argv)"
         )
+    command = _require_str_list(_require(agent_d, "command"), field=f"{field_prefix} command")
+    if not command:
+        raise ConfigError(
+            f"{field_prefix} command: must be a non-empty list; run `agent-runner migrate`"
+        )
     return AgentConfig(
-        command=list(_require(agent_d, "command")),
+        command=command,
         prompt_arg_template=prompt_arg_template,
         name=agent_d.get("name"),
         env={str(k): str(v) for k, v in agent_d.get("env", {}).items()},
@@ -473,9 +509,10 @@ def _parse_phase_overrides(
             prompt_sub = value["prompt"]
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
                 raise ConfigError(f"[phases.{phase_name}].prompt must have a 'files' list")
-            prompt_files = [
-                _expand_and_resolve(str(p), project_name, work_dir) for p in prompt_sub["files"]
-            ]
+            files_raw = _require_str_list(
+                prompt_sub["files"], field=f"phases.{phase_name}.prompt.files"
+            )
+            prompt_files = [_expand_and_resolve(p, project_name, work_dir) for p in files_raw]
 
         phase_agent = None
         if "agent" in value:
@@ -522,7 +559,16 @@ def _parse_fresh_eyes_every_n(runtime_d: dict) -> int | None:
     return _require_positive_int(raw, field="runtime.fresh_eyes_every_n")
 
 
+_SCHEDULE_ALLOWED_FIELDS = frozenset({"timezone", "run_windows", "pause_windows"})
+
+
 def _parse_schedule(schedule_d: dict) -> ScheduleConfig:
+    unknown = set(schedule_d) - _SCHEDULE_ALLOWED_FIELDS
+    if unknown:
+        raise ConfigError(
+            f"unknown [schedule] field(s): {sorted(unknown)}; "
+            f"allowed: {sorted(_SCHEDULE_ALLOWED_FIELDS)}; run `agent-runner migrate`"
+        )
     tz = schedule_d.get("timezone")
     if tz is not None:
         tz = str(tz)
@@ -568,7 +614,9 @@ def load_config(toml_path: Path) -> Config:
 
     # Phases first — needed for per-phase round_timeout validation below.
     phases_d = raw.get("phases", {})
-    phases_list = list(phases_d["list"]) if "list" in phases_d else None
+    phases_list = (
+        _require_str_list(phases_d["list"], field="phases.list") if "list" in phases_d else None
+    )
     phase_policy = str(phases_d.get("phase_policy", "wait"))
     if phase_policy not in ("wait", "skip"):
         raise ConfigError(
@@ -651,6 +699,12 @@ def load_config(toml_path: Path) -> Config:
         ),
     )
     prompt_d = raw.get("prompt", {})
+    unknown_prompt = set(prompt_d) - _PROMPT_ALLOWED_FIELDS
+    if unknown_prompt:
+        raise ConfigError(
+            f"unknown [prompt] field(s): {sorted(unknown_prompt)}; "
+            f"allowed: {sorted(_PROMPT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
+        )
     mode = prompt_d.get("context_injection_mode", "prepend")
     if mode not in _VALID_INJECTION_MODES:
         raise ConfigError(
@@ -666,11 +720,17 @@ def load_config(toml_path: Path) -> Config:
     prompt_file = (
         _expand_and_resolve(str(prompt_d["file"]), project_name, work_dir) if has_file else None
     )
-    prompt_files = (
-        [_expand_and_resolve(str(p), project_name, work_dir) for p in prompt_d["files"]]
-        if has_files
-        else []
-    )
+    if has_files:
+        files_raw = _require_str_list(prompt_d["files"], field="prompt.files")
+        if not files_raw:
+            raise ConfigError(
+                "prompt.files: must be a non-empty list (use a per-phase "
+                "[phases.<name>.prompt] files = [] to disable prompts for a phase); "
+                "run `agent-runner migrate`"
+            )
+        prompt_files = [_expand_and_resolve(p, project_name, work_dir) for p in files_raw]
+    else:
+        prompt_files = []
     prompt = PromptConfig(
         file=prompt_file,
         files=prompt_files,
@@ -749,6 +809,16 @@ def load_config(toml_path: Path) -> Config:
             )
         ),
     )
+    if (
+        monitor.anomaly_repetitive_threshold > 0
+        and monitor.anomaly_repetitive_window > 0
+        and monitor.anomaly_repetitive_threshold > monitor.anomaly_repetitive_window
+    ):
+        raise ConfigError(
+            f"monitor.anomaly_repetitive_threshold ({monitor.anomaly_repetitive_threshold}) "
+            f"must be <= anomaly_repetitive_window ({monitor.anomaly_repetitive_window}): "
+            f"the detector can never fire otherwise; run `agent-runner migrate`"
+        )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
     disable = list(plugins_raw.pop("disable", []))
     plugins = PluginsConfig(disable=disable, raw=plugins_raw)
