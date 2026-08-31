@@ -31,6 +31,7 @@ __all__ = [
     "emit_schedule_paused",
     "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
+    "emit_stale_index_lock_cleared",
     "emit_stop_file_detected",
     "emit_transient_error_backoff_capped",
     "emit_transient_error_detected",
@@ -97,6 +98,15 @@ def emit_stop_file_detected(
         content=content,
         rounds_completed=rounds_completed,
     )
+
+
+def emit_stale_index_lock_cleared(log_dir: Path, *, lock_path: str, round_num: int) -> None:
+    """Emit when serve removed a .git/index.lock that its own timed-out+killed git
+    call orphaned. Single-writer: serve holds the round lock, so any lock surviving
+    our kill is ours to clear."""
+    from agent_runner.events import STALE_INDEX_LOCK_CLEARED, emit
+
+    emit(log_dir, STALE_INDEX_LOCK_CLEARED, lock_path=lock_path, round_num=round_num)
 
 
 def emit_schedule_paused(

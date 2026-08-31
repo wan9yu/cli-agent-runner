@@ -227,6 +227,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `service_upgrade_rolled_back`
 - `service_upgraded`
 - `smoke_check_failed`
+- `stale_index_lock_cleared`
 - `status_recovered`
 - `stop_file_detected`
 - `transient_error_backoff_capped`

@@ -14,11 +14,14 @@ Stash safety rules (R820 + §9 IMMUTABLE):
 
 from __future__ import annotations
 
+import os
 import re
+import signal
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 
+from agent_runner._emit import emit_stale_index_lock_cleared
 from agent_runner.clock import SYSTEM_CLOCK
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
@@ -121,6 +124,13 @@ def _matches_owned_path(path: str) -> bool:
 GIT_COMMIT_TIMEOUT_S = 120
 
 
+_GIT_KILL_GRACE_S = 3  # git dies fast on TERM; grace before we killpg the session
+
+
+class GitTimeout(RuntimeError):  # noqa: N818 — brief-specified name, not a *Error condition
+    """A git invocation exceeded its timeout and was force-killed."""
+
+
 class AutoCommitError(RuntimeError):
     """git add/commit failed during try_auto_commit (reason capped at 200 chars)."""
 
@@ -136,6 +146,36 @@ class StashRef:
     reused: bool = False  # True only when stash_orphan returned an idempotency-window hit
 
 
+def _run_with_timeout(
+    argv: list[str], *, cwd: Path, timeout: int
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess in its OWN session under a wall-clock timeout, escalating
+    TERM -> grace -> killpg on breach so a hung git leaves no descendants. Raises
+    GitTimeout on breach."""
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.communicate(timeout=_GIT_KILL_GRACE_S)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.communicate()
+        raise GitTimeout(f"git {' '.join(argv[1:])[:100]} exceeded {timeout}s") from None
+
+
 def _git(
     repo: Path,
     *args: str,
@@ -148,14 +188,11 @@ def _git(
     one-liners and the noqa pragma lives in exactly one place.
 
     pre_flags are injected between 'git' and command args (e.g. ('-c', 'commit.gpgsign=false')).
+    Delegates to ``_run_with_timeout`` so every git call runs in its own session
+    with TERM->grace->KILL escalation on timeout (raises GitTimeout, not
+    subprocess.TimeoutExpired).
     """
-    return subprocess.run(
-        ["git", *pre_flags, *args],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    return _run_with_timeout(["git", *pre_flags, *args], cwd=repo, timeout=timeout)
 
 
 def is_git_repo(path: Path) -> bool:
@@ -380,6 +417,23 @@ def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
     return ["--", f":(exclude){rel}"]
 
 
+def _clear_self_caused_index_lock(work_dir: Path, round_num: int, log_dir: Path | None) -> None:
+    """Remove a .git/index.lock our own timed-out+killed git left behind (single
+    writer: serve holds the round lock). Emits stale_index_lock_cleared.
+
+    NEVER call this outside the self-caused (our-own-timeout-kill) path — this
+    module has no way to distinguish our orphaned lock from one held by a
+    concurrent git process, and the single-writer guarantee only holds here
+    because we JUST killed the only git invocation serve could have started.
+    """
+    lock = work_dir / ".git" / "index.lock"
+    if not lock.exists():
+        return
+    lock.unlink(missing_ok=True)
+    if log_dir is not None:
+        emit_stale_index_lock_cleared(log_dir, lock_path=str(lock), round_num=round_num)
+
+
 def try_auto_commit(
     work_dir: Path,
     round_num: int,
@@ -393,12 +447,21 @@ def try_auto_commit(
     HEAD untouched). Raises AutoCommitError on git failure. DOES NOT push.
     Subject: ``agent-runner auto-commit: R<N> <phase>``. Uses
     ``git -c commit.gpgsign=false``; honors pre-commit hooks (no --no-verify).
+
+    The commit call uses GIT_COMMIT_TIMEOUT_S (120s, not the 10s default) since
+    real pre-commit hooks routinely exceed 10s. Either the add or the commit
+    timing out means OUR git call was killed mid-write, which can leave a
+    ``.git/index.lock`` behind; that (and only that) path clears it.
     """
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
     exclude = _log_dir_exclude_pathspec(work_dir, log_dir)
-    add_result = _git(work_dir, "add", "-A", *exclude)
+    try:
+        add_result = _git(work_dir, "add", "-A", *exclude)
+    except GitTimeout as e:
+        _clear_self_caused_index_lock(work_dir, round_num, log_dir)
+        raise AutoCommitError(str(e)[:200]) from e
     if add_result.returncode != 0:
         raise AutoCommitError((add_result.stderr or "git add failed")[:200])
 
@@ -408,13 +471,18 @@ def try_auto_commit(
     if exclude and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
         return ""
 
-    commit_result = _git(
-        work_dir,
-        "commit",
-        "-m",
-        subject,
-        pre_flags=("-c", "commit.gpgsign=false"),
-    )
+    try:
+        commit_result = _git(
+            work_dir,
+            "commit",
+            "-m",
+            subject,
+            pre_flags=("-c", "commit.gpgsign=false"),
+            timeout=GIT_COMMIT_TIMEOUT_S,
+        )
+    except GitTimeout as e:
+        _clear_self_caused_index_lock(work_dir, round_num, log_dir)
+        raise AutoCommitError(str(e)[:200]) from e
     if commit_result.returncode != 0:
         raise AutoCommitError((commit_result.stderr or "git commit failed")[:200])
 
