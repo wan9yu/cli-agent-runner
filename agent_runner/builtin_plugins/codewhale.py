@@ -102,15 +102,15 @@ def _parse_codewhale_log(log_path: Path) -> dict[str, Any]:
 
 
 def _classify_codewhale_error(error_event: dict[str, Any]) -> str | None:
-    """Pull a status code out of a codewhale {"type":"error"} record for the
-    shared ladder.
-
-    The only error record captured so far carries a free-text 'error' string
-    and no status code at all (an auth failure), so nothing maps today; the
-    numeric-field lookup is the forward path for when a real rate-limit or 5xx
-    sample is captured.
-    """
-    return classify_transient_status(error_event.get("code") or error_event.get("status_code"))
+    """Pull a status code out of a codewhale {"type":"error"} record for the shared
+    ladder. Tries ``code`` then ``status_code`` and takes the first that classifies —
+    a truthy *symbolic* string ``code`` must not mask a numeric ``status_code`` 429
+    (``code or status_code`` did exactly that)."""
+    for candidate in (error_event.get("code"), error_event.get("status_code")):
+        classification = classify_transient_status(candidate)
+        if classification is not None:
+            return classification
+    return None
 
 
 register_post_round_hook(CodewhaleErrorDetector())
