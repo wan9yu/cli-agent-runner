@@ -20,7 +20,7 @@ import json
 import re
 from collections import deque
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -250,20 +250,17 @@ def detect_hung(
 
 def detect_orphan_chain(events: list[dict[str, Any]], *, threshold: int = 3) -> Alert | None:
     rounds_in_order = [e for e in events if e.get("event") in (ROUND_END, ORPHAN_STASHED)]
+    orphan_rounds = {
+        e.get("round_num") for e in rounds_in_order if e.get("event") == ORPHAN_STASHED
+    }
     streak = 0
     last_round_with_orphan: int | None = None
     for e in rounds_in_order:
         if e.get("event") == ORPHAN_STASHED:
             streak += 1
             last_round_with_orphan = e.get("round_num")
-        elif e.get("event") == ROUND_END:
-            rn = e.get("round_num")
-            has_orphan_for_round = any(
-                o.get("event") == ORPHAN_STASHED and o.get("round_num") == rn
-                for o in rounds_in_order
-            )
-            if not has_orphan_for_round:
-                streak = 0
+        elif e.get("event") == ROUND_END and e.get("round_num") not in orphan_rounds:
+            streak = 0
     if streak >= threshold:
         return _alert(
             "orphan_chain",
@@ -635,6 +632,48 @@ def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]
             except json.JSONDecodeError:
                 continue
     return out
+
+
+_MONITOR_EVENT_BUFFER = 20000
+"""Rolling window for `_EventTail.buffer` — enough history for every built-in
+detector's lookback (round-timeout chains, orphan streaks, dedup identity)
+without holding a project's entire events history in memory forever."""
+
+
+@dataclass
+class _EventTail:
+    """Per-poll byte-offset carry + bounded rolling event buffer, so a monitor poll
+    parses only bytes appended since the previous poll instead of re-reading the
+    entire events history every interval (as _tail_events_jsonl already carries)."""
+
+    offsets: dict[Path, int] = field(default_factory=dict)
+    buffer: deque[dict[str, Any]] = field(
+        default_factory=lambda: deque(maxlen=_MONITOR_EVENT_BUFFER)
+    )
+
+    def read(self, files: list[Path]) -> list[dict[str, Any]]:
+        for path in files:
+            pos = self.offsets.get(path, 0)
+            try:
+                size = path.stat().st_size
+            except FileNotFoundError:
+                continue
+            if size < pos:
+                pos = 0  # rotated/truncated underneath us
+            if size == pos:
+                continue
+            with path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(pos)
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        self.buffer.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+                self.offsets[path] = f.tell()
+        return list(self.buffer)
 
 
 _MAX_TAIL_FILES = 20

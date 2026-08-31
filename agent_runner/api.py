@@ -498,14 +498,19 @@ def peek(
     return state if select is None else select_path(state, select)
 
 
-def _poll_once(project: str | Path) -> list[monitor.Alert]:
+def _poll_once(
+    project: str | Path, *, event_tail: monitor._EventTail | None = None
+) -> list[monitor.Alert]:
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
     # Always local: detection runs on the supervised host by design. Remote
     # observation is an event RELAY (``monitor --host X --mode events``), not a
     # remote poll — see agent_runner/remote_relay.py.
     src: monitor.StateSource = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
-    events = monitor.parse_events_from_jsonl_files(src.events_files())
+    if event_tail is not None:
+        events = event_tail.read(src.events_files())
+    else:
+        events = monitor.parse_events_from_jsonl_files(src.events_files())
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
     log_tails = monitor.load_round_log_tails(src.rounds_dir())
     builtin = monitor.run_all_detectors(
@@ -577,9 +582,10 @@ def _monitor_loop_iter(
         mode="anomaly-only",
     )
 
+    event_tail = monitor._EventTail()
     while True:
         try:
-            alerts = _poll_once(work_dir)
+            alerts = _poll_once(work_dir, event_tail=event_tail)
         except Exception as e:  # noqa: BLE001 — a poll crash must not kill supervision
             warnings.warn(f"monitor poll failed: {type(e).__name__}: {e}", stacklevel=2)
             SYSTEM_CLOCK.sleep(interval_s)

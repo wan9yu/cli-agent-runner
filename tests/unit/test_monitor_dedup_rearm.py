@@ -18,7 +18,7 @@ def _disk(v: float) -> Alert:
 def test_recovered_then_recurred_alert_fires_twice(tmp_path, monkeypatch) -> None:
     # poll 1: firing; poll 2: cleared (empty); poll 3: firing again -> should re-yield.
     polls = iter([[_disk(91.0)], [], [_disk(92.0)]])
-    monkeypatch.setattr(api, "_poll_once", lambda _wd: next(polls))
+    monkeypatch.setattr(api, "_poll_once", lambda _wd, **_kwargs: next(polls))
     sleeps = {"n": 0}
 
     def _fake_sleep(_s) -> None:

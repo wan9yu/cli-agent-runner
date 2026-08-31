@@ -257,6 +257,10 @@ manual
 # agent_runner.monitor.LocalSource
 log_dir
 
+# agent_runner.monitor._EventTail
+offsets
+buffer
+
 # agent_runner.phase_select.Selection
 phase
 paused
