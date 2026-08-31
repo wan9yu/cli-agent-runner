@@ -14,6 +14,8 @@ rate-limit detector was generalized to multi-classification in 0.1.23
 
 from __future__ import annotations
 
+import math
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -50,22 +52,45 @@ class ClaudeErrorDetector:
         )
 
         if parsed.get("transient_error"):
-            te = parsed["transient_error"]
-            emit_transient_error_detected(
-                ctx.log_dir, round_num=ctx.round_num, phase=ctx.phase or "", **te
+            self._safe_emit(
+                "transient_error",
+                lambda: emit_transient_error_detected(
+                    ctx.log_dir,
+                    round_num=ctx.round_num,
+                    phase=ctx.phase or "",
+                    **parsed["transient_error"],
+                ),
             )
 
         if parsed.get("usage"):
-            emit_agent_usage_recorded(
-                ctx.log_dir,
-                round_num=ctx.round_num,
-                phase=ctx.phase or "",
-                success=result.ok,
-                **parsed["usage"],
+            self._safe_emit(
+                "usage",
+                lambda: emit_agent_usage_recorded(
+                    ctx.log_dir,
+                    round_num=ctx.round_num,
+                    phase=ctx.phase or "",
+                    success=result.ok,
+                    **parsed["usage"],
+                ),
             )
 
         if parsed.get("anomaly"):
-            emit_anomaly_repetitive_tool(ctx.log_dir, round_num=ctx.round_num, **parsed["anomaly"])
+            self._safe_emit(
+                "anomaly",
+                lambda: emit_anomaly_repetitive_tool(
+                    ctx.log_dir, round_num=ctx.round_num, **parsed["anomaly"]
+                ),
+            )
+
+    @staticmethod
+    def _safe_emit(label: str, fn: Any) -> None:
+        """Emit one payload in isolation — plugin hooks run as an all-or-nothing unit,
+        so a single bad emit (e.g. a downstream write failure) must not void the
+        other emits already computed from the same parsed round."""
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001 — one failed emit must not void the siblings
+            warnings.warn(f"claude {label} emit failed: {type(e).__name__}: {e}", stacklevel=2)
 
 
 def _extract_tool_target(tool_input: Any) -> str | None:
@@ -127,8 +152,8 @@ def _parse_claude_log(
     for event in json_events(log_path):
         event_type = event.get("type")
         if event_type == "rate_limit_event":
-            rli = event.get("rate_limit_info", {})
-            if rli.get("status") == "rejected":
+            rli = event.get("rate_limit_info")
+            if isinstance(rli, dict) and rli.get("status") == "rejected":
                 rate_limit_info = rli
         elif event_type == "result":
             result_event = event
@@ -167,6 +192,21 @@ def _parse_claude_log(
     return out
 
 
+def _as_epoch(value: Any, fallback: int) -> int:
+    """Coerce a foreign ``resetsAt`` to an epoch int; a present-null, non-numeric,
+    or non-finite (NaN/Infinity) value degrades to ``fallback`` instead of raising
+    out of the caller and voiding the round. Never fabricates a value beyond the
+    provided fallback."""
+    if isinstance(value, bool) or value is None:
+        return fallback
+    if isinstance(value, float) and not math.isfinite(value):
+        return fallback
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return fallback
+
+
 def _classify_transient_error(
     rate_limit_info: dict | None, result_event: dict | None
 ) -> dict | None:
@@ -177,7 +217,9 @@ def _classify_transient_error(
         return {
             "classification": "rate_limit_account",
             "agent": "claude",
-            "reset_at_epoch": int(rate_limit_info.get("resetsAt", SYSTEM_CLOCK.epoch() + 300)),
+            "reset_at_epoch": _as_epoch(
+                rate_limit_info.get("resetsAt"), int(SYSTEM_CLOCK.epoch()) + 300
+            ),
             "raw": str((result_event or {}).get("result", ""))[:_RAW_CAP],
         }
     # rate_limit_event with null/other rateLimitType falls through to status-based
