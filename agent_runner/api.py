@@ -385,21 +385,34 @@ def status(project: str | Path) -> ServiceStatus:
     return ServiceStatus(mode=ServiceMode.NONE, active=False)
 
 
-def _resolve_project(project: str | Path) -> str:
+def _resolve_target(project: str | Path | None) -> tuple[str, Path]:
+    """Resolve a project reference to (project_name, log_dir), Path-first.
+
+    ONE resolution feeds both the name and the log_dir so peek/status can never
+    resolve them against different projects (the mixed-project peek bug). A Path
+    (or None -> cwd) reads log_dir from that directory's toml; a path-like or
+    bare string is validated against _PROJECT_NAME_RE before use.
+    """
+    if project is None:
+        project = Path.cwd()
     if isinstance(project, Path):
-        return _project_name(project)
+        return _project_name(project), _log_dir(project)
     if "/" in project or "\\" in project:
-        return _project_name(Path(project))
-    return project
+        p = Path(project)
+        return _project_name(p), _log_dir(p)
+    if not _PROJECT_NAME_RE.match(project):
+        raise ValueError(f"invalid project name {project!r}: must match [A-Za-z0-9._-]+")
+    if project == _project_name(Path.cwd()):
+        return project, _log_dir(Path.cwd())
+    return project, Path.home() / ".agent-runner" / project / "logs"
+
+
+def _resolve_project(project: str | Path) -> str:
+    return _resolve_target(project)[0]
 
 
 def _log_dir_for_project(project: str | Path) -> Path:
-    if isinstance(project, Path):
-        return _log_dir(project)
-    p = Path.cwd() if project == _project_name(Path.cwd()) else None
-    if p is not None:
-        return _log_dir(p)
-    return Path.home() / ".agent-runner" / project / "logs"
+    return _resolve_target(project)[1]
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +497,10 @@ def peek(
             phase=throttle.phase,
             throttled_agents=tuple(sorted(active)),
         )
-    raw_service = status(project if project is not None else work_dir)
+    # Resolve service state from the SAME project the events came from: work_dir
+    # is the Path peek loaded cfg/log_dir from (a bare name falls back to cwd),
+    # so status() can't drift to a sibling project's serve.pid.
+    raw_service = status(work_dir)
     svc = dataclasses.replace(raw_service, rate_limit=rate_limit)
 
     state = ProjectState(
