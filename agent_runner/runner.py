@@ -37,7 +37,7 @@ from agent_runner.events import (
     parse_iso_ms,
 )
 from agent_runner.monitor import NETWORK_PATTERNS
-from agent_runner.round_log import prune_rounds_dir
+from agent_runner.round_log import open_round_log, prune_rounds_dir
 
 
 class LockHeldError(RuntimeError):
@@ -201,7 +201,8 @@ def _scan_round_log_for_network_blip(
     if signal_name(result.exit_code) is not None:
         return  # signal death is a termination, not a network blip
     try:
-        text = log_path.read_text(encoding="utf-8", errors="replace")
+        with open_round_log(log_path) as fh:
+            text = fh.read()
     except FileNotFoundError:
         return
     m = NETWORK_PATTERNS.search(text)

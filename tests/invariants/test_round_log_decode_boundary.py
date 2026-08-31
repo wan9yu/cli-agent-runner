@@ -24,9 +24,22 @@ def test_open_round_log_pins_errors_replace() -> None:
     assert 'errors="replace"' in fn_src
 
 
-def test_monitor_tail_reader_uses_helper_not_bare_open() -> None:
-    src = (PKG / "monitor.py").read_text(encoding="utf-8")
-    fn = _func(ast.parse(src), "load_round_log_tails")
+def _assert_reader_uses_helper(module_name: str, func_name: str) -> None:
+    src = (PKG / module_name).read_text(encoding="utf-8")
+    fn = _func(ast.parse(src), func_name)
     names = _call_names(fn)
-    assert "open_round_log" in names, "round-log tail must decode via open_round_log"
-    assert "open" not in names, "no bare text-mode open() of a round log outside the helper"
+    assert "open_round_log" in names, f"{func_name} must decode round logs via open_round_log"
+    assert "open" not in names, f"{func_name} must not bare-open() a round log outside the helper"
+    assert "read_text" not in names, f"{func_name} must not read_text() a round log outside helper"
+
+
+def test_monitor_tail_reader_uses_helper_not_bare_open() -> None:
+    _assert_reader_uses_helper("monitor.py", "load_round_log_tails")
+
+
+def test_round_view_log_reader_uses_helper_not_bare_read_text() -> None:
+    _assert_reader_uses_helper("round_view.py", "build_round_view")
+
+
+def test_runner_network_blip_scan_uses_helper_not_bare_read_text() -> None:
+    _assert_reader_uses_helper("runner.py", "_scan_round_log_for_network_blip")

@@ -10,6 +10,7 @@ from typing import Any
 
 from agent_runner.api_types import RoundView
 from agent_runner.events import AGENT_EXIT, ROUND_START
+from agent_runner.round_log import open_round_log
 
 
 def resolve_round_arg(arg: int | str | None, log_dir: Path) -> int | None:
@@ -70,7 +71,8 @@ def build_round_view(
     log_tail: str | None = None
     if want_log:
         try:
-            lines = log_path.read_text(encoding="utf-8").splitlines()
+            with open_round_log(log_path) as fh:
+                lines = fh.read().splitlines()
             log_tail = "\n".join(lines[-tail_lines:])
         except FileNotFoundError:
             log_tail = None
