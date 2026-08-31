@@ -10,12 +10,20 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from agent_runner.config import _PROMPT_ALLOWED_FIELDS, _SCHEDULE_ALLOWED_FIELDS
+
 
 @dataclass(frozen=True)
 class Migration:
     detect: Callable[[dict], bool]  # old key present in the parsed TOML?
     apply: Callable[[str], str] | None  # raw-text rewrite; None = manual-only
-    describe: str  # report line (auto) or instruction (manual)
+    # Report line (auto) or instruction (manual). Usually a plain string so the
+    # docs gen-block (agent_runner/_docgen.py _render_migrate_transforms) can
+    # render the registry statically with no parsed config in hand. A handful
+    # of unknown-key transforms instead pass a `parsed -> str` callable so the
+    # manual report can name the exact offending key(s); docgen calls it with
+    # `{}` and gets the same generic instruction back (no keys to list yet).
+    describe: str | Callable[[dict], str]
 
 
 @dataclass(frozen=True)
@@ -42,23 +50,142 @@ def _has_flat_phase_override(parsed: dict) -> bool:
     return False
 
 
-def _rename_key(old: str, new: str) -> Callable[[str], str]:
-    """Rename a bare TOML assignment `old = ...` to `new = ...`, preserving indent,
-    spacing, value, and inline comment. Anchored to line-start assignments, so a
-    commented-out `# old = ...` or `old` inside a value/string is never matched."""
-    pat = re.compile(rf"(?m)^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=)")
-    return lambda text: pat.sub(rf"\g<indent>{new}\g<sp>", text)
+_TABLE_HEADER = re.compile(r"^\s*\[(?P<name>[^\]]+)\]")
+
+
+def _rename_key(old: str, new: str, table: str) -> Callable[[str], str]:
+    """Rename `old = ...` to `new = ...` but ONLY inside the [table] section.
+    Tracks the current `[header]` while scanning line-by-line, so a same-named
+    key in another table (e.g. a `[plugins.*]` sub-table) is left alone. If the
+    assignment resolves to anything other than exactly one line in the target
+    table, the rewrite is refused (text returned unchanged) and run_migrations
+    routes it to manual."""
+    assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=)")
+
+    def _apply(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        cur: str | None = None
+        hits: list[int] = []
+        for i, line in enumerate(lines):
+            h = _TABLE_HEADER.match(line)
+            if h:
+                cur = h.group("name").strip()
+                continue
+            if cur == table and assign.match(line):
+                hits.append(i)
+        if len(hits) != 1:
+            return text
+        lines[hits[0]] = assign.sub(rf"\g<indent>{new}\g<sp>", lines[hits[0]], count=1)
+        return "".join(lines)
+
+    return _apply
+
+
+def _wrap_bare_string_list(
+    key: str, table: str | re.Pattern, *, skip_space: bool = False
+) -> Callable[[str], str]:
+    """Wrap `key = "val"` into `key = ["val"]` inside [table], preserving the
+    quote style and any inline comment. Auto-fix for a single-value list field
+    (command="claude", list="dev", files="main.md"). `table` may instead be a
+    compiled pattern full-matched against the current `[header]` name (e.g. a
+    walker over `[phases.<name>.agent]`) — in that case EVERY matching
+    single-line assignment across matching tables is wrapped; the plain-string
+    form keeps its exactly-one-hit refusal.
+
+    `skip_space=True` leaves a space-bearing value's line untouched (the walker
+    over N sibling tables would otherwise auto-wrap a DIFFERENT phase's unsafe
+    `command = "claude -p"` just because some OTHER phase's space-free value
+    tripped this migration's detect — silently producing a technically-valid
+    but semantically-wrong single-token argv while a sibling manual-only
+    Migration also reports it. Used for command/prompt_arg_template, where a
+    space is the argv-splitting footgun the manual-only Migration owns; not
+    used for list/files, where a space is just an ordinary value character."""
+    assign = re.compile(
+        rf"^(?P<indent>[ \t]*){re.escape(key)}(?P<sp>[ \t]*=[ \t]*)"
+        rf'(?P<q>["\'])(?P<val>.*?)(?P=q)(?P<rest>.*)$'
+    )
+
+    def _table_matches(name: str) -> bool:
+        if isinstance(table, re.Pattern):
+            return bool(table.fullmatch(name))
+        return name == table
+
+    def _apply(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        cur: str | None = None
+        hits: list[int] = []
+        for i, line in enumerate(lines):
+            h = _TABLE_HEADER.match(line)
+            if h:
+                cur = h.group("name").strip()
+                continue
+            if cur is None or not _table_matches(cur):
+                continue
+            m = assign.match(line)
+            if not m or (skip_space and _has_space(m.group("val"))):
+                continue
+            hits.append(i)
+        if not hits:
+            return text
+        if not isinstance(table, re.Pattern) and len(hits) != 1:
+            return text
+        for i in hits:
+            lines[i] = assign.sub(
+                rf"\g<indent>{key}\g<sp>[\g<q>\g<val>\g<q>]\g<rest>", lines[i], count=1
+            )
+        return "".join(lines)
+
+    return _apply
+
+
+def _bare_str(parsed: dict, *path: str) -> str | None:
+    cur: object = parsed
+    for p in path:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(p)
+    return cur if isinstance(cur, str) else None
+
+
+def _has_space(s: str | None) -> bool:
+    return s is not None and any(c.isspace() for c in s)
+
+
+def _phase_subtables(parsed: dict) -> list[dict]:
+    """The per-phase sub-tables under [phases] (walker for per-phase variants)."""
+    phases = parsed.get("phases", {})
+    if not isinstance(phases, dict):
+        return []
+    return [v for v in phases.values() if isinstance(v, dict)]
+
+
+def _unknown_key_desc(table: str, allowed: frozenset[str]) -> Callable[[dict], str]:
+    """Build a `parsed -> str` description for an unknown-key-under-[table]
+    Migration: names the exact offending key(s) found in THIS config, and
+    degrades to a generic (still correct) instruction when called with no
+    config in hand (docgen's static registry render calls every describe with
+    `{}`, where there is nothing yet to name)."""
+
+    def _describe(parsed: dict) -> str:
+        bad = sorted(set(parsed.get(table, {})) - allowed)
+        offending = f": {bad}" if bad else ""
+        return (
+            f"unknown [{table}] key(s) rejected in 0.2.12{offending}; delete them "
+            f"(allowed: {sorted(allowed)})"
+        )
+
+    return _describe
 
 
 MIGRATIONS: list[Migration] = [
     Migration(
         detect=lambda p: "rate_limit_action" in p.get("runtime", {}),
-        apply=_rename_key("rate_limit_action", "transient_error_action"),
+        apply=_rename_key("rate_limit_action", "transient_error_action", "runtime"),
         describe="runtime.rate_limit_action → runtime.transient_error_action",
     ),
     Migration(
         detect=lambda p: "orphan_action" in p.get("vcs", {}),
-        apply=_rename_key("orphan_action", "dirty_action"),
+        apply=_rename_key("orphan_action", "dirty_action", "vcs"),
         describe="vcs.orphan_action → vcs.dirty_action",
     ),
     Migration(
@@ -78,7 +205,165 @@ MIGRATIONS: list[Migration] = [
             "(the flat form still works as an alias)"
         ),
     ),
+    # --- top-level bare-string-list footguns (D1 hard-rejects these; the safe
+    # ones auto-fix by wrapping in a single-element list) ---
+    Migration(
+        detect=lambda p: (
+            _bare_str(p, "agent", "command") is not None
+            and not _has_space(_bare_str(p, "agent", "command"))
+        ),
+        apply=_wrap_bare_string_list("command", "agent"),
+        describe='agent.command "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: _has_space(_bare_str(p, "agent", "command")),
+        apply=None,
+        describe=(
+            "[agent] command is a quoted string with spaces; rewrite it as an "
+            'argv list, e.g. command = ["claude", "-p"] '
+            "(auto-split is unsafe — shell quoting rules differ)"
+        ),
+    ),
+    Migration(
+        detect=lambda p: (
+            _bare_str(p, "agent", "prompt_arg_template") is not None
+            and not _has_space(_bare_str(p, "agent", "prompt_arg_template"))
+        ),
+        apply=_wrap_bare_string_list("prompt_arg_template", "agent"),
+        describe='agent.prompt_arg_template "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: _has_space(_bare_str(p, "agent", "prompt_arg_template")),
+        apply=None,
+        describe=(
+            "[agent] prompt_arg_template is a quoted string with spaces; rewrite "
+            'it as a list, e.g. prompt_arg_template = ["-p", "{prompt}"]'
+        ),
+    ),
+    Migration(
+        detect=lambda p: _bare_str(p, "phases", "list") is not None,
+        apply=_wrap_bare_string_list("list", "phases"),
+        describe='phases.list "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: _bare_str(p, "prompt", "files") is not None,
+        apply=_wrap_bare_string_list("files", "prompt"),
+        describe='prompt.files "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: p.get("agent", {}).get("command") == [],
+        apply=None,
+        describe=(
+            '[agent] command is empty; set a real argv list, e.g. command = ["claude"] '
+            "(no auto-fix — a real value is needed)"
+        ),
+    ),
+    Migration(
+        detect=lambda p: p.get("prompt", {}).get("files") == [],
+        apply=None,
+        describe=(
+            "empty top-level [prompt] files; give it real paths or remove the key "
+            "(per-phase [phases.<name>.prompt] files = [] stays valid)"
+        ),
+    ),
+    # --- per-phase variants (walker over [phases.<name>.*] sub-tables) ---
+    Migration(
+        detect=lambda p: any(
+            isinstance(sub.get("agent"), dict) and sub["agent"].get("command") == []
+            for sub in _phase_subtables(p)
+        ),
+        apply=None,
+        describe=(
+            "a [phases.<name>.agent] command is empty; set a real argv list "
+            "(no auto-fix — a real value is needed)"
+        ),
+    ),
+    Migration(
+        detect=lambda p: any(
+            _bare_str(sub, "agent", "command") is not None
+            and not _has_space(_bare_str(sub, "agent", "command"))
+            for sub in _phase_subtables(p)
+        ),
+        apply=_wrap_bare_string_list(
+            "command", re.compile(r"phases\.[^.\]]+\.agent"), skip_space=True
+        ),
+        describe='phases.<name>.agent.command "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: any(
+            _has_space(_bare_str(sub, "agent", "command"))
+            or _has_space(_bare_str(sub, "agent", "prompt_arg_template"))
+            for sub in _phase_subtables(p)
+        ),
+        apply=None,
+        describe=(
+            "a [phases.<name>.agent] command/prompt_arg_template is a quoted string "
+            "with spaces; rewrite it as an argv list (auto-split is unsafe)"
+        ),
+    ),
+    Migration(
+        detect=lambda p: any(
+            _bare_str(sub, "agent", "prompt_arg_template") is not None
+            and not _has_space(_bare_str(sub, "agent", "prompt_arg_template"))
+            for sub in _phase_subtables(p)
+        ),
+        apply=_wrap_bare_string_list(
+            "prompt_arg_template", re.compile(r"phases\.[^.\]]+\.agent"), skip_space=True
+        ),
+        describe='phases.<name>.agent.prompt_arg_template "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: any(
+            _bare_str(sub, "prompt", "files") is not None for sub in _phase_subtables(p)
+        ),
+        apply=_wrap_bare_string_list("files", re.compile(r"phases\.[^.\]]+\.prompt")),
+        describe='phases.<name>.prompt.files "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: any(
+            isinstance(sub.get("schedule"), dict)
+            and set(sub["schedule"]) - _SCHEDULE_ALLOWED_FIELDS
+            for sub in _phase_subtables(p)
+        ),
+        apply=None,
+        describe=(
+            f"unknown [phases.<name>.schedule] key(s) rejected in 0.2.12; delete them "
+            f"(allowed: {sorted(_SCHEDULE_ALLOWED_FIELDS)})"
+        ),
+    ),
+    # --- top-level unknown-key / threshold footguns (manual-only: naming the
+    # exact offending key(s) requires the loader's own ConfigError) ---
+    Migration(
+        detect=lambda p: bool(set(p.get("prompt", {})) - _PROMPT_ALLOWED_FIELDS),
+        apply=None,
+        describe=_unknown_key_desc("prompt", _PROMPT_ALLOWED_FIELDS),
+    ),
+    Migration(
+        detect=lambda p: bool(set(p.get("schedule", {})) - _SCHEDULE_ALLOWED_FIELDS),
+        apply=None,
+        describe=_unknown_key_desc("schedule", _SCHEDULE_ALLOWED_FIELDS),
+    ),
+    Migration(
+        detect=lambda p: (
+            (p.get("monitor", {}).get("anomaly_repetitive_threshold") or 0) > 0
+            and (p.get("monitor", {}).get("anomaly_repetitive_window") or 0) > 0
+            and p["monitor"]["anomaly_repetitive_threshold"]
+            > p["monitor"]["anomaly_repetitive_window"]
+        ),
+        apply=None,
+        describe=(
+            "monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: "
+            "lower the threshold or raise the window so the detector can fire"
+        ),
+    ),
 ]
+
+
+def _describe(m: Migration, parsed: dict) -> str:
+    """Resolve a Migration's report line: a plain string as-is, or a
+    `parsed -> str` callable invoked with the actual config (so it can name
+    the exact offending key(s) detected in THIS file)."""
+    return m.describe(parsed) if callable(m.describe) else m.describe
 
 
 def run_migrations(text: str, parsed: dict) -> MigrationResult:
@@ -88,15 +373,16 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
     for m in MIGRATIONS:
         if not m.detect(parsed):
             continue
+        desc = _describe(m, parsed)
         if m.apply is None:
-            manual.append(m.describe)
+            manual.append(desc)
             continue
         rewritten = m.apply(new_text)
         if rewritten == new_text:
             # Detected but the line-anchored rename matched nothing (e.g. a
             # dotted-key `runtime.rate_limit_action = ...` at top level) —
             # route to manual so we never report "applied" on an unchanged file.
-            manual.append(m.describe)
+            manual.append(desc)
             continue
         try:
             tomllib.loads(rewritten)
@@ -107,9 +393,9 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
             # a manual instruction instead so `migrate`/`upgrade` don't corrupt
             # the file and then traceback on the next load.
             manual.append(
-                m.describe + " (target key already present — remove the deprecated key manually)"
+                desc + " (target key already present — remove the deprecated key manually)"
             )
             continue
         new_text = rewritten
-        applied.append(m.describe)
+        applied.append(desc)
     return MigrationResult(new_text=new_text, applied=applied, manual=manual)

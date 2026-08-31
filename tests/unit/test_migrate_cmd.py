@@ -83,3 +83,16 @@ def test_integration_migrated_config_loads(tmp_path):
     loaded = load_config(cfg)  # was rejecting the old keys before
     assert loaded.runtime.transient_error_action == "skip"
     assert loaded.vcs.dirty_action == "ignore"
+
+
+def test_migrate_bare_command_then_config_loads(tmp_path):
+    from agent_runner.config import load_config
+
+    body = (
+        '[agent]\ncommand = "true"\nprompt_arg_template = ["-p"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+    )
+    cfg = _write(tmp_path, body)
+    assert migrate_cmd.cmd(_args(cfg)) == 0
+    load_config(cfg)  # the rewritten file loads clean under 0.2.12 strictness

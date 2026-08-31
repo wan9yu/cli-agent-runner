@@ -253,6 +253,23 @@ The transforms `migrate` applies (generated from the registry):
 - vcs.orphan_action → vcs.dirty_action
 - runtime.round_timeout_per_phase (removed 0.1.16) must be moved manually to [phases.<name>] round_timeout_s
 - flat round_timeout_s/disable_pre_round_hooks under [phases.<name>] should move under a nested [phases.<name>.runtime] sub-table (the flat form still works as an alias)
+- agent.command "x" → ["x"]
+- [agent] command is a quoted string with spaces; rewrite it as an argv list, e.g. command = ["claude", "-p"] (auto-split is unsafe — shell quoting rules differ)
+- agent.prompt_arg_template "x" → ["x"]
+- [agent] prompt_arg_template is a quoted string with spaces; rewrite it as a list, e.g. prompt_arg_template = ["-p", "{prompt}"]
+- phases.list "x" → ["x"]
+- prompt.files "x" → ["x"]
+- [agent] command is empty; set a real argv list, e.g. command = ["claude"] (no auto-fix — a real value is needed)
+- empty top-level [prompt] files; give it real paths or remove the key (per-phase [phases.<name>.prompt] files = [] stays valid)
+- a [phases.<name>.agent] command is empty; set a real argv list (no auto-fix — a real value is needed)
+- phases.<name>.agent.command "x" → ["x"]
+- a [phases.<name>.agent] command/prompt_arg_template is a quoted string with spaces; rewrite it as an argv list (auto-split is unsafe)
+- phases.<name>.agent.prompt_arg_template "x" → ["x"]
+- phases.<name>.prompt.files "x" → ["x"]
+- unknown [phases.<name>.schedule] key(s) rejected in 0.2.12; delete them (allowed: ['pause_windows', 'run_windows', 'timezone'])
+- unknown [prompt] key(s) rejected in 0.2.12; delete them (allowed: ['concat_separator', 'context_injection_mode', 'file', 'files', 'inject_context', 'strip_yaml_frontmatter'])
+- unknown [schedule] key(s) rejected in 0.2.12; delete them (allowed: ['pause_windows', 'run_windows', 'timezone'])
+- monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: lower the threshold or raise the window so the detector can fire
 <!-- /gen:migrate-transforms -->
 
 ## 中文摘要

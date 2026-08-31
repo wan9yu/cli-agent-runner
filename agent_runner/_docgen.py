@@ -157,10 +157,16 @@ def render_event_kinds_list() -> str:
 
 
 def _render_migrate_transforms() -> str:
-    """Bullet list of the transforms `agent-runner migrate` applies, from the registry."""
+    """Bullet list of the transforms `agent-runner migrate` applies, from the registry.
+    A few entries carry a `parsed -> str` describe (so the manual report can name the
+    exact offending key found in a real config); rendered here with `{}`, which degrades
+    to the same generic instruction since there's no config in hand."""
     from agent_runner.migrations import MIGRATIONS
 
-    return "\n".join(f"- {m.describe}" for m in MIGRATIONS)
+    def _line(m) -> str:
+        return m.describe({}) if callable(m.describe) else m.describe
+
+    return "\n".join(f"- {_line(m)}" for m in MIGRATIONS)
 
 
 def _subparser_action() -> argparse.Action:
