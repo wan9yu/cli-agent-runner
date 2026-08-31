@@ -46,6 +46,9 @@ from agent_runner.events import (
     MONITOR_ALERT_EMITTED,
     MONITOR_AUTO_STOP_FAILED,
     MONITOR_AUTO_STOP_TRIGGERED,
+    MONITOR_REMOTE_BLIP,
+    MONITOR_REMOTE_GIVEUP,
+    MONITOR_STARTED,
     ORPHAN_STASHED,
     ROUND_END,
     ROUND_START,
@@ -75,6 +78,21 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "supervisor_stale",
     }
 )
+
+_MONITOR_SELF_KINDS: frozenset[str] = frozenset(
+    {
+        MONITOR_ALERT_EMITTED,
+        MONITOR_AUTO_STOP_FAILED,
+        MONITOR_AUTO_STOP_TRIGGERED,
+        MONITOR_REMOTE_BLIP,
+        MONITOR_REMOTE_GIVEUP,
+        MONITOR_STARTED,
+        DETECTOR_ERROR,
+    }
+)
+"""Kinds a monitor process writes into the very stream it reads. Excluded from
+detect_supervisor_stale's freshness baseline (ouroboros: the monitor must not
+measure its own emissions, or a busy monitor over a dead supervisor never alarms)."""
 
 # Built-in detectors whose ``auto_action="stop_service"`` is honored by default
 # (continuing in either state actively harms the host: burning API quota / writing
@@ -485,9 +503,10 @@ def detect_supervisor_stale(
     sentinel). Empty event list → no alert: that is "never started", not
     silent-death, and there is no baseline to measure staleness against.
     """
-    if stale_threshold_s <= 0 or not events:
+    supervised = [e for e in events if e.get("event") not in _MONITOR_SELF_KINDS]
+    if stale_threshold_s <= 0 or not supervised:
         return None
-    last_ts_str = max((e["ts"] for e in events if "ts" in e), default=None)
+    last_ts_str = max((e["ts"] for e in supervised if "ts" in e), default=None)
     if last_ts_str is None:
         return None
     age_s = (now - parse_iso_ms(last_ts_str)).total_seconds()

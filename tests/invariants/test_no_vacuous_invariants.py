@@ -23,6 +23,7 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_atomic_write_enforced.py",
     "test_doc_test_pointers_exist.py",
     "test_stash_uses_sha_not_index.py",
+    "test_monitor_self_exclusion.py",
 )
 
 
