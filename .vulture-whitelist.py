@@ -290,6 +290,7 @@ name
 ok
 reason
 how_to_fix
+permanent
 
 # agent_runner.vcs_state.StashRef
 sha

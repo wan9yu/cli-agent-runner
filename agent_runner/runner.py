@@ -337,7 +337,7 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
                 file=sys.stderr,
             )
             events.emit(log_dir, events.SMOKE_CHECK_FAILED, reason=f"{r.name}: {r.reason}")
-        sys.exit(api.PERMANENT_CONFIG_EXIT)
+        sys.exit(startup_check.battery_exit_code(failures))
 
     # Concurrency lock (per-project)
     lock_path = log_dir / "agent-runner.lock"

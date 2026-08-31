@@ -11,6 +11,7 @@ import pytest
 from agent_runner.api import (
     CRASH_LOOP_EXIT,
     CRASH_LOOP_THRESHOLD,
+    ENV_BATTERY_EXIT,
     PERMANENT_CONFIG_EXIT,
     post_round_decision,
 )
@@ -64,6 +65,27 @@ def test_given_clean_rounds_when_serve_then_no_crash_loop(
     kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
     assert "crash_loop" not in kinds
     assert "max_rounds_reached" in kinds
+
+
+def test_given_consecutive_env_battery_exits_when_serve_then_no_crash_loop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A ~5-round environmental outage (76, mirrors an active throttle) must not
+    trip the crash-loop breaker — it should keep restarting with an escalating
+    delay until max_rounds, never emitting crash_loop."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn([ENV_BATTERY_EXIT]))
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=6))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "crash_loop" not in kinds
+    assert "max_rounds_reached" in kinds
+    assert rc == 0
 
 
 def test_given_success_between_crashes_when_serve_then_counter_resets(

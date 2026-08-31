@@ -24,6 +24,11 @@ class CheckResult:
     ok: bool
     reason: str = ""
     how_to_fix: str = ""
+    # PERMANENT (config-class, no retry) vs ENVIRONMENTAL (recoverable, retry) —
+    # see battery_exit_code. Defaults to False (environmental) per the locked
+    # decision "unclassified → environmental": a check nobody has explicitly
+    # marked permanent is safer treated as retry-able than as a hard stop.
+    permanent: bool = False
 
 
 def _check_log_dir(cfg: Config) -> CheckResult:
@@ -44,7 +49,7 @@ def _check_log_dir(cfg: Config) -> CheckResult:
 
 def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckResult:
     if not agent.command:
-        return CheckResult(name, False, "agent.command is empty")
+        return CheckResult(name, False, "agent.command is empty", permanent=True)
     cli = agent.command[0]
     # Validate with the exact resolution the spawn uses (agent_runtime owns
     # the model): slash-containing commands resolve against work_dir (the
@@ -65,6 +70,7 @@ def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckR
                 if relative
                 else f"install {cli} or set agent.command[0] to its absolute path"
             ),
+            permanent=True,
         )
     return CheckResult(name, True)
 
@@ -78,6 +84,7 @@ def _check_work_dir_is_git(cfg: Config) -> CheckResult:
             False,
             reason=f"{cfg.runtime.work_dir} is not a git working tree",
             how_to_fix="run `git init` in the work_dir, or change runtime.work_dir in config",
+            permanent=True,
         )
     return CheckResult("work_dir_is_git_repo", True)
 
@@ -93,6 +100,7 @@ def _check_prompt_file(cfg: Config) -> CheckResult:
             False,
             reason="no prompt files configured",
             how_to_fix="set prompt.file or prompt.files in agent-runner.toml",
+            permanent=True,
         )
     first = targets[0]
     if not first.exists():
@@ -101,37 +109,42 @@ def _check_prompt_file(cfg: Config) -> CheckResult:
             False,
             reason=f"{first} does not exist",
             how_to_fix="create the prompt .md file or fix prompt.file / prompt.files[0] in config",
+            permanent=True,
         )
     return CheckResult("prompt_file_exists", True)
 
 
-def _check_prompt_smoke(cfg: Config) -> CheckResult:
+def _check_prompt_smoke(
+    cfg: Config, *, phase: str | None = None, name: str = "prompt_smoke_passes"
+) -> CheckResult:
     from agent_runner.api import assemble_prompt as _api_assemble_prompt
 
     try:
-        prompt = _api_assemble_prompt(cfg, phase=None, context=None)
+        prompt = _api_assemble_prompt(cfg, phase=phase, context=None)
     except Exception as e:
-        return CheckResult("prompt_smoke_passes", False, f"assembly failed: {e}")
+        return CheckResult(name, False, f"assembly failed: {e}", permanent=True)
     if not prompt:
-        return CheckResult("prompt_smoke_passes", False, "assembled prompt is empty")
+        return CheckResult(name, False, "assembled prompt is empty", permanent=True)
     if prompt[0] in _FORBIDDEN_FIRST_CHARS:
         return CheckResult(
-            "prompt_smoke_passes",
+            name,
             False,
             reason=(
                 f"first char {prompt[0]!r} is forbidden (R721 — agent CLI argv parsers "
                 f"may reject leading dash/whitespace as a flag terminator)"
             ),
             how_to_fix="ensure the prompt body does not start with -, space, or newline",
+            permanent=True,
         )
     if len(prompt.encode("utf-8")) < _MIN_PROMPT_BYTES:
         return CheckResult(
-            "prompt_smoke_passes",
+            name,
             False,
             reason=(f"prompt is {len(prompt.encode('utf-8'))} bytes < {_MIN_PROMPT_BYTES} minimum"),
             how_to_fix="add substantive content — a stub prompt suggests a broken config",
+            permanent=True,
         )
-    return CheckResult("prompt_smoke_passes", True)
+    return CheckResult(name, True)
 
 
 def _check_config_loaded(cfg: Config) -> CheckResult:
@@ -171,8 +184,36 @@ def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
     return results
 
 
+def _phase_prompt_checks(cfg: Config) -> list[CheckResult]:
+    """Smoke-check every phase that OVERRIDES the prompt (`[phases.<name>.prompt]`)
+    — mirror of _agent_cli_checks onto prompts — so a broken phase prompt fails at
+    boot instead of silent-burning the round it would run. Phases with no override
+    (prompt_files is None) reuse the base prompt, already checked; an explicit
+    `prompt.files = []` (a documented distinct state since 0.2.9) is preserved and
+    not treated as broken here."""
+    phases = cfg.phases
+    if phases is None:
+        return []
+    results: list[CheckResult] = []
+    for phase in phases.list or []:
+        if cfg.profile_for(phase).prompt_files is None:
+            continue
+        results.append(_check_prompt_smoke(cfg, phase=phase, name=f"prompt_smoke_passes:{phase}"))
+    return results
+
+
 def run_battery(cfg: Config) -> list[CheckResult]:
     """Run all checks. Returns empty list if escape hatch env is set."""
     if os.environ.get(ESCAPE_HATCH_ENV, "").lower() in ("1", "true", "yes", "on"):
         return []
-    return [check(cfg) for check in CHECKS] + _agent_cli_checks(cfg)
+    return [check(cfg) for check in CHECKS] + _agent_cli_checks(cfg) + _phase_prompt_checks(cfg)
+
+
+def battery_exit_code(failures: list[CheckResult]) -> int:
+    """Map failing battery results to an exit code: any PERMANENT failure → 78
+    (config_broken; systemd keeps the unit stopped); otherwise every failure is
+    ENVIRONMENTAL → 76 (recoverable; serve retries with escalating back-off).
+    Permanent wins — a real config break is not masked by a concurrent disk blip."""
+    from agent_runner.api import ENV_BATTERY_EXIT, PERMANENT_CONFIG_EXIT
+
+    return PERMANENT_CONFIG_EXIT if any(f.permanent for f in failures) else ENV_BATTERY_EXIT

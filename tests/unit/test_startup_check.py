@@ -124,3 +124,41 @@ def test_given_relative_slash_command_missing_in_work_dir_then_cli_check_fails(
     cli = next(r for r in results if r.name == "agent_cli_in_path")
     assert not cli.ok
     assert str(tmp_git_repo) in cli.reason
+
+
+def test_checkresult_permanent_defaults_false(tmp_git_repo: Path) -> None:
+    # Unclassified checks are environmental by default (locked decision).
+    assert CheckResult("x", ok=False, reason="r").permanent is False
+
+
+def test_non_git_workdir_is_permanent(tmp_path: Path) -> None:
+    failed = [r for r in run_battery(_cfg(tmp_path)) if not r.ok]
+    git = next(r for r in failed if r.name == "work_dir_is_git_repo")
+    assert git.permanent is True
+
+
+def test_log_dir_write_failure_is_environmental(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_a, **_k):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "mkdir", boom)
+    failed = [r for r in run_battery(_cfg(tmp_git_repo)) if not r.ok]
+    log = next(r for r in failed if r.name == "log_dir_writable")
+    assert log.permanent is False  # ENOSPC → recoverable → environmental
+
+
+def test_broken_phase_prompt_override_fails_battery_by_name(tmp_git_repo: Path) -> None:
+    from agent_runner.config import PhaseOverride, PhasesConfig
+
+    cfg = _cfg(tmp_git_repo)
+    missing = tmp_git_repo / "no-such-phase-prompt.md"
+    object.__setattr__(
+        cfg,
+        "phases",
+        PhasesConfig(list=["dev"], overrides={"dev": PhaseOverride(prompt_files=[missing])}),
+    )
+    failed = [r for r in run_battery(cfg) if not r.ok]
+    dev = next(r for r in failed if r.name == "prompt_smoke_passes:dev")
+    assert dev.permanent is True
