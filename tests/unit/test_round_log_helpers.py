@@ -147,6 +147,39 @@ def test_given_file_vanishes_between_glob_and_stat_when_prune_then_skips_not_rai
     assert not (tmp_path / "round-1.log").exists()
 
 
+def test_given_dangling_symlink_when_prune_then_no_crash_and_skipped(tmp_path: Path) -> None:
+    """A round-*.log symlink whose target is gone must not raise during the
+    mtime sort (p.stat() follows the link → FileNotFoundError) and must never
+    be a deletion candidate."""
+    _write_round_logs(tmp_path, 3)  # round-1..3
+    dangling = tmp_path / "round-9.log"
+    dangling.symlink_to(tmp_path / "gone-target.log")  # target does not exist
+
+    outcome = prune_old_round_logs(tmp_path, retention=2)
+
+    assert dangling.is_symlink()  # untouched
+    assert not (tmp_path / "round-1.log").exists()  # oldest regular file pruned
+    assert outcome.deleted == 1
+
+
+def test_given_file_deleted_during_sort_when_prune_then_skips_entry(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """TOCTOU: a regular round-*.log vanishing between glob and lstat is skipped,
+    not raised."""
+    _write_round_logs(tmp_path, 3)
+    real_lstat = Path.lstat
+
+    def flaky_lstat(self):
+        if self.name == "round-2.log":
+            raise FileNotFoundError(self)
+        return real_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", flaky_lstat)
+    outcome = prune_old_round_logs(tmp_path, retention=1)  # must not raise
+    assert outcome.deleted >= 1
+
+
 def test_given_retention_zero_when_prune_old_round_logs_then_never_prunes(
     tmp_path: Path,
 ) -> None:

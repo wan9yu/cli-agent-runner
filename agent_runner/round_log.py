@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -71,21 +72,32 @@ def _is_bulk(stale: int, keep: int) -> bool:
 
 
 def _mtime_or_none(path: Path) -> float | None:
-    """``path``'s mtime, or ``None`` if it no longer exists.
+    """``path``'s mtime, or ``None`` if it no longer exists or is a symlink.
 
     Bridges the TOCTOU gap between ``glob()`` enumerating a file and the
-    ``stat()`` call here: a concurrent cleanup / logrotate / another tool
+    ``lstat()`` call here: a concurrent cleanup / logrotate / another tool
     churning the log dir at serve startup can delete an entry in between. That
     race is routine, not an error — the file being gone already means
     "nothing to prune here" — so it degrades to "skip this entry", never
     propagates ``FileNotFoundError`` (which would otherwise reach
     ``serve_cmd._prepare_loop``'s deterministic-startup guard and misclassify
     a transient race as a permanent config failure).
+
+    Uses ``lstat`` (not ``stat``) so a ``round-*.log`` entry that turns out to
+    be a symlink is inspected without following it — a dangling target would
+    otherwise raise ``FileNotFoundError`` here, and a live target would
+    wrongly borrow the target's mtime and get treated as a real log file. A
+    symlink (dangling or not) is never a real round log, so it degrades the
+    same way as "vanished": excluded from consideration entirely, never a
+    deletion candidate.
     """
     try:
-        return path.stat().st_mtime
+        st = path.lstat()
     except FileNotFoundError:
         return None
+    if stat.S_ISLNK(st.st_mode):
+        return None
+    return st.st_mtime
 
 
 def atomic_relink(link: Path, target: Path) -> None:
@@ -117,11 +129,16 @@ def prune_old_round_logs(log_dir: Path, retention: int) -> PruneOutcome:
         return PruneOutcome(deleted=0, deferred=0, existing=0)
     present = []
     for p in log_dir.glob("round-*.log"):
+        # Exclude round-current.log up front — a dangling symlink here must
+        # never even reach lstat, let alone the sort. Any *other* round-*.log
+        # symlink (unexpected, but defended anyway) is excluded by
+        # _mtime_or_none returning None for it.
+        if p.name == ROUND_CURRENT_LINK:
+            continue
         mtime = _mtime_or_none(p)
         if mtime is not None:
             present.append((p, mtime))
     logs = [p for p, _mtime in sorted(present, key=lambda pair: pair[1], reverse=True)]
-    logs = [p for p in logs if p.name != ROUND_CURRENT_LINK]
     stale = logs[retention:]
     if _is_bulk(len(stale), retention):
         return PruneOutcome(deleted=0, deferred=len(stale), existing=len(logs))
