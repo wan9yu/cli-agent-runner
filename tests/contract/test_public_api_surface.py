@@ -158,3 +158,129 @@ def test_given_vcs_state_module_when_imported_then_plugin_owned_paths_api_presen
         f"agent_runner.vcs_state: missing public names {missing}. "
         f"Plugin authors registered against the 0.1.8 names — do not remove without major bump."
     )
+
+
+# Baseline pin for the 0.2.12 Group G split (api.py -> _serve_policy et al.).
+# This is `_public_names("agent_runner.api")` frozen at HEAD before the split
+# starts: EVERY name `dir(agent_runner.api)` exposes today, minus underscored
+# ones -- including stdlib/typing re-exports (Path, Any, Literal, ...),
+# submodules imported at module scope (events, monitor, lifecycle, ...), and
+# genuine public API (start/stop/..., emit_* wrappers, read_round_num, ...).
+# Exact equality (not subset) is intentional: G1-G3 must not drop OR add a
+# name here silently. If a later task deliberately changes api's surface,
+# update this set in the same commit and say why.
+EXPECTED_API_SURFACE = {
+    "AGENT_NETWORK_BLIP",
+    "Any",
+    "AutoCommitError",
+    "CRASH_LOOP_EXIT",
+    "CRASH_LOOP_MAX_DELAY_S",
+    "CRASH_LOOP_SHORT_EXIT_S",
+    "CRASH_LOOP_THRESHOLD",
+    "Config",
+    "ENV_BATTERY_EXIT",
+    "HOOK_FAILED",
+    "InitResult",
+    "InstallResult",
+    "Iterator",
+    "Literal",
+    "MONITOR_STARTED",
+    "PERMANENT_CONFIG_EXIT",
+    "PIDFile",
+    "Path",
+    "ProjectState",
+    "RateLimitState",
+    "RuntimeConfig",
+    "SYSTEM_CLOCK",
+    "Sequence",
+    "ServiceMode",
+    "ServiceStatus",
+    "StashError",
+    "TextIO",
+    "annotations",
+    "assemble_prompt",
+    "check_self_terminated_sentinel",
+    "dataclasses",
+    "defenses",
+    "detect_service_mode",
+    "emit_agent_auth_error_detected",
+    "emit_agent_usage_recorded",
+    "emit_anomaly_repetitive_tool",
+    "emit_config_broken",
+    "emit_config_migrated",
+    "emit_crash_loop",
+    "emit_fresh_eyes_round_triggered",
+    "emit_max_rounds_reached",
+    "emit_rate_limit_stop",
+    "emit_round_grace_extended",
+    "emit_round_grace_kill",
+    "emit_round_logs_prune_deferred",
+    "emit_round_progress",
+    "emit_round_substrate_after",
+    "emit_round_substrate_before",
+    "emit_round_supervisor_wedged",
+    "emit_schedule_paused",
+    "emit_schedule_phase_skipped",
+    "emit_schedule_resumed",
+    "emit_stale_index_lock_cleared",
+    "emit_stop_file_detected",
+    "emit_transient_error_backoff_capped",
+    "emit_transient_error_detected",
+    "emit_transient_error_recovered",
+    "events",
+    "init",
+    "install",
+    "kill",
+    "lifecycle",
+    "load_config",
+    "monitor",
+    "monitor_loop",
+    "monitor_unit_filename",
+    "narrate_events",
+    "os",
+    "outer_round_ceiling_s",
+    "peek",
+    "pid_alive",
+    "post_round_decision",
+    "re",
+    "read_round_num",
+    "read_sentinel_content",
+    "relay_remote_events",
+    "render_monitor_unit",
+    "render_serve_unit",
+    "resolve_runtime_for_phase",
+    "restart",
+    "scaffold_project",
+    "select_path",
+    "send_signal_to_pid",
+    "serve_unit_filename",
+    "shutil",
+    "signal",
+    "start",
+    "stash_orphan",
+    "status",
+    "stop",
+    "stream_events_jsonl",
+    "subprocess",
+    "sysconfig",
+    "try_auto_commit",
+    "uninstall",
+}
+
+
+def test_given_api_module_when_imported_then_public_surface_pinned() -> None:
+    """0.2.12 Group G0: freeze api's importable surface before the split.
+
+    Uses exact equality (not the subset check other tests in this file use)
+    so G1-G3 fail loudly on either a dropped name (a real regression) or an
+    added one (a deliberate change that must update this pin in the same
+    commit)."""
+    actual = _public_names("agent_runner.api")
+    missing = EXPECTED_API_SURFACE - actual
+    added = actual - EXPECTED_API_SURFACE
+    assert not missing and not added, (
+        f"agent_runner.api public surface drifted from the 0.2.12 Group G0 "
+        f"baseline pin -- missing: {missing or '{}'}, added: {added or '{}'}. "
+        f"If this split intentionally changed api's public surface, update "
+        f"EXPECTED_API_SURFACE in this file in the same commit and explain why."
+    )
