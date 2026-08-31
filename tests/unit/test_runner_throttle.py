@@ -159,6 +159,36 @@ def test_pending_recovered_overlapping_one_clears_while_other_active(tmp_path):
     assert pending == [("claude", "rate_limit_account", 200)]
 
 
+def test_pending_recovered_holds_for_estimated_class_until_extended_reset(tmp_path):
+    """Estimated-class ladder: once _backoff_exponent pushes the effective reset
+    past the emitter's raw reset_at_epoch, pending_recovered must NOT report the
+    agent cleared just because the RAW reset passed — it has to agree with
+    _active_throttles, which gates on the exp-backoff-EXTENDED reset. Otherwise
+    the skip loop emits a recovered breadcrumb while the ladder still holds,
+    the agent drops out of _active_throttles early, and its phase retries at the
+    flat raw cadence instead of the escalated one."""
+    from agent_runner._throttle import _active_throttles, pending_recovered
+
+    raw_reset = 10_000
+    # Two detections for the same agent -> _backoff_exponent == 1 -> api_transient_5xx
+    # (base=60s) extension = 60 * (2**1 - 1) = 60s -> extended reset = raw_reset + 60.
+    _write_events(
+        tmp_path,
+        [
+            _detected(raw_reset, ts=_iso(raw_reset - 120), agent="codex", cls="api_transient_5xx"),
+            _detected(raw_reset, ts=_iso(raw_reset - 60), agent="codex", cls="api_transient_5xx"),
+        ],
+    )
+    still_extended = FakeClock(epoch=float(raw_reset + 30))  # past raw, before extended
+    assert "codex" in _active_throttles(tmp_path, clock=still_extended)
+    assert pending_recovered(tmp_path, clock=still_extended) == []
+
+    past_extended = FakeClock(epoch=float(raw_reset + 61))  # past the extended reset too
+    assert "codex" not in _active_throttles(tmp_path, clock=past_extended)
+    pending = pending_recovered(tmp_path, clock=past_extended)
+    assert pending and pending[0][0] == "codex"
+
+
 def test_active_throttles_keys_by_agent_multiple(tmp_path):
     from agent_runner._throttle import _active_throttles
 

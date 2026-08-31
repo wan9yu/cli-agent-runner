@@ -341,12 +341,17 @@ def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tup
     detected one and the agent drops out. Per-agent, so an agent that cleared is
     reported even while a sibling is still throttled (overlapping recovery); an empty
     list means nothing cleared (all still throttled, or the back-off path already left
-    a recovered)."""
-    now = clock.epoch()
+    a recovered).
+
+    An agent is reported cleared only once its EXP-BACKOFF-EXTENDED reset has
+    passed (i.e. it has dropped out of :func:`_active_throttles`), never merely
+    its raw emitter reset — otherwise the skip loop would emit ``recovered`` while
+    still gating the agent, flattening the ladder."""
+    active = _active_throttles(log_dir, clock=clock)
     cleared: list[tuple[str, str, int]] = []
     for agent, detected in _latest_transient_per_agent(log_dir).items():
-        if detected is None or _coerce_int(detected.get("reset_at_epoch"), 0) > now:
-            continue  # None = latest was a recovered; > now = still throttled
+        if detected is None or agent in active:
+            continue  # None = latest was a recovered; in active = extended reset still future
         cleared.append(
             (
                 agent,
