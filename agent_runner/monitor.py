@@ -186,18 +186,25 @@ def detect_hung(
             open_rounds[rn] = (e["ts"], e.get("phase"))
         elif kind == ROUND_END and rn in open_rounds:
             del open_rounds[rn]
-    for rn, (started_ts, phase) in open_rounds.items():
-        started = parse_iso_ms(started_ts)
-        elapsed = (now - started).total_seconds()
-        effective_timeout = _phase_timeout(phases_overrides, phase, round_timeout_s)
-        threshold = effective_timeout * factor
-        if elapsed > threshold:
-            return _alert(
-                "hung",
-                "warning",
-                f"Round {rn} started {elapsed:.0f}s ago with no round_end",
-                {"round_num": rn, "elapsed_s": elapsed, "threshold_s": threshold},
-            )
+    if not open_rounds:
+        return None
+    # Serial rotation (§7): rounds run strictly one at a time, so any open round
+    # older than the highest-numbered one is a dropped round_end, not a live hang.
+    # Checking only the newest open round stops an ancient crashed round from
+    # latching `hung` forever across every subsequent completed round.
+    rn = max(open_rounds)
+    started_ts, phase = open_rounds[rn]
+    started = parse_iso_ms(started_ts)
+    elapsed = (now - started).total_seconds()
+    effective_timeout = _phase_timeout(phases_overrides, phase, round_timeout_s)
+    threshold = effective_timeout * factor
+    if elapsed > threshold:
+        return _alert(
+            "hung",
+            "warning",
+            f"Round {rn} started {elapsed:.0f}s ago with no round_end",
+            {"round_num": rn, "elapsed_s": elapsed, "threshold_s": threshold},
+        )
     return None
 
 
