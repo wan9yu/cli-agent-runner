@@ -55,6 +55,35 @@ def test_given_kill_subcommand_when_invoked_then_calls_api_kill(
         k.assert_called_once()
 
 
+def test_given_pid_file_service_when_restart_then_clean_error_not_traceback(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """cmd_restart must catch the RuntimeError api.restart() raises for a
+    non-systemd service and turn it into a clean `agent-runner: ...` stderr
+    line + non-zero rc — not let it propagate as a raw traceback. The service
+    must also not be touched (no SIGTERM/SIGKILL sent)."""
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    _init(tmp_git_repo)
+    from agent_runner.config import load_config
+
+    log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text("12345")
+
+    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
+        rc = main(["restart"])
+
+    send.assert_not_called()  # service not stopped
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.err.startswith("agent-runner: ")
+    assert "systemd" in captured.err
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out
+
+
 def test_given_peek_with_select_when_invoked_then_passes_select_arg(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent_runner import api
-from agent_runner.cli.common import emit, info, work_dir_from_args
+from agent_runner.cli.common import emit, fail, info, work_dir_from_args
 from agent_runner.clock import SYSTEM_CLOCK
 
 
@@ -45,10 +45,11 @@ def cmd_kill(args) -> int:
 
 
 def cmd_restart(args) -> int:
-    emit(
-        api.restart(work_dir_from_args(args), force=args.force),
-        json_mode=getattr(args, "json", False),
-    )
+    try:
+        result = api.restart(work_dir_from_args(args), force=args.force)
+    except RuntimeError as e:
+        return fail(str(e))
+    emit(result, json_mode=getattr(args, "json", False))
     return 0
 
 
