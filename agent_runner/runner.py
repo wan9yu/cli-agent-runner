@@ -27,7 +27,6 @@ from agent_runner import (
     vcs_state,
 )
 from agent_runner.agent_runtime import signal_name
-from agent_runner.api import _primary_prompt_file
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult
 from agent_runner.clock import SYSTEM_CLOCK
@@ -39,6 +38,17 @@ from agent_runner.events import (
 )
 from agent_runner.monitor import NETWORK_PATTERNS
 from agent_runner.round_log import next_round_num, open_round_log, prune_rounds_dir
+
+
+def _primary_prompt_file(cfg: Config) -> Path | None:
+    """Primary prompt file: first of cfg.prompt.files, else cfg.prompt.file.
+
+    Runner-only helper (feeds HookContext a single Path to inspect). Lives
+    beside its sole caller so api.py stays a facade, not a runner utility bag.
+    """
+    if cfg.prompt.files:
+        return cfg.prompt.files[0]
+    return cfg.prompt.file
 
 
 class LockHeldError(RuntimeError):

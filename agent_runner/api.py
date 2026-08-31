@@ -682,17 +682,6 @@ def _tail_events_jsonl(
             SYSTEM_CLOCK.sleep(poll_interval_s)
 
 
-def _primary_prompt_file(cfg: Config) -> Path | None:
-    """Return the primary prompt file: first of cfg.prompt.files, else cfg.prompt.file.
-
-    Used by HookContext to give hooks a single Path to inspect (e.g.
-    prompt-mutation hash tracking). Internal — runner is the only caller.
-    """
-    if cfg.prompt.files:
-        return cfg.prompt.files[0]
-    return cfg.prompt.file
-
-
 def assemble_prompt(
     cfg: Config, phase: str | None, *, context: dict[str, Any] | None = None
 ) -> str:
