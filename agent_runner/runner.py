@@ -345,8 +345,8 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
     try:
         return _run_one_round_inner(cfg, phase_override=phase_override)
     finally:
+        _holder_sidecar(lock_path).unlink(missing_ok=True)  # before releasing the flock
         os.close(lock_fd)
-        _holder_sidecar(lock_path).unlink(missing_ok=True)
 
 
 def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> RoundResult:
