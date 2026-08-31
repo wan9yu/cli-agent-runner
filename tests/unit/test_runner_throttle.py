@@ -590,3 +590,35 @@ def test_compute_adjusted_reset_at_emits_backoff_capped_event_on_adjustment(tmp_
     assert ev["capped_by_absolute_max"] is False
     assert ev["original_reset_at_epoch"] == now + 60
     assert ev["applied_reset_at_epoch"] == applied
+
+
+def test_elapsed_s_clamps_backward_clock_step_to_zero() -> None:
+    from agent_runner._throttle import _elapsed_s
+
+    clk = FakeClock(epoch=1000.0)
+    assert _elapsed_s(900.0, clock=clk) == 100
+    clk.warp_epoch(-500.0)  # NTP step backward: now < since_epoch
+    assert _elapsed_s(900.0, clock=clk) == 0  # never negative
+
+
+def test_apply_back_off_recovered_throttled_for_s_matches_sleep(tmp_path) -> None:
+    from agent_runner._throttle import _apply_back_off
+    from agent_runner.api_types import TransientErrorState
+
+    clk = FakeClock(epoch=1000.0)
+    throttle = TransientErrorState(
+        reset_at_epoch=1000 + 120,
+        classification="rate_limit_account",  # server-authoritative → verbatim reset
+        agent="claude",
+        since_round=1,
+        phase="",
+    )
+    stop = {"requested": False}
+    assert _apply_back_off(tmp_path, throttle, stop=stop, clock=clk) is False
+    rec = [
+        json.loads(line)
+        for f in tmp_path.glob("events-*.jsonl")
+        for line in f.read_text().splitlines()
+        if json.loads(line)["event"] == "transient_error_recovered"
+    ]
+    assert rec and rec[0]["throttled_for_s"] >= 120  # slept ~120s + jitter, clamped >= 0

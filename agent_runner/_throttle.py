@@ -28,6 +28,16 @@ from agent_runner.events import (
     parse_iso_ms,
 )
 
+__all__ = [
+    "_active_throttles",
+    "_apply_back_off",
+    "_check_throttle_state",
+    "_interruptible_sleep",
+    "compute_adjusted_reset_at",
+    "effective_throttle_view",
+    "pending_recovered",
+]
+
 # _scan_events_for_transient sentinel: file held no transient event at all
 # (distinct from "latest transient was a recovered" → None).
 _NO_TRANSIENT = object()
@@ -120,7 +130,7 @@ def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
     """The most recent ``transient_error_detected`` with no
     ``transient_error_recovered`` after it, or None. Used by
     :func:`_check_throttle_state` (still-throttled?) — the single-throttle "latest"
-    view kept for the non-skip (wait / back_off / stop) paths and peek.
+    view kept for the non-skip (back_off / skip / stop) paths and peek.
 
     Scans the newest monthly ``events-*.jsonl`` and, only if it holds no transient
     event yet, the previous month's — so a throttle that spans a month boundary
@@ -297,6 +307,14 @@ def _check_throttle_state(
     )
 
 
+def _elapsed_s(since_epoch: float, *, clock: Clock = SYSTEM_CLOCK) -> int:
+    """Whole seconds from ``since_epoch`` (a clock epoch) to now, clamped at 0.
+    The single elapsed-seconds computation behind every ``throttled_for_s`` — one
+    clamp guards both the skip breadcrumb and the back-off recovered event against
+    a backward wall-clock step yielding a negative duration."""
+    return max(0, int(clock.epoch() - since_epoch))
+
+
 def _throttled_for_s(ts: Any, *, clock: Clock = SYSTEM_CLOCK) -> int:
     """Seconds since a detected event's ``ts`` (best-effort; 0 if unparseable).
     ``clock`` supplies now; inject a ``FakeClock`` for exact-value tests."""
@@ -308,7 +326,7 @@ def _throttled_for_s(ts: Any, *, clock: Clock = SYSTEM_CLOCK) -> int:
         return 0
     if detected.tzinfo is None:
         detected = detected.replace(tzinfo=UTC)  # hand-injected naive ts → treat as UTC
-    return max(0, int(clock.epoch() - detected.timestamp()))
+    return _elapsed_s(detected.timestamp(), clock=clock)
 
 
 def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tuple[str, str, int]]:
@@ -513,6 +531,6 @@ def _apply_back_off(
         log_dir,
         classification=throttle.classification,
         agent=throttle.agent,
-        throttled_for_s=int(clock.epoch() - sleep_start),
+        throttled_for_s=_elapsed_s(sleep_start, clock=clock),
     )
     return False

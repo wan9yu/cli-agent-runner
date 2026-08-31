@@ -294,7 +294,7 @@ def _stop_file_predicate(stop_file: Path | None) -> Callable[[], bool]:
 
 
 def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
-    """Legacy single-throttle gate for the NON-skip regime (wait / back_off / stop).
+    """Legacy single-throttle gate for the NON-skip regime (back_off / skip / stop).
 
     Returns ``"break"`` (stop the loop — throttle action is ``stop``, or a SIGTERM
     landed mid-back-off) or ``"proceed"`` (no throttle, or back_off already applied and
