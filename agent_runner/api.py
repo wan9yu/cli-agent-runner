@@ -396,10 +396,23 @@ def kill(project: str | Path) -> ServiceStatus:
         SYSTEM_CLOCK.sleep(0.1)
     if alive:
         send_signal_to_pid(pid, signal.SIGKILL)
+        alive = pid_alive(pid)  # re-check: SIGKILL may have reaped it
     return ServiceStatus(mode=ServiceMode.PID_FILE, active=alive, pid=pid)
 
 
 def restart(project: str | Path, *, force: bool = False) -> ServiceStatus:
+    # Detect mode FIRST and refuse before stop()/kill(): start() only respawns a
+    # SYSTEMD_USER unit, so restarting a PID_FILE/NONE service would stop it and
+    # never bring it back — the half-execution this fix eliminates.
+    pname = _resolve_project(project)
+    log_dir = _log_dir_for_project(project)
+    mode = detect_service_mode(pname, log_dir=log_dir)
+    if mode != ServiceMode.SYSTEMD_USER:
+        raise RuntimeError(
+            f"restart requires a systemd-user service; {pname} is {mode.value}. "
+            "A plain serve process cannot be respawned by the CLI — stop/kill it "
+            "and start it again by hand."
+        )
     if force:
         kill(project)
     else:

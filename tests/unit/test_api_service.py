@@ -10,6 +10,7 @@ import pytest
 from agent_runner import api
 from agent_runner.api_types import InitResult, ServiceMode, ServiceStatus
 from agent_runner.config import PhaseOverride, PhasesConfig, load_config
+from tests._clock import FakeClock
 
 
 def test_given_git_repo_when_api_init_then_returns_init_result(tmp_git_repo: Path) -> None:
@@ -242,6 +243,53 @@ def test_systemctl_is_active_seam_returns_none_when_binary_absent(
 
     monkeypatch.setattr("agent_runner.api.subprocess.run", boom)
     assert api._systemctl_is_active("agent-runner@x.service") is None
+
+
+def test_given_pid_file_when_restart_then_refuses_before_stopping(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain serve process can't be respawned by the CLI — restart must refuse
+    FIRST, never leaving a half-executed stop-without-start."""
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    from agent_runner.config import load_config
+
+    log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text("12345")
+    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
+        with pytest.raises(RuntimeError, match="systemd"):
+            api.restart(tmp_git_repo)
+    send.assert_not_called()  # refused BEFORE stop()
+
+
+def test_given_pid_file_when_kill_then_rechecks_alive_after_sigkill(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After SIGKILL, active must reflect the post-kill liveness, not the stale
+    pre-SIGKILL True."""
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    from agent_runner.config import load_config
+
+    log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text("12345")
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    killed = {"sent": False}
+
+    def fake_send(pid: int, sig: int) -> bool:
+        assert pid > 0, "PID_FILE kill must target the single pid, never a -pgid"
+        if sig == signal.SIGKILL:
+            killed["sent"] = True
+        return True
+
+    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: not killed["sent"])
+    with patch("os.killpg", side_effect=AssertionError("killpg in PID_FILE mode")):
+        s = api.kill(tmp_git_repo)
+    assert killed["sent"] is True  # loop never saw it die → escalated to SIGKILL
+    assert s.active is False  # re-checked AFTER SIGKILL
 
 
 def test_poll_once_forwards_supervisor_stale_threshold(
