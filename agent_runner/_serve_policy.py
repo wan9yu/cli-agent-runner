@@ -24,9 +24,11 @@ CRASH_LOOP_EXIT = 75
 
 # Exit code for an ENVIRONMENTAL startup-battery failure (ENOSPC, mount hiccup,
 # an unclassified check): recoverable, unlike a permanent config break. NOT in
-# the unit's RestartPreventExitStatus (stays "78 75") so 76 restarts; a
-# *persistent* environmental outage is then bounded by the unit's
-# StartLimitBurst window (0.2.12). 76 = EX_NOINPUT (sysexits).
+# the unit's RestartPreventExitStatus (stays "78 75") so 76 restarts; treated
+# exactly like an active throttle (post_round_decision), so serve keeps
+# retrying at a fixed doubled delay with the crash-loop breaker disarmed,
+# staying alive until the environment heals. StartLimit bounds only repeated
+# serve-PROCESS death, not this round-level path. 76 = EX_PROTOCOL (sysexits).
 ENV_BATTERY_EXIT = 76
 
 # Crash-loop circuit breaker (b12). The serve loop escalates the restart delay
@@ -62,11 +64,14 @@ def post_round_decision(
     A clean (exit 0), long, or transient round resets ``consecutive`` to 0; an
     unknown short crash escalates the delay (restart × 2ⁿ, capped) until the stop.
     An ``ENV_BATTERY_EXIT`` (76, environmental startup-battery failure) is treated
-    exactly like an active throttle: it escalates the delay but never counts toward
-    the crash-loop breaker, so a short environmental outage (ENOSPC, mount hiccup)
-    never trips ``crash_loop``. A *persistent* environmental failure keeps serve
-    alive at the doubled delay and is ultimately bounded by the systemd unit's
-    StartLimit window, not by this breaker.
+    exactly like an active throttle: it takes the flat ``restart_delay_s * 2``
+    delay below (never escalating) and resets ``consecutive`` to 0, so it never
+    counts toward the crash-loop breaker — a short environmental outage (ENOSPC,
+    mount hiccup) never trips ``crash_loop``. This always returns ``"continue"``,
+    so serve itself never exits 76 and systemd's StartLimit window never engages
+    for this path; a *persistent* environmental failure keeps serve alive
+    retrying at the doubled delay until the environment heals. StartLimit bounds
+    only repeated serve-PROCESS death, independent of this round-level path.
     """
     if returncode == PERMANENT_CONFIG_EXIT:
         return ("config_broken", 0, consecutive)

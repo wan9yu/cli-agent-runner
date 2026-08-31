@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The monitor no longer dies on a non-UTF-8 byte or an odd plugin severity; each builtin detector is isolated (`detector_error` event) and a hung round is TERM→grace→killpg'd (`round_supervisor_wedged`) instead of orphaning the agent or latching `hung`.
-- Environmental startup failures (ENOSPC, mount hiccup, unclassified) escalate back-off (exit 76) instead of tripping the crash-loop breaker; deterministic config failures give up by name (exit 78).
+- Environmental startup failures (ENOSPC, mount hiccup, unclassified) exit 76 and keep serve retrying at a fixed back-off until they heal, instead of tripping the crash-loop breaker; deterministic config failures give up by name (exit 78).
 - A git-commit timeout leaves no surviving `.git/index.lock` (self-caused only; `stale_index_lock_cleared`); a stop-file lands within one back-off chunk.
 - `status`/`kill`/`restart` report and act on real service state: liveness falls back to `serve.pid` when `systemctl` is absent, and `restart` refuses on non-service modes before stopping.
 - `upgrade` runs the new binary's `migrate` before the smoke check, restores the config on rollback, and emits `upgrade_start_failed` with a remedy when the new version installs but won't start.

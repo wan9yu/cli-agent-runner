@@ -212,7 +212,7 @@ def run_battery(cfg: Config) -> list[CheckResult]:
 def battery_exit_code(failures: list[CheckResult]) -> int:
     """Map failing battery results to an exit code: any PERMANENT failure → 78
     (config_broken; systemd keeps the unit stopped); otherwise every failure is
-    ENVIRONMENTAL → 76 (recoverable; serve retries with escalating back-off).
+    ENVIRONMENTAL → 76 (recoverable; serve retries at a fixed back-off until it heals).
     Permanent wins — a real config break is not masked by a concurrent disk blip."""
     from agent_runner.api import ENV_BATTERY_EXIT, PERMANENT_CONFIG_EXIT
 
