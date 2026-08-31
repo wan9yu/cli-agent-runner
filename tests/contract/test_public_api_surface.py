@@ -169,6 +169,13 @@ def test_given_vcs_state_module_when_imported_then_plugin_owned_paths_api_presen
 # Exact equality (not subset) is intentional: G1-G3 must not drop OR add a
 # name here silently. If a later task deliberately changes api's surface,
 # update this set in the same commit and say why.
+#
+# G1 (extract restart policy into _serve_policy.py) drops "Literal": it was
+# only ever a side effect of `post_round_decision`'s return-type annotation
+# living in api.py, not a name plugin authors could meaningfully use. With
+# that function (and its only `Literal[...]` usage) moved to _serve_policy,
+# api.py no longer imports `Literal` at module scope, so it no longer appears
+# in `dir(api)`. No genuine public API name was removed.
 EXPECTED_API_SURFACE = {
     "AGENT_NETWORK_BLIP",
     "Any",
@@ -183,7 +190,6 @@ EXPECTED_API_SURFACE = {
     "InitResult",
     "InstallResult",
     "Iterator",
-    "Literal",
     "MONITOR_STARTED",
     "PERMANENT_CONFIG_EXIT",
     "PIDFile",

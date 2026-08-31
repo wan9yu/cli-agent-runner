@@ -31,8 +31,6 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.api",
         {
-            "CRASH_LOOP_EXIT",
-            "PERMANENT_CONFIG_EXIT",
             "check_self_terminated_sentinel",
             "emit_config_broken",
             "emit_crash_loop",
@@ -49,8 +47,11 @@ ALLOWED_SERVE_FROM = [
             "emit_schedule_resumed",
             "emit_transient_error_recovered",
             "outer_round_ceiling_s",
-            "post_round_decision",
         },
+    ),
+    (
+        "agent_runner._serve_policy",
+        {"CRASH_LOOP_EXIT", "PERMANENT_CONFIG_EXIT", "post_round_decision"},
     ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args"}),

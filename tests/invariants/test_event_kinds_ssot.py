@@ -87,7 +87,7 @@ def test_given_emit_calls_when_scanned_then_kind_is_a_constant_not_a_literal() -
 _ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
     # Restart-action enum: Literal["config_broken", "crash_loop", "continue"].
     # "continue" has no constant, and a constant cannot sit inside Literal[...].
-    ("agent_runner/api.py", "post_round_decision"): "restart-action enum",
+    ("agent_runner/_serve_policy.py", "post_round_decision"): "restart-action enum",
     # Compares the post_round_decision restart-action enum, not event kinds.
     ("agent_runner/cli/serve_cmd.py", "cmd"): "restart-action enum",
 }

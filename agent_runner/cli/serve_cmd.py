@@ -20,6 +20,11 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import phase_select, schedule
+from agent_runner._serve_policy import (
+    CRASH_LOOP_EXIT,
+    PERMANENT_CONFIG_EXIT,
+    post_round_decision,
+)
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
     _active_throttles,
@@ -29,8 +34,6 @@ from agent_runner._throttle import (
     pending_recovered,
 )
 from agent_runner.api import (
-    CRASH_LOOP_EXIT,
-    PERMANENT_CONFIG_EXIT,
     check_self_terminated_sentinel,
     emit_config_broken,
     emit_crash_loop,
@@ -47,7 +50,6 @@ from agent_runner.api import (
     emit_stop_file_detected,
     emit_transient_error_recovered,
     outer_round_ceiling_s,
-    post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
 from agent_runner.clock import SYSTEM_CLOCK, Clock
