@@ -1,4 +1,5 @@
-"""§9 IMMUTABLE — vcs_state must never name a stash by stash@{N} index.
+"""§9 IMMUTABLE — neither vcs_state nor the shipped init prompt template may name
+a stash by stash@{N} index.
 
 R820 + orphan-stash-archive-2026-04-23 lesson: concurrent auto-stash shifts
 indices, so an index captured at one moment names a different stash at the
@@ -52,3 +53,26 @@ def test_given_vcs_state_stash_calls_when_scanned_then_no_stash_at_brace_index()
                 offenders.append(ast.unparse(node))
     assert scanned > 0, "no string literals scanned in vcs_state.py"  # vacuity-guard
     assert offenders == [], f"vcs_state.py names a stash by index: {offenders}"
+
+
+# A bare index-based stash verb: pop/drop/branch default to stash@{0}; apply/show
+# without an explicit `<ref>` argument do too.
+_TEMPLATE_INDEX_VERB = re.compile(
+    r"git stash (?:pop|drop|branch)\b|git stash (?:apply|show)(?!\s+<)"
+)
+
+
+def test_given_prompt_template_when_scanned_then_stash_named_by_sha_not_index() -> None:
+    """§9 IMMUTABLE — the shipped init prompt template must recover an orphan stash
+    by its round-context SHA (`git stash apply <ref>`), never by index. This scan
+    covered only vcs_state.py, which is why the template shipped with `stash pop`."""
+    from agent_runner.scaffold import _PROMPT_TEMPLATE
+
+    assert not _INDEX_REF.search(_PROMPT_TEMPLATE), (
+        f"prompt template names a stash by index: {_PROMPT_TEMPLATE!r}"
+    )
+    assert not _TEMPLATE_INDEX_VERB.search(_PROMPT_TEMPLATE), (
+        "prompt template uses an index-based stash verb; use `git stash apply <ref>`"
+    )
+    assert "git stash apply" in _PROMPT_TEMPLATE  # positive: SHA recovery documented
+    assert "ref" in _PROMPT_TEMPLATE

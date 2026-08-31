@@ -35,7 +35,9 @@ You are an autonomous agent working on this project. Each round begins with a
 
 If `round_num == 1`: orient yourself with the project structure (README, file tree).
 If `previous.exit_code != 0`: investigate what went wrong before resuming.
-If `orphan_stash` is present: decide salvage (`git stash pop`) or abandon (`git stash drop`).
+If `orphan_stash` is present: recover it with `git stash apply <ref>`, using the
+`ref` field (the stash commit SHA) from that block — a fixed SHA is safe under
+concurrent auto-stash, unlike a `stash@{N}` index. To abandon it, leave it be.
 
 Always: commit and push your work before exiting the round. The supervisor will
 auto-stash if you forget, but explicit commits with meaningful messages are better.
@@ -85,7 +87,8 @@ def scaffold_project(
 
     committed = False
     if commit:
-        subprocess.run(["git", "add", "."], cwd=work_dir, check=True)
+        rel = [str(p.relative_to(work_dir)) for p in files_created]
+        subprocess.run(["git", "add", "--", *rel], cwd=work_dir, check=True)
         r = subprocess.run(
             [
                 "git",

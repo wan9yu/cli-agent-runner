@@ -88,6 +88,35 @@ def test_given_unknown_preset_when_scaffold_then_raises(tmp_git_repo: Path) -> N
         scaffold_project(tmp_git_repo, preset="nonexistent", force=False, commit=False)
 
 
+def test_given_dirty_repo_when_scaffold_commits_then_only_scaffold_files(
+    tmp_git_repo: Path,
+) -> None:
+    """`git add .` would sweep an unrelated working-tree change into the scaffold
+    commit; `git add -- <files_created>` must commit only the scaffold files."""
+    unrelated = tmp_git_repo / "unrelated.txt"
+    unrelated.write_text("do not commit me\n")
+
+    scaffold_project(tmp_git_repo, force=False, commit=True)
+
+    committed = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert "unrelated.txt" not in committed
+    assert "agent-runner.toml" in committed
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "unrelated.txt"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "?? unrelated.txt" in status  # still untracked, untouched
+
+
 def test_given_claude_preset_when_scaffold_then_includes_agent_env_block(
     tmp_git_repo: Path,
 ) -> None:
