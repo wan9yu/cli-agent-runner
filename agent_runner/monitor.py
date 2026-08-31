@@ -617,7 +617,9 @@ def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = _TAIL_LINES) -> 
         except (ValueError, IndexError):
             continue
         try:
-            with f.open(encoding="utf-8") as fh:
+            from agent_runner.round_log import open_round_log  # lazy: avoids api<->monitor cycle
+
+            with open_round_log(f) as fh:
                 tails[num] = "".join(deque(fh, maxlen=tail_lines))
         except FileNotFoundError:
             continue

@@ -9,11 +9,23 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 from agent_runner.api import read_round_num
 
 ROUND_CURRENT_LINK = "round-current.log"
 _AGENT_ROUND_LOG_RE = re.compile(r"^R(\d+)-")
+
+
+def open_round_log(path: Path) -> TextIO:
+    """Text-mode opener for round logs, pinning ``errors="replace"``.
+
+    Round logs are the merged, untrusted stdout+stderr of an agent subprocess and
+    routinely contain non-UTF-8 bytes. Every text-mode round-log read goes through
+    here so one place owns the decode policy; the ``"rb"`` marker scan in
+    agent_runtime is the only exempt reader (it needs raw bytes).
+    """
+    return path.open("r", encoding="utf-8", errors="replace")
 
 
 @dataclass(frozen=True)
