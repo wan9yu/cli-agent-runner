@@ -152,9 +152,9 @@ def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
     """Rate limit throttle state — None if not currently throttled."""
     from datetime import UTC, datetime
 
-    from agent_runner._throttle import _check_throttle_state
+    from agent_runner._throttle import effective_throttle_view
 
-    throttle = _check_throttle_state(log_dir)
+    throttle, _active = effective_throttle_view(log_dir)
     if throttle is None:
         return None
     iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()

@@ -178,6 +178,24 @@ def _active_throttles(
     return active
 
 
+def effective_throttle_view(
+    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
+) -> tuple[TransientErrorState | None, dict[str, TransientErrorState]]:
+    """The scalar throttle view + the active-by-agent map, composed once.
+
+    The global-latest scalar (:func:`_check_throttle_state`) can be None while a
+    sibling agent is still throttled (the newest transient event is another agent's
+    recovered). When that happens fall back to the active throttle that clears LAST,
+    so the scalar fields stay coherent. Both :func:`api.peek` and
+    ``http_progress._rate_limit_state`` consume this — the two had drifted (peek had
+    the fallback, http_progress did not)."""
+    throttle = _check_throttle_state(log_dir, clock=clock)
+    active = _active_throttles(log_dir, clock=clock)
+    if throttle is None and active:
+        throttle = max(active.values(), key=lambda s: s.reset_at_epoch)
+    return throttle, active
+
+
 def _check_throttle_state(
     log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
 ) -> TransientErrorState | None:

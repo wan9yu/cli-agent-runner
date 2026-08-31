@@ -93,6 +93,54 @@ def test_given_narrative_file_when_get_then_rendered(tmp_path: Path) -> None:
         assert "hypothesis X covered" in body
 
 
+def test_given_sibling_recovered_when_rate_limit_state_then_still_throttled(
+    tmp_path: Path,
+) -> None:
+    """``_rate_limit_state`` must not report "not throttled" when the newest transient
+    event is a sibling agent's recovered while another agent is still throttled — it
+    must share the same max-reset fallback ``api.peek`` already has, via
+    ``effective_throttle_view``."""
+    import time
+
+    from agent_runner.http_progress import _rate_limit_state
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    future = int(time.time() + 3600)
+    past = int(time.time() - 60)
+    rows = [
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:00:00Z",
+            "agent": "claude",
+            "reset_at_epoch": future,
+            "classification": "rate_limit_account",
+            "round_num": 7,
+        },
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:01:00Z",
+            "agent": "gemini",
+            "reset_at_epoch": past,
+            "classification": "rate_limit_model",
+            "round_num": 8,
+        },
+        {
+            "event": "transient_error_recovered",
+            "ts": "2026-05-16T00:02:00Z",
+            "agent": "gemini",
+            "throttled_for_s": 60,
+            "classification": "rate_limit_model",
+        },
+    ]
+    (log_dir / "events-2026-05.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    rl = _rate_limit_state(log_dir)
+    assert rl is not None  # not dropped to null — claude is still throttled
+    assert rl["limit_type"] == "rate_limit_account"
+    assert rl["since_round"] == 7
+
+
 def test_given_port_in_use_when_serve_http_progress_then_exit_1(tmp_path: Path, capsys) -> None:
     """If the requested port is in use, serve_http_progress returns 1 with structured stderr."""
     from agent_runner.http_progress import serve_http_progress

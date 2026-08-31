@@ -449,16 +449,9 @@ def peek(
     )
     recent_blips = _recent_events_of_kind(parsed_events, AGENT_NETWORK_BLIP, _RECENT_BLIPS_LIMIT)
 
-    from agent_runner._throttle import _active_throttles, _check_throttle_state
+    from agent_runner._throttle import effective_throttle_view
 
-    throttle = _check_throttle_state(log_dir)
-    active = _active_throttles(log_dir)
-    if throttle is None and active:
-        # The global-latest scalar view can be None while a sibling agent is still
-        # throttled (the newest transient event is another agent's recovered). Fall
-        # back to the active throttle that clears LAST so the scalar fields stay
-        # coherent and the plural throttled_agents view is not dropped to null.
-        throttle = max(active.values(), key=lambda s: s.reset_at_epoch)
+    throttle, active = effective_throttle_view(log_dir)
     rate_limit: RateLimitState | None = None
     if throttle is not None:
         rate_limit = RateLimitState(
