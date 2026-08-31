@@ -70,6 +70,24 @@ def _is_bulk(stale: int, keep: int) -> bool:
     return stale > keep
 
 
+def _mtime_or_none(path: Path) -> float | None:
+    """``path``'s mtime, or ``None`` if it no longer exists.
+
+    Bridges the TOCTOU gap between ``glob()`` enumerating a file and the
+    ``stat()`` call here: a concurrent cleanup / logrotate / another tool
+    churning the log dir at serve startup can delete an entry in between. That
+    race is routine, not an error — the file being gone already means
+    "nothing to prune here" — so it degrades to "skip this entry", never
+    propagates ``FileNotFoundError`` (which would otherwise reach
+    ``serve_cmd._prepare_loop``'s deterministic-startup guard and misclassify
+    a transient race as a permanent config failure).
+    """
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
 def atomic_relink(link: Path, target: Path) -> None:
     """Atomically replace ``link`` to point at ``target``.
 
@@ -97,11 +115,12 @@ def prune_old_round_logs(log_dir: Path, retention: int) -> PruneOutcome:
     """
     if _pruning_disabled(retention):
         return PruneOutcome(deleted=0, deferred=0, existing=0)
-    logs = sorted(
-        log_dir.glob("round-*.log"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+    present = []
+    for p in log_dir.glob("round-*.log"):
+        mtime = _mtime_or_none(p)
+        if mtime is not None:
+            present.append((p, mtime))
+    logs = [p for p, _mtime in sorted(present, key=lambda pair: pair[1], reverse=True)]
     logs = [p for p in logs if p.name != ROUND_CURRENT_LINK]
     stale = logs[retention:]
     if _is_bulk(len(stale), retention):

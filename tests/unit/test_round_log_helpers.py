@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent_runner.round_log import (
     ROUND_CURRENT_LINK,
     atomic_relink,
@@ -111,6 +113,38 @@ def test_given_bulk_backlog_when_prune_old_round_logs_then_nothing_deleted(
     assert outcome.deferred == 50
     assert outcome.existing == 60
     assert len(list(tmp_path.glob("round-*.log"))) == 60
+
+
+def test_given_file_vanishes_between_glob_and_stat_when_prune_then_skips_not_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A round-*.log deleted by a concurrent cleanup/logrotate between glob()
+    enumeration and the stat() sort key is a TOCTOU race, not a permanent
+    failure. It must be skipped, not raise FileNotFoundError — that OSError
+    would otherwise reach serve_cmd._prepare_loop's deterministic-startup
+    guard and misclassify a transient race as a permanent config failure
+    (PERMANENT_CONFIG_EXIT / no systemd restart)."""
+    _write_round_logs(tmp_path, 3)
+    vanished = tmp_path / "round-2.log"
+    real_stat = Path.stat
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == vanished:
+            raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+
+    outcome = prune_old_round_logs(tmp_path, retention=1)
+
+    # round-2 (the "vanished" one) is skipped entirely — not counted, not
+    # pruned. Of the remaining two, round-3 (newest) survives the retention=1
+    # keep and round-1 (oldest) is pruned as stale.
+    assert outcome.existing == 2
+    assert outcome.deleted == 1
+    assert outcome.deferred == 0
+    assert (tmp_path / "round-3.log").exists()
+    assert not (tmp_path / "round-1.log").exists()
 
 
 def test_given_retention_zero_when_prune_old_round_logs_then_never_prunes(
