@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `json_tail` no longer lets a blank-line flood evict the terminal round-log record; `init` commits only its scaffold files.
 
 ### Notes
-- New event kinds: `detector_error`, `round_supervisor_wedged`, `stale_index_lock_cleared`, `upgrade_start_failed`. `RestartPreventExitStatus` stays `78 75` — the new environmental code 76 restarts.
+- New event kinds: `detector_error`, `round_supervisor_wedged`, `stale_index_lock_cleared`, `upgrade_start_failed`. `RestartPreventExitStatus` stays `78 75` — environmental failures (round exit 76) are retried inside serve rather than stopping it.
 
 See `docs/migrations/0.2.md`.
 
