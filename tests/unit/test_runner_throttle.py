@@ -17,13 +17,27 @@ def _iso(epoch: int) -> str:
 
 
 def _write_events(log_dir: Path, events: list[dict]):
-    """Write events to monthly events file."""
+    """Write events to monthly events file (truncates any existing content)."""
     from datetime import UTC, datetime
 
     now = datetime.now(UTC)
     events_path = log_dir / f"events-{now.strftime('%Y-%m')}.jsonl"
     events_path.parent.mkdir(parents=True, exist_ok=True)
     with events_path.open("w") as f:
+        for ev in events:
+            f.write(json.dumps(ev) + "\n")
+
+
+def _append_events(log_dir: Path, events: list[dict]):
+    """Append to the monthly events file — for tests that simulate a growing
+    events stream (each ``transient_error_detected`` persisted before the
+    supervisor's next read), unlike ``_write_events`` which truncates."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    events_path = log_dir / f"events-{now.strftime('%Y-%m')}.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    with events_path.open("a") as f:
         for ev in events:
             f.write(json.dumps(ev) + "\n")
 
@@ -406,7 +420,6 @@ def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
     """First failure of a bucket: multiplier = 2^0 = 1×; applied = original."""
     from agent_runner import _throttle
 
-    _throttle.reset_counters()  # ensure clean state
     now = 1_700_000_000.0  # injected clock → exact, no time.time() drift
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
@@ -422,19 +435,19 @@ def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
 
 
 def test_compute_adjusted_reset_at_second_failure_doubles(tmp_path):
-    """Second consecutive failure: counter is 1 going in → multiplier = 2^1 = 2×."""
+    """Second consecutive failure: exponent (from 2 persisted detections) is 1 →
+    multiplier = 2^1 = 2×. The events-derived ladder counts the SAME agent's
+    ``transient_error_detected`` history, not a repeated in-process call."""
     from agent_runner import _throttle
 
-    _throttle.reset_counters()
     now = 1_700_000_000.0
-    # First call increments counter to 1
-    _throttle.compute_adjusted_reset_at(
-        classification="rate_limit_model",
-        original_reset_at_epoch=int(now) + 60,
-        agent="claude",
-        log_dir=tmp_path,
+    _write_events(
+        tmp_path,
+        [
+            _detected(int(now) + 60, cls="rate_limit_model"),
+            _detected(int(now) + 60, cls="rate_limit_model"),
+        ],
     )
-    # Second call: n=1 → multiplier=2 → applied_duration=120s
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=int(now) + 60,
@@ -448,21 +461,13 @@ def test_compute_adjusted_reset_at_second_failure_doubles(tmp_path):
 
 
 def test_compute_adjusted_reset_at_sixth_plateaus_at_32x(tmp_path):
-    """After 5 prior failures (counter=5), 6th call uses multiplier=32× (2^5).
-    7th call should plateau at 32× (exp_cap=5 means n is clamped)."""
+    """6 persisted detections → exponent=5 → multiplier=32× (2^5), capped at 1800s.
+    The exp_cap (5) plateaus the multiplier beyond this."""
     from agent_runner import _throttle
 
-    _throttle.reset_counters()
     now = 1_700_000_000.0
-    # Pump counter to 5 (5 calls)
-    for _ in range(5):
-        _throttle.compute_adjusted_reset_at(
-            classification="rate_limit_model",
-            original_reset_at_epoch=int(now) + 60,
-            agent="claude",
-            log_dir=tmp_path,
-        )
-    # 6th call: n=5 → multiplier=32 → duration=60*32=1920s but capped at 1800
+    _write_events(tmp_path, [_detected(int(now) + 60, cls="rate_limit_model") for _ in range(6)])
+    # 6th detection already persisted: n=5 → multiplier=32 → duration=60*32=1920s but capped at 1800
     applied_6, count_6, capped_6 = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=int(now) + 60,
@@ -476,19 +481,12 @@ def test_compute_adjusted_reset_at_sixth_plateaus_at_32x(tmp_path):
 
 
 def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
-    """api_timeout has 30s base; multiplier=2 → 60s; multiplier=32 → 960s (under cap)."""
+    """api_timeout has 30s base; 6 persisted detections → exponent=5 → multiplier=32 →
+    30*32=960s (under cap)."""
     from agent_runner import _throttle
 
-    _throttle.reset_counters()
     now = 1_700_000_000.0
-    # Force counter=5 → multiplier=32 → 30*32=960s, well under 1800 cap
-    for _ in range(5):
-        _throttle.compute_adjusted_reset_at(
-            classification="api_timeout",
-            original_reset_at_epoch=int(now) + 30,
-            agent="claude",
-            log_dir=tmp_path,
-        )
+    _write_events(tmp_path, [_detected(int(now) + 30, cls="api_timeout") for _ in range(6)])
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="api_timeout",
         original_reset_at_epoch=int(now) + 30,
@@ -501,35 +499,6 @@ def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
     assert applied == int(now) + 960  # exact
 
 
-def test_reset_counters_clears_all_buckets(tmp_path):
-    """reset_counters() after compute_adjusted_reset_at calls returns to fresh state."""
-    from agent_runner import _throttle
-
-    _throttle.reset_counters()
-    now = int(time.time())
-    _throttle.compute_adjusted_reset_at(
-        classification="rate_limit_model",
-        original_reset_at_epoch=now + 60,
-        agent="claude",
-        log_dir=tmp_path,
-    )
-    _throttle.compute_adjusted_reset_at(
-        classification="api_timeout",
-        original_reset_at_epoch=now + 30,
-        agent="claude",
-        log_dir=tmp_path,
-    )
-    _throttle.reset_counters()
-    # Next call to either bucket should start at counter=0 again
-    applied, count, _ = _throttle.compute_adjusted_reset_at(
-        classification="rate_limit_model",
-        original_reset_at_epoch=now + 60,
-        agent="claude",
-        log_dir=tmp_path,
-    )
-    assert count == 1  # fresh start
-
-
 def test_compute_adjusted_reset_at_rate_limit_account_exempt(tmp_path):
     """Server-authoritative rate_limit_account: counter never increments,
     returned reset is the original (resetsAt from server), no event fires."""
@@ -537,7 +506,6 @@ def test_compute_adjusted_reset_at_rate_limit_account_exempt(tmp_path):
 
     from agent_runner import _throttle
 
-    _throttle.reset_counters()
     server_reset = int(time.time()) + 18000  # 5h from now (resetsAt from Anthropic)
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_account",
@@ -574,21 +542,27 @@ def test_compute_adjusted_reset_at_rate_limit_account_exempt(tmp_path):
 
 
 def test_compute_adjusted_reset_at_emits_backoff_capped_event_on_adjustment(tmp_path):
-    """When multiplier > 1, emit transient_error_backoff_capped with all new fields."""
+    """When multiplier > 1, emit transient_error_backoff_capped with all new fields.
+
+    Mirrors the real call sequence: the plugin already persisted a
+    ``transient_error_detected`` for each occurrence before the supervisor calls
+    ``compute_adjusted_reset_at`` — the exponent is read from that stream, not
+    incremented by the call itself."""
     import json
 
     from agent_runner import _throttle
 
-    _throttle.reset_counters()
     now = int(time.time())
-    # First call: multiplier=1, no event
+    # First detection persisted: exponent=0 → multiplier=1, no event
+    _append_events(tmp_path, [_detected(now + 60, cls="rate_limit_model")])
     _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=now + 60,
         agent="claude",
         log_dir=tmp_path,
     )
-    # Second call: multiplier=2, event should fire
+    # Second detection persisted: exponent=1 → multiplier=2, event should fire
+    _append_events(tmp_path, [_detected(now + 60, cls="rate_limit_model")])
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=now + 60,

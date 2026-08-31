@@ -22,6 +22,7 @@ from typing import Any
 from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.events import (
+    AGENT_USAGE_RECORDED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     parse_iso_ms,
@@ -151,6 +152,51 @@ def _latest_transient_per_agent(log_dir: Path) -> dict[str, Any]:
     return latest
 
 
+def _backoff_exponent(log_dir: Path, agent: str) -> int:
+    """Events-derived exp-backoff exponent for ``agent``: the count of
+    ``transient_error_detected`` events attributed to it MINUS ONE (first
+    detection → 0, no multiplier), since that agent's last successful completed
+    round (``agent_usage_recorded`` with truthy ``success``).
+
+    Single-sourced and restart-safe: recomputed from the persisted stream on
+    every read, so a restart mid-outage resolves the SAME n rather than
+    double-applying a lost module counter. ``transient_error_recovered`` is
+    deliberately NOT a reset point — the throttle-aware-skip path emits one every
+    cycle, which would pin the exponent at <=1 and flatten the ladder."""
+    count = 0
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
+        for ev in _iter_events(path):
+            if str(ev.get("agent", "")) != agent:
+                continue
+            kind = ev.get("event")
+            if kind == TRANSIENT_ERROR_DETECTED:
+                count += 1
+            elif kind == AGENT_USAGE_RECORDED and ev.get("success"):
+                count = 0
+    return max(0, count - 1)
+
+
+def _extend_reset(classification: str, reset_at_epoch: int, exponent: int) -> int:
+    """Anchor-stable exp-backoff extension for the events-derived effective view.
+
+    Estimated classes (base in ``_BACK_OFF_DEFAULTS``) push the emitter's reset
+    out by ``base * (2**min(exponent, _EXP_CAP) - 1)``, capped at
+    ``_ABSOLUTE_CAP_S``; server-authoritative ``rate_limit_account`` and
+    plugin-defined classes pass through verbatim. Anchored to ``reset_at_epoch``
+    (NOT ``now``) so repeated scans — and a post-restart scan — yield the
+    identical value; the skip loop reads it every cycle and must not drift."""
+    from agent_runner.builtin_plugins._constants import (
+        _ABSOLUTE_CAP_S,
+        _BACK_OFF_DEFAULTS,
+        _EXP_CAP,
+    )
+
+    base = _BACK_OFF_DEFAULTS.get(classification)
+    if base is None or classification == "rate_limit_account" or exponent <= 0:
+        return reset_at_epoch
+    return reset_at_epoch + min(base * (2 ** min(exponent, _EXP_CAP) - 1), _ABSOLUTE_CAP_S)
+
+
 def _active_throttles(
     log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
 ) -> dict[str, TransientErrorState]:
@@ -160,18 +206,26 @@ def _active_throttles(
 
     Rate limits are per-provider (per API key / agent binary), not per-phase — so the
     serve skip-policy routes around EVERY phase sharing a throttled agent while a
-    healthy agent's phase keeps running. Restart-safe (events-derived)."""
+    healthy agent's phase keeps running. Restart-safe (events-derived). The effective
+    reset applies the events-derived exp-backoff ladder (:func:`_backoff_exponent` +
+    :func:`_extend_reset`) so a permanently-failing agent escalates here too, not just
+    on the wait/back_off path — ONE ladder, shared by both regimes."""
     now = clock.epoch()
     active: dict[str, TransientErrorState] = {}
     for agent, detected in _latest_transient_per_agent(log_dir).items():
         if detected is None:
             continue
-        reset_at = _coerce_int(detected.get("reset_at_epoch"), 0)
+        classification = str(detected.get("classification", "rate_limit_account"))
+        reset_at = _extend_reset(
+            classification,
+            _coerce_int(detected.get("reset_at_epoch"), 0),
+            _backoff_exponent(log_dir, agent),
+        )
         if reset_at <= now:
             continue
         active[agent] = TransientErrorState(
             reset_at_epoch=reset_at,
-            classification=str(detected.get("classification", "rate_limit_account")),
+            classification=classification,
             agent=agent,
             since_round=_coerce_int(detected.get("round_num"), 0),
             phase=str(detected.get("phase", "")),
@@ -271,11 +325,6 @@ def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tup
     return cleared
 
 
-# Module-level supervisor state — bucket → consecutive-failure count.
-# Cleared by reset_counters() or by serve restart.
-_consecutive_failures: dict[str, int] = {}
-
-
 def compute_adjusted_reset_at(
     *,
     classification: str,
@@ -299,9 +348,10 @@ def compute_adjusted_reset_at(
     only non-invented answer.
 
     For estimated classifications (``rate_limit_model``, ``api_transient_5xx``,
-    ``api_timeout``): increments the counter for this bucket, computes
-    duration = base × 2^min(n, _EXP_CAP), caps at _ABSOLUTE_CAP_S, emits
-    ``transient_error_backoff_capped`` if multiplier > 1 or capped.
+    ``api_timeout``): derives the exponent from the persisted event stream
+    (``_backoff_exponent``), computes duration = base × 2^min(n, _EXP_CAP), caps
+    at _ABSOLUTE_CAP_S, emits ``transient_error_backoff_capped`` if multiplier >
+    1 or capped.
     """
     from agent_runner._emit import emit_transient_error_backoff_capped
     from agent_runner.builtin_plugins._constants import (
@@ -316,9 +366,12 @@ def compute_adjusted_reset_at(
         # supplied reset_at_epoch, so respect it verbatim and never touch the counter.
         return (original_reset_at_epoch, 0, False)
 
-    # Estimated class: apply exp backoff.
+    # Estimated class: apply exp backoff. Single source: the exponent is derived
+    # from the persisted event stream, not a module counter — so the skip path
+    # (via _active_throttles → _backoff_exponent) shares the SAME ladder and a
+    # restart mid-outage resolves the same n instead of double-applying.
     base = _BACK_OFF_DEFAULTS[classification]
-    n = _consecutive_failures.get(classification, 0)
+    n = _backoff_exponent(log_dir, agent)
     multiplier = 2 ** min(n, _EXP_CAP)
     extended_duration = base * multiplier
     capped_by_absolute_max = extended_duration > _ABSOLUTE_CAP_S
@@ -326,7 +379,6 @@ def compute_adjusted_reset_at(
     applied_reset_at = int(clock.epoch()) + applied_duration
 
     new_count = n + 1
-    _consecutive_failures[classification] = new_count
 
     # Emit observability event when supervisor adjusted the wait.
     if multiplier > 1 or capped_by_absolute_max:
@@ -343,11 +395,6 @@ def compute_adjusted_reset_at(
         )
 
     return (applied_reset_at, new_count, capped_by_absolute_max)
-
-
-def reset_counters() -> None:
-    """Clear all bucket counters. Called by serve loop when no active throttle."""
-    _consecutive_failures.clear()
 
 
 _BACK_OFF_CAP_S = 28800  # 8h — defensive cap; 1.6× the 5h-window

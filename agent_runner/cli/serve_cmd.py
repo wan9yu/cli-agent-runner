@@ -28,7 +28,6 @@ from agent_runner._throttle import (
     _interruptible_sleep,
     pending_recovered,
 )
-from agent_runner._throttle import reset_counters as _reset_counters
 from agent_runner.api import (
     CRASH_LOOP_EXIT,
     PERMANENT_CONFIG_EXIT,
@@ -303,7 +302,6 @@ def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
     this never sees a skip-around config — it neither defers nor emits a skip
     breadcrumb, keeping every pre-0.2.11 non-skip path byte-identical."""
     if throttle is None:
-        _reset_counters()
         return "proceed"
     action = cfg.runtime.transient_error_action
     if action == "back_off":
@@ -327,9 +325,12 @@ def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
 
 def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     """Skip-policy throttle handling (multi-agent). Emits recovered breadcrumbs for any
-    agent that cleared (even while siblings remain throttled), resets the exp-backoff
-    counters when nothing is throttled, and returns ``(throttled_phases, wake_epoch)``
-    for :func:`_select_and_gate`.
+    agent that cleared (even while siblings remain throttled), and returns
+    ``(throttled_phases, wake_epoch)`` for :func:`_select_and_gate`.
+
+    The exp-backoff ladder is events-derived (:func:`_throttle._backoff_exponent`),
+    not a module counter, so there is nothing to reset here — it self-clears once an
+    ``agent_usage_recorded`` success lands for the agent.
 
     Rate limits are per-provider, so selection routes around EVERY phase whose agent —
     the binary basename of ``command[0]``, which is the detector's ``agent`` label — is
@@ -337,8 +338,6 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     all-throttled round wakes when the first one clears."""
     active = _active_throttles(log_dir)
     _maybe_emit_recovered(log_dir)  # per-agent, dedup-safe — runs even if throttles remain
-    if not active:
-        _reset_counters()
     throttled: set[str] = set()
     wake: int | None = None
     for phase in cfg.phases.list:

@@ -67,7 +67,6 @@ ALLOWED_SERVE_FROM = [
             "_check_throttle_state",
             "_interruptible_sleep",
             "pending_recovered",
-            "reset_counters",
         },
     ),
 ]
