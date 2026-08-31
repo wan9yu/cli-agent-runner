@@ -141,6 +141,11 @@ def _live_children(
 # bypass this scan; revisit if that happens.
 _RESULT_MARKER = b'"type":"result"'
 
+# Decoupled from the 0.2s poll tick: the marker scan only needs to notice the
+# result within max_grace_after_result_s (seconds, integer), so scanning more
+# often than this buys nothing but re-read cost on a growing round log.
+_RESULT_SCAN_INTERVAL_S = 1.0
+
 
 def resolve_exec_target(command0: str, work_dir: Path, env_path: str | None = None) -> str | None:
     """Model of Popen's POSIX exec resolution for argv[0].
@@ -249,6 +254,9 @@ def run(
             threading.Thread(target=_write_stdin, daemon=True).start()
         result_seen_at: float | None = None
         grace_extended_emitted = False
+        result_scan_offset = 0
+        result_scan_carry = b""
+        last_result_scan = start
         while True:
             ret = proc.poll()
             now = clock.monotonic()  # duration / R1128 hard-wall / grace / interval — all monotonic
@@ -264,13 +272,22 @@ def run(
                 )
             # Grace kill: result emitted but subprocess still running.
             if max_grace_after_result_s > 0:
-                if result_seen_at is None:
+                if result_seen_at is None and now - last_result_scan >= _RESULT_SCAN_INTERVAL_S:
+                    last_result_scan = now
                     try:
                         with log_path.open("rb") as f:
-                            if _RESULT_MARKER in f.read():
-                                result_seen_at = now
+                            f.seek(result_scan_offset)
+                            chunk = f.read()
+                        result_scan_offset += len(chunk)
+                        haystack = result_scan_carry + chunk
+                        if _RESULT_MARKER in haystack:
+                            result_seen_at = now
+                        else:
+                            # Keep the tail so a marker split across two read
+                            # chunks (this scan vs. the next) still re-forms.
+                            result_scan_carry = haystack[-(len(_RESULT_MARKER) - 1) :]
                     except OSError:
-                        pass  # log not flushed yet; check next tick
+                        pass  # log not flushed yet; retry next interval
                 if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:
                     live, ignored = _live_children(proc, ignore_patterns=grace_kill_ignore_patterns)
                     if live:

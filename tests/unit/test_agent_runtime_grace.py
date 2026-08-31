@@ -143,10 +143,15 @@ def test_grace_extended_when_result_but_child_running(tmp_path):
 
 def test_grace_kill_after_child_exits_then_idle(tmp_path):
     """Live child first (extend), child exits, agent becomes childless (exec)
-    -> next tick reaps via grace (well before wall timeout)."""
+    -> next tick reaps via grace (well before wall timeout).
+
+    The child's 4s lifetime must clear (result-detection latency, up to
+    _RESULT_SCAN_INTERVAL_S ~= 1s since B5) + max_grace_after_result_s with
+    margin, so the "still busy -> extend" observation isn't a race against
+    the child's own exit."""
     script = _write_fake_script(
         tmp_path,
-        'echo \'{"type":"result"}\'\nsleep 2 &\nwait\nexec sleep 30\n',
+        'echo \'{"type":"result"}\'\nsleep 4 &\nwait\nexec sleep 30\n',
     )
     log_path = tmp_path / "round.log"
     extended = []
@@ -155,14 +160,14 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=10,
+        timeout_s=12,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
         on_grace_extended=lambda live, ignored: extended.append((live, ignored)),
     )
     assert result.killed_for_grace is True  # reaped after child exited
-    assert result.duration_s < 6  # ~2s child + reap, well under timeout
+    assert result.duration_s < 9  # ~4s child + reap, well under timeout
     assert len(extended) == 1
 
 
