@@ -192,6 +192,58 @@ def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_
     assert call_kwargs["phases_overrides"] == {"dev": PhaseOverride(round_timeout_s=3600)}
 
 
+def _fake_systemd_unit(tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = tmp_git_repo / "fake-systemd"
+    fake.mkdir(exist_ok=True)
+    (fake / f"agent-runner@{tmp_git_repo.name}.service").write_text("[Unit]\n")
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake)
+
+
+def test_given_systemd_failed_when_status_then_active_false(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "failed")
+    s = api.status(tmp_git_repo)
+    assert s.mode == ServiceMode.SYSTEMD_USER
+    assert s.active is False
+
+
+def test_given_systemd_activating_when_status_then_active_true(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "activating")
+    assert api.status(tmp_git_repo).active is True
+
+
+def test_given_systemctl_absent_when_status_then_falls_back_to_pid(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    from agent_runner.config import load_config
+
+    log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text(str(os.getpid()))
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: None)
+    assert api.status(tmp_git_repo).active is True  # live serve.pid
+
+
+def test_systemctl_is_active_seam_returns_none_when_binary_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*a, **k):
+        raise FileNotFoundError("systemctl")
+
+    monkeypatch.setattr("agent_runner.api.subprocess.run", boom)
+    assert api._systemctl_is_active("agent-runner@x.service") is None
+
+
 def test_poll_once_forwards_supervisor_stale_threshold(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -211,6 +211,42 @@ def _systemctl_user(*args: str) -> None:
     subprocess.run(["systemctl", "--user", *args], check=True)
 
 
+_SYSTEMD_ACTIVE_STATES = frozenset({"active", "activating", "reloading"})
+_SYSTEMD_INACTIVE_STATES = frozenset({"failed", "inactive"})
+
+
+def _systemctl_is_active(unit_name: str) -> str | None:
+    """Patchable seam. Return the unit's `systemctl --user is-active` state
+    string ("active"/"activating"/"failed"/...), or None when systemctl is
+    absent or the call errors — the caller then falls back to serve.pid so
+    status() never crashes on a non-systemd host (darwin dev, containers).
+    is-active prints the state even on a non-zero exit, so check=False keeps
+    the string instead of raising CalledProcessError."""
+    try:
+        proc = subprocess.run(
+            ["systemctl", "--user", "is-active", unit_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    return proc.stdout.strip() or None
+
+
+def _systemd_active(unit_name: str, log_dir: Path) -> bool:
+    """Map is-active state to liveness; the new StartLimit windows make
+    `activating` a routine healthy state. An unknown state or absent systemctl
+    falls back to serve.pid liveness."""
+    state = _systemctl_is_active(unit_name)
+    if state in _SYSTEMD_ACTIVE_STATES:
+        return True
+    if state in _SYSTEMD_INACTIVE_STATES:
+        return False
+    pid = PIDFile(log_dir / "serve.pid").read()
+    return pid is not None and pid_alive(pid)
+
+
 # ---------------------------------------------------------------------------
 # init / install / uninstall
 
@@ -380,7 +416,8 @@ def status(project: str | Path) -> ServiceStatus:
         return ServiceStatus(mode=mode, active=pid is not None and pid_alive(pid), pid=pid)
     if mode == ServiceMode.SYSTEMD_USER:
         unit = lifecycle._user_systemd_dir() / serve_unit_filename(pname)
-        return ServiceStatus(mode=mode, active=True, unit_file=unit)
+        active = _systemd_active(serve_unit_filename(pname), log_dir)
+        return ServiceStatus(mode=mode, active=active, unit_file=unit)
     return ServiceStatus(mode=ServiceMode.NONE, active=False)
 
 
