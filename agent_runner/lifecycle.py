@@ -18,6 +18,13 @@ from agent_runner.api_types import ServiceMode
 from agent_runner.context_store import atomic_write_json
 
 
+def _valid_pid(value: object) -> bool:
+    """A PID we may signal: a real int (not bool — bool subclasses int) and > 1
+    (pid 1 is init). Applied to BOTH read() branches so a legacy `true`/`1` file
+    can't smuggle an unsignalable PID past the guard."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 1
+
+
 @dataclass(frozen=True)
 class PIDFile:
     path: Path
@@ -47,9 +54,9 @@ class PIDFile:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             return None
-        if isinstance(data, int):
-            return data  # legacy bare-int format: unverified
-        if not isinstance(data, dict) or not isinstance(data.get("pid"), int):
+        if isinstance(data, int) or isinstance(data, bool):
+            return data if _valid_pid(data) else None  # legacy bare-int, still guarded
+        if not isinstance(data, dict) or not _valid_pid(data.get("pid")):
             return None
         pid = data["pid"]
         recorded = data.get("create_time")

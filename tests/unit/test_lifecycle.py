@@ -58,6 +58,36 @@ def test_legacy_bare_int_reads_unverified(tmp_path: Path) -> None:
     assert PIDFile(p).read() == os.getpid()
 
 
+def test_legacy_bare_bool_true_reads_none(tmp_path: Path) -> None:
+    """json `true` is an int subclass — must NOT slip through as pid 1."""
+    p = tmp_path / "p.pid"
+    p.write_text("true")
+    assert PIDFile(p).read() is None
+
+
+def test_legacy_bare_pid_one_reads_none(tmp_path: Path) -> None:
+    """pid 1 is init — never a serve process we started."""
+    p = tmp_path / "p.pid"
+    p.write_text("1")
+    assert PIDFile(p).read() is None
+
+
+def test_dict_bool_pid_reads_none(tmp_path: Path) -> None:
+    import json
+
+    p = tmp_path / "p.pid"
+    p.write_text(json.dumps({"pid": True}))
+    assert PIDFile(p).read() is None
+
+
+def test_dict_pid_one_reads_none(tmp_path: Path) -> None:
+    import json
+
+    p = tmp_path / "p.pid"
+    p.write_text(json.dumps({"pid": 1}))
+    assert PIDFile(p).read() is None
+
+
 def test_given_running_pid_when_pid_alive_then_returns_true() -> None:
     assert pid_alive(os.getpid()) is True
 
