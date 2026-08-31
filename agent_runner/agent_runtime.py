@@ -21,6 +21,7 @@ from pathlib import Path
 
 import psutil
 
+from agent_runner.api_types import _round_ok
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 
 REAP_GRACE_S = 5
@@ -55,12 +56,7 @@ class RunResult:
 
     @property
     def ok(self) -> bool:
-        """The supervisor's round-success predicate: clean exit, no timeout.
-
-        Single definition of "did this round fail" at the supervisor level. A
-        plugin MAY narrow it further when its CLI's exit code is unreliable.
-        """
-        return self.exit_code == 0 and not self.timed_out
+        return _round_ok(self.exit_code, self.timed_out)
 
 
 def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str) -> list[str]:

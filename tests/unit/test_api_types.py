@@ -188,3 +188,28 @@ def test_round_result_dirty_outcome_defaults_none_and_is_settable():
     assert RoundResult(**base).dirty_outcome is None
     r = RoundResult(**base, dirty_outcome=DirtyOutcome(kind="stashed", ref="sha"))
     assert r.dirty_outcome.kind == "stashed" and r.stashed is False
+
+
+def test_run_result_and_round_result_ok_share_one_predicate() -> None:
+    from agent_runner.agent_runtime import RunResult
+    from agent_runner.api_types import RoundResult, _round_ok
+
+    for exit_code, timed_out in [(0, False), (0, True), (1, False), (137, False)]:
+        expected = _round_ok(exit_code, timed_out)
+        rr = RunResult(exit_code=exit_code, duration_s=1.0, timed_out=timed_out, pid=1)
+        assert rr.ok is expected
+        round_res = RoundResult(
+            round_num=1,
+            phase=None,
+            started_at="",
+            ended_at="",
+            exit_code=exit_code,
+            duration_s=1.0,
+            timed_out=timed_out,
+            log_path=Path("x"),
+            dirty_files=[],
+            stashed=False,
+        )
+        assert round_res.ok is expected
+    assert _round_ok(0, False) is True
+    assert _round_ok(0, True) is False and _round_ok(1, False) is False

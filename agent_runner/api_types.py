@@ -158,6 +158,16 @@ class TransientErrorState:
     phase: str = ""  # rotation phase the failing round ran under ("" = no [phases])
 
 
+def _round_ok(exit_code: int, timed_out: bool) -> bool:
+    """The supervisor's round-success predicate: clean exit, no timeout.
+
+    Single definition of "did this round fail" at the supervisor level, shared by
+    ``RoundResult.ok`` and ``agent_runtime.RunResult.ok``. A plugin MAY narrow it
+    further when its CLI's exit code is unreliable.
+    """
+    return exit_code == 0 and not timed_out
+
+
 @dataclass(frozen=True)
 class RoundResult:
     """Result of one ``run_one_round`` call.
@@ -181,12 +191,7 @@ class RoundResult:
 
     @property
     def ok(self) -> bool:
-        """The supervisor's round-success predicate: clean exit, no timeout.
-
-        Single definition of "did this round fail" at the supervisor level. A
-        plugin MAY narrow it further when its CLI's exit code is unreliable.
-        """
-        return self.exit_code == 0 and not self.timed_out
+        return _round_ok(self.exit_code, self.timed_out)
 
 
 @dataclass(frozen=True)
