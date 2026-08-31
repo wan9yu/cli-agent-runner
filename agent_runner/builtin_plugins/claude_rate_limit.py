@@ -192,11 +192,12 @@ def _parse_claude_log(
     return out
 
 
-def _as_epoch(value: Any, fallback: int) -> int:
-    """Coerce a foreign ``resetsAt`` to an epoch int; a present-null, non-numeric,
-    or non-finite (NaN/Infinity) value degrades to ``fallback`` instead of raising
-    out of the caller and voiding the round. Never fabricates a value beyond the
-    provided fallback."""
+def _as_int(value: Any, fallback: int) -> int:
+    """Coerce a foreign numeric field to int; a present-null, non-numeric, or
+    non-finite (NaN/Infinity — both valid ``json.loads`` float tokens) value
+    degrades to ``fallback`` instead of raising and voiding the round. Shared
+    guard behind ``_as_epoch`` (reset-time fields) and ``_extract_usage``
+    (token/duration counts) — never fabricates a value beyond the fallback."""
     if isinstance(value, bool) or value is None:
         return fallback
     if isinstance(value, float) and not math.isfinite(value):
@@ -205,6 +206,11 @@ def _as_epoch(value: Any, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError, OverflowError):
         return fallback
+
+
+def _as_epoch(value: Any, fallback: int) -> int:
+    """Coerce a foreign ``resetsAt`` to an epoch int; see ``_as_int`` for the guard."""
+    return _as_int(value, fallback)
 
 
 def _classify_transient_error(
@@ -257,12 +263,12 @@ def _extract_usage(result_event: dict, *, model: str | None, tool_call_count: in
     return {
         "agent": "claude",
         "model": model or "unknown",
-        "input_tokens": int(usage.get("input_tokens", 0)),
-        "output_tokens": int(usage.get("output_tokens", 0)),
-        "cached_tokens": int(usage.get("cache_read_input_tokens", 0)),
-        "cache_creation_tokens": int(usage.get("cache_creation_input_tokens", 0)),
+        "input_tokens": _as_int(usage.get("input_tokens"), 0),
+        "output_tokens": _as_int(usage.get("output_tokens"), 0),
+        "cached_tokens": _as_int(usage.get("cache_read_input_tokens"), 0),
+        "cache_creation_tokens": _as_int(usage.get("cache_creation_input_tokens"), 0),
         "cost_usd": result_event.get("total_cost_usd"),
-        "duration_ms": int(result_event.get("duration_ms", 0)),
+        "duration_ms": _as_int(result_event.get("duration_ms"), 0),
         "models_breakdown": None,
         "tool_call_count": tool_call_count,
     }
