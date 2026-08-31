@@ -13,8 +13,6 @@ def test_given_stale_sentinel_when_serve_starts_then_cleaned(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Stale .agent-done from previous run is removed at serve startup."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -22,7 +20,11 @@ def test_given_stale_sentinel_when_serve_starts_then_cleaned(
     sentinel = log_dir / ".agent-done"
     sentinel.write_text("stale")
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        round_log_path.write_text("")
+        return 0
+
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
     assert not sentinel.exists()
@@ -33,7 +35,6 @@ def test_given_sentinel_present_pre_round_when_serve_then_break_loop_exit_0(
 ) -> None:
     """Sentinel found before round invocation → break, emit, exit 0."""
     import json
-    import subprocess
 
     from agent_runner.cli import serve_cmd
 
@@ -43,22 +44,22 @@ def test_given_sentinel_present_pre_round_when_serve_then_break_loop_exit_0(
 
     call_count = [0]
 
-    def fake_run(*_a, **_k):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
         # After first round, write sentinel so the SECOND iteration finds it.
         call_count[0] += 1
+        round_log_path.write_text("")
         if call_count[0] == 1:
             sentinel.write_text("research wrapped up")
-        return type("R", (), {"returncode": 0})()
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
-    # call_count breakdown: 1 = compute_git_head (before-round), 2 = round subprocess,
-    # 3 = compute_git_head (after-round). Sentinel is written on call 1 but checked
-    # only at the TOP of the next loop iteration — the first round completes fully
-    # (all 3 calls), then iteration 2 finds the sentinel and breaks. Total = 3 (not 6).
-    assert call_count[0] == 3  # second round NOT invoked
+    # Sentinel is written during round 1 but checked only at the TOP of the next
+    # loop iteration — the first round completes, then iteration 2 finds the
+    # sentinel and breaks. So the round spawn is invoked exactly once.
+    assert call_count[0] == 1  # second round NOT invoked
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
     payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
@@ -72,7 +73,6 @@ def test_given_empty_sentinel_when_serve_then_still_stops_with_empty_reason(
 ) -> None:
     """Empty .agent-done file still triggers stop; reason is empty string."""
     import json
-    import subprocess
 
     from agent_runner.cli import serve_cmd
 
@@ -82,13 +82,14 @@ def test_given_empty_sentinel_when_serve_then_still_stops_with_empty_reason(
 
     call_count = [0]
 
-    def fake_run(*_a, **_k):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
         call_count[0] += 1
+        round_log_path.write_text("")
         if call_count[0] == 1:
             sentinel.write_text("")
-        return type("R", (), {"returncode": 0})()
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
@@ -105,7 +106,6 @@ def test_given_long_reason_when_serve_then_event_payload_capped_200(
 ) -> None:
     """Reason text >200 chars is truncated to 200 in the event payload."""
     import json
-    import subprocess
 
     from agent_runner.cli import serve_cmd
 
@@ -116,13 +116,14 @@ def test_given_long_reason_when_serve_then_event_payload_capped_200(
 
     call_count = [0]
 
-    def fake_run(*_a, **_k):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
         call_count[0] += 1
+        round_log_path.write_text("")
         if call_count[0] == 1:
             sentinel.write_text(long_reason)
-        return type("R", (), {"returncode": 0})()
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
@@ -139,7 +140,6 @@ def test_given_non_utf8_sentinel_when_serve_then_handled_with_replace(
 ) -> None:
     """Non-UTF-8 bytes in .agent-done → read with errors='replace', still triggers stop."""
     import json
-    import subprocess
 
     from agent_runner.cli import serve_cmd
 
@@ -149,13 +149,14 @@ def test_given_non_utf8_sentinel_when_serve_then_handled_with_replace(
 
     call_count = [0]
 
-    def fake_run(*_a, **_k):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
         call_count[0] += 1
+        round_log_path.write_text("")
         if call_count[0] == 1:
             sentinel.write_bytes(b"\xff\xfe invalid utf-8")
-        return type("R", (), {"returncode": 0})()
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
     assert rc == 0
@@ -171,8 +172,6 @@ def test_given_serve_running_round_when_subprocess_invoked_then_env_has_log_dir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Round subprocess receives AGENT_RUNNER_LOG_DIR in its env."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -180,11 +179,12 @@ def test_given_serve_running_round_when_subprocess_invoked_then_env_has_log_dir(
 
     captured_env = {}
 
-    def fake_run(*_a, **kwargs):
-        captured_env.update(kwargs.get("env", {}))
-        return type("R", (), {"returncode": 0})()
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        captured_env.update(round_env)
+        round_log_path.write_text("")
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
     assert captured_env.get("AGENT_RUNNER_LOG_DIR") == str(log_dir)

@@ -40,11 +40,13 @@ from agent_runner.api import (
     emit_round_logs_prune_deferred,
     emit_round_substrate_after,
     emit_round_substrate_before,
+    emit_round_supervisor_wedged,
     emit_schedule_paused,
     emit_schedule_phase_skipped,
     emit_schedule_resumed,
     emit_stop_file_detected,
     emit_transient_error_recovered,
+    outer_round_ceiling_s,
     post_round_decision,
 )
 from agent_runner.cli.common import cfg_from_args
@@ -443,6 +445,69 @@ def _apply_fresh_eyes(cfg, log_dir, round_num: int, round_env: dict) -> None:
         )
 
 
+# Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler
+# reaps its agent pgroup (agent_runtime.REAP_GRACE_S) then exits, so allow that plus
+# margin. Kept local to honor serve_cmd's import allowlist; test_spawn_round_wedged
+# asserts it stays >= REAP_GRACE_S so the two never drift.
+_ROUND_TERM_GRACE_S = 15
+
+
+def _terminate_round(proc: subprocess.Popen) -> int:
+    """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
+    flock/sidecar released), grace, then killpg as last resort. Returns the returncode."""
+    proc.terminate()
+    try:
+        return proc.wait(timeout=_ROUND_TERM_GRACE_S)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        return proc.wait(timeout=10)
+
+
+def _spawn_round(
+    round_argv: list[str],
+    round_log_path: Path,
+    round_env: dict,
+    *,
+    timeout_s: int,
+) -> int:
+    """Spawn `agent-runner round` in its OWN process group under an outer wall-clock
+    ceiling. Breaks on the timeout DEADLINE only: on breach, emit
+    round_supervisor_wedged and escalate TERM → grace → killpg (TERM-first is
+    load-bearing: a bare killpg SIGKILLs before the round can reap its agent).
+    Graceful serve stop is NOT handled here — the serve loop's existing top-of-loop
+    `while not stop["requested"]` check + post-round break let the current round
+    finish (the documented stop contract: runbook.md, 0.2.11 CHANGELOG). Returns
+    the round returncode."""
+    log_dir = round_log_path.parent
+    with round_log_path.open("w") as f:
+        proc = subprocess.Popen(
+            round_argv,
+            env=round_env,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        try:
+            deadline = SYSTEM_CLOCK.monotonic() + timeout_s
+            while True:
+                try:
+                    return proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    pass
+                if SYSTEM_CLOCK.monotonic() >= deadline:
+                    break
+        except BaseException:
+            _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
+            raise
+        emit_round_supervisor_wedged(
+            log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
+        )
+        return _terminate_round(proc)
+
+
 def _add_max_rounds_arg(parser) -> None:
     parser.add_argument(
         "--max-rounds",
@@ -574,8 +639,12 @@ def cmd(args) -> int:
             ]
             if phase_arg is not None:
                 round_argv += ["--phase", phase_arg]
-            with round_log_path.open("w") as f:
-                r = subprocess.run(round_argv, env=round_env, stdout=f, stderr=subprocess.STDOUT)
+            r_returncode = _spawn_round(
+                round_argv,
+                round_log_path,
+                round_env,
+                timeout_s=outer_round_ceiling_s(cfg, phase_arg),
+            )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             git_head_after = compute_git_head(work_dir)
@@ -591,7 +660,7 @@ def cmd(args) -> int:
             # tested api.post_round_decision helper so this loop stays thin. Those
             # strings are that enum, not events.py kinds — do not normalize them.
             action, delay, consecutive_crashes = post_round_decision(
-                returncode=r.returncode,
+                returncode=r_returncode,
                 duration_s=round_duration_s,
                 # Crash-loop breaker excuses a fast exit only when the agent that just
                 # ran is throttled (agent-agnostic when the round self-rotated the phase).
@@ -607,7 +676,7 @@ def cmd(args) -> int:
                 emit_crash_loop(
                     log_dir,
                     consecutive=consecutive_crashes,
-                    exit_code=r.returncode,
+                    exit_code=r_returncode,
                     log_path=round_log_path,
                 )
                 exit_code = CRASH_LOOP_EXIT

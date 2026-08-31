@@ -3,7 +3,6 @@ short crashes; a clean round resets the run."""
 
 from __future__ import annotations
 
-import subprocess
 import time
 from pathlib import Path
 
@@ -18,22 +17,18 @@ from agent_runner.api import (
 from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
-def _fake_run(round_returncodes: list[int]):
-    """subprocess.run stand-in: only the ROUND subprocess consumes the supplied
-    returncodes (repeating the last); git/other calls return 0. Always supplies
-    .stdout so compute_git_head etc. don't choke."""
+def _fake_spawn(round_returncodes: list[int]):
+    """serve_cmd._spawn_round stand-in: returns the supplied returncodes in
+    sequence (repeating the last), and writes the round log file so downstream
+    readers (round-current.log relink, crash_loop's log tail) don't choke."""
     seq = list(round_returncodes)
 
-    def run(*args, **kwargs):
-        cmd = args[0] if args else kwargs.get("args", [])
-        is_round = isinstance(cmd, (list, tuple)) and "round" in cmd
-        if is_round:
-            rc = seq.pop(0) if len(seq) > 1 else seq[0]
-        else:
-            rc = 0
-        return type("R", (), {"returncode": rc, "stdout": ""})()
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        rc = seq.pop(0) if len(seq) > 1 else seq[0]
+        round_log_path.write_text("round output\n")
+        return rc
 
-    return run
+    return spawn
 
 
 def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
@@ -44,7 +39,7 @@ def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(subprocess, "run", _fake_run([1]))  # always crash, fast
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn([1]))  # always crash, fast
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
@@ -62,7 +57,7 @@ def test_given_clean_rounds_when_serve_then_no_crash_loop(
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(subprocess, "run", _fake_run([0]))  # always clean
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn([0]))  # always clean
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=4))
 
@@ -80,7 +75,7 @@ def test_given_success_between_crashes_when_serve_then_counter_resets(
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
     # 3 crashes, a clean round (resets), then crash forever → fires at 5 POST-reset
-    monkeypatch.setattr(subprocess, "run", _fake_run([1, 1, 1, 0, 1]))
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn([1, 1, 1, 0, 1]))
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 

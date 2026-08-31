@@ -1,5 +1,4 @@
 import json
-import subprocess
 import types
 from argparse import Namespace
 from datetime import datetime
@@ -123,9 +122,13 @@ def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
     cfg_path = _toml_with_always_pause(tmp_path)
     log_dir = tmp_path / "logs"
     ran = []
-    monkeypatch.setattr(
-        subprocess, "run", lambda *_a, **_k: ran.append(1) or type("R", (), {"returncode": 0})()
-    )
+
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        ran.append(1)
+        round_log_path.write_text("")
+        return 0
+
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
     rc = serve_cmd.cmd(args)

@@ -69,6 +69,27 @@ CRASH_LOOP_THRESHOLD = 5
 CRASH_LOOP_SHORT_EXIT_S = 60  # mirrors monitor.SHORT_EXIT_THRESHOLD_S
 CRASH_LOOP_MAX_DELAY_S = 1800  # cap the escalating restart delay (30 min)
 
+_HOOK_ALLOWANCE_S = 60  # slack for post-round hooks between the inner wall and the ceiling
+
+
+def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
+    """Outer wall-clock ceiling for the round subprocess: the inner round timeout
+    plus a DERIVED margin (agent reap grace + git-commit ceiling + hook allowance),
+    so the ceiling only trips when the round supervisor itself is wedged, never
+    while it does its own bounded post-round cleanup."""
+    from agent_runner.agent_runtime import REAP_GRACE_S
+    from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
+
+    if phase_arg is not None:
+        inner = cfg.profile_for(phase_arg).runtime.round_timeout_s
+    else:
+        # rotation/legacy: any phase can override larger, so budget the max
+        inner = max(
+            (cfg.profile_for(p).runtime.round_timeout_s for p in (cfg.phases.list or [])),
+            default=cfg.runtime.round_timeout_s,
+        )
+    return inner + REAP_GRACE_S + GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
+
 
 # The action strings below are the restart-action enum, not events.py kinds:
 # "continue" has no constant, and a constant cannot sit inside Literal[...].
@@ -772,6 +793,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_round_progress,
     emit_round_substrate_after,
     emit_round_substrate_before,
+    emit_round_supervisor_wedged,
     emit_schedule_paused,
     emit_schedule_phase_skipped,
     emit_schedule_resumed,

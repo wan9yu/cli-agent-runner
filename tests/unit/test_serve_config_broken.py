@@ -3,7 +3,6 @@ of respawning a broken config forever."""
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,10 +19,11 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
-    def fake_run(*_a, **_k):
-        return type("R", (), {"returncode": PERMANENT_CONFIG_EXIT, "stdout": ""})()
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        round_log_path.write_text("")
+        return PERMANENT_CONFIG_EXIT
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
     # serve broke the loop (returned the give-up exit code) rather than respawning

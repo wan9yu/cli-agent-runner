@@ -9,6 +9,12 @@ import pytest
 from tests._test_helpers import FakeArgs, make_toml
 
 
+def _fake_spawn_ok(round_argv, round_log_path, round_env, *, timeout_s) -> int:
+    """serve_cmd._spawn_round stand-in: clean exit, empty round log."""
+    round_log_path.write_text("")
+    return 0
+
+
 def _write_old_round_logs(log_dir: Path, count: int) -> None:
     """Create ``count`` round-<N>.log files with explicit ascending mtimes."""
     import os
@@ -41,21 +47,16 @@ def test_given_round_runs_when_serve_then_round_log_file_created(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Round subprocess output goes to log_dir/round-<N>.log."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
-    def fake_run(*_a, **kwargs):
-        stdout = kwargs.get("stdout")
-        if stdout:
-            stdout.write("round 1 output\n")
-            stdout.flush()
-        return type("R", (), {"returncode": 0})()
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        round_log_path.write_text("round 1 output\n")
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 
@@ -68,14 +69,12 @@ def test_given_round_runs_when_serve_then_current_symlink_points_to_active(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """round-current.log symlink points to the latest round-<N>.log."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_ok)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 
@@ -88,8 +87,6 @@ def test_given_existing_round_num_when_serve_then_log_filename_matches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """If status.json has round_num=5, next round's log is round-6.log (counter sync)."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
     from agent_runner.context_store import Status, write_status
 
@@ -98,7 +95,7 @@ def test_given_existing_round_num_when_serve_then_log_filename_matches(
     log_dir.mkdir(exist_ok=True)
     write_status(log_dir, Status(round_num=5, running=False))
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_ok)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 
@@ -110,8 +107,6 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Old round-<N>.log files beyond round_log_retention pruned at serve start."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
 
     log_dir = tmp_path / "logs"
@@ -121,7 +116,7 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
     _write_old_round_logs(log_dir, 6)
     cfg_path = _toml_with_retention(tmp_path, log_dir, retention=3)
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_ok)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 
@@ -140,8 +135,6 @@ def test_given_retention_zero_when_serve_starts_then_no_prune_and_no_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The default (0) leaves the serve-level family alone and stays silent."""
-    import subprocess
-
     from agent_runner.cli import serve_cmd
     from tests._test_helpers import read_events_for_current_month
 
@@ -150,7 +143,7 @@ def test_given_retention_zero_when_serve_starts_then_no_prune_and_no_event(
     _write_old_round_logs(log_dir, 50)
     cfg_path = _toml_with_retention(tmp_path, log_dir, retention=0)
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_ok)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 
@@ -169,8 +162,6 @@ def test_given_bulk_backlog_when_serve_starts_then_prune_deferred_and_emitted(
     """Lowering retention far below the existing backlog defers the whole prune:
     no file is deleted, one round_logs_prune_deferred is emitted, serve runs on.
     """
-    import subprocess
-
     from agent_runner.cli import serve_cmd
     from tests._test_helpers import read_events_for_current_month
 
@@ -179,7 +170,7 @@ def test_given_bulk_backlog_when_serve_starts_then_prune_deferred_and_emitted(
     _write_old_round_logs(log_dir, 10)
     cfg_path = _toml_with_retention(tmp_path, log_dir, retention=2)
 
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_ok)
 
     serve_cmd.cmd(FakeArgs(cfg_path))
 

@@ -8,7 +8,6 @@ an injected clock, mirroring test_serve_schedule_gate.py.
 from __future__ import annotations
 
 import json
-import subprocess
 import time
 from argparse import Namespace
 from datetime import datetime
@@ -29,16 +28,16 @@ def _events(log_dir):
 
 
 def _capture_run(monkeypatch):
-    """Patch subprocess.run to record round argvs only (skips git substrate calls);
-    returns the list of ``agent_runner.cli ... round`` invocations."""
+    """Patch serve_cmd._spawn_round to record round argvs, returning 0 without
+    spawning a real subprocess; returns the list of round-argv invocations."""
     argvs: list[list[str]] = []
 
-    def _fake(argv, **_k):
-        if "agent_runner.cli" in argv:
-            argvs.append(argv)
-        return type("R", (), {"returncode": 0})()
+    def _fake(round_argv, round_log_path, round_env, *, timeout_s):
+        argvs.append(round_argv)
+        round_log_path.write_text("")
+        return 0
 
-    monkeypatch.setattr(subprocess, "run", _fake)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake)
     return argvs
 
 

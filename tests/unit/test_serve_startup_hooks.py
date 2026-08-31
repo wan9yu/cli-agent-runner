@@ -79,8 +79,6 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """Hook runs successfully; serve proceeds to PID file write + loop."""
-    import subprocess
-
     from agent_runner import hooks
     from agent_runner.cli import serve_cmd
 
@@ -98,13 +96,11 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
 
     cfg_path = make_toml(tmp_path)
 
-    def fake_run(*_args, **_kwargs):
-        class R:
-            returncode = 0
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        round_log_path.write_text("")
+        return 0
 
-        return R()
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=True))
     assert rc == 0

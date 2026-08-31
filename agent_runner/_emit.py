@@ -27,6 +27,7 @@ __all__ = [
     "emit_round_progress",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
+    "emit_round_supervisor_wedged",
     "emit_schedule_paused",
     "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
@@ -166,6 +167,18 @@ def emit_round_substrate_after(
         git_head=git_head,
         paths_hash=paths_hash,
     )
+
+
+def emit_round_supervisor_wedged(
+    log_dir: Path, *, pid: int, timeout_s: int, log_path: Path
+) -> None:
+    """Emit when the round subprocess blew past the outer ceiling and serve had to
+    TERM/kill it (the round supervisor was wedged — not doing its own bounded
+    post-round cleanup). Distinct from round_timeout_kill (the AGENT hit the inner
+    wall inside a healthy round)."""
+    from agent_runner.events import ROUND_SUPERVISOR_WEDGED, emit
+
+    emit(log_dir, ROUND_SUPERVISOR_WEDGED, pid=pid, timeout_s=timeout_s, log_path=str(log_path))
 
 
 def emit_fresh_eyes_round_triggered(log_dir: Path, *, round_num: int, every_n: int) -> None:

@@ -79,18 +79,16 @@ def test_given_no_fresh_eyes_config_when_rounds_run_then_no_trigger_events(
     assert len(fresh_events) == 0
 
 
-def _capturing_run(captured: list[dict]):
-    """subprocess.run stand-in: records the ROUND subprocess env, passes
-    everything else (git rev-parse, etc.) a benign rc=0 with .stdout so
-    _substrate.compute_git_head doesn't take its AttributeError fallback."""
+def _capturing_spawn(captured: list[dict]):
+    """serve_cmd._spawn_round stand-in: records the round subprocess env,
+    writes the round log, and returns a clean exit."""
 
-    def run(*args, **kwargs):
-        cmd = args[0] if args else kwargs.get("args", [])
-        if isinstance(cmd, (list, tuple)) and "round" in cmd:
-            captured.append(dict(kwargs["env"]))
-        return type("R", (), {"returncode": 0, "stdout": ""})()
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s):
+        captured.append(dict(round_env))
+        round_log_path.write_text("")
+        return 0
 
-    return run
+    return spawn
 
 
 def test_given_fresh_eyes_round_when_serve_dispatches_then_env_var_is_1(
@@ -110,7 +108,7 @@ def test_given_fresh_eyes_round_when_serve_dispatches_then_env_var_is_1(
     )
     captured: list[dict] = []
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(subprocess, "run", _capturing_run(captured))
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _capturing_spawn(captured))
 
     serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=2))
 
@@ -130,7 +128,7 @@ def test_given_no_fresh_eyes_config_when_serve_dispatches_then_env_var_is_0(
     cfg_path = make_toml_with_sections(tmp_path, vcs_block='[vcs]\ndirty_action = "ignore"\n')
     captured: list[dict] = []
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(subprocess, "run", _capturing_run(captured))
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _capturing_spawn(captured))
 
     serve_cmd.cmd(FakeArgs(cfg_path))  # once=True → exactly one round
 

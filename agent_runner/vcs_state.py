@@ -116,6 +116,11 @@ def _matches_owned_path(path: str) -> bool:
     return False
 
 
+# Fixed git-commit ceiling (plugin-first: no new config knob). Feeds the outer
+# round ceiling (api.outer_round_ceiling_s) and is enforced on the commit itself.
+GIT_COMMIT_TIMEOUT_S = 120
+
+
 class AutoCommitError(RuntimeError):
     """git add/commit failed during try_auto_commit (reason capped at 200 chars)."""
 

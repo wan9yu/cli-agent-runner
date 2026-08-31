@@ -217,6 +217,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `round_start`
 - `round_substrate_after`
 - `round_substrate_before`
+- `round_supervisor_wedged`
 - `round_timeout_kill`
 - `schedule_paused`
 - `schedule_phase_skipped`
