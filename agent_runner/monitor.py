@@ -103,6 +103,28 @@ measure its own emissions, or a busy monitor over a dead supervisor never alarms
 # tests/invariants/test_auto_stop_policy_ssot.py pins it.
 AUTO_STOP_ALERTS: frozenset[str] = frozenset(_DEFAULT_AUTO_STOP_ON)
 
+_ALERT_IDENTITY_FIELDS: dict[str, tuple[str, ...]] = {
+    # Volatile fields (elapsed_s / streak / age_s / matches / value) are excluded;
+    # only fields that name the *episode* remain, so one episode dedups to one alert.
+    "hung": ("round_num",),
+    "orphan_chain": ("last_round",),
+    "rate_limit_active": ("agent", "throttled_until_iso"),
+    "anomaly_repetitive_active": ("latest_tool", "latest_target"),
+    "supervisor_stale": ("last_ts",),
+}
+
+
+def alert_identity(alert: Alert) -> str:
+    """Stable dedup key for one alert episode. Rate-crossing detectors (timeout_rate,
+    disk_*, mem_pressure, oauth_fail, network_fail) key on the detector name alone;
+    others key on the episode-identifying context fields enumerated above."""
+    fields = _ALERT_IDENTITY_FIELDS.get(alert.detector)
+    if not fields:
+        return alert.detector
+    parts = "|".join(f"{k}={alert.context.get(k)!r}" for k in fields)
+    return f"{alert.detector}:{parts}"
+
+
 _PLUGIN_DETECTORS: list[Detector] = []
 
 

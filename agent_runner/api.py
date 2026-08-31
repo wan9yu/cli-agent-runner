@@ -395,6 +395,10 @@ from agent_runner.events import (  # noqa: E402
 
 _RECENT_HOOK_FAILURES_LIMIT = 10
 _RECENT_BLIPS_LIMIT = 5
+_MONITOR_SEEN_CAP = 512
+"""Bound on `_monitor_loop_iter`'s dedup set — an unbounded set of alert-identity
+keys would grow forever across a long-lived monitor process; oldest-episode
+eviction (OrderedDict.popitem(last=False)) keeps memory flat."""
 
 
 def _recent_events_of_kind(
@@ -530,7 +534,9 @@ def monitor_loop(
 ) -> Iterator[monitor.Alert]:
     """Yield alerts as they're detected. Caller decides what to do.
 
-    The loop dedups alerts by (detector, json.dumps(context)) within session.
+    The loop dedups alerts by ``monitor.alert_identity`` (a stable per-episode key,
+    not the raw measurement) within a bounded, oldest-evicted window so a single
+    long-running alert cannot spam and the dedup set cannot grow unbounded.
     Emits ``monitor_started`` once at entry — programmatic consumers can subscribe
     to that kind as the canonical "supervision is up" signal (monitor is otherwise
     silent during healthy operation by design).
@@ -555,10 +561,10 @@ def _monitor_loop_iter(
     it is carried into the ``monitor_started`` payload as an explicit record
     that this monitor watches its own host.
     """
-    import json as _json
     import warnings
+    from collections import OrderedDict
 
-    seen: set[str] = set()
+    seen: OrderedDict[str, None] = OrderedDict()
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
@@ -579,10 +585,13 @@ def _monitor_loop_iter(
             SYSTEM_CLOCK.sleep(interval_s)
             continue
         for alert in alerts:
-            key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"
+            key = monitor.alert_identity(alert)
             if key in seen:
+                seen.move_to_end(key)
                 continue
-            seen.add(key)
+            seen[key] = None
+            if len(seen) > _MONITOR_SEEN_CAP:
+                seen.popitem(last=False)  # bounded: evict oldest episode
             yield alert
             monitor.on_alert(
                 alert,
