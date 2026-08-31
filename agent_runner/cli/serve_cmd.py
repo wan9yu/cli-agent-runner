@@ -15,6 +15,7 @@ import os
 import signal
 import subprocess  # noqa: TID251
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -264,6 +265,14 @@ def _skip_around(cfg, args) -> bool:
     return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
 
 
+def _stop_file_predicate(stop_file: Path | None) -> Callable[[], bool]:
+    """Zero-arg should_stop predicate for _interruptible_sleep/_apply_back_off: True
+    iff a stop_file is configured and currently exists. Shared by the back-off gate
+    and the crash-loop restart delay so a stop_file lands within one sleep chunk on
+    both paths instead of only being noticed at the next loop-top check."""
+    return lambda: stop_file is not None and stop_file.exists()
+
+
 def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
     """Legacy single-throttle gate for the NON-skip regime (wait / back_off / stop).
 
@@ -277,9 +286,16 @@ def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
         return "proceed"
     action = cfg.runtime.transient_error_action
     if action == "back_off":
-        # Emits transient_error_recovered on resume; returns True (→ break) if a
-        # SIGTERM cut the back-off short, leaving the throttle active and no breadcrumb.
-        if _apply_back_off(log_dir, throttle, stop=stop):
+        # Emits transient_error_recovered on resume; returns True (→ break) if a SIGTERM
+        # or stop_file cut the back-off short, leaving the throttle active and no
+        # breadcrumb. stop_file is re-checked per chunk so it lands within one chunk
+        # instead of after the full back-off (up to the 8h cap).
+        if _apply_back_off(
+            log_dir,
+            throttle,
+            stop=stop,
+            should_stop=_stop_file_predicate(cfg.runtime.stop_file),
+        ):
             return "break"
     elif action == "stop":
         emit_rate_limit_stop(log_dir)
@@ -683,8 +699,9 @@ def cmd(args) -> int:
                 break
             if args.once or stop["requested"]:
                 break
-            # Chunked so a SIGTERM during a long restart delay lands within one chunk.
-            _interruptible_sleep(delay, stop)
+            # Chunked so a SIGTERM/stop_file during a long restart delay lands within
+            # one chunk.
+            _interruptible_sleep(delay, stop, should_stop=_stop_file_predicate(stop_file))
     finally:
         pid_file.unlink()
         _release_serve_lock(serve_lock_fd)

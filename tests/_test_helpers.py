@@ -160,12 +160,18 @@ def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
 
 
 def read_events_for_current_month(log_dir: Path) -> list[dict]:
-    """Read all events from the current month's events-YYYY-MM.jsonl."""
+    """Read all events from the current month's events-YYYY-MM.jsonl.
+
+    Returns ``[]`` when the file doesn't exist yet — a caller that interrupted
+    before any event was emitted (e.g. a should_stop-tripped back-off) has no
+    events file at all, which is a valid "nothing happened" state, not an error."""
     import json
     from datetime import UTC, datetime
 
     month = datetime.now(UTC).strftime("%Y-%m")
     events_path = log_dir / f"events-{month}.jsonl"
+    if not events_path.exists():
+        return []
     return [json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
 
 

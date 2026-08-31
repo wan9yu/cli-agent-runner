@@ -14,6 +14,7 @@ import json
 import math
 import random
 import warnings
+from collections.abc import Callable
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -355,11 +356,22 @@ _BACK_OFF_JITTER_MAX_S = 30
 
 
 def _interruptible_sleep(
-    total_s: float, stop: dict[str, bool], *, clock: Clock = SYSTEM_CLOCK, chunk_s: int = 30
+    total_s: float,
+    stop: dict[str, bool],
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    chunk_s: int = 30,
+    should_stop: Callable[[], bool] | None = None,
 ) -> bool:
-    """Sleep ``total_s`` in ``<= chunk_s`` slices, re-checking ``stop`` at each
-    boundary; return True iff ``stop["requested"]`` cut it short. Shared by the serve
-    restart delay and :func:`_apply_back_off` so a SIGTERM lands within one chunk.
+    """Sleep ``total_s`` in ``<= chunk_s`` slices, re-checking ``stop`` (and, if given,
+    ``should_stop()``) at each boundary; return True iff ``stop["requested"]`` OR
+    ``should_stop()`` cut it short. Shared by the serve restart delay and
+    :func:`_apply_back_off` so a SIGTERM or a stop_file lands within one chunk instead
+    of after the full sleep (e.g. the 8h back-off cap).
+
+    ``should_stop`` matches :func:`_pause_poll`'s contract (serve_cmd.py): a zero-arg
+    predicate the caller closes over its own stop_file check with, so this module never
+    needs to know what "should stop" means beyond calling it.
 
     Counts down the *intended* nap per slice rather than measuring a wall/monotonic
     deadline: NTP-step immune (no clock read for the deadline) AND does not busy-spin
@@ -367,7 +379,7 @@ def _interruptible_sleep(
     instead of looping until real time advances)."""
     remaining = float(total_s)
     while remaining > 0:
-        if stop["requested"]:
+        if stop["requested"] or (should_stop is not None and should_stop()):
             return True
         nap = min(float(chunk_s), remaining)
         clock.sleep(nap)
@@ -382,15 +394,17 @@ def _apply_back_off(
     stop: dict[str, bool],
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
+    should_stop: Callable[[], bool] | None = None,
 ) -> bool:
     """Sleep until adjusted reset_at + jitter, then emit recovered. Returns True iff
-    ``stop["requested"]`` was set before the sleep completed — an interrupted back-off,
-    where the caller must break WITHOUT treating the throttle as recovered: the reset
-    has not passed, so a recovered breadcrumb would poison restart-safe state.
+    ``stop["requested"]`` OR ``should_stop()`` cut the sleep short before it completed —
+    an interrupted back-off, where the caller must break WITHOUT treating the throttle
+    as recovered: the reset has not passed, so a recovered breadcrumb would poison
+    restart-safe state.
 
-    The sleep is chunked and re-checks ``stop`` at each boundary (see
-    :func:`_interruptible_sleep`), so a SIGTERM lands within one chunk instead of after
-    a multi-hour window.
+    The sleep is chunked and re-checks ``stop`` (and ``should_stop``) at each boundary
+    (see :func:`_interruptible_sleep`), so a SIGTERM or a stop_file lands within one
+    chunk instead of after a multi-hour window.
 
     For estimated-class classifications (rate_limit_model / api_transient_5xx /
     api_timeout), applies exp backoff on consecutive failures via
@@ -431,8 +445,8 @@ def _apply_back_off(
         sleep_s = max(requested, 0.0)
 
     sleep_start = clock.epoch()
-    if _interruptible_sleep(sleep_s, stop, clock=clock, chunk_s=chunk_s):
-        return True  # SIGTERM during back-off — leave the throttle active, no breadcrumb
+    if _interruptible_sleep(sleep_s, stop, clock=clock, chunk_s=chunk_s, should_stop=should_stop):
+        return True  # SIGTERM/stop_file during back-off — leave throttle active, no breadcrumb
 
     emit_transient_error_recovered(
         log_dir,
