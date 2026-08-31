@@ -185,3 +185,22 @@ def test_throttled_determinism_same_inputs_same_output(tmp_path):
     a = phase_select.select_phase(cfg, 1, throttled_phases=t, now_fn=_clock(10))
     b = phase_select.select_phase(cfg, 1, throttled_phases=t, now_fn=_clock(10))
     assert (a.phase, a.paused, a.skipped) == (b.phase, b.paused, b.skipped)
+
+
+def test_rotation_index_is_zero_based_round_minus_one_mod_n() -> None:
+    from agent_runner import phase_select
+
+    assert [phase_select.rotation_index(r, 3) for r in (1, 2, 3, 4)] == [0, 1, 2, 0]
+
+
+def test_runner_and_phase_select_rotation_agree(tmp_path) -> None:
+    from agent_runner import phase_select
+    from agent_runner.runner import _phase_for
+
+    phases = ["a", "b", "c"]
+    phases_block = '[phases]\nlist = ["a","b","c"]\nphase_policy = "wait"\n'
+    cfg = _cfg(tmp_path, phases_block)
+    for r in range(1, 8):
+        _, idx = _phase_for(r, phases)
+        assert idx == phase_select.rotation_index(r, len(phases))
+        assert phases[idx] == phase_select.candidate_phases(cfg, r)[0]

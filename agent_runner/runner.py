@@ -22,6 +22,7 @@ from agent_runner import (
     events,
     hooks,
     metrics,
+    phase_select,
     startup_check,
     vcs_state,
 )
@@ -135,7 +136,7 @@ def _phase_for(
         return override, phases.index(override)
     if not phases:
         return None, 0
-    idx = (round_num - 1) % len(phases)
+    idx = phase_select.rotation_index(round_num, len(phases))
     return phases[idx], idx
 
 

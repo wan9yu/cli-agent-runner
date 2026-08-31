@@ -18,6 +18,13 @@ from datetime import datetime
 from agent_runner import schedule
 
 
+def rotation_index(round_num: int, n: int) -> int:
+    """Zero-based phase index for ``round_num`` over ``n`` phases: the single
+    ``(round_num - 1) % n`` rotation shared by the runner's ``_phase_for`` and this
+    module's ``candidate_phases`` so serve and ``round`` rotate identically."""
+    return (round_num - 1) % n
+
+
 @dataclass(frozen=True)
 class Selection:
     """Outcome of :func:`select_phase` for one round.
@@ -53,7 +60,7 @@ def candidate_phases(cfg, round_num: int) -> list[str | None]:
     if not phases:
         return [None]
     n = len(phases)
-    k0 = (round_num - 1) % n
+    k0 = rotation_index(round_num, n)
     if cfg.phases.phase_policy == "skip":
         return [phases[(k0 + i) % n] for i in range(n)]
     return [phases[k0]]
