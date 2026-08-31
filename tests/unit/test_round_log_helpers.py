@@ -162,6 +162,27 @@ def test_given_dangling_symlink_when_prune_then_no_crash_and_skipped(tmp_path: P
     assert outcome.deleted == 1
 
 
+def test_given_dangling_round_current_link_when_prune_then_no_crash_and_left_alone(
+    tmp_path: Path,
+) -> None:
+    """Finding #13, literally: round-current.log itself (not a stand-in name)
+    is a symlink whose target has been removed. Must not crash serve startup,
+    must never be counted or pruned, and the real round logs still prune
+    correctly per retention."""
+    _write_round_logs(tmp_path, 3)  # round-1..3
+    dangling_current = tmp_path / ROUND_CURRENT_LINK
+    dangling_current.symlink_to(tmp_path / "round-removed.log")  # target does not exist
+
+    outcome = prune_old_round_logs(tmp_path, retention=2)  # must not raise
+
+    assert dangling_current.is_symlink()  # untouched, not resolved/crashed on
+    assert outcome.existing == 3  # dangling round-current.log never counted
+    assert outcome.deleted == 1
+    assert not (tmp_path / "round-1.log").exists()  # oldest regular file pruned
+    assert (tmp_path / "round-2.log").exists()
+    assert (tmp_path / "round-3.log").exists()
+
+
 def test_given_file_deleted_during_sort_when_prune_then_skips_entry(
     tmp_path: Path, monkeypatch
 ) -> None:
