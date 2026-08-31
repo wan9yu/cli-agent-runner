@@ -29,6 +29,11 @@ def _rr(exit_code: int, *, timed_out: bool = False, killed_for_grace: bool = Fal
 
 
 def _run(monkeypatch, result: RoundResult) -> int:
+    # cmd() installs a real SIGTERM handler; without this no-op each call here
+    # would permanently rebind the pytest process's global SIGTERM disposition
+    # (the suite runs in one interpreter) — a test-isolation leak, not just a
+    # unit-test concern. See test_round_cmd_sigterm.py for the handler's own tests.
+    monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
     monkeypatch.setattr(round_cmd, "cfg_from_args", lambda _a: object())
     with patch.object(round_cmd, "run_one_round", return_value=result):
         return round_cmd.cmd(Namespace(config="x", phase=None))
