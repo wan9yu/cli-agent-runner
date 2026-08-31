@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-08-31
+
+### Breaking
+- Config validation now hard-rejects footguns that used to load silently: a scalar where a list is required (`phases.list`, `[agent] command`, `prompt_arg_template`, `[prompt] files`), an empty `[agent] command` / empty top-level `[prompt] files`, unknown keys in `[schedule]`/`[prompt]`, and `threshold > window`. **Run `agent-runner migrate` BEFORE `upgrade`** — the orchestrated upgrade runs the old binary's migrate, which cannot self-cross this break. Every new error names `agent-runner migrate`.
+- systemd `serve` unit adds `StartLimitIntervalSec`/`StartLimitBurst`; re-render or hand-edit existing units.
+
+### Fixed
+- The monitor no longer dies on a non-UTF-8 byte or an odd plugin severity; each builtin detector is isolated (`detector_error` event) and a hung round is TERM→grace→killpg'd (`round_supervisor_wedged`) instead of orphaning the agent or latching `hung`.
+- Environmental startup failures (ENOSPC, mount hiccup, unclassified) escalate back-off (exit 76) instead of tripping the crash-loop breaker; deterministic config failures give up by name (exit 78).
+- A git-commit timeout leaves no surviving `.git/index.lock` (self-caused only; `stale_index_lock_cleared`); a stop-file lands within one back-off chunk.
+- `status`/`kill`/`restart` report and act on real service state: liveness falls back to `serve.pid` when `systemctl` is absent, and `restart` refuses on non-service modes before stopping.
+- `upgrade` runs the new binary's `migrate` before the smoke check, restores the config on rollback, and emits `upgrade_start_failed` with a remedy when the new version installs but won't start.
+- `json_tail` no longer lets a blank-line flood evict the terminal round-log record; `init` commits only its scaffold files.
+
+### Notes
+- New event kinds: `detector_error`, `round_supervisor_wedged`, `stale_index_lock_cleared`, `upgrade_start_failed`. `RestartPreventExitStatus` stays `78 75` — the new environmental code 76 restarts.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.11] - 2026-08-29
 
 ### Changed
