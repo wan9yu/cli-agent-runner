@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import random
+import warnings
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,44 @@ from agent_runner.events import (
 # _scan_events_for_transient sentinel: file held no transient event at all
 # (distinct from "latest transient was a recovered" → None).
 _NO_TRANSIENT = object()
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    """Coerce a parsed-event field to int, falling back to ``default`` on None or a
+    non-numeric value with a ``UserWarning``. A plugin-written ``reset_at_epoch: null``
+    must degrade to 'no throttle', never raise a TypeError out of the serve loop."""
+    if isinstance(value, bool):
+        value = int(value)  # bool is an int subclass; normalize before the isinstance below
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            pass
+    warnings.warn(
+        f"cannot coerce event value {value!r} to int; using default {default}", stacklevel=2
+    )
+    return default
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    """Float sibling of ``_coerce_int`` for parsed-event metric fields."""
+    if isinstance(value, bool):
+        value = float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            pass
+    warnings.warn(
+        f"cannot coerce event value {value!r} to float; using default {default}", stacklevel=2
+    )
+    return default
 
 
 def _iter_events(path: Path):
@@ -112,14 +151,14 @@ def _active_throttles(
     for agent, detected in _latest_transient_per_agent(log_dir).items():
         if detected is None:
             continue
-        reset_at = int(detected.get("reset_at_epoch", 0))
+        reset_at = _coerce_int(detected.get("reset_at_epoch"), 0)
         if reset_at <= now:
             continue
         active[agent] = TransientErrorState(
             reset_at_epoch=reset_at,
             classification=str(detected.get("classification", "rate_limit_account")),
             agent=agent,
-            since_round=int(detected.get("round_num", 0)),
+            since_round=_coerce_int(detected.get("round_num"), 0),
             phase=str(detected.get("phase", "")),
         )
     return active
@@ -142,7 +181,7 @@ def _check_throttle_state(
     latest_detected = _latest_unrecovered_detected(log_dir)
     if latest_detected is None:
         return None
-    reset_at = int(latest_detected.get("reset_at_epoch", 0))
+    reset_at = _coerce_int(latest_detected.get("reset_at_epoch"), 0)
     if reset_at <= now:
         return None  # Reset already passed without recovery emit; treat as recovered
 
@@ -152,7 +191,7 @@ def _check_throttle_state(
         reset_at_epoch=reset_at,
         classification=classification,
         agent=str(latest_detected.get("agent", "unknown")),
-        since_round=int(latest_detected.get("round_num", 0)),
+        since_round=_coerce_int(latest_detected.get("round_num"), 0),
         phase=str(latest_detected.get("phase", "")),
     )
 
@@ -187,7 +226,7 @@ def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tup
     now = clock.epoch()
     cleared: list[tuple[str, str, int]] = []
     for agent, detected in _latest_transient_per_agent(log_dir).items():
-        if detected is None or int(detected.get("reset_at_epoch", 0)) > now:
+        if detected is None or _coerce_int(detected.get("reset_at_epoch"), 0) > now:
             continue  # None = latest was a recovered; > now = still throttled
         cleared.append(
             (

@@ -434,8 +434,11 @@ def detect_rate_limit_active(
         if kind == TRANSIENT_ERROR_RECOVERED:
             return None
         if kind == TRANSIENT_ERROR_DETECTED:
-            if int(ev.get("reset_at_epoch", 0)) > now:
-                iso = datetime.fromtimestamp(ev["reset_at_epoch"], UTC).isoformat()
+            from agent_runner._throttle import _coerce_int
+
+            reset = _coerce_int(ev.get("reset_at_epoch"), 0)
+            if reset > now:
+                iso = datetime.fromtimestamp(reset, UTC).isoformat()
                 classification = ev.get("classification", "unknown")
                 return _alert(
                     "rate_limit_active",
@@ -723,14 +726,16 @@ def assemble_project_state(source: StateSource, *, project: str) -> ProjectState
     status = read_json(source.status_path()) or {}
     orphan = read_json(source.orphan_path())
     latest = _latest_metric_dict(metrics)
+    from agent_runner._throttle import _coerce_float, _coerce_int
+
     system = SystemMetrics(
-        mem_total_mb=int(latest.get("mem_total_mb", 0)),
-        mem_available_mb=int(latest.get("mem_available_mb", 0)),
-        disk_used_pct=float(latest.get("disk_used_pct", 0.0)),
-        disk_free_gb=float(latest.get("disk_free_gb", 0.0)),
+        mem_total_mb=_coerce_int(latest.get("mem_total_mb"), 0),
+        mem_available_mb=_coerce_int(latest.get("mem_available_mb"), 0),
+        disk_used_pct=_coerce_float(latest.get("disk_used_pct"), 0.0),
+        disk_free_gb=_coerce_float(latest.get("disk_free_gb"), 0.0),
         load_1m=latest.get("load_1m"),
         cpu_pct=latest.get("cpu_pct"),
-        agent_process_count=int(latest.get("agent_process_count", 0)),
+        agent_process_count=_coerce_int(latest.get("agent_process_count"), 0),
     )
     return ProjectState(
         project=project,
