@@ -254,6 +254,23 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
     return 0
 
 
+def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
+    """Print matching lines of ``path`` from byte ``start`` to true EOF; return EOF."""
+    with path.open("r", encoding="utf-8") as f:
+        f.seek(start)
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                evt = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if evt.get("event") in kind_set:
+                print(line, flush=True)
+        return f.tell()
+
+
 def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = None) -> int:
     """Streaming: poll current-month events.jsonl at 1s interval; emit each
     new matching line as it fires. Blocks until SIGINT (KeyboardInterrupt).
@@ -283,28 +300,20 @@ def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = Non
         while True:
             events_file = _current_month_events_file(log_dir)
             if events_file != current_file:
-                # Month rollover OR first iteration: reset offset
+                if current_file is not None and current_file.exists():
+                    # Rollover: flush the old file's remaining tail before switching,
+                    # then begin the new file at 0 (no line is lost across the boundary).
+                    _emit_new_lines(current_file, last_size, kind_set)
+                    last_size = 0
+                elif current_file is None:
+                    # True first iteration (no --since): skip the pre-existing backlog.
+                    last_size = events_file.stat().st_size if events_file.exists() else 0
                 current_file = events_file
-                last_size = events_file.stat().st_size if events_file.exists() else 0
 
             if events_file.exists():
                 size = events_file.stat().st_size
                 if size > last_size:
-                    with events_file.open("r", encoding="utf-8") as f:
-                        f.seek(last_size)
-                        for line in f:
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                evt = json.loads(line)
-                            except json.JSONDecodeError:
-                                continue
-                            if evt.get("event") in kind_set:
-                                print(line, flush=True)
-                        # True EOF, not the size sampled above: a writer may have
-                        # appended during the loop and those lines were printed.
-                        last_size = f.tell()
+                    last_size = _emit_new_lines(events_file, last_size, kind_set)
                 elif size < last_size:
                     # File truncated / rotated underneath us; reset
                     last_size = 0
