@@ -512,6 +512,48 @@ def test_given_sibling_recovered_when_peek_then_still_throttled_agent_surfaces(
     assert state.service.rate_limit.throttled_until_epoch == future
 
 
+def test_given_consecutive_5xx_detections_when_peek_then_reports_escalated_reset(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """peek's throttled_until_epoch must reflect the events-derived exp-backoff
+    escalation (_backoff_exponent + _extend_reset), not the raw emitter reset — a
+    permanently-failing agent's 4x-extended reset must be visible to an operator
+    watching peek / the HTTP dashboard, not just gate the skip loop internally."""
+    import time
+
+    from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_reset = int(time.time() + 60)
+    # 3 consecutive detections, no success between → exponent=2 → multiplier=4.
+    rows = [
+        {
+            "event": "transient_error_detected",
+            "ts": f"2026-05-16T00:0{i}:00Z",
+            "agent": "claude",
+            "reset_at_epoch": raw_reset,
+            "classification": "api_transient_5xx",
+            "round_num": i,
+        }
+        for i in range(3)
+    ]
+    (log_dir / "events-2026-05.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+    base = _BACK_OFF_DEFAULTS["api_transient_5xx"]
+    expected_reset = raw_reset + base * (2**2 - 1)  # exponent=2 → 4x - 1x extra
+
+    state = api.peek(tmp_git_repo)
+    assert state.service.rate_limit is not None
+    assert state.service.rate_limit.throttled_until_epoch == expected_reset
+    assert state.service.rate_limit.throttled_until_epoch > raw_reset
+
+
 def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

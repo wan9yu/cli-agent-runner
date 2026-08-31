@@ -238,15 +238,29 @@ def effective_throttle_view(
 ) -> tuple[TransientErrorState | None, dict[str, TransientErrorState]]:
     """The scalar throttle view + the active-by-agent map, composed once.
 
-    The global-latest scalar (:func:`_check_throttle_state`) can be None while a
-    sibling agent is still throttled (the newest transient event is another agent's
-    recovered). When that happens fall back to the active throttle that clears LAST,
-    so the scalar fields stay coherent. Both :func:`api.peek` and
+    ``active`` carries the events-derived exp-backoff escalation
+    (:func:`_active_throttles` → :func:`_backoff_exponent` + :func:`_extend_reset`);
+    the raw scalar from :func:`_check_throttle_state` does not — it reads the
+    emitter's ``reset_at_epoch`` verbatim. Reconcile the two here: when the
+    scalar's agent has an entry in ``active``, swap the scalar for that
+    (escalated) entry, so every consumer of the scalar — not just the
+    None-fallback case below — sees the SAME reset the skip loop is actually
+    gating on. Without this, a permanently-failing agent's escalation would
+    reach the skip loop but not ``api.peek`` / the HTTP dashboard, which would
+    keep reporting the original (shorter) reset and confuse an operator
+    watching the stated time pass with the agent still throttled.
+
+    Separately, the global-latest scalar can be None while a sibling agent is
+    still throttled (the newest transient event is another agent's recovered).
+    When that happens fall back to the active throttle that clears LAST, so the
+    scalar fields stay coherent. Both :func:`api.peek` and
     ``http_progress._rate_limit_state`` consume this — the two had drifted (peek had
     the fallback, http_progress did not)."""
     throttle = _check_throttle_state(log_dir, clock=clock)
     active = _active_throttles(log_dir, clock=clock)
-    if throttle is None and active:
+    if throttle is not None and throttle.agent in active:
+        throttle = active[throttle.agent]
+    elif throttle is None and active:
         throttle = max(active.values(), key=lambda s: s.reset_at_epoch)
     return throttle, active
 
