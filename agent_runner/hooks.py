@@ -47,6 +47,19 @@ from agent_runner._registry import ensure_unique
 _HEAD_BYTES = 1024
 _TAIL_BYTES = 1024
 _TRUNC_MARKER = "\n... [truncated] ...\n"
+_MAX_ERROR_MSG_BYTES = 1024
+
+
+def _cap_redacted(text: str, n: int) -> str:
+    """Redact secrets FIRST, then cap to ``n`` chars (head + marker + tail). Redacting
+    before truncating is load-bearing: a secret straddling the cut would otherwise be
+    split so the anchored regexes miss it and a fragment reaches events.jsonl."""
+    redacted = redact_secrets(text)
+    if len(redacted) <= n:
+        return redacted
+    head = n // 2
+    tail = n - head
+    return redacted[:head] + _TRUNC_MARKER + redacted[-tail:]
 
 
 @dataclass(frozen=True)
@@ -274,7 +287,7 @@ def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
             hook(cfg)
         except Exception as e:  # noqa: BLE001 — hook is plugin contract; any failure aborts serve
             exc_type = type(e).__name__
-            exc_msg = redact_secrets(str(e))[:200]
+            exc_msg = _cap_redacted(str(e), 200)
             print(
                 f"agent-runner: serve_startup_hook {hook.name} failed: {exc_type}: {exc_msg}",
                 file=sys.stderr,
@@ -294,17 +307,10 @@ def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
 
 
 def _summarize_error(exc: BaseException, tb: str) -> dict[str, str]:
-    """Pack exception details for a ``hook_failed`` event payload.
-
-    Truncates ``tb`` to ``_HEAD_BYTES`` + ``_TAIL_BYTES`` with a separator
-    so the JSONL stream doesn't bloat from one runaway hook.
-    """
-    if len(tb) <= _HEAD_BYTES + _TAIL_BYTES:
-        trimmed = tb
-    else:
-        trimmed = tb[:_HEAD_BYTES] + _TRUNC_MARKER + tb[-_TAIL_BYTES:]
+    """Pack exception details for a ``hook_failed`` payload. Both fields redact before
+    capping (see :func:`_cap_redacted`) so no secret survives the JSONL cut."""
     return {
         "error_type": type(exc).__name__,
-        "error_message": redact_secrets(str(exc)),
-        "traceback": redact_secrets(trimmed),
+        "error_message": _cap_redacted(str(exc), _MAX_ERROR_MSG_BYTES),
+        "traceback": _cap_redacted(tb, _HEAD_BYTES + _TAIL_BYTES),
     }
