@@ -309,6 +309,7 @@ def _orchestrated_upgrade(
             failure_reason=version_or_err,
             started_at=t0,
             cfg_path=cfg_path,
+            restore_config=pre_migrate,
         )
     to_version = version_or_err
 
@@ -322,6 +323,7 @@ def _orchestrated_upgrade(
             failure_reason=peek_err,
             started_at=t0,
             cfg_path=cfg_path,
+            restore_config=pre_migrate,
         )
     info(f"smoke OK (now at {to_version})")
 
@@ -449,8 +451,18 @@ def _rollback(
             f"{rollback_pip.stderr.strip()[:200]}",
         )
 
-    if restore_config is not None and Path(cfg_path).read_text(encoding="utf-8") != restore_config:
-        Path(cfg_path).write_text(restore_config, encoding="utf-8")  # undo the new-binary migrate
+    if restore_config is not None:
+        try:
+            if Path(cfg_path).read_text(encoding="utf-8") != restore_config:
+                # undo the new-binary migrate
+                Path(cfg_path).write_text(restore_config, encoding="utf-8")
+        except OSError as e:  # best-effort; report instead of crashing mid-rollback
+            return _rollback_failed(
+                log_dir,
+                attempted_version,
+                from_version,
+                f"config restore failed after pip rollback: {type(e).__name__}: {str(e)[:150]}",
+            )
 
     rc_v, version_or_err = _smoke_version()
     if rc_v != 0:

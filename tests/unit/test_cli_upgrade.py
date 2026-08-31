@@ -775,6 +775,69 @@ def test_given_new_binary_migrate_manual_when_upgrade_then_rollback_restores_con
     assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
 
 
+def test_given_migrate_succeeds_then_later_smoke_fails_when_rollback_then_config_restored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """New-binary migrate succeeds (rewrites the file to the new schema), but the
+    peek smoke AFTER it fails → rollback still must restore the pre-migrate
+    config, not just leave the new-schema file for the reinstalled old binary."""
+    import json
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.api_types import ServiceMode
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    original = toml_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+    monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
+
+    version_calls = [0]
+
+    def fake_run(cmd, **kwargs):
+        if _is_pip_call(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "migrate" in cmd:
+            # migrate SUCCEEDS but rewrites the file to the new schema
+            Path(_config_arg(cmd)).write_text(original + "\nmigrated_field = true\n")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            version_calls[0] += 1
+            # 1st --version (smoke for new): 9.9.9. 2nd (sanity smoke restored): from_version.
+            if version_calls[0] == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="agent-runner 9.9.9\n", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        if "peek" in cmd:
+            # peek FAILS after a successful migrate — triggers rollback
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="KeyError: 'phases'"
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+    assert rc == 1  # rolled back
+    assert toml_path.read_text(encoding="utf-8") == original  # migrate's rewrite undone
+
+    payloads = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
+
+
 def test_given_orchestrated_upgrade_when_run_then_migrate_precedes_peek(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
