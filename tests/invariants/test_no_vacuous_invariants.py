@@ -24,6 +24,7 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_doc_test_pointers_exist.py",
     "test_stash_uses_sha_not_index.py",
     "test_monitor_self_exclusion.py",
+    "test_event_int_coercion.py",
 )
 
 

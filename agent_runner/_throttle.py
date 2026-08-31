@@ -11,6 +11,7 @@ throttle state this module scans.
 from __future__ import annotations
 
 import json
+import math
 import random
 import warnings
 from datetime import UTC
@@ -33,12 +34,18 @@ _NO_TRANSIENT = object()
 def _coerce_int(value: Any, default: int) -> int:
     """Coerce a parsed-event field to int, falling back to ``default`` on None or a
     non-numeric value with a ``UserWarning``. A plugin-written ``reset_at_epoch: null``
-    must degrade to 'no throttle', never raise a TypeError out of the serve loop."""
+    must degrade to 'no throttle', never raise a TypeError out of the serve loop.
+
+    NaN/Infinity are non-numeric for this purpose too: ``json.loads`` accepts the bare
+    ``NaN``/``Infinity``/``-Infinity`` tokens by default, and ``int()`` on such a float
+    raises (``ValueError`` for NaN, ``OverflowError`` for +-Infinity) — the same
+    serve-loop crash this helper exists to prevent, just reached via a different
+    malformed value than ``None``."""
     if isinstance(value, bool):
         value = int(value)  # bool is an int subclass; normalize before the isinstance below
     if isinstance(value, int):
         return value
-    if isinstance(value, float):
+    if isinstance(value, float) and math.isfinite(value):
         return int(value)
     if isinstance(value, str):
         try:
@@ -52,16 +59,23 @@ def _coerce_int(value: Any, default: int) -> int:
 
 
 def _coerce_float(value: Any, default: float) -> float:
-    """Float sibling of ``_coerce_int`` for parsed-event metric fields."""
+    """Float sibling of ``_coerce_int`` for parsed-event metric fields.
+
+    Rejects NaN/Infinity the same way ``_coerce_int`` does — a nonsensical
+    ``disk_used_pct: NaN`` must not reach ``SystemMetrics`` as a silently-passed
+    float; it degrades to ``default`` + a ``UserWarning`` instead."""
     if isinstance(value, bool):
         value = float(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and math.isfinite(value):
         return float(value)
     if isinstance(value, str):
         try:
-            return float(value.strip())
+            parsed = float(value.strip())
         except ValueError:
             pass
+        else:
+            if math.isfinite(parsed):
+                return parsed
     warnings.warn(
         f"cannot coerce event value {value!r} to float; using default {default}", stacklevel=2
     )

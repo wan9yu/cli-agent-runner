@@ -38,13 +38,12 @@ def _bare_int_or_float_on_get(tree: ast.Module) -> list[int]:
 def test_scanner_detects_a_planted_offender() -> None:
     """Positive control: prove the AST match actually fires on the exact anti-pattern
     it's meant to catch, so a scanner bug (e.g. a typo'd attr name) can't make the
-    real test below pass vacuously forever.
-
-    # vacuity-guard
-    """
+    real test below pass vacuously forever."""
     tree = ast.parse('reset_at = int(detected.get("reset_at_epoch", 0))\n')
     offenders = _bare_int_or_float_on_get(tree)
-    assert offenders == [1], "scanner failed to detect a planted bare int(...get(...))"
+    assert offenders == [1], (  # vacuity-guard
+        "scanner failed to detect a planted bare int(...get(...))"
+    )
 
 
 def test_no_bare_int_or_float_on_event_get() -> None:
