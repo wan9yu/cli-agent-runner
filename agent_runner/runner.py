@@ -518,7 +518,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             log_dir,
             round_num=round_num,
             grace_s=cfg.runtime.max_grace_after_result_s,
-            live_children=result.grace_kill_children,
+            live_children=[],
         )
     elif result.timed_out:
         events.emit(

@@ -16,7 +16,7 @@ import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -52,7 +52,6 @@ class RunResult:
     timed_out: bool
     pid: int
     killed_for_grace: bool = False
-    grace_kill_children: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -216,38 +215,40 @@ def run(
     # an [agent.env] PWD cannot silently diverge from where the child runs.
     env = {**os.environ, **env_extra, "PWD": str(work_dir)}
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = log_path.open("w", encoding="utf-8")
-    start = clock.monotonic()  # all round-duration/deadline math is monotonic (NTP-safe)
-    last_progress_at = start
-    proc = subprocess.Popen(
-        argv,
-        cwd=work_dir,
-        env=env,
-        stdin=subprocess.PIPE if stdin_mode else subprocess.DEVNULL,
-        stdout=log_file,
-        # Merged on purpose: oauth_fail / network_fail / network-blip detection
-        # regex-scan stderr text out of this log (see hooks.agent_log_path).
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    if stdin_mode and proc.stdin is not None:
-        # Write+close on a daemon thread so the wall-clock timeout loop below
-        # is never blocked by a write >64KB (OS pipe buffer) to an agent that
-        # doesn't drain stdin (R1128: no unbounded-hang path).
-        stdin_pipe = proc.stdin
-        stdin_data = prompt.encode("utf-8")
-
-        def _write_stdin():
-            try:
-                stdin_pipe.write(stdin_data)
-                stdin_pipe.close()
-            except (BrokenPipeError, OSError):
-                pass  # agent exited before reading stdin; the poll loop handles exit
-
-        threading.Thread(target=_write_stdin, daemon=True).start()
-    result_seen_at: float | None = None
-    grace_extended_emitted = False
+    proc: subprocess.Popen | None = None
+    log_file = None
     try:
+        log_file = log_path.open("w", encoding="utf-8")
+        start = clock.monotonic()  # all round-duration/deadline math is monotonic (NTP-safe)
+        last_progress_at = start
+        proc = subprocess.Popen(
+            argv,
+            cwd=work_dir,
+            env=env,
+            stdin=subprocess.PIPE if stdin_mode else subprocess.DEVNULL,
+            stdout=log_file,
+            # Merged on purpose: oauth_fail / network_fail / network-blip detection
+            # regex-scan stderr text out of this log (see hooks.agent_log_path).
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        if stdin_mode and proc.stdin is not None:
+            # Write+close on a daemon thread so the wall-clock timeout loop below
+            # is never blocked by a write >64KB (OS pipe buffer) to an agent that
+            # doesn't drain stdin (R1128: no unbounded-hang path).
+            stdin_pipe = proc.stdin
+            stdin_data = prompt.encode("utf-8")
+
+            def _write_stdin():
+                try:
+                    stdin_pipe.write(stdin_data)
+                    stdin_pipe.close()
+                except (BrokenPipeError, OSError):
+                    pass  # agent exited before reading stdin; the poll loop handles exit
+
+            threading.Thread(target=_write_stdin, daemon=True).start()
+        result_seen_at: float | None = None
+        grace_extended_emitted = False
         while True:
             ret = proc.poll()
             now = clock.monotonic()  # duration / R1128 hard-wall / grace / interval — all monotonic
@@ -289,7 +290,6 @@ def run(
                             timed_out=True,
                             pid=proc.pid,
                             killed_for_grace=True,
-                            grace_kill_children=[],
                         )
             # Progress heartbeat: call back if interval elapsed
             if progress_callback is not None and progress_interval_s > 0:
@@ -310,5 +310,13 @@ def run(
                     )
                     last_progress_at = now
             clock.sleep(0.2)
+    except BaseException:
+        # Supervisor death (a heartbeat callback raising, or a signal injected into
+        # the round CLI) must not leave the agent pgroup orphaned. Reap, then re-raise
+        # fail-loud — we never swallow the cause.
+        if proc is not None:
+            _kill_pgroup(proc, clock)
+        raise
     finally:
-        log_file.close()
+        if log_file is not None:
+            log_file.close()

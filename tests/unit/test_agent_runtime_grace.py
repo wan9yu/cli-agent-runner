@@ -38,7 +38,6 @@ def test_grace_kill_fires_when_result_then_idle(tmp_path):
         max_grace_after_result_s=1,
     )
     assert result.killed_for_grace is True
-    assert result.grace_kill_children == []
     assert result.duration_s < 4
 
 

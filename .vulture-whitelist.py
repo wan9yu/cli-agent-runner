@@ -12,7 +12,6 @@ duration_s
 timed_out
 pid
 killed_for_grace
-grace_kill_children
 
 # agent_runner.api_types.Alert
 severity
