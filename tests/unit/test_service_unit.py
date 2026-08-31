@@ -143,3 +143,13 @@ def test_given_serve_unit_when_rendered_then_killmode_mixed(tmp_path: Path) -> N
     Verified in production by a downstream integrator via an interrupted round."""
     body = render_serve_unit(_cfg(tmp_path), script_path=Path("/usr/bin/agent-runner"))
     assert "KillMode=mixed" in body
+
+
+def test_given_serve_unit_when_rendered_then_startlimit_bounds_restart(tmp_path: Path) -> None:
+    """RestartSec=3 alone can respawn a broken serve indefinitely; the StartLimit
+    window converts a persistent early-exit into a systemd 'failed' state."""
+    body = render_serve_unit(_cfg(tmp_path), script_path=tmp_path / "ar")
+    assert "StartLimitIntervalSec=300" in body
+    assert "StartLimitBurst=5" in body
+    # StartLimit* are [Unit] directives — must precede [Service].
+    assert body.index("StartLimitBurst") < body.index("[Service]")

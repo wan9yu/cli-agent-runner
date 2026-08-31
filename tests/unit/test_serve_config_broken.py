@@ -31,3 +31,17 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     assert rc == PERMANENT_CONFIG_EXIT
     kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
     assert "config_broken" in kinds
+
+
+def test_given_invalid_max_rounds_when_serve_then_config_broken_and_78(
+    tmp_path: Path,
+) -> None:
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=0))
+
+    assert rc == PERMANENT_CONFIG_EXIT
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "config_broken" in kinds

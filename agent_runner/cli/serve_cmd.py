@@ -96,6 +96,27 @@ def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> i
     return effective
 
 
+def _prepare_loop(cfg, args, log_dir: Path) -> tuple[int | None, int | None]:
+    """Deterministic pre-loop startup work: stale-sentinel cleanup, round-log
+    prune, max-rounds resolution. A failure here (bad glob → OSError, invalid
+    --max-rounds → ValueError) is deterministic — it will not self-heal on
+    restart — so it maps to config_broken / PERMANENT_CONFIG_EXIT (systemd keeps
+    the unit stopped) rather than an uncaught crash that respawns forever.
+    Returns ``(exit_code_or_None, effective_max_rounds)``."""
+    try:
+        (log_dir / ".agent-done").unlink(missing_ok=True)
+        _prune_serve_round_logs(log_dir, cfg.runtime.round_log_retention)
+        effective_max_rounds = _resolve_max_rounds(
+            cli_value=args.max_rounds, config_value=cfg.runtime.max_rounds
+        )
+    except (OSError, ValueError) as e:
+        emit_config_broken(
+            log_dir, reason=f"deterministic startup failure: {e}; run `agent-runner migrate`"
+        )
+        return (PERMANENT_CONFIG_EXIT, None)
+    return (None, effective_max_rounds)
+
+
 def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
     """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
     ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
@@ -572,15 +593,11 @@ def cmd(args) -> int:
     signal.signal(signal.SIGTERM, graceful)
     signal.signal(signal.SIGINT, graceful)
 
-    # Pre-loop cleanup: remove stale sentinel, prune old round logs.
-    (log_dir / ".agent-done").unlink(missing_ok=True)
-    _prune_serve_round_logs(log_dir, cfg.runtime.round_log_retention)
-
     round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
-
-    effective_max_rounds = _resolve_max_rounds(
-        cli_value=args.max_rounds, config_value=cfg.runtime.max_rounds
-    )
+    fail_code, effective_max_rounds = _prepare_loop(cfg, args, log_dir)
+    if fail_code is not None:
+        _release_serve_lock(serve_lock_fd)
+        return fail_code
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     work_dir = cfg.runtime.work_dir
     rounds_completed = 0

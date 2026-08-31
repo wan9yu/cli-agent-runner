@@ -61,6 +61,11 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
         f"[Unit]\n"
         f"Description=Agent Runner Supervisor ({cfg.runtime.work_dir.name})\n"
         f"After=network.target\n"
+        # RestartSec=3 with no ceiling turns a persistent early-exit into an
+        # invisible tight respawn; the StartLimit window stops the unit (failed)
+        # after StartLimitBurst starts inside StartLimitIntervalSec.
+        f"StartLimitIntervalSec=300\n"
+        f"StartLimitBurst=5\n"
         f"\n"
         f"[Service]\n"
         f"Type=simple\n"
