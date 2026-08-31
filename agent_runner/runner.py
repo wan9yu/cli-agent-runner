@@ -37,7 +37,7 @@ from agent_runner.events import (
     parse_iso_ms,
 )
 from agent_runner.monitor import NETWORK_PATTERNS
-from agent_runner.round_log import open_round_log, prune_rounds_dir
+from agent_runner.round_log import next_round_num, open_round_log, prune_rounds_dir
 
 
 class LockHeldError(RuntimeError):
@@ -137,6 +137,24 @@ def _phase_for(
         return None, 0
     idx = (round_num - 1) % len(phases)
     return phases[idx], idx
+
+
+def _resolve_round_num(log_dir: Path) -> int:
+    """The single round-number derivation.
+
+    Serve publishes its computed number via ``AGENT_RUNNER_ROUND_NUM`` so the child
+    never re-derives (and skews) it; a standalone ``agent-runner round`` (no env)
+    falls back to the SAME file-aware counter serve uses — ``next_round_num`` — not
+    ``prev_status.round_num + 1``, so a child that crashed before writing status.json
+    cannot re-use a round number whose serve-log already exists.
+    """
+    raw = os.environ.get("AGENT_RUNNER_ROUND_NUM")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return next_round_num(log_dir)
 
 
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
@@ -356,7 +374,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     if (log_dir / "status.json").exists() and prev_status is None:
         events.emit(log_dir, events.STATUS_RECOVERED, reason="status.json could not be parsed")
 
-    round_num = (prev_status.round_num if prev_status else 0) + 1
+    round_num = _resolve_round_num(log_dir)
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
     profile = cfg.profile_for(phase)
     resolved_rt = profile.runtime  # profile already merged the per-phase runtime override

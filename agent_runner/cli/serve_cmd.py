@@ -481,6 +481,14 @@ def _apply_fresh_eyes(cfg, log_dir, round_num: int, round_env: dict) -> None:
         )
 
 
+def _apply_round_num_env(round_env: dict, round_num: int) -> None:
+    """Publish serve's computed round number to the round child (single-source).
+
+    The child's ``runner._resolve_round_num`` reads ``AGENT_RUNNER_ROUND_NUM`` so it
+    never re-derives (and skews) the number serve already chose this iteration."""
+    round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
+
+
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler
 # reaps its agent pgroup (agent_runtime.REAP_GRACE_S) then exits, so allow that plus
 # margin. Kept local to honor serve_cmd's import allowlist; test_spawn_round_wedged
@@ -659,6 +667,7 @@ def cmd(args) -> int:
                 paths_hash=paths_hash_before,
             )
             _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
+            _apply_round_num_env(round_env, round_num)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [

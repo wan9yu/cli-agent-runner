@@ -45,6 +45,17 @@ def test_given_corrupt_status_when_read_then_returns_none(tmp_log_dir: Path) -> 
     assert read_status(tmp_log_dir) is None
 
 
+def test_given_status_with_unknown_key_when_read_then_known_fields_survive(
+    tmp_log_dir: Path,
+) -> None:
+    (tmp_log_dir / STATUS_FILE).write_text(
+        json.dumps({"round_num": 9, "running": False, "future_field": "x"}),
+        encoding="utf-8",
+    )
+    s = read_status(tmp_log_dir)
+    assert s is not None and s.round_num == 9
+
+
 def test_given_orphan_state_round_trip_when_written_and_read_then_equal(
     tmp_log_dir: Path,
 ) -> None:

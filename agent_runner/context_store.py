@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -68,10 +68,11 @@ def write_status(log_dir: Path, status: Status) -> None:
 
 def read_status(log_dir: Path) -> Status | None:
     data = read_json(log_dir / STATUS_FILE)
-    if data is None:
+    if not isinstance(data, dict):
         return None
+    known = {f.name for f in fields(Status)}
     try:
-        return Status(**data)
+        return Status(**{k: v for k, v in data.items() if k in known})
     except TypeError:
         return None
 
