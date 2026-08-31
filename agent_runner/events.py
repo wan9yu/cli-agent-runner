@@ -81,6 +81,7 @@ STOP_FILE_DETECTED = "stop_file_detected"
 TRANSIENT_ERROR_BACKOFF_CAPPED = "transient_error_backoff_capped"
 TRANSIENT_ERROR_DETECTED = "transient_error_detected"
 TRANSIENT_ERROR_RECOVERED = "transient_error_recovered"
+UPGRADE_START_FAILED = "upgrade_start_failed"
 
 
 def _collect_builtin_kinds() -> frozenset[str]:

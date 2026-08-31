@@ -76,6 +76,7 @@ def cmd(args) -> int:
         target=args.target,
         cfg_path=args.config,
         no_restart=getattr(args, "no_restart", False),
+        no_migrate=getattr(args, "no_migrate", False),
     )
 
 
@@ -180,6 +181,25 @@ def _smoke_version() -> tuple[int, str]:
     return 0, m.group(1)
 
 
+def _smoke_migrate(cfg_path: Path) -> tuple[int, str]:
+    """Spawn the freshly-installed binary to migrate the config for the NEW schema.
+
+    Runs AFTER pip install (the fresh code's migration registry) and BEFORE the
+    peek smoke. The old binary already migrated for its own schema at cmd() entry;
+    this closes new-binary-only shapes. rc: 0 clean, 1 a manual remainder the new
+    binary cannot auto-fix, 2 read/TOML error. Returns (rc, error_excerpt).
+    """
+    r = subprocess.run(
+        [sys.executable, "-m", "agent_runner.cli", "--config", str(cfg_path), "migrate"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode != 0:
+        return r.returncode, (r.stdout + r.stderr).strip()[:200]
+    return 0, ""
+
+
 def _smoke_peek(cfg_path: Path) -> tuple[int, str]:
     """Spawn fresh Python to run `peek --json --config <path>`. Returns (rc, error_excerpt)."""
     r = subprocess.run(
@@ -199,6 +219,7 @@ def _run_upgrade(
     target: str | None,
     cfg_path: Path,
     no_restart: bool = False,
+    no_migrate: bool = False,
 ) -> int:
     """Dispatch: full orchestration for the systemd --user service we installed;
     package-only everywhere else."""
@@ -207,7 +228,11 @@ def _run_upgrade(
     from_version = __version__
     if _orchestrate_capable(cfg, no_restart):
         return _orchestrated_upgrade(
-            cfg, target=target, cfg_path=cfg_path, from_version=from_version
+            cfg,
+            target=target,
+            cfg_path=cfg_path,
+            from_version=from_version,
+            no_migrate=no_migrate,
         )
     return _package_only_upgrade(cfg, target=target, from_version=from_version)
 
@@ -220,7 +245,12 @@ def _orchestrate_capable(cfg: Config | None, no_restart: bool) -> bool:
 
 
 def _orchestrated_upgrade(
-    cfg: Config, *, target: str | None, cfg_path: Path, from_version: str
+    cfg: Config,
+    *,
+    target: str | None,
+    cfg_path: Path,
+    from_version: str,
+    no_migrate: bool = False,
 ) -> int:
     """Full stop → pip → smoke(--version + peek) → start → emit service_upgraded,
     with auto-rollback on smoke failure. Only reached for the systemd --user
@@ -251,6 +281,22 @@ def _orchestrated_upgrade(
             f"service is stopped, run 'agent-runner start' to resume previous version"
         )
     info(f"installed ({SYSTEM_CLOCK.monotonic() - t_pip:.1f}s)")
+
+    pre_migrate = Path(cfg_path).read_text(encoding="utf-8") if Path(cfg_path).exists() else None
+    if not no_migrate:
+        info("migrating config for new version...")
+        rc_m, migrate_err = _smoke_migrate(Path(cfg_path))
+        if rc_m != 0:
+            return _rollback(
+                cfg,
+                log_dir,
+                from_version,
+                attempted_version=target or "latest",
+                failure_reason=f"new-binary migrate failed (rc={rc_m}): {migrate_err}",
+                started_at=t0,
+                cfg_path=cfg_path,
+                restore_config=pre_migrate,
+            )
 
     info("smoke check (--version + peek)...")
     rc_v, version_or_err = _smoke_version()
@@ -283,12 +329,20 @@ def _orchestrated_upgrade(
     t_start = SYSTEM_CLOCK.monotonic()
     try:
         api.start(cfg.runtime.work_dir)
-    except Exception as e:  # noqa: BLE001 — new version installed but service stopped
-        return _rollback_failed(
+    except Exception as e:  # noqa: BLE001 — new version installed but service won't start
+        pname = api._resolve_project(cfg.runtime.work_dir)
+        remedy = f"systemctl --user status {api.serve_unit_filename(pname)}"
+        events.emit(
             log_dir,
-            to_version,
-            to_version,
-            f"api.start raised after upgrade: {type(e).__name__}: {str(e)[:150]}",
+            events.UPGRADE_START_FAILED,
+            to_version=to_version,
+            failure_reason=f"{type(e).__name__}: {str(e)[:150]}",
+            remedy=remedy,
+        )
+        return fail(
+            f"upgraded to {to_version} but the service did not start "
+            f"({type(e).__name__}: {str(e)[:150]}); code is installed, inspect:\n  {remedy}",
+            code=2,
         )
     info(f"started ({SYSTEM_CLOCK.monotonic() - t_start:.1f}s)")
 
@@ -372,11 +426,15 @@ def _rollback(
     failure_reason: str,
     started_at: float,
     cfg_path: Path,
+    restore_config: str | None = None,
 ) -> int:
     """Smoke failed at attempted_version; reinstall from_version and recover.
 
     Emits ``service_upgrade_rolled_back`` on success (exit 1).
     Emits ``service_upgrade_rollback_failed`` if the rollback itself fails (exit 2).
+    ``restore_config``, when given, is the pre-migrate config text to write back
+    once the pip rollback succeeds — undoing a new-binary migrate that mutated
+    the file before a later step failed.
     """
     info(f"smoke failed at {attempted_version}; rolling back to {from_version}...")
 
@@ -390,6 +448,9 @@ def _rollback(
             f"pip --force-reinstall failed (rc={rollback_pip.returncode}): "
             f"{rollback_pip.stderr.strip()[:200]}",
         )
+
+    if restore_config is not None and Path(cfg_path).read_text(encoding="utf-8") != restore_config:
+        Path(cfg_path).write_text(restore_config, encoding="utf-8")  # undo the new-binary migrate
 
     rc_v, version_or_err = _smoke_version()
     if rc_v != 0:

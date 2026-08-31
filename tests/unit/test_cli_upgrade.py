@@ -207,16 +207,18 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
     monkeypatch.setattr(api, "start", lambda _wd: None)
     monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
 
-    call_count = [0]
+    version_calls = [0]
 
     def fake_run(cmd, **kwargs):
-        call_count[0] += 1
         if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "migrate" in cmd:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
+            version_calls[0] += 1
             # 1st --version (smoke for new): version reads as 0.1.99
             # 2nd --version (sanity smoke for restored): reads as from_version
-            if call_count[0] == 2:
+            if version_calls[0] == 1:
                 return subprocess.CompletedProcess(
                     args=cmd, returncode=0, stdout="agent-runner 0.1.99\n", stderr=""
                 )
@@ -265,14 +267,14 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
     monkeypatch.setattr(api, "start", lambda _wd: None)
     monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
 
-    call_count = [0]
+    version_calls = [0]
 
     def fake_run(cmd, **kwargs):
-        call_count[0] += 1
         if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
-            if call_count[0] == 2:  # first --version after pip → fails
+            version_calls[0] += 1
+            if version_calls[0] == 1:  # first --version after pip → fails
                 return subprocess.CompletedProcess(
                     args=cmd, returncode=1, stdout="", stderr="ImportError: cannot import 'foo'"
                 )
@@ -312,15 +314,15 @@ def test_given_rollback_pip_uses_force_reinstall_with_from_version(
     monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
 
     pip_calls = []
-    call_count = [0]
+    version_calls = [0]
 
     def fake_run(cmd, **kwargs):
-        call_count[0] += 1
         if _is_pip_call(cmd):
             pip_calls.append(cmd)
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
-            if call_count[0] == 2:
+            version_calls[0] += 1
+            if version_calls[0] == 1:
                 return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="boom")
             return subprocess.CompletedProcess(
                 args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
@@ -471,57 +473,6 @@ def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
     if events_files:
         payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
-
-
-def test_given_api_start_raises_after_smoke_when_run_upgrade_then_rollback_failed_event_exit_2(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """api.start raises after smoke → rollback_failed event with restore_target_version=to_version.
-
-    Exit code must be 2.
-    """
-    import json
-    import subprocess
-
-    from agent_runner import api
-    from agent_runner.api_types import ServiceMode
-    from agent_runner.cli import upgrade_cmd
-    from agent_runner.config import load_config
-
-    toml = make_toml(tmp_path)
-    log_dir = tmp_path / "logs"
-
-    def _raise_start(_wd):
-        raise RuntimeError("permission denied")
-
-    monkeypatch.setattr(api, "stop", lambda _wd: None)
-    monkeypatch.setattr(api, "start", _raise_start)
-    monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
-
-    def fake_run(cmd, **kwargs):
-        if _is_pip_call(cmd):
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-        if "--version" in cmd:
-            return subprocess.CompletedProcess(
-                args=cmd, returncode=0, stdout="agent-runner 0.1.99\n", stderr=""
-            )
-        if "peek" in cmd:
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    cfg = load_config(toml)
-    rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml)
-    assert rc == 2
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    assert events_files, "expected at least one events file"
-    payloads = [json.loads(line) for line in events_files[-1].read_text().splitlines()]
-    failed = [p for p in payloads if p["event"] == "service_upgrade_rollback_failed"]
-    assert len(failed) == 1
-    assert failed[0]["restore_target_version"] == "0.1.99"
-    assert "api.start raised after upgrade" in failed[0]["failure_reason"]
 
 
 def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
@@ -765,3 +716,149 @@ def test_given_package_only_smoke_fail_then_rollback_no_start(
     assert rc == 1  # smoke failed, rolled back
     assert started == []  # service never started/stopped
     assert any("--force-reinstall" in c for c in pip_calls)  # pip-level rollback happened
+
+
+def _config_arg(cmd) -> str | None:
+    """The --config path in a `-m agent_runner.cli --config <p> <sub>` invocation."""
+    if "--config" in cmd:
+        return cmd[cmd.index("--config") + 1]
+    return None
+
+
+def test_given_new_binary_migrate_manual_when_upgrade_then_rollback_restores_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """New-binary migrate hits a manual remainder (rc=1) after mutating the file →
+    upgrade rolls back to from_version AND the config is restored to pre-migrate."""
+    import json
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.api_types import ServiceMode
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    original = toml_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+    monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
+
+    def fake_run(cmd, **kwargs):
+        if _is_pip_call(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "migrate" in cmd:
+            Path(_config_arg(cmd)).write_text(original + "\nmutated_by_migrate = true\n")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="  MANUAL:  fix command by hand", stderr=""
+            )
+        if "--version" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+    assert rc == 1  # rolled back
+    assert toml_path.read_text(encoding="utf-8") == original  # config restored
+
+    payloads = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
+
+
+def test_given_orchestrated_upgrade_when_run_then_migrate_precedes_peek(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The new-binary migrate subprocess is invoked before the peek smoke."""
+    import subprocess
+
+    from agent_runner import __version__, api
+    from agent_runner.api_types import ServiceMode
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml_path = make_toml(tmp_path)
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+    monkeypatch.setattr(api, "start", lambda _wd: None)
+    monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
+
+    order = []
+
+    def fake_run(cmd, **kwargs):
+        if _is_pip_call(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "migrate" in cmd:
+            order.append("migrate")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=f"agent-runner {__version__}\n", stderr=""
+            )
+        if "peek" in cmd:
+            order.append("peek")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cfg = load_config(toml_path)
+    upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+    assert order == ["migrate", "peek"]
+
+
+def test_given_start_fails_after_upgrade_when_run_then_emits_upgrade_start_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Smoke passes but api.start raises → emit upgrade_start_failed (not a
+    mislabeled rollback), exit 2, and print a systemctl remedy."""
+    import json
+    import subprocess
+
+    from agent_runner import api
+    from agent_runner.api_types import ServiceMode
+    from agent_runner.cli import upgrade_cmd
+    from agent_runner.config import load_config
+
+    toml_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+
+    monkeypatch.setattr(api, "stop", lambda _wd: None)
+
+    def boom(_wd):
+        raise RuntimeError("unit failed to start")
+
+    monkeypatch.setattr(api, "start", boom)
+    monkeypatch.setattr(api, "detect_service_mode", lambda *a, **k: ServiceMode.SYSTEMD_USER)
+
+    def fake_run(cmd, **kwargs):
+        if _is_pip_call(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if "--version" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="agent-runner 9.9.9\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cfg = load_config(toml_path)
+    rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+    assert rc == 2
+
+    payloads = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    kinds = {p["event"] for p in payloads}
+    assert "upgrade_start_failed" in kinds
+    assert "service_upgrade_rollback_failed" not in kinds
+    # remedy goes to stderr via cli.common.fail()
+    assert "systemctl --user" in capsys.readouterr().err

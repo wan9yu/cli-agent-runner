@@ -362,13 +362,14 @@ fetch from there. To verify your index before upgrading: `pip config list`.
 
 Grep events.jsonl for upgrade history:
 ```
-grep -E "service_upgrad|package_upgraded" {log_dir}/events-*.jsonl | jq .
+grep -E "service_upgrad|package_upgraded|upgrade_start_failed" {log_dir}/events-*.jsonl | jq .
 ```
 Event kinds:
 - `service_upgraded` — clean orchestrated upgrade (live service on new version)
 - `package_upgraded` — package updated, restart deferred to operator
 - `service_upgrade_rolled_back` — attempted upgrade reverted (safety net fired)
 - `service_upgrade_rollback_failed` — critical: needs manual intervention
+- `upgrade_start_failed` — new code installed and smoke-passed, but the service did not start; run the `remedy` command in the payload
 
 ## Plugin cold-start (serve-startup hooks)
 

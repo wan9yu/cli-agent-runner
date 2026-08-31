@@ -233,6 +233,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `transient_error_backoff_capped`
 - `transient_error_detected`
 - `transient_error_recovered`
+- `upgrade_start_failed`
 <!-- /gen:event-kinds -->
 
 ## 中文摘要
