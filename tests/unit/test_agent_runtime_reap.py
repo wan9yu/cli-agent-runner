@@ -34,6 +34,13 @@ def test_callback_raise_reaps_agent_pgroup(tmp_path):
     script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
 
     def boom(_stats):
+        # Only trigger the reap once the child has recorded its pid. A slow bash
+        # startup under load can otherwise let this callback fire (and reap the
+        # pgroup) before `echo $! > child.pid` runs, leaving no pidfile for the
+        # assertion — a load-dependent flake. Gating the trigger on the pidfile
+        # makes the reap happen after the pid is recorded, regardless of load.
+        if not childpid.exists() or not childpid.read_text().strip():
+            return
         raise OSError("events.emit failed mid-round")
 
     with pytest.raises(OSError, match="events.emit failed"):
