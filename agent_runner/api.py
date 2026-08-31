@@ -599,6 +599,13 @@ def _monitor_loop_iter(
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )
+        # Re-arm: an episode absent from this poll has cleared, so forget it — a
+        # later recurrence is a NEW episode and must fire again (not stay suppressed
+        # until bounded eviction). Only keys still firing this poll survive.
+        current = {monitor.alert_identity(a) for a in alerts}
+        for key in list(seen):
+            if key not in current:
+                del seen[key]
         SYSTEM_CLOCK.sleep(interval_s)
 
 
