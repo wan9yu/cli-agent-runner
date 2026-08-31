@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -42,6 +42,7 @@ from agent_runner.events import (
     AGENT_AUTH_ERROR_DETECTED,
     AGENT_EXIT,
     ANOMALY_REPETITIVE_TOOL,
+    DETECTOR_ERROR,
     MONITOR_ALERT_EMITTED,
     MONITOR_AUTO_STOP_FAILED,
     MONITOR_AUTO_STOP_TRIGGERED,
@@ -656,6 +657,20 @@ def assemble_project_state(source: StateSource, *, project: str) -> ProjectState
     )
 
 
+def _run_detector(
+    name: str, fn: Callable[[], Alert | None], *, log_dir: Path | None
+) -> Alert | None:
+    """Run one builtin detector, isolating a crash the way run_plugin_detectors
+    isolates plugins: emit ``detector_error`` (when a log_dir is available) and
+    return None so the remaining detectors still run."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001 — one bad detector must not blind the rest
+        if log_dir is not None and log_dir.is_dir():
+            emit_event(log_dir, DETECTOR_ERROR, detector=name, error=f"{type(e).__name__}: {e}")
+        return None
+
+
 def run_all_detectors(
     *,
     events: list[dict[str, Any]],
@@ -670,8 +685,13 @@ def run_all_detectors(
     mem_avail_min_mb: int = 200,
     disk_warning_pct: float = 90.0,
     disk_critical_pct: float = 95.0,
+    log_dir: Path | None = None,
 ) -> list[Alert]:
-    """Run all 11 detectors; returns alerts (empty = healthy)."""
+    """Run all 11 detectors; returns alerts (empty = healthy).
+
+    Each detector is isolated via ``_run_detector``: a crash in one emits
+    ``detector_error`` (when ``log_dir`` is given) and does not stop the rest.
+    """
     if now is None:
         now = SYSTEM_CLOCK.now_utc()
     compiled_auth_pats = (
@@ -683,24 +703,57 @@ def run_all_detectors(
         else supervisor_stale_threshold_s
     )
     candidates = [
-        detect_timeout_rate(events),
-        detect_hung(
-            events,
-            now=now,
-            round_timeout_s=round_timeout_s,
-            phases_overrides=phases_overrides,
+        _run_detector("timeout_rate", lambda: detect_timeout_rate(events), log_dir=log_dir),
+        _run_detector(
+            "hung",
+            lambda: detect_hung(
+                events, now=now, round_timeout_s=round_timeout_s, phases_overrides=phases_overrides
+            ),
+            log_dir=log_dir,
         ),
-        detect_orphan_chain(events),
-        detect_disk_warning(
-            metrics, threshold_pct=disk_warning_pct, critical_pct=disk_critical_pct
+        _run_detector("orphan_chain", lambda: detect_orphan_chain(events), log_dir=log_dir),
+        _run_detector(
+            "disk_warning",
+            lambda: detect_disk_warning(
+                metrics, threshold_pct=disk_warning_pct, critical_pct=disk_critical_pct
+            ),
+            log_dir=log_dir,
         ),
-        detect_disk_critical(metrics, threshold_pct=disk_critical_pct),
-        detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb),
-        detect_oauth_fail(events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint),
-        detect_network_fail(events, log_tails),
-        detect_rate_limit_active(events, now=now.timestamp()),
-        detect_anomaly_repetitive_active(events),
-        detect_supervisor_stale(events, now=now, stale_threshold_s=effective_stale_s),
+        _run_detector(
+            "disk_critical",
+            lambda: detect_disk_critical(metrics, threshold_pct=disk_critical_pct),
+            log_dir=log_dir,
+        ),
+        _run_detector(
+            "mem_pressure",
+            lambda: detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb),
+            log_dir=log_dir,
+        ),
+        _run_detector(
+            "oauth_fail",
+            lambda: detect_oauth_fail(
+                events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint
+            ),
+            log_dir=log_dir,
+        ),
+        _run_detector(
+            "network_fail", lambda: detect_network_fail(events, log_tails), log_dir=log_dir
+        ),
+        _run_detector(
+            "rate_limit_active",
+            lambda: detect_rate_limit_active(events, now=now.timestamp()),
+            log_dir=log_dir,
+        ),
+        _run_detector(
+            "anomaly_repetitive_active",
+            lambda: detect_anomaly_repetitive_active(events),
+            log_dir=log_dir,
+        ),
+        _run_detector(
+            "supervisor_stale",
+            lambda: detect_supervisor_stale(events, now=now, stale_threshold_s=effective_stale_s),
+            log_dir=log_dir,
+        ),
     ]
     return [a for a in candidates if a is not None]
 

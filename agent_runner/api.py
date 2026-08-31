@@ -516,6 +516,7 @@ def _poll_once(project: str | Path) -> list[monitor.Alert]:
         mem_avail_min_mb=cfg.monitor.host_health.mem_avail_min_mb,
         disk_warning_pct=cfg.monitor.host_health.disk_warning_pct,
         disk_critical_pct=cfg.monitor.host_health.disk_critical_pct,
+        log_dir=cfg.runtime.log_dir,
     )
     if not monitor._PLUGIN_DETECTORS:
         return builtin  # skip ProjectState assembly when no plugins to feed
@@ -555,6 +556,7 @@ def _monitor_loop_iter(
     that this monitor watches its own host.
     """
     import json as _json
+    import warnings
 
     seen: set[str] = set()
     work_dir = project if isinstance(project, Path) else Path.cwd()
@@ -570,7 +572,12 @@ def _monitor_loop_iter(
     )
 
     while True:
-        alerts = _poll_once(work_dir)
+        try:
+            alerts = _poll_once(work_dir)
+        except Exception as e:  # noqa: BLE001 — a poll crash must not kill supervision
+            warnings.warn(f"monitor poll failed: {type(e).__name__}: {e}", stacklevel=2)
+            SYSTEM_CLOCK.sleep(interval_s)
+            continue
         for alert in alerts:
             key = f"{alert.detector}:{_json.dumps(alert.context, sort_keys=True)}"
             if key in seen:

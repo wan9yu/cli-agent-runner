@@ -191,6 +191,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `config_broken`
 - `config_migrated`
 - `crash_loop`
+- `detector_error`
 - `dirty_auto_committed`
 - `dirty_commit_failed`
 - `dirty_detected`
