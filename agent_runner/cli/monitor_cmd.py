@@ -8,6 +8,8 @@ import sys
 from agent_runner import api, monitor
 from agent_runner.cli.common import _to_jsonable, fail, work_dir_from_args
 
+_SEVERITY_TAGS = {"info": "[OK]", "warning": "[WARN]", "critical": "[CRIT]"}
+
 
 def add_parser(sub, parent) -> None:
     p = sub.add_parser(
@@ -107,7 +109,7 @@ def _cmd_anomaly(args) -> int:
                 print(json.dumps(_to_jsonable(alert)))
                 sys.stdout.flush()
             else:
-                tag = {"info": "[OK]", "warning": "[WARN]", "critical": "[CRIT]"}[alert.severity]
+                tag = _SEVERITY_TAGS.get(alert.severity, f"[{alert.severity.upper()}]")
                 print(f"{tag} {alert.detector} — {alert.message}")
                 sys.stdout.flush()
     except KeyboardInterrupt:
