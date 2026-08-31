@@ -6,14 +6,17 @@ are pinned once here instead of in each plugin's own test file.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import pytest
 
 from agent_runner.builtin_plugins._constants import (
     _BACK_OFF_DEFAULTS,
+    _TAIL_LINES,
     classify_transient_status,
     json_events,
+    json_tail,
 )
 
 
@@ -59,3 +62,20 @@ def test_given_mixed_lines_when_json_events_then_only_dicts_yielded(tmp_path: Pa
         encoding="utf-8",
     )
     assert list(json_events(log)) == [{"type": "first", "n": 1}, {"type": "second", "n": 2}]
+
+
+def test_given_blank_line_when_json_tail_then_not_kept() -> None:
+    """A blank line's first char is '' — substring membership ('' in '{[') wrongly
+    kept it; tuple membership ('' in ('{','[')) rejects it."""
+    buf = io.StringIO('{"a":1}\n' + "\n" * 5 + "   \n")
+    assert list(json_tail(buf)) == ['{"a":1}\n']
+
+
+def test_given_terminal_json_then_blank_flood_when_json_events_then_not_evicted(
+    tmp_path,
+) -> None:
+    """Terminal JSON record followed by more blank lines than the window: blanks
+    must not fill the deque and evict the record."""
+    log = tmp_path / "R7-test.log"
+    log.write_text('{"type":"terminal","n":9}\n' + "\n" * (_TAIL_LINES + 100), encoding="utf-8")
+    assert list(json_events(log)) == [{"type": "terminal", "n": 9}]

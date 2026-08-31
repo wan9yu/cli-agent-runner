@@ -26,10 +26,13 @@ so a stderr burst cannot evict what they scan for."""
 def json_tail(f: TextIO, maxlen: int = _TAIL_LINES) -> deque[str]:
     """Last ``maxlen`` JSON-looking lines of a merged round log.
 
-    Non-JSON chatter (stderr text) is filtered BEFORE windowing, so a burst
-    of any size cannot evict the terminal JSONL event from the window.
+    A line is JSON-looking when its first non-space char is ``{`` or ``[``
+    (tuple membership — a blank line's ``""`` is NOT a member, unlike substring
+    membership in ``"{["``). Non-JSON chatter is filtered BEFORE windowing, so a
+    burst of any size — including blank-line floods — cannot evict the terminal
+    JSONL event from the window.
     """
-    return deque((ln for ln in f if ln.lstrip()[:1] in "{["), maxlen=maxlen)
+    return deque((ln for ln in f if ln.lstrip()[:1] in ("{", "[")), maxlen=maxlen)
 
 
 def json_events(log_path: Path) -> Iterator[dict]:
