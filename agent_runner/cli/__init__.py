@@ -77,6 +77,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     from agent_runner.api import PERMANENT_CONFIG_EXIT
+    from agent_runner.cli.common import fail
     from agent_runner.config import ConfigError
 
     parser = _build_parser()
@@ -90,11 +91,10 @@ def main(argv: list[str] | None = None) -> int:
         # Deterministic, self-explaining startup failure: a config that does not
         # load will not self-heal on restart, so return the give-up exit code the
         # unit lists in RestartPreventExitStatus instead of a bare-1 restart loop.
-        print(
-            f"agent-runner: config error: {e}\nRun `agent-runner migrate` then retry.",
-            file=sys.stderr,
+        return fail(
+            f"config error: {e}\nRun `agent-runner migrate` then retry.",
+            code=PERMANENT_CONFIG_EXIT,
         )
-        return PERMANENT_CONFIG_EXIT
 
 
 if __name__ == "__main__":  # pragma: no cover

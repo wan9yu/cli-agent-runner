@@ -794,59 +794,38 @@ def run_all_detectors(
         if supervisor_stale_threshold_s is None
         else supervisor_stale_threshold_s
     )
-    candidates = [
-        _run_detector("timeout_rate", lambda: detect_timeout_rate(events), log_dir=log_dir),
-        _run_detector(
+    detectors: list[tuple[str, Callable[[], Alert | None]]] = [
+        ("timeout_rate", lambda: detect_timeout_rate(events)),
+        (
             "hung",
             lambda: detect_hung(
                 events, now=now, round_timeout_s=round_timeout_s, phases_overrides=phases_overrides
             ),
-            log_dir=log_dir,
         ),
-        _run_detector("orphan_chain", lambda: detect_orphan_chain(events), log_dir=log_dir),
-        _run_detector(
+        ("orphan_chain", lambda: detect_orphan_chain(events)),
+        (
             "disk_warning",
             lambda: detect_disk_warning(
                 metrics, threshold_pct=disk_warning_pct, critical_pct=disk_critical_pct
             ),
-            log_dir=log_dir,
         ),
-        _run_detector(
-            "disk_critical",
-            lambda: detect_disk_critical(metrics, threshold_pct=disk_critical_pct),
-            log_dir=log_dir,
-        ),
-        _run_detector(
-            "mem_pressure",
-            lambda: detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb),
-            log_dir=log_dir,
-        ),
-        _run_detector(
+        ("disk_critical", lambda: detect_disk_critical(metrics, threshold_pct=disk_critical_pct)),
+        ("mem_pressure", lambda: detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb)),
+        (
             "oauth_fail",
             lambda: detect_oauth_fail(
                 events, log_tails, patterns=compiled_auth_pats, hint=auth_fail_hint
             ),
-            log_dir=log_dir,
         ),
-        _run_detector(
-            "network_fail", lambda: detect_network_fail(events, log_tails), log_dir=log_dir
-        ),
-        _run_detector(
-            "rate_limit_active",
-            lambda: detect_rate_limit_active(events, now=now.timestamp()),
-            log_dir=log_dir,
-        ),
-        _run_detector(
-            "anomaly_repetitive_active",
-            lambda: detect_anomaly_repetitive_active(events),
-            log_dir=log_dir,
-        ),
-        _run_detector(
+        ("network_fail", lambda: detect_network_fail(events, log_tails)),
+        ("rate_limit_active", lambda: detect_rate_limit_active(events, now=now.timestamp())),
+        ("anomaly_repetitive_active", lambda: detect_anomaly_repetitive_active(events)),
+        (
             "supervisor_stale",
             lambda: detect_supervisor_stale(events, now=now, stale_threshold_s=effective_stale_s),
-            log_dir=log_dir,
         ),
     ]
+    candidates = [_run_detector(name, fn, log_dir=log_dir) for name, fn in detectors]
     return [a for a in candidates if a is not None]
 
 

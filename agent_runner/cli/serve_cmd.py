@@ -264,13 +264,16 @@ def _pause_until_selectable(
         emit_schedule_resumed(log_dir, paused_for_s=int(clock.monotonic() - started))
 
 
-def _maybe_emit_recovered(log_dir) -> None:
+def _maybe_emit_recovered(log_dir, active=None) -> None:
     """Emit ``transient_error_recovered`` for every agent whose throttle cleared via
     skip-around (rotation, no back-off sleep) and so left no breadcrumb. Per-agent, so
     one agent recovering while a sibling is still throttled still gets its breadcrumb.
     Events-derived + dedup-safe (see ``pending_recovered``): the back-off path already
-    emits its own recovered, so this stays quiet there and never double-emits."""
-    for agent, classification, throttled_for_s in pending_recovered(log_dir):
+    emits its own recovered, so this stays quiet there and never double-emits.
+
+    ``active`` is the current ``_active_throttles`` map when the caller already has
+    it (the skip loop does), passed through to spare ``pending_recovered`` a rescan."""
+    for agent, classification, throttled_for_s in pending_recovered(log_dir, active=active):
         emit_transient_error_recovered(
             log_dir, classification=classification, agent=agent, throttled_for_s=throttled_for_s
         )
@@ -339,7 +342,8 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     throttled. ``wake_epoch`` is the earliest reset among the blocking agents, so an
     all-throttled round wakes when the first one clears."""
     active = _active_throttles(log_dir)
-    _maybe_emit_recovered(log_dir)  # per-agent, dedup-safe — runs even if throttles remain
+    # reuse the map just computed — pending_recovered would otherwise rescan the events dir
+    _maybe_emit_recovered(log_dir, active)  # per-agent, dedup-safe — runs even if throttles remain
     throttled: set[str] = set()
     wake: int | None = None
     for phase in cfg.phases.list:

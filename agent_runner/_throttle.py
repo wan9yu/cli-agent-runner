@@ -329,7 +329,12 @@ def _throttled_for_s(ts: Any, *, clock: Clock = SYSTEM_CLOCK) -> int:
     return _elapsed_s(detected.timestamp(), clock=clock)
 
 
-def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tuple[str, str, int]]:
+def pending_recovered(
+    log_dir: Path,
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    active: dict[str, TransientErrorState] | None = None,
+) -> list[tuple[str, str, int]]:
     """One ``(agent, classification, throttled_for_s)`` per agent whose throttle
     cleared WITHOUT a recovered breadcrumb — its latest transient event is a
     ``detected`` with ``reset_at <= now`` and NO ``transient_error_recovered`` after.
@@ -346,8 +351,13 @@ def pending_recovered(log_dir: Path, *, clock: Clock = SYSTEM_CLOCK) -> list[tup
     An agent is reported cleared only once its EXP-BACKOFF-EXTENDED reset has
     passed (i.e. it has dropped out of :func:`_active_throttles`), never merely
     its raw emitter reset — otherwise the skip loop would emit ``recovered`` while
-    still gating the agent, flattening the ladder."""
-    active = _active_throttles(log_dir, clock=clock)
+    still gating the agent, flattening the ladder.
+
+    ``active`` lets a caller that already computed :func:`_active_throttles` this
+    cycle (the skip loop does) pass it in, avoiding a second events-directory
+    rescan; omitted, it is computed here."""
+    if active is None:
+        active = _active_throttles(log_dir, clock=clock)
     cleared: list[tuple[str, str, int]] = []
     for agent, detected in _latest_transient_per_agent(log_dir).items():
         if detected is None or agent in active:

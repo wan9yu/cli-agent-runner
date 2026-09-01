@@ -54,7 +54,7 @@ class PIDFile:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             return None
-        if isinstance(data, int) or isinstance(data, bool):
+        if isinstance(data, int):  # bool is an int subclass, so it is covered here too
             return data if _valid_pid(data) else None  # legacy bare-int, still guarded
         if not isinstance(data, dict) or not _valid_pid(data.get("pid")):
             return None

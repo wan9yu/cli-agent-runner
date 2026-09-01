@@ -74,7 +74,7 @@ def cmd(args) -> int:
     return _run_upgrade(
         cfg,
         target=args.target,
-        cfg_path=args.config,
+        cfg_path=cfg_path,
         no_restart=getattr(args, "no_restart", False),
         no_migrate=getattr(args, "no_migrate", False),
     )
@@ -282,10 +282,10 @@ def _orchestrated_upgrade(
         )
     info(f"installed ({SYSTEM_CLOCK.monotonic() - t_pip:.1f}s)")
 
-    pre_migrate = Path(cfg_path).read_text(encoding="utf-8") if Path(cfg_path).exists() else None
+    pre_migrate = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else None
     if not no_migrate:
         info("migrating config for new version...")
-        rc_m, migrate_err = _smoke_migrate(Path(cfg_path))
+        rc_m, migrate_err = _smoke_migrate(cfg_path)
         if rc_m != 0:
             return _rollback(
                 cfg,
@@ -453,9 +453,9 @@ def _rollback(
 
     if restore_config is not None:
         try:
-            if Path(cfg_path).read_text(encoding="utf-8") != restore_config:
+            if cfg_path.read_text(encoding="utf-8") != restore_config:
                 # undo the new-binary migrate
-                Path(cfg_path).write_text(restore_config, encoding="utf-8")
+                cfg_path.write_text(restore_config, encoding="utf-8")
         except OSError as e:  # best-effort; report instead of crashing mid-rollback
             return _rollback_failed(
                 log_dir,
