@@ -1,5 +1,6 @@
-"""b18: a permanent startup-battery failure stops serve (config_broken) instead
-of respawning a broken config forever."""
+"""b18: a permanent, non-self-healing round failure (ConfigError-classified —
+a startup-battery check or any other permanent verdict) stops serve
+(config_broken) instead of respawning a broken config forever."""
 
 from __future__ import annotations
 

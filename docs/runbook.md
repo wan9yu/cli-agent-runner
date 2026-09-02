@@ -37,10 +37,13 @@ correctly (process still runs as your user, not root).
 
 ## Daily operations
 
-> **Config changes require restart**: editing `agent-runner.toml` does not
-> hot-reload. After any TOML change, run `agent-runner restart` to pick up
-> the new config. The supervisor reuses the loaded Config across all rounds
-> within a single `serve` session.
+> **Restart after any TOML change, to be safe**: each round runs as its own
+> subprocess and re-reads `agent-runner.toml` fresh, so a change to per-round
+> fields (agent command, prompt, per-phase overrides) already takes effect on
+> the very next round. `serve` itself, though, loads the config once at
+> startup and reuses that same copy for the whole session — schedule windows,
+> phase rotation, the outer round-timeout ceiling, and log retention keep the
+> OLD values until you run `agent-runner restart`. When in doubt, restart.
 
 ### Health check
 

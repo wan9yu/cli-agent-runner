@@ -731,7 +731,14 @@ def cmd(args) -> int:
                 restart_delay_s=cfg.runtime.restart_delay_s,
             )
             if action == "config_broken":
-                emit_config_broken(log_dir, reason="startup battery permanent failure")
+                # classify_round_exit maps ANY ConfigError to this exit code (Group
+                # A) — not only a startup-battery check failure (e.g. _phase_for's
+                # stale-serve-cache ConfigError takes this same path with the
+                # battery never having run this round), so the reason names the
+                # verdict, not an assumed cause.
+                emit_config_broken(
+                    log_dir, reason=f"permanent config failure (round exited {r_returncode})"
+                )
                 exit_code = PERMANENT_CONFIG_EXIT
                 break
             if action == "crash_loop":

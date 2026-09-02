@@ -250,7 +250,8 @@ def _extract_usage(result_event: dict, *, model: str | None, tool_call_count: in
       subtracted cached from input; 0.1.26 reverts to the correct direct read.
     - ``cached_tokens`` is cache reads only (``cache_read_input_tokens``).
     - ``cache_creation_tokens`` is ``cache_creation_input_tokens`` (write cost,
-      billed at ~25% premium over fresh input per Anthropic pricing).
+      priced differently from fresh input by the provider — this plugin records
+      the count only and never interprets cost).
     - ``models_breakdown`` always None for claude (single-model per round);
       only populated by gemini multi-model rounds.
     - ``model`` from caller — ``_parse_claude_log`` tracks the latest

@@ -54,7 +54,8 @@ def emit_max_rounds_reached(log_dir: Path, *, rounds_completed: int, max_rounds:
 
 
 def emit_config_broken(log_dir: Path, *, reason: str) -> None:
-    """Emit config_broken (serve stopped on a permanent startup-battery failure)."""
+    """Emit config_broken (serve gave up on a permanent, non-self-healing failure —
+    a startup-battery check, or any other ConfigError-classified round exit)."""
     from agent_runner.events import CONFIG_BROKEN, emit
 
     emit(log_dir, CONFIG_BROKEN, reason=reason)
@@ -315,8 +316,11 @@ def emit_agent_usage_recorded(
     - ``models_breakdown``: only populated when a round used multiple models
       (gemini multi-model rounds). None for claude (always single-model).
     - ``cache_creation_tokens``: claude only — ``usage.cache_creation_input_tokens``,
-      independent count from ``cached_tokens`` (cache_read). Billed at ~25% premium
-      over fresh input per Anthropic pricing. Gemini has no equivalent → 0.
+      independent count from ``cached_tokens`` (cache_read). Priced differently
+      from fresh input by the provider; the framework records the count only and
+      never interprets cost (no price tables here — see ``cost_usd`` above for the
+      one cost figure the framework passes through verbatim). Gemini has no
+      equivalent → 0.
     - ``tool_call_count``: number of tool invocations the agent made in the round.
       Claude: count of ``tool_use`` content blocks across all assistant events.
       Gemini: ``stats.tool_calls``.
