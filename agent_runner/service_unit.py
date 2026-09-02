@@ -5,21 +5,22 @@ Two units per project:
   agent-runner-monitor@<project>.service  - runs `agent-runner monitor`
 
 Install command writes these to ~/.config/systemd/user/. The graceful-stop
-contract relies on KillMode=mixed + KillSignal=SIGTERM +
-TimeoutStopSec=max(round_timeout_s, *per_phase)+60: SIGTERM must reach ONLY the
-serve process (which traps it and drains the current round). systemd's default
-KillMode=control-group would SIGTERM the whole cgroup — round and agent child
-included — making the drain structurally ineffective (verified in production
-by a downstream integrator via an interrupted round).
+contract relies on KillMode=mixed + KillSignal=SIGTERM + TimeoutStopSec
+(derived from max(round_timeout_s, *per_phase) via
+``_serve_policy.timeout_budget`` — see that function for the margin
+breakdown): SIGTERM must reach ONLY the serve process (which traps it and
+drains the current round). systemd's default KillMode=control-group would
+SIGTERM the whole cgroup — round and agent child included — making the drain
+structurally ineffective (verified in production by a downstream integrator
+via an interrupted round).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from agent_runner._serve_policy import timeout_budget
 from agent_runner.config import Config
-
-_GRACE_S = 60
 
 
 def _unit_mode_lines(user: str | None) -> tuple[str, str]:
@@ -55,7 +56,7 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
         for override in cfg.phases.overrides.values():
             if override.round_timeout_s is not None:
                 max_timeout = max(max_timeout, override.round_timeout_s)
-    timeout_total = max_timeout + _GRACE_S
+    timeout_total, _ = timeout_budget(max_timeout)
     user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import re
 import shutil
 import signal
 import subprocess  # noqa: TID251 — api uses systemctl + ssh, both subprocess
@@ -19,7 +18,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
-from agent_runner import events, lifecycle
+from agent_runner import _resolve, events, lifecycle
 
 # Restart policy lives in _serve_policy (pure, dependency-free). Re-exported
 # here so external callers keep `from agent_runner.api import post_round_decision`.
@@ -61,16 +60,19 @@ from agent_runner.service_unit import (
     serve_unit_filename,
 )
 
-_HOOK_ALLOWANCE_S = 60  # slack for post-round hooks between the inner wall and the ceiling
-
 
 def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
     """Outer wall-clock ceiling for the round subprocess: the inner round timeout
     plus a DERIVED margin (agent reap grace + git-commit ceiling + hook allowance),
     so the ceiling only trips when the round supervisor itself is wedged, never
-    while it does its own bounded post-round cleanup."""
-    from agent_runner.agent_runtime import REAP_GRACE_S
-    from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
+    while it does its own bounded post-round cleanup.
+
+    Derived from ``_serve_policy.timeout_budget``, the single source shared
+    with ``service_unit.py``'s ``TimeoutStopSec`` (Group C, seam 3) — kept as
+    a local import so this stays out of api's re-exported public surface
+    (internal-only, not a 0.2.13 public contract).
+    """
+    from agent_runner._serve_policy import timeout_budget
 
     if phase_arg is not None:
         inner = cfg.profile_for(phase_arg).runtime.round_timeout_s
@@ -80,10 +82,9 @@ def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
             (cfg.profile_for(p).runtime.round_timeout_s for p in (cfg.phases.list or [])),
             default=cfg.runtime.round_timeout_s,
         )
-    return inner + REAP_GRACE_S + GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
+    _, outer_ceiling = timeout_budget(inner)
+    return outer_ceiling
 
-
-_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 _LINGER_HINT = (
     "On headless distros, run `sudo loginctl enable-linger $USER` and "
@@ -92,28 +93,17 @@ _LINGER_HINT = (
 
 
 def _project_name(work_dir: Path) -> str:
-    name = work_dir.resolve().name or "default"
-    if not _PROJECT_NAME_RE.match(name):
-        raise ValueError(
-            f"invalid project name {name!r}: must match [A-Za-z0-9._-]+. "
-            "The project name is the basename of work_dir and is interpolated into "
-            "ssh remote commands and systemd unit filenames; shell metacharacters "
-            "and path separators are rejected."
-        )
-    return name
+    """Strict project name: api.py's lifecycle/observe verbs interpolate it
+    into ssh remote commands and systemd unit filenames. See
+    ``_resolve.project_name`` (single source, lenient/strict split)."""
+    return _resolve.project_name(work_dir, strict=True)
 
 
 def _log_dir(work_dir: Path) -> Path:
-    """Return the configured log_dir from agent-runner.toml.
-
-    Falls back to the conventional ~/.agent-runner/<project>/logs only when
-    the toml is missing. This keeps `api.status` / `api.stop` aligned with
-    where `serve_cmd.py` actually writes serve.pid.
-    """
-    cfg_path = work_dir / "agent-runner.toml"
-    if cfg_path.exists():
-        return load_config(cfg_path).runtime.log_dir
-    return Path.home() / ".agent-runner" / _project_name(work_dir) / "logs"
+    """Return the configured log_dir. See ``_resolve.log_dir`` (single source):
+    this keeps `api.status` / `api.stop` aligned with where `serve_cmd.py`
+    actually writes serve.pid."""
+    return _resolve.log_dir(work_dir)
 
 
 def _agent_runner_script_path() -> Path:
@@ -204,6 +194,37 @@ def init(
 _SYSTEM_UNITS_DIR = Path("/etc/systemd/system")
 
 
+def _unit_work_dir(serve_path: Path) -> Path | None:
+    """Parse an existing unit's ``WorkingDirectory=`` line, or None if the file
+    doesn't exist / can't be read / has no such line."""
+    try:
+        text = serve_path.read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("WorkingDirectory="):
+            return Path(line.removeprefix("WorkingDirectory="))
+    return None
+
+
+def _guard_against_clobber(serve_path: Path, work_dir: Path, *, force: bool) -> None:
+    """Refuse to overwrite a same-basename sibling project's unit.
+
+    The unit filename is derived from the project name (work_dir's basename)
+    alone, so two unrelated projects sharing a basename — or the same project
+    moved to a new path — would silently clobber each other's install.
+    force=True is the explicit override for the moved-repo case.
+    """
+    owner = _unit_work_dir(serve_path)
+    if owner is None or owner == work_dir or force:
+        return
+    raise FileExistsError(
+        f"{serve_path} already manages a different project at {owner} "
+        f"(this is {work_dir}); pass force=True to overwrite "
+        "(e.g. after moving/renaming that project's directory)."
+    )
+
+
 def _install_system(cfg: Config, project: str, *, with_monitor: bool) -> InstallResult:
     if os.geteuid() != 0:
         raise RuntimeError(
@@ -235,7 +256,11 @@ def _install_system(cfg: Config, project: str, *, with_monitor: bool) -> Install
 
 
 def install(
-    work_dir: Path | None = None, *, system: bool = False, with_monitor: bool = False
+    work_dir: Path | None = None,
+    *,
+    system: bool = False,
+    with_monitor: bool = False,
+    force: bool = False,
 ) -> InstallResult:
     if work_dir is None:
         work_dir = Path.cwd()
@@ -243,13 +268,17 @@ def install(
     cfg = load_config(cfg_path)
     project = _project_name(work_dir)
 
+    units_dir = _SYSTEM_UNITS_DIR if system else lifecycle._user_systemd_dir()
+    _guard_against_clobber(
+        units_dir / serve_unit_filename(project), cfg.runtime.work_dir, force=force
+    )
+
     if system:
         return _install_system(cfg, project, with_monitor=with_monitor)
 
     _check_user_systemd_available()
     script_path = _agent_runner_script_path()
 
-    units_dir = lifecycle._user_systemd_dir()
     units_dir.mkdir(parents=True, exist_ok=True)
 
     serve_path = units_dir / serve_unit_filename(project)
@@ -455,7 +484,7 @@ def _resolve_target(project: str | Path | None) -> tuple[str, Path]:
     if "/" in project or "\\" in project:
         p = Path(project)
         return _project_name(p), _log_dir(p)
-    if not _PROJECT_NAME_RE.match(project):
+    if not _resolve._PROJECT_NAME_RE.match(project):
         raise ValueError(f"invalid project name {project!r}: must match [A-Za-z0-9._-]+")
     if project == _project_name(Path.cwd()):
         return project, _log_dir(Path.cwd())

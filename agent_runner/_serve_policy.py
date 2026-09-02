@@ -140,3 +140,50 @@ def classify_round_exit(exc: BaseException) -> int:
     if isinstance(exc, EnvironmentalError):
         return ENV_BATTERY_EXIT
     return 1
+
+
+# ---------------------------------------------------------------------------
+# Round-timeout budget (Group C, seam 3 — 0.2.13). TimeoutStopSec
+# (service_unit.py, systemd's SIGKILL deadline after `systemctl stop`) and the
+# outer round-wall ceiling (api.outer_round_ceiling_s, the in-process watchdog
+# around the round subprocess) were derived independently and could drift —
+# TimeoutStopSec only added a flat 60s to the inner round timeout, with no
+# margin for the outer ceiling's own reap/git-commit/hook slack, let alone the
+# SIGTERM-to-round-child grace on top of that. One function computes both so
+# they cannot disagree.
+#
+# service_unit.py must not import api.py (cycle: api.py already imports
+# service_unit.render_serve_unit), so this lives here — a dependency-free leaf
+# both service_unit.py and api.py can import. Its margin constants are
+# LITERAL mirrors of the real sources of truth (agent_runtime.REAP_GRACE_S,
+# vcs_state.GIT_COMMIT_TIMEOUT_S, api._ROUND_TERM_GRACE_S) rather than
+# imports, same as service_unit.py's literal "78 75" RestartPreventExitStatus
+# mirroring PERMANENT_CONFIG_EXIT/CRASH_LOOP_EXIT — pinned by
+# test_timeout_budget_invariant.py so a change to any of the three can't
+# silently drift this budget out of sync.
+_REAP_GRACE_S = 5
+_GIT_COMMIT_TIMEOUT_S = 120
+_HOOK_ALLOWANCE_S = 60  # slack for post-round hooks between the inner wall and the ceiling
+_ROUND_TERM_GRACE_S = 15  # mirrors api._ROUND_TERM_GRACE_S / serve_cmd._ROUND_TERM_GRACE_S
+_STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-request overhead
+
+
+def timeout_budget(round_timeout_s: int) -> tuple[int, int]:
+    """Single source for the round-timeout safety budget.
+
+    Returns ``(timeout_stop_sec, outer_ceiling_s)``:
+
+    - ``outer_ceiling_s`` — the in-process outer wall-clock ceiling for the
+      round subprocess (``api.outer_round_ceiling_s``): ``round_timeout_s``
+      plus reap grace + git-commit ceiling + hook allowance, so it only trips
+      when the round supervisor itself is wedged, never during its own
+      bounded post-round cleanup.
+    - ``timeout_stop_sec`` — systemd's ``TimeoutStopSec``
+      (``service_unit.py``): must clear ``outer_ceiling_s`` by enough for a
+      SIGTERM to reach and drain the round (``_ROUND_TERM_GRACE_S``) plus a
+      stop-request overhead pad, so `systemctl stop` never SIGKILLs a round
+      that is draining normally.
+    """
+    outer_ceiling_s = round_timeout_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
+    timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + _STOP_GRACE_MARGIN_S
+    return timeout_stop_sec, outer_ceiling_s

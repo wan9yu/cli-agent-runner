@@ -71,7 +71,7 @@ def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path
 def test_given_serve_unit_when_rendered_then_timeout_includes_grace(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)  # round_timeout_s=600
     body = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
-    assert "TimeoutStopSec=660" in body  # 600 + 60 grace
+    assert "TimeoutStopSec=810" in body  # 600 + 210 budget (_serve_policy.timeout_budget)
 
 
 def test_given_serve_unit_when_rendered_then_paths_substituted(tmp_path: Path) -> None:
@@ -91,10 +91,10 @@ def test_given_monitor_unit_when_rendered_then_runs_monitor_command(tmp_path: Pa
 
 
 def test_given_round_timeout_when_render_then_timeout_includes_grace(tmp_path: Path) -> None:
-    """TimeoutStopSec = round_timeout_s + 60 grace."""
+    """TimeoutStopSec = round_timeout_s + 210 budget (_serve_policy.timeout_budget)."""
     cfg = _cfg(tmp_path, round_timeout_s=1800)
     unit = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
-    assert "TimeoutStopSec=1860" in unit  # 1800 + 60
+    assert "TimeoutStopSec=2010" in unit  # 1800 + 210
 
 
 def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
@@ -117,8 +117,8 @@ def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
     )
 
     unit = render_serve_unit(cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner")
-    # max(1800, 3600) + 60 = 3660
-    assert "TimeoutStopSec=3660" in unit
+    # max(1800, 3600) + 210 = 3810
+    assert "TimeoutStopSec=3810" in unit
 
 
 def test_given_user_arg_when_render_serve_unit_then_includes_user_directive(tmp_path: Path) -> None:

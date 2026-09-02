@@ -15,9 +15,9 @@ from pathlib import Path
 
 import psutil
 
+from agent_runner import _resolve
 from agent_runner.api_types import ServiceMode
 from agent_runner.context_store import atomic_write_json
-from agent_runner.service_unit import serve_unit_filename
 
 # Bounds every `systemctl --user` call this module makes. A wedged D-Bus
 # session (or a systemd that never answers) must not hang a lifecycle-safety
@@ -146,7 +146,7 @@ def detect_service_mode(project: str, *, log_dir: Path) -> ServiceMode:
       signal directly; `start` needs the systemd path to respawn it)
     - no unit: PID_FILE if a pidfile exists, else NONE
     """
-    unit_name = serve_unit_filename(project)
+    unit_name = _resolve.unit_filename(project)
     unit = _user_systemd_dir() / unit_name
     if not unit.exists():
         if (log_dir / "serve.pid").exists():

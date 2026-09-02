@@ -248,7 +248,8 @@ EXPECTED_API_SURFACE = {
     "peek",
     "pid_alive",
     "post_round_decision",
-    "re",
+    # "re" dropped 0.2.13 (Group C): project-name regex validation moved to
+    # _resolve.py, api.py no longer needs `import re` for its own sake.
     "read_round_num",
     "read_sentinel_content",
     "relay_remote_events",

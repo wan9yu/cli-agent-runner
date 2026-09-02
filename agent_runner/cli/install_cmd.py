@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from subprocess import CalledProcessError
 
-from agent_runner import api
+from agent_runner import _resolve, api
 from agent_runner.cli.common import emit, fail, work_dir_from_args
 
 
@@ -26,6 +26,14 @@ def add_parser(sub, parent) -> None:
         action="store_true",
         help="Also install monitor sidekick service for auto-stop on critical alerts",
     )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Overwrite a same-basename sibling project's unit "
+            "(e.g. after moving/renaming a project directory)"
+        ),
+    )
     p.set_defaults(func=cmd_install)
 
     u = sub.add_parser(
@@ -37,13 +45,15 @@ def add_parser(sub, parent) -> None:
 def cmd_install(args) -> int:
     work_dir = work_dir_from_args(args)
     try:
-        result = api.install(work_dir, system=args.system, with_monitor=args.monitor)
-    except (FileNotFoundError, RuntimeError, CalledProcessError) as e:
+        result = api.install(
+            work_dir, system=args.system, with_monitor=args.monitor, force=args.force
+        )
+    except (FileNotFoundError, FileExistsError, RuntimeError, CalledProcessError) as e:
         return fail(str(e))
     emit(result, json_mode=getattr(args, "json", False))
     if args.system and result.started is False:
-        project = work_dir.name
-        sys.stderr.write(f"next: systemctl start agent-runner@{project}\n")
+        project = _resolve.project_name(work_dir, strict=True)
+        sys.stderr.write(f"next: systemctl start {_resolve.unit_filename(project)}\n")
     return 0
 
 

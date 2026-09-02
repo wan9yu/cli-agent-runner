@@ -17,6 +17,7 @@ import importlib.resources
 import subprocess  # noqa: TID251 — scaffold needs git for the commit step
 from pathlib import Path
 
+from agent_runner import _resolve
 from agent_runner.api_types import InitResult
 from agent_runner.vcs_state import is_git_repo
 
@@ -66,7 +67,7 @@ def scaffold_project(
 
     files_created: list[Path] = []
 
-    project = work_dir.resolve().name or "default"
+    project = _resolve.project_name(work_dir, strict=False)
     toml_text = _load_preset(preset).replace("{project}", project)
     toml_path.write_text(toml_text)
     files_created.append(toml_path)

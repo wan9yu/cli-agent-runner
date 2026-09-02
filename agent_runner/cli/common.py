@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from agent_runner import _resolve
 from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, ConfigError, load_config
 from agent_runner.events import plugin_event_kinds
@@ -52,11 +53,11 @@ def work_dir_from_args(args) -> Path:
     The api functions hardcode ``work_dir / "agent-runner.toml"`` for config loading,
     so callers cannot rename the toml. Reject a mismatching filename loudly here
     instead of letting api read the wrong file (or a missing file) silently.
+
+    ``_resolve.config_path`` is the single source for "given args, which toml" —
+    see it for why this can't just be ``args.config``.
     """
-    cfg = getattr(args, "config", None)
-    if cfg is None:
-        return Path.cwd().resolve()
-    cfg_path = Path(cfg).resolve()
+    cfg_path = _resolve.config_path(args)
     if cfg_path.name != "agent-runner.toml":
         raise ValueError(
             f"--config must point at a file named 'agent-runner.toml', got {cfg_path.name!r}"

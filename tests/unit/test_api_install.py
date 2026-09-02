@@ -145,3 +145,78 @@ def test_given_system_mode_happy_path_when_install_then_writes_to_etc_and_does_n
     # Verify daemon-reload and enable were called
     assert any("daemon-reload" in cmd for cmd in calls)
     assert any("enable" in cmd for cmd in calls)
+
+
+# ---------------------------------------------------------------------------
+# Task 4: install-clobber guard (Group C, seam 3) — same-basename sibling
+# ---------------------------------------------------------------------------
+
+
+def _write_project(work_dir, *, log_dir="logs"):
+    work_dir.mkdir(parents=True)
+    (work_dir / "p.md").write_text("hi")
+    (work_dir / "agent-runner.toml").write_text(
+        "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
+        f"[runtime]\nwork_dir = '{work_dir}'\nlog_dir = '{log_dir}'\n[prompt]\nfile = 'p.md'\n"
+    )
+
+
+def _patch_user_install(monkeypatch, units_dir):
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: units_dir)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr(
+        "agent_runner.api._agent_runner_script_path", lambda: units_dir / "fake-agent-runner"
+    )
+
+
+def test_given_same_basename_sibling_unit_when_install_then_raises_without_force(
+    tmp_path, monkeypatch
+):
+    units_dir = tmp_path / "systemd"
+    _patch_user_install(monkeypatch, units_dir)
+
+    site_a = tmp_path / "site-a" / "myproj"
+    site_b = tmp_path / "site-b" / "myproj"  # same basename, different location
+    _write_project(site_a)
+    _write_project(site_b)
+
+    api.install(site_a, system=False)  # installs agent-runner@myproj.service for site_a
+
+    with pytest.raises(FileExistsError, match="myproj"):
+        api.install(site_b, system=False)
+
+
+def test_given_same_basename_sibling_unit_when_install_with_force_then_overwrites(
+    tmp_path, monkeypatch
+):
+    units_dir = tmp_path / "systemd"
+    _patch_user_install(monkeypatch, units_dir)
+
+    site_a = tmp_path / "site-a" / "myproj"
+    site_b = tmp_path / "site-b" / "myproj"
+    _write_project(site_a)
+    _write_project(site_b)
+
+    api.install(site_a, system=False)
+    result = api.install(site_b, system=False, force=True)
+
+    assert result.unit_path.exists()
+    assert f"WorkingDirectory={site_b.resolve()}" in result.unit_path.read_text()
+
+
+def test_given_reinstall_of_same_project_when_install_then_does_not_require_force(
+    tmp_path, monkeypatch
+):
+    """A same-basename unit that already targets THIS work_dir (a plain
+    reinstall/refresh) must not be treated as a clobber."""
+    units_dir = tmp_path / "systemd"
+    _patch_user_install(monkeypatch, units_dir)
+
+    site_a = tmp_path / "site-a" / "myproj"
+    _write_project(site_a)
+
+    api.install(site_a, system=False)
+    result = api.install(site_a, system=False)  # no force needed
+
+    assert result.unit_path.exists()

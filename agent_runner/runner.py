@@ -17,6 +17,7 @@ from typing import Any
 
 import agent_runner.api as api
 from agent_runner import (
+    _resolve,
     agent_runtime,
     context_store,
     events,
@@ -451,7 +452,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     hook_ctx = hooks.HookContext(
         work_dir=cfg.runtime.work_dir,
         log_dir=log_dir,
-        project=cfg.runtime.work_dir.resolve().name or "default",
+        project=_resolve.project_name(cfg.runtime.work_dir, strict=False),
         round_num=round_num,
         phase=phase,
         agent_name=profile.agent.name
