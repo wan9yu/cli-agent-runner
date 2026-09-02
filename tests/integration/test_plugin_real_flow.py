@@ -55,7 +55,7 @@ def _write_minimal_toml(work_dir: Path, agent_command: str, agent_name: str) -> 
     cfg_path.write_text(
         f"[agent]\n"
         f'command = ["{agent_command}"]\n'
-        f"prompt_arg_template = []\n"
+        f'prompt_arg_template = ["{{prompt}}"]\n'
         f'name = "{agent_name}"\n'
         f"[runtime]\n"
         f'work_dir = "{work_dir}"\n'

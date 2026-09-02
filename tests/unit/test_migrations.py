@@ -1,5 +1,7 @@
 import tomllib
 
+import pytest
+
 from agent_runner import migrations
 
 
@@ -59,22 +61,26 @@ def test_current_config_is_noop():
     assert r.applied == [] and r.manual == [] and r.new_text == text
 
 
-def test_flat_phase_override_detected_as_manual():
-    # A flat round_timeout_s directly under [phases.a] must be reported for a
-    # manual move under [phases.a.runtime] — never rewritten (a header rename
-    # would silently re-parent sibling sub-tables like prompt.files).
+def test_flat_phase_override_detected_as_advisory_not_manual():
+    # A flat round_timeout_s directly under [phases.a] is guidance, not a
+    # rejection — the flat form is a PERMANENT alias (config.py still loads
+    # it). Routing it through `manual` used to make `upgrade` refuse to cross
+    # the version boundary forever over a config that was never broken; it
+    # must report as advisory and never block applied/manual-gated callers.
     text = 'phases.list = ["a"]\n[phases.a]\nround_timeout_s = 900\n'
     r = _run(text)
     assert r.applied == []
-    assert len(r.manual) == 1 and "[phases.<name>.runtime]" in r.manual[0]
-    assert r.new_text == text  # manual transforms never touch the text
+    assert r.manual == []
+    assert len(r.advisory) == 1 and "[phases.<name>.runtime]" in r.advisory[0]
+    assert r.new_text == text  # advisory transforms never touch the text
 
 
 def test_flat_phase_disable_hooks_detected():
     text = 'phases.list = ["a"]\n[phases.a]\ndisable_pre_round_hooks = true\n'
     r = _run(text)
     assert r.applied == []
-    assert len(r.manual) == 1 and "[phases.<name>.runtime]" in r.manual[0]
+    assert r.manual == []
+    assert len(r.advisory) == 1 and "[phases.<name>.runtime]" in r.advisory[0]
 
 
 def test_nested_phase_runtime_is_not_flagged():
@@ -215,3 +221,107 @@ def test_wrap_bare_per_phase_command_does_not_touch_sibling_space_command():
     assert 'command = ["claude"]' in r.new_text  # dev: safe, auto-fixed
     assert '[phases.prod.agent]\ncommand = "claude -p"' in r.new_text  # prod: untouched
     assert any("argv list" in m for m in r.manual)
+
+
+# --- 0.2.13 strictness completion: table-as-scalar, base-table unknown keys,
+# [phases] scalar keys, per-phase prompt unknown keys, argv {prompt} placeholder.
+# Every new config.py rejection needs a matching registry entry here so
+# `agent-runner migrate` reports it instead of crashing or missing it — the
+# "migrate parity" contract. ---
+
+
+@pytest.mark.parametrize(
+    "table", ["agent", "runtime", "prompt", "vcs", "monitor", "phases", "plugins", "schedule"]
+)
+def test_scalar_table_is_reported_manual_not_crashed(table: str):
+    # This is the registry-type-safety regression test: `monitor = 1` (and
+    # every sibling top-level table given as a scalar) used to crash detect()
+    # lambdas that assumed a dict (`p.get("monitor", {}).get(...)`). Detecting
+    # and reporting it — never raising — is what lets `agent-runner migrate`
+    # run at all on the exact config that needs it.
+    text = f"{table} = 1\n"
+    r = _run(text)  # must not raise
+    assert r.applied == []
+    assert any(table in m for m in r.manual)
+    assert r.new_text == text
+
+
+def test_monitor_scalar_table_survives_every_other_monitor_detector():
+    # A config with [monitor]-shaped content AND a scalar monitor= at once
+    # can't happen in real TOML (one wins), but every OTHER detector that
+    # reads "monitor" off the parsed dict must independently survive a scalar
+    # monitor value, not just the anomaly-threshold compare.
+    text = "monitor = 1\n"
+    r = _run(text)  # must not raise from anomaly_repetitive_* or anywhere else
+    assert any("monitor" in m for m in r.manual)
+
+
+def test_unknown_agent_key_is_manual():
+    text = '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\nbogus = 1\n'
+    r = _run(text)
+    assert any("bogus" in m and "[agent]" in m for m in r.manual)
+
+
+def test_unknown_runtime_key_is_manual():
+    text = '[runtime]\nwork_dir = "/x"\nlog_dir = "/x/logs"\nbogus = 1\n'
+    r = _run(text)
+    assert any("bogus" in m and "[runtime]" in m for m in r.manual)
+
+
+def test_unknown_vcs_key_is_manual():
+    text = "[vcs]\nbogus = 1\n"
+    r = _run(text)
+    assert any("bogus" in m and "[vcs]" in m for m in r.manual)
+
+
+def test_unknown_monitor_key_is_manual():
+    text = "[monitor]\nbogus = 1\n"
+    r = _run(text)
+    assert any("bogus" in m and "[monitor]" in m for m in r.manual)
+
+
+def test_phases_scalar_key_is_manual():
+    text = '[phases]\nlist = ["dev"]\nbogus = 1\n[phases.dev]\n'
+    r = _run(text)
+    assert any("bogus" in m for m in r.manual)
+
+
+def test_unknown_phase_prompt_key_is_manual():
+    text = (
+        '[phases]\nlist = ["dev"]\n[phases.dev.prompt]\nfiles = ["a.md"]\ninject_context = false\n'
+    )
+    r = _run(text)
+    assert any("phases.<name>.prompt" in m for m in r.manual)
+
+
+def test_agent_missing_prompt_placeholder_is_manual():
+    text = '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p"]\n'
+    r = _run(text)
+    assert any("{prompt}" in m for m in r.manual)
+
+
+def test_agent_stdin_delivery_is_not_flagged_for_missing_placeholder():
+    # stdin delivery legitimately has no {prompt} token in argv — a different,
+    # already-enforced rule (config.py rejects the opposite: {prompt} present
+    # under stdin). The migrate-side detector must not conflate the two.
+    text = '[agent]\ncommand = ["true"]\nprompt_delivery = "stdin"\nprompt_arg_template = ["-p"]\n'
+    r = _run(text)
+    assert r.manual == []
+
+
+def test_phase_agent_missing_prompt_placeholder_is_manual():
+    text = '[phases]\nlist = ["dev"]\n[phases.dev.agent]\nprompt_arg_template = ["-p"]\n'
+    r = _run(text)
+    assert any("{prompt}" in m for m in r.manual)
+
+
+def test_phase_agent_missing_prompt_placeholder_with_files_empty_is_not_flagged():
+    # Carve-out mirror of config.py's: a phase that disables its own prompt
+    # (files = []) legitimately needs no {prompt} token in its own template.
+    text = (
+        '[phases]\nlist = ["dev"]\n'
+        "[phases.dev.prompt]\nfiles = []\n"
+        '[phases.dev.agent]\nprompt_arg_template = ["-p"]\n'
+    )
+    r = _run(text)
+    assert r.manual == []

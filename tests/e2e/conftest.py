@@ -140,7 +140,7 @@ def pi_config(pi_workdir: str, pi_fake_agent: str) -> str:
     body = (
         "[agent]\n"
         f'command = ["{pi_fake_agent}"]\n'
-        "prompt_arg_template = []\n"
+        'prompt_arg_template = ["{prompt}"]\n'
         "[runtime]\n"
         f'work_dir = "{pi_workdir}"\n'
         f'log_dir = "{log_dir}"\n'

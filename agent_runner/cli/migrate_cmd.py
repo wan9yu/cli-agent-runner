@@ -31,12 +31,14 @@ def cmd(args) -> int:
         return fail(f"{cfg_path} is not valid TOML: {e}", code=2)
 
     result = migrations.run_migrations(text, parsed)
-    if not result.applied and not result.manual:
+    if not result.applied and not result.manual and not result.advisory:
         print(f"{cfg_path}: nothing to migrate")
         return 0
 
     for line in result.applied:
         print(f"  rewrite: {line}")
+    for line in result.advisory:
+        print(f"  NOTE:    {line}")
     for line in result.manual:
         print(f"  MANUAL:  {line}")
 

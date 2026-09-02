@@ -18,7 +18,7 @@ def _write_minimal_toml(tmp_git_repo: Path, fake_agent: Path) -> Path:
     toml.write_text(f"""
 [agent]
 command = ["{fake_agent}"]
-prompt_arg_template = []
+prompt_arg_template = ["{{prompt}}"]
 [runtime]
 work_dir = "{tmp_git_repo}"
 log_dir = "{log_dir}"

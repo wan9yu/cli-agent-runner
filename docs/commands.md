@@ -272,6 +272,15 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [prompt] key(s) rejected in 0.2.12; delete them (allowed: ['concat_separator', 'context_injection_mode', 'file', 'files', 'inject_context', 'strip_yaml_frontmatter'])
 - unknown [schedule] key(s) rejected in 0.2.12; delete them (allowed: ['pause_windows', 'run_windows', 'timezone'])
 - monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: lower the threshold or raise the window so the detector can fire
+- [<table>] given as a scalar, not a table; give it real [table] content (no auto-fix possible)
+- unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'name', 'prompt_arg_template', 'prompt_delivery'])
+- unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['disable_pre_round_hooks', 'dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_log_retention', 'round_timeout_s', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
+- unknown [vcs] key(s) rejected in 0.2.13; delete them (allowed: ['dirty_action', 'stash_idempotency_s'])
+- unknown [monitor] key(s) rejected in 0.2.13; delete them (allowed: ['anomaly_repetitive_threshold', 'anomaly_repetitive_window', 'auth_fail_hint', 'auth_fail_patterns', 'auto_stop_on', 'host_health', 'remote_failure_tolerance_s', 'round_progress_interval_s', 'supervisor_stale_threshold_s'])
+- [phases] key(s) ['<name>'] must be phase sub-tables ([phases.<name>]); only 'list'/'phase_policy' are scalar [phases] fields
+- unknown [phases.<name>.prompt] key(s) rejected in 0.2.13; delete them (allowed: ['files'])
+- [agent] prompt_arg_template has no {prompt} placeholder; the prompt is never delivered to the agent — add {prompt} to one of the argv tokens
+- a [phases.<name>.agent] prompt_arg_template has no {prompt} placeholder; add one, or set that phase's prompt.files = [] if it truly sends no prompt
 <!-- /gen:migrate-transforms -->
 
 ## 中文摘要

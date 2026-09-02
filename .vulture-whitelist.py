@@ -247,11 +247,13 @@ path
 detect
 apply
 describe
+advisory
 
 # agent_runner.migrations.MigrationResult
 new_text
 applied
 manual
+advisory
 
 # agent_runner.monitor.LocalSource
 log_dir

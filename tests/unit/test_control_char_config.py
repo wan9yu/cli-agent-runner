@@ -31,7 +31,7 @@ def _base(wd: Path, *, work_dir_value: str | None = None, log_dir_value: str | N
     return (
         "[agent]\n"
         'command = ["true"]\n'
-        'prompt_arg_template = ["-p"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n'
         "[runtime]\n"
         f'work_dir = "{wd_str}"\n'
         f'log_dir = "{log_dir_str}"\n'

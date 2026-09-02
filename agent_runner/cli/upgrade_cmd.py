@@ -64,7 +64,8 @@ def cmd(args) -> int:
         return fail(
             "config needs manual migration before upgrade:\n  "
             + "\n  ".join(manual)
-            + "\nfix it (or run `agent-runner migrate`) then retry"
+            + "\nfix it (or run `agent-runner migrate`) then retry, or re-run with "
+            "--no-migrate to skip migration and upgrade anyway"
         )  # aborts BEFORE any stop/pip — fail fast
     cfg = _try_load_cfg(args)
     if applied and cfg is not None:

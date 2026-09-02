@@ -89,3 +89,29 @@ def test_try_load_cfg_returns_none_on_broken_toml(tmp_path):
     cfg = _cfg(tmp_path, "[runtime\n not toml")
     args = argparse.Namespace(config=cfg)
     assert upgrade_cmd._try_load_cfg(args) is None
+
+
+def test_flat_phase_alias_does_not_block_upgrade(tmp_path):
+    """The flat [phases.<name>] alias is a permanent, still-valid form —
+    it must never be treated as the `manual` remainder that aborts upgrade."""
+    body = (
+        _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
+        + '[prompt]\nfile = "p.md"\n'
+        + '[phases]\nlist = ["a"]\n[phases.a]\nround_timeout_s = 900\n'
+    )
+    cfg = _cfg(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+    applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+    assert manual == []
+
+
+def test_manual_remedy_mentions_no_migrate_escape_hatch(tmp_path, capsys):
+    body = (
+        _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
+        + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
+    )
+    cfg = _cfg(tmp_path, body)
+    args = argparse.Namespace(config=str(cfg))
+    rc = upgrade_cmd.cmd(args)
+    assert rc == 1
+    assert "--no-migrate" in capsys.readouterr().err

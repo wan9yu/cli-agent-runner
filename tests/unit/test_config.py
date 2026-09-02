@@ -1897,3 +1897,147 @@ def test_removed_field_error_points_to_migrate(tmp_path):
     (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
     with pytest.raises(ConfigError, match="agent-runner migrate"):
         load_config(toml)
+
+
+# --- 0.2.13 strictness completion: base-table unknown keys, [phases] scalar
+# keys, per-phase [phases.<name>.prompt] unknown keys, argv prompt_arg_template
+# missing {prompt} (with the per-phase files=[] carve-out) ---
+
+
+def _min_config_lines(
+    tmp_path: Path, *, agent_extra: str = "", runtime_extra: str = ""
+) -> list[str]:
+    """The minimal valid [agent]/[runtime]/[prompt] lines this module's other
+    tests inline repeatedly, with room to inject an extra raw line into
+    [agent]/[runtime]. Callers append their own trailing [table] blocks."""
+    return [
+        "[agent]\n",
+        'command = ["true"]\n',
+        'prompt_arg_template = ["{prompt}"]\n',
+        agent_extra,
+        "[runtime]\n",
+        f'work_dir = "{tmp_path}"\n',
+        f'log_dir = "{tmp_path}/logs"\n',
+        runtime_extra,
+        "[prompt]\n",
+        f'file = "{tmp_path}/prompt.md"\n',
+    ]
+
+
+@pytest.mark.parametrize(
+    "table, extra",
+    [
+        ("agent", "agent_extra"),
+        ("runtime", "runtime_extra"),
+        ("vcs", None),
+        ("monitor", None),
+    ],
+)
+def test_given_unknown_base_table_key_when_loaded_then_config_error(
+    tmp_path: Path, table: str, extra: str | None
+) -> None:
+    """Unknown keys under base [agent]/[runtime]/[vcs]/[monitor] used to load
+    silently; 0.2.13 rejects them like the existing [prompt]/[schedule] checks."""
+    from agent_runner.config import ConfigError, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    kwargs = {extra: 'bogus_field = "x"\n'} if extra else {}
+    lines = _min_config_lines(tmp_path, **kwargs)
+    if extra is None:
+        lines.append(f'[{table}]\nbogus_field = "x"\n')
+    (tmp_path / "agent-runner.toml").write_text("".join(lines))
+
+    with pytest.raises(ConfigError, match=rf"unknown \[{table}\].*bogus_field"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_scalar_key_directly_under_phases_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """A stray non-table key under [phases] (typo'd out of a [phases.<name>]
+    sub-table) used to be silently skipped; 0.2.13 rejects it."""
+    from agent_runner.config import ConfigError, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    lines = _min_config_lines(tmp_path)
+    lines.append('[phases]\nlist = ["dev"]\nbogus_field = "x"\n[phases.dev]\n')
+    (tmp_path / "agent-runner.toml").write_text("".join(lines))
+
+    with pytest.raises(ConfigError, match=r"\[phases\].*bogus_field"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_unknown_per_phase_prompt_key_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """[phases.<name>.prompt] only ever reads 'files'; migrations/0.2.md already
+    promised rejection of anything else — 0.2.13 makes the code match."""
+    from agent_runner.config import ConfigError, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    lines = _min_config_lines(tmp_path)
+    lines.append(
+        '[phases]\nlist = ["dev"]\n'
+        "[phases.dev.prompt]\n"
+        'files = ["dev.md"]\n'
+        "inject_context = false\n"
+    )
+    (tmp_path / "agent-runner.toml").write_text("".join(lines))
+
+    with pytest.raises(ConfigError, match=r"phases\.dev\.prompt.*inject_context"):
+        load_config(tmp_path / "agent-runner.toml")
+
+
+def test_given_argv_prompt_arg_template_without_placeholder_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """argv delivery with no {prompt} token in the template never delivers the
+    prompt to the agent — a silent footgun 0.2.13 now rejects."""
+    from agent_runner.config import ConfigError, load_config
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path, agent_extra='prompt_arg_template = ["-p"]\n')
+    with pytest.raises(ConfigError, match=r"prompt_arg_template.*\{prompt\}"):
+        load_config(cfg_path)
+
+
+def test_given_disabled_phase_agent_without_placeholder_when_loaded_then_ok(
+    tmp_path: Path,
+) -> None:
+    """Carve-out: a phase whose own prompt.files = [] sends no prompt at all,
+    so its own [phases.<name>.agent] template needs no {prompt} token."""
+    from agent_runner.config import load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    lines = _min_config_lines(tmp_path)
+    lines.append(
+        '[phases]\nlist = ["silent"]\n'
+        "[phases.silent.prompt]\n"
+        "files = []\n"
+        "[phases.silent.agent]\n"
+        'prompt_arg_template = ["--silent-mode"]\n'
+    )
+    (tmp_path / "agent-runner.toml").write_text("".join(lines))
+
+    cfg = load_config(tmp_path / "agent-runner.toml")
+    assert cfg.phases.overrides["silent"].agent.prompt_arg_template == ["--silent-mode"]
+
+
+def test_given_enabled_phase_agent_without_placeholder_when_loaded_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """Without the files=[] carve-out, a phase inherits the base's (mandatory,
+    non-empty) prompt, so its own argv template still needs {prompt}."""
+    from agent_runner.config import ConfigError, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    lines = _min_config_lines(tmp_path)
+    lines.append(
+        '[phases]\nlist = ["silent"]\n'
+        "[phases.silent.agent]\n"
+        'prompt_arg_template = ["--silent-mode"]\n'
+    )
+    (tmp_path / "agent-runner.toml").write_text("".join(lines))
+
+    with pytest.raises(ConfigError, match=r"prompt_arg_template.*\{prompt\}"):
+        load_config(tmp_path / "agent-runner.toml")

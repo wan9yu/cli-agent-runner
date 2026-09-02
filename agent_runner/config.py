@@ -274,6 +274,23 @@ def _require(d: dict, *path: str) -> object:
     return cur
 
 
+def _require_table(raw: dict, key: str) -> dict:
+    """Return ``raw[key]`` as a dict, defaulting to ``{}`` when absent.
+
+    Raises ``ConfigError`` when ``key`` is present but not a table (the
+    table-as-scalar footgun, e.g. ``agent = 1`` instead of ``[agent]``) —
+    every downstream parser assumes a dict and would otherwise crash with a
+    bare AttributeError/TypeError deep inside its own field lookups.
+    """
+    value = raw.get(key, {})
+    if not isinstance(value, dict):
+        raise ConfigError(
+            f"[{key}] must be a table, got {type(value).__name__} ({value!r}); "
+            f"run `agent-runner migrate`"
+        )
+    return value
+
+
 def _expand_path(s: str, project_name: str) -> Path:
     return Path(s.replace("{project}", project_name)).expanduser()
 
@@ -391,8 +408,23 @@ _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
 _PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_timeout_s", "disable_pre_round_hooks"})
 
 # Field names of AgentConfig — the keys a [phases.<name>.agent] sub-table may
-# set (merged onto the base [agent] table before validation).
+# set (merged onto the base [agent] table before validation), and also the
+# base [agent] table's own allowed keys (0.2.13: unknown [agent] keys reject).
 _AGENT_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(AgentConfig))
+
+# Field names of RuntimeConfig/VcsConfig/MonitorConfig — the keys their base
+# TOML tables accept. Renamed/removed keys (runtime.round_timeout_per_phase,
+# runtime.rate_limit_action, vcs.orphan_action) are checked separately with a
+# dedicated migration message BEFORE these sets are consulted, so they never
+# need to appear here.
+_RUNTIME_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(RuntimeConfig))
+_VCS_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(VcsConfig))
+_MONITOR_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(MonitorConfig))
+
+# Keys allowed under a [phases.<name>.prompt] sub-table — `files` only
+# (docs/configuration.md's per-phase table already promised this; 0.2.13
+# makes the loader enforce it instead of silently ignoring the rest).
+_PHASE_PROMPT_ALLOWED_FIELDS = frozenset({"files"})
 
 # Keys allowed under the top-level [prompt] table.
 _PROMPT_ALLOWED_FIELDS = frozenset(
@@ -407,14 +439,29 @@ _PROMPT_ALLOWED_FIELDS = frozenset(
 )
 
 
-def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
+def _parse_agent(
+    agent_d: dict, *, field_prefix: str, require_prompt_placeholder: bool = True
+) -> AgentConfig:
     """Parse + validate an [agent] table (or a merged per-phase agent table).
 
     ``field_prefix`` names the table in error messages (e.g. ``"[agent]"`` or
     ``"[phases.b.agent]"``). The prompt_delivery validity check and the
     stdin/``{prompt}`` cross-check run here so a per-phase agent override is
     validated on the MERGED result, not just the base [agent] table.
+
+    ``require_prompt_placeholder`` gates the argv-``{prompt}``-token check for
+    the phase carve-out: a phase whose own ``prompt.files = []`` sends no
+    prompt at all, so its own argv template legitimately needs no ``{prompt}``
+    token. The base ``[agent]`` table always requires one (a top-level prompt
+    is mandatory and non-empty) — callers other than the per-phase resolver
+    leave this at its default.
     """
+    unknown = set(agent_d) - _AGENT_ALLOWED_FIELDS
+    if unknown:
+        raise ConfigError(
+            f"unknown {field_prefix} field(s): {sorted(unknown)}; "
+            f"allowed: {sorted(_AGENT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
+        )
     prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
     prompt_arg_template = _require_str_list(
         _require(agent_d, "prompt_arg_template"), field=f"{field_prefix} prompt_arg_template"
@@ -427,6 +474,17 @@ def _parse_agent(agent_d: dict, *, field_prefix: str) -> AgentConfig:
         raise ConfigError(
             f"stdin delivery: remove {{prompt}} from {field_prefix} prompt_arg_template "
             "(the prompt is piped to stdin, not placed in argv)"
+        )
+    if (
+        prompt_delivery == "argv"
+        and require_prompt_placeholder
+        and not any("{prompt}" in a for a in prompt_arg_template)
+    ):
+        raise ConfigError(
+            f"{field_prefix} prompt_arg_template has no {{prompt}} placeholder: the "
+            "prompt is never delivered to the agent; add {prompt} to one of the argv "
+            "tokens (or, for a per-phase override, set that phase's prompt.files = [] "
+            "if it truly sends no prompt); run `agent-runner migrate`"
         )
     command = _require_str_list(_require(agent_d, "command"), field=f"{field_prefix} command")
     if not command:
@@ -462,7 +520,11 @@ def _parse_phase_overrides(
         if key in ("list", "phase_policy"):
             continue
         if not isinstance(value, dict):
-            continue
+            raise ConfigError(
+                f"[phases] {key!r} must be a phase sub-table ([phases.{key}]), got "
+                f"{type(value).__name__}; only 'list'/'phase_policy' are scalar [phases] "
+                f"fields. Run `agent-runner migrate`."
+            )
         phase_name = key
         if phases_list is None or phase_name not in phases_list:
             raise ConfigError(
@@ -524,6 +586,12 @@ def _parse_phase_overrides(
             prompt_sub = value["prompt"]
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
                 raise ConfigError(f"[phases.{phase_name}].prompt must have a 'files' list")
+            unknown_prompt = set(prompt_sub) - _PHASE_PROMPT_ALLOWED_FIELDS
+            if unknown_prompt:
+                raise ConfigError(
+                    f"unknown [phases.{phase_name}.prompt] field(s): {sorted(unknown_prompt)}; "
+                    f"allowed: {sorted(_PHASE_PROMPT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
+                )
             files_raw = _require_str_list(
                 prompt_sub["files"], field=f"phases.{phase_name}.prompt.files"
             )
@@ -534,14 +602,12 @@ def _parse_phase_overrides(
             agent_sub = value["agent"]
             if not isinstance(agent_sub, dict):
                 raise ConfigError(f"[phases.{phase_name}.agent] must be a table")
-            unknown_agent = set(agent_sub.keys()) - _AGENT_ALLOWED_FIELDS
-            if unknown_agent:
-                raise ConfigError(
-                    f"unknown field(s) under [phases.{phase_name}.agent]: "
-                    f"{sorted(unknown_agent)}; allowed: {sorted(_AGENT_ALLOWED_FIELDS)}"
-                )
             merged = {**agent_d, **agent_sub}
-            phase_agent = _parse_agent(merged, field_prefix=f"[phases.{phase_name}.agent]")
+            phase_agent = _parse_agent(
+                merged,
+                field_prefix=f"[phases.{phase_name}.agent]",
+                require_prompt_placeholder=(prompt_files != []),
+            )
 
         phase_schedule = None
         if "schedule" in value:
@@ -616,8 +682,9 @@ def load_config(toml_path: Path) -> Config:
     with toml_path.open("rb") as f:
         raw = tomllib.load(f)
 
-    agent_d = raw.get("agent", {})
+    agent_d = _require_table(raw, "agent")
     agent = _parse_agent(agent_d, field_prefix="[agent]")
+    _require_table(raw, "runtime")  # table-as-scalar guard before the field lookup below
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
     # Checked on the RAW string BEFORE any path expansion/resolution: a NUL
     # byte (a legal TOML basic-string escape) makes Path.resolve() raise a bare
@@ -637,7 +704,7 @@ def load_config(toml_path: Path) -> Config:
     project_name = work_dir.name or "default"
 
     # Phases first — needed for per-phase round_timeout validation below.
-    phases_d = raw.get("phases", {})
+    phases_d = _require_table(raw, "phases")
     phases_list = (
         _require_str_list(phases_d["list"], field="phases.list") if "list" in phases_d else None
     )
@@ -655,7 +722,7 @@ def load_config(toml_path: Path) -> Config:
         phase_policy=phase_policy,  # type: ignore[arg-type]  # narrowed above
     )
 
-    runtime_d = raw.get("runtime", {})
+    runtime_d = _require_table(raw, "runtime")
     if "round_timeout_per_phase" in runtime_d:
         raise ConfigError(
             "runtime.round_timeout_per_phase removed in 0.1.16; "
@@ -667,6 +734,13 @@ def load_config(toml_path: Path) -> Config:
             "runtime.rate_limit_action was removed in 0.1.29; use "
             "runtime.transient_error_action (same allowed values: "
             "back_off / skip / stop). Run `agent-runner migrate`."
+        )
+
+    unknown_runtime = set(runtime_d) - _RUNTIME_ALLOWED_FIELDS
+    if unknown_runtime:
+        raise ConfigError(
+            f"unknown [runtime] field(s): {sorted(unknown_runtime)}; "
+            f"allowed: {sorted(_RUNTIME_ALLOWED_FIELDS)}; run `agent-runner migrate`"
         )
 
     transient_error_action_raw = runtime_d.get("transient_error_action")
@@ -729,7 +803,7 @@ def load_config(toml_path: Path) -> Config:
             field="runtime.grace_kill_ignore_patterns",
         ),
     )
-    prompt_d = raw.get("prompt", {})
+    prompt_d = _require_table(raw, "prompt")
     unknown_prompt = set(prompt_d) - _PROMPT_ALLOWED_FIELDS
     if unknown_prompt:
         raise ConfigError(
@@ -775,10 +849,16 @@ def load_config(toml_path: Path) -> Config:
             field="prompt.strip_yaml_frontmatter",
         ),
     )
-    vcs_d = raw.get("vcs", {})
+    vcs_d = _require_table(raw, "vcs")
     if "orphan_action" in vcs_d:
         raise ConfigError(
             "vcs.orphan_action removed in 0.1.18; use vcs.dirty_action. Run `agent-runner migrate`."
+        )
+    unknown_vcs = set(vcs_d) - _VCS_ALLOWED_FIELDS
+    if unknown_vcs:
+        raise ConfigError(
+            f"unknown [vcs] field(s): {sorted(unknown_vcs)}; "
+            f"allowed: {sorted(_VCS_ALLOWED_FIELDS)}; run `agent-runner migrate`"
         )
     dirty_action = str(vcs_d.get("dirty_action", "stash"))
     if dirty_action not in _VALID_DIRTY_ACTIONS:
@@ -792,7 +872,13 @@ def load_config(toml_path: Path) -> Config:
         ),
         dirty_action=dirty_action,
     )
-    monitor_d = raw.get("monitor", {})
+    monitor_d = _require_table(raw, "monitor")
+    unknown_monitor = set(monitor_d) - _MONITOR_ALLOWED_FIELDS
+    if unknown_monitor:
+        raise ConfigError(
+            f"unknown [monitor] field(s): {sorted(unknown_monitor)}; "
+            f"allowed: {sorted(_MONITOR_ALLOWED_FIELDS)}; run `agent-runner migrate`"
+        )
     hh_d = monitor_d.get("host_health", {})
     host_health = MonitorHostHealthConfig(
         mem_avail_min_mb=_require_non_negative_int(
@@ -854,7 +940,7 @@ def load_config(toml_path: Path) -> Config:
             f"must be <= anomaly_repetitive_window ({monitor.anomaly_repetitive_window}): "
             f"the detector can never fire otherwise; run `agent-runner migrate`"
         )
-    plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
+    plugins_raw = dict(_require_table(raw, "plugins"))  # copy so we can pop
     disable = (
         _require_str_list(plugins_raw.pop("disable"), field="plugins.disable")
         if "disable" in plugins_raw
@@ -862,7 +948,7 @@ def load_config(toml_path: Path) -> Config:
     )
     plugins = PluginsConfig(disable=disable, raw=plugins_raw)
 
-    schedule_cfg = _parse_schedule(raw.get("schedule", {}))
+    schedule_cfg = _parse_schedule(_require_table(raw, "schedule"))
 
     cfg = Config(
         agent=agent,

@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
 
+import pytest
+
 from agent_runner.cli import migrate_cmd
 
 
@@ -89,10 +91,96 @@ def test_migrate_bare_command_then_config_loads(tmp_path):
     from agent_runner.config import load_config
 
     body = (
-        '[agent]\ncommand = "true"\nprompt_arg_template = ["-p"]\n'
+        '[agent]\ncommand = "true"\nprompt_arg_template = ["-p", "{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         f'[prompt]\nfile = "{tmp_path}/p.md"\n'
     )
     cfg = _write(tmp_path, body)
     assert migrate_cmd.cmd(_args(cfg)) == 0
     load_config(cfg)  # the rewritten file loads clean under 0.2.12 strictness
+
+
+def test_flat_phase_alias_is_advisory_not_blocking(tmp_path, capsys):
+    # The flat [phases.<name>] round_timeout_s/disable_pre_round_hooks alias is
+    # a PERMANENT, still-valid form — reporting it as `manual` (exit 1 forever)
+    # was the bug: `migrate` must surface it as guidance without blocking.
+    cfg = _write(tmp_path, 'phases.list = ["a"]\n[phases.a]\nround_timeout_s = 900\n')
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 0
+    assert "[phases.<name>.runtime]" in capsys.readouterr().out
+
+
+def test_unknown_runtime_key_round_trip(tmp_path):
+    """A brand-new 0.2.13 rejection (unknown [runtime] key): load_config
+    raises, migrate reports it (exit 1, guided — not a crash), and deleting
+    the stray key by hand makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\nbogus = 1\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_table_as_scalar_round_trip(tmp_path):
+    """Table-as-scalar ([monitor] given as `monitor = 1`): load_config
+    raises, migrate reports it without crashing, and giving it real table
+    content makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "monitor = 1\n"
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("monitor = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_argv_missing_placeholder_round_trip(tmp_path):
+    """argv prompt_arg_template missing {prompt}: load_config raises, migrate
+    reports it (no safe auto-fix — the insertion point is a real decision),
+    and adding the token by hand makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    fixed = cfg.read_text().replace(
+        'prompt_arg_template = ["-p"]', 'prompt_arg_template = ["-p", "{prompt}"]'
+    )
+    cfg.write_text(fixed)
+    load_config(cfg)  # now loads clean
