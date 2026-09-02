@@ -21,11 +21,13 @@ ALLOWED_SERVE_IMPORTS = {
     "signal",
     "subprocess",
     "time",
+    "tomllib",
     "pathlib",
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"phase_select", "schedule"}),
+    ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     (

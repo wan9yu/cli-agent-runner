@@ -25,3 +25,19 @@ def test_given_broken_config_when_main_serve_then_exit_78_not_traceback(tmp_path
 def test_given_broken_config_when_main_then_names_migrate(tmp_path: Path, capsys) -> None:
     main(["serve", "--config", str(_broken_toml(tmp_path))])
     assert "agent-runner migrate" in capsys.readouterr().err
+
+
+def test_given_missing_config_when_main_serve_then_exit_78_not_traceback(tmp_path: Path) -> None:
+    # Group A: a single bad load (missing file, never even started the loop) is
+    # PERMANENT -- fatal to serve immediately, not a 5-restart crash loop.
+    rc = main(["serve", "--config", str(tmp_path / "nope.toml")])
+    assert rc == PERMANENT_CONFIG_EXIT
+
+
+def test_given_syntax_broken_toml_when_main_round_then_exit_78_not_traceback(
+    tmp_path: Path,
+) -> None:
+    bad_toml = tmp_path / "agent-runner.toml"
+    bad_toml.write_text("this is not [valid toml")
+    rc = main(["round", "--config", str(bad_toml)])
+    assert rc == PERMANENT_CONFIG_EXIT

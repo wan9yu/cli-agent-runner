@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from agent_runner.config import ConfigError
+
 # Exit code for a permanent (no-retry) startup-battery failure. A broken config
 # does not self-heal between rounds, so serve STOPS rather than respawning it
 # forever. 78 = EX_CONFIG (sysexits) — avoids argparse's 2 and the generic 1.
@@ -40,6 +42,21 @@ ENV_BATTERY_EXIT = 76
 CRASH_LOOP_THRESHOLD = 5
 CRASH_LOOP_SHORT_EXIT_S = 60  # mirrors monitor.SHORT_EXIT_THRESHOLD_S
 CRASH_LOOP_MAX_DELAY_S = 1800  # cap the escalating restart delay (30 min)
+
+
+class EnvironmentalError(Exception):
+    """Marks a round-child failure as ENVIRONMENTAL (recoverable) rather than a
+    permanent config break — classify_round_exit maps it to ENV_BATTERY_EXIT
+    (76), same treatment as an active throttle: serve retries at a flat back-off
+    with the crash-loop breaker disarmed.
+
+    A raise site elsewhere in the package (runner.LockHeldError,
+    vcs_state.GitTimeout) mixes this in alongside its own base class instead of
+    _serve_policy importing every module that raises one — this leaf module
+    sits BELOW runner.py/vcs_state.py in the import graph (both reach here via
+    api.py already), so importing upward would cycle. classify_round_exit
+    matches this marker, not the concrete class or its OTHER base.
+    """
 
 
 # The action strings below are the restart-action enum, not events.py kinds:
@@ -87,3 +104,39 @@ def post_round_decision(
         return ("continue", delay, consecutive)
     delay = restart_delay_s if returncode == 0 else restart_delay_s * 2
     return ("continue", delay, 0)
+
+
+def classify_round_exit(exc: BaseException) -> int:
+    """The round-child exit-code CLASSIFIER (Group A) — permanence, not exception
+    identity, decides serve's response. Replaces the old exception *whitelist*
+    (``cli/__init__.py`` mapped only ``ConfigError``->78, ``round_cmd.py`` only
+    ``KeyboardInterrupt``->130; ~10 other classes fell through to Python's own
+    uncaught-exception exit 1 — neither retry-76 nor stay-stopped-78/75).
+
+    - ``ConfigError`` (won't self-heal) -> ``PERMANENT_CONFIG_EXIT`` (78).
+    - ``EnvironmentalError``-marked (self-heals) -> ``ENV_BATTERY_EXIT`` (76).
+    - ``KeyboardInterrupt`` (SIGTERM/SIGINT) -> 130, the shell's convention.
+    - ``SystemExit`` passes its own code through unchanged (an int code; a
+      non-int/absent code — argparse-style ``sys.exit("msg")`` or a bare
+      ``sys.exit()`` — falls to 1, same as unclassified).
+    - Anything else, INCLUDING a totally unclassified traceback, falls to 1 so
+      the crash-loop breaker still bounds a genuine supervisor bug. Do NOT
+      default unclassified -> 76: ``post_round_decision`` resets its counter on
+      76, so an arbitrary bug would loop forever at the doubled delay with no
+      breaker and no detector. The battery's own "unclassified -> environmental"
+      rule (``startup_check.py``) governs *authored probes*, not arbitrary round
+      tracebacks — a different trust boundary.
+
+    Never returns ``CRASH_LOOP_EXIT`` (75) — that verdict belongs exclusively to
+    serve's own ``post_round_decision``, counting consecutive unknown short
+    crashes; a round child never claims it directly.
+    """
+    if isinstance(exc, SystemExit):
+        return exc.code if isinstance(exc.code, int) else 1
+    if isinstance(exc, KeyboardInterrupt):
+        return 130
+    if isinstance(exc, ConfigError):
+        return PERMANENT_CONFIG_EXIT
+    if isinstance(exc, EnvironmentalError):
+        return ENV_BATTERY_EXIT
+    return 1

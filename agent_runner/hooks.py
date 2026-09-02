@@ -280,7 +280,9 @@ def run_serve_startup_hooks(cfg: Any, log_dir: Path) -> bool:
     """Run all serve_startup_hooks. Returns True on success, False on abort.
 
     On first hook failure: print structured stderr, best-effort emit
-    ``serve_startup_hook_failed`` event, return False (caller exits 1).
+    ``serve_startup_hook_failed`` event, return False (caller exits 78 —
+    deterministic, no retry: the same hook fails the same way on every
+    restart, so systemd should give up rather than burn StartLimitBurst).
     """
     for hook in serve_startup_hooks():
         try:

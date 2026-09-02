@@ -45,3 +45,30 @@ def test_given_invalid_max_rounds_when_serve_then_config_broken_and_78(
     assert rc == PERMANENT_CONFIG_EXIT
     kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
     assert "config_broken" in kinds
+
+
+def test_given_missing_config_at_boot_when_serve_then_raises_config_error(
+    tmp_path: Path,
+) -> None:
+    """Group A: a bad initial load (never even started the loop) is PERMANENT --
+    a single transient bad load is fatal to serve, not a 5-restart crash loop.
+    cmd() raises ConfigError uncaught (main() maps it to 78); this pins the
+    exception type main()'s handler relies on, mirroring round_cmd's own
+    boundary conversion for the identical FileNotFoundError."""
+    from agent_runner.cli import serve_cmd
+    from agent_runner.config import ConfigError
+
+    with pytest.raises(ConfigError):
+        serve_cmd.cmd(FakeArgs(tmp_path / "nope.toml", once=False))
+
+
+def test_given_broken_toml_syntax_at_boot_when_serve_then_raises_config_error(
+    tmp_path: Path,
+) -> None:
+    from agent_runner.cli import serve_cmd
+    from agent_runner.config import ConfigError
+
+    bad_toml = tmp_path / "agent-runner.toml"
+    bad_toml.write_text("this is not [valid toml")
+    with pytest.raises(ConfigError):
+        serve_cmd.cmd(FakeArgs(bad_toml, once=False))

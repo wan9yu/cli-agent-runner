@@ -107,14 +107,16 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
     assert called["count"] == 1
 
 
-def test_given_hook_raises_when_serve_then_abort_exit_1_emit_event(
+def test_given_hook_raises_when_serve_then_abort_exit_78_emit_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """Hook raises; serve aborts with exit 1 and emits serve_startup_hook_failed."""
+    """Hook raises; serve aborts with exit 78 (deterministic, no retry -- Group A)
+    and emits serve_startup_hook_failed."""
     import json
     import subprocess
 
     from agent_runner import hooks
+    from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
     from agent_runner.cli import serve_cmd
 
     monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
@@ -143,7 +145,7 @@ def test_given_hook_raises_when_serve_then_abort_exit_1_emit_event(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
-    assert rc == 1
+    assert rc == PERMANENT_CONFIG_EXIT
     assert called["subprocess_run"] == 0
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -163,6 +165,7 @@ def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
     import subprocess
 
     from agent_runner import hooks
+    from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
     from agent_runner.cli import serve_cmd
 
     monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
@@ -195,5 +198,5 @@ def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
-    assert rc == 1
+    assert rc == PERMANENT_CONFIG_EXIT
     assert called_b["count"] == 0

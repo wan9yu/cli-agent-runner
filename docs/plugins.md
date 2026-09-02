@@ -222,10 +222,12 @@ my_seeder = "my_plugin_pkg"
 
 ### Failure semantics
 
-If your hook raises, `agent-runner serve` aborts with exit code 1 and emits a
-`serve_startup_hook_failed` event (best-effort). This is by design: hooks are
-plugin contracts. Failing fast and loudly beats subsequent rounds failing in
-hard-to-diagnose ways.
+If your hook raises, `agent-runner serve` aborts with exit code 78 (deterministic
+— stays stopped, no restart) and emits a `serve_startup_hook_failed` event
+(best-effort). This is by design: hooks are plugin contracts, and a hook
+failure is the same every restart — failing fast and loudly beats burning
+through restart attempts before subsequent rounds fail in hard-to-diagnose
+ways.
 
 Make hooks idempotent — they may fire multiple times during a serve restart
 cycle. Check for existing state before seeding.

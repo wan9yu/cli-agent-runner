@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 
 from agent_runner._emit import emit_stale_index_lock_cleared
+from agent_runner._serve_policy import EnvironmentalError
 from agent_runner.clock import SYSTEM_CLOCK
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
@@ -127,8 +128,11 @@ GIT_COMMIT_TIMEOUT_S = 120
 _GIT_KILL_GRACE_S = 3  # git dies fast on TERM; grace before we killpg the session
 
 
-class GitTimeout(RuntimeError):  # noqa: N818 — brief-specified name, not a *Error condition
-    """A git invocation exceeded its timeout and was force-killed."""
+class GitTimeout(RuntimeError, EnvironmentalError):  # noqa: N818 — brief-specified name
+    """A git invocation exceeded its timeout and was force-killed. Self-heals
+    (a hung git process, not a broken config) — Group A: classify_round_exit
+    -> ENV_BATTERY_EXIT, 76 — serve retries at a flat back-off instead of
+    counting it as a crash."""
 
 
 class AutoCommitError(RuntimeError):

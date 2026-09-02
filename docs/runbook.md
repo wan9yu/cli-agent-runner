@@ -384,9 +384,10 @@ hook seeds it before any round runs.
 
 ### Failure behavior
 
-If a serve-startup hook raises, `agent-runner serve` aborts with exit code 1
-before entering the round loop. A `serve_startup_hook_failed` event is emitted
-best-effort with payload `{hook, exc_type, exc_msg}`.
+If a serve-startup hook raises, `agent-runner serve` aborts with exit code 78
+(deterministic — stays stopped, no restart) before entering the round loop. A
+`serve_startup_hook_failed` event is emitted best-effort with payload
+`{hook, exc_type, exc_msg}`.
 
 To inspect failures: `grep serve_startup_hook_failed {log_dir}/events-*.jsonl`.
 

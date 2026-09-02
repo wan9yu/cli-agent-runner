@@ -76,7 +76,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from agent_runner.api import PERMANENT_CONFIG_EXIT
+    from agent_runner._serve_policy import classify_round_exit
     from agent_runner.cli.common import fail
     from agent_runner.config import ConfigError
 
@@ -91,10 +91,20 @@ def main(argv: list[str] | None = None) -> int:
         # Deterministic, self-explaining startup failure: a config that does not
         # load will not self-heal on restart, so return the give-up exit code the
         # unit lists in RestartPreventExitStatus instead of a bare-1 restart loop.
+        # classify_round_exit is the single source of truth for "ConfigError ->
+        # 78" — round_cmd routes through it directly; this catch is what gives
+        # serve (and every other command whose ConfigError isn't caught closer
+        # to its raise site) the same verdict.
         return fail(
             f"config error: {e}\nRun `agent-runner migrate` then retry.",
-            code=PERMANENT_CONFIG_EXIT,
+            code=classify_round_exit(e),
         )
+    except KeyboardInterrupt as e:
+        # A Ctrl-C landing before round/serve's own SIGTERM/SIGINT handling is
+        # armed (argument parsing, config load) — 130 is the shell's SIGINT
+        # convention; round_cmd's own classifier gives the same verdict once
+        # its handler is installed, so every path agrees.
+        return classify_round_exit(e)
 
 
 if __name__ == "__main__":  # pragma: no cover

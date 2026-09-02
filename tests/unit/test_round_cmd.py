@@ -55,3 +55,57 @@ def test_grace_kill_returns_0(monkeypatch):
 def test_timeout_returns_0(monkeypatch):
     # a wall-clock timeout is not a crash-loop signal (it's long, not a short crash)
     assert _run(monkeypatch, _rr(-15, timed_out=True)) == 0
+
+
+# --- Group A: classify_round_exit now governs any exception run_one_round raises ---
+
+
+def _run_raising(monkeypatch, exc: BaseException) -> int:
+    monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
+    monkeypatch.setattr(round_cmd, "cfg_from_args", lambda _a: object())
+
+    def boom(*_a, **_k):
+        raise exc
+
+    monkeypatch.setattr(round_cmd, "run_one_round", boom)
+    return round_cmd.cmd(Namespace(config="x", phase=None))
+
+
+def test_config_error_from_run_one_round_returns_78(monkeypatch):
+    from agent_runner.config import ConfigError
+
+    assert _run_raising(monkeypatch, ConfigError("bad field")) == 78
+
+
+def test_lock_held_error_from_run_one_round_returns_76(monkeypatch):
+    from agent_runner.runner import LockHeldError
+
+    assert _run_raising(monkeypatch, LockHeldError("another agent-runner is running")) == 76
+
+
+def test_git_timeout_from_run_one_round_returns_76(monkeypatch):
+    from agent_runner.vcs_state import GitTimeout
+
+    assert _run_raising(monkeypatch, GitTimeout("git status exceeded 10s")) == 76
+
+
+def test_unclassified_exception_returns_1_and_prints_traceback(monkeypatch, capsys):
+    rc = _run_raising(monkeypatch, RuntimeError("plugin import blew up"))
+    assert rc == 1
+    # A classified 78/76 verdict is no less worth diagnosing than a bare 1 --
+    # serve captures this subprocess's stderr into round-<N>.log either way.
+    assert "RuntimeError" in capsys.readouterr().err
+
+
+def test_missing_config_file_returns_78(monkeypatch, tmp_path):
+    monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
+    rc = round_cmd.cmd(Namespace(config=tmp_path / "nope.toml", phase=None))
+    assert rc == 78
+
+
+def test_broken_toml_syntax_returns_78(monkeypatch, tmp_path):
+    monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
+    bad_toml = tmp_path / "agent-runner.toml"
+    bad_toml.write_text("this is not [valid toml")
+    rc = round_cmd.cmd(Namespace(config=bad_toml, phase=None))
+    assert rc == 78

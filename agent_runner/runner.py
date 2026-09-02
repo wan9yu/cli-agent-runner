@@ -26,11 +26,12 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner._serve_policy import EnvironmentalError
 from agent_runner.agent_runtime import signal_name
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.config import Config
+from agent_runner.config import Config, ConfigError
 from agent_runner.events import (
     AGENT_NETWORK_BLIP,
     now_iso_ms,
@@ -51,8 +52,10 @@ def _primary_prompt_file(cfg: Config) -> Path | None:
     return cfg.prompt.file
 
 
-class LockHeldError(RuntimeError):
-    pass
+class LockHeldError(RuntimeError, EnvironmentalError):
+    """Another agent-runner already holds the round lock. Self-heals once that
+    holder finishes or dies (Group A: classify_round_exit -> ENV_BATTERY_EXIT,
+    76 — serve retries at a flat back-off instead of counting it as a crash)."""
 
 
 def _holder_sidecar(lock_path: Path) -> Path:
@@ -137,12 +140,27 @@ def _phase_for(
     bypasses the counter (used by `agent-runner round --phase NAME` for audit /
     debug / multi-script orchestration). Override does NOT mutate the counter —
     subsequent default rounds resume normal rotation.
+
+    Raises ConfigError (not a bare ValueError — Group A: classify_round_exit
+    matches the type, not a built-in) when override doesn't fit this round's
+    freshly-loaded [phases]. This is PERMANENT from the round's perspective
+    (78: every subsequent round fails identically), but the remedy is
+    "restart serve", not "run migrate" — the near-universal cause is serve
+    passing --phase from its OWN cached phase list, computed once at boot,
+    against a config that has since been edited (phases added/removed/renamed)
+    while serve kept running on the stale copy.
     """
     if override is not None:
         if not phases:
-            raise ValueError("--phase requires [phases] to be configured in agent-runner.toml")
+            raise ConfigError(
+                "--phase requires [phases] to be configured in agent-runner.toml "
+                "(if running under serve, its cached config is stale — restart serve)"
+            )
         if override not in phases:
-            raise ValueError(f"phase {override!r} not in configured [phases]: {phases}")
+            raise ConfigError(
+                f"phase {override!r} not in configured [phases]: {phases} "
+                "(serve's cached config is stale — restart serve)"
+            )
         return override, phases.index(override)
     if not phases:
         return None, 0
@@ -360,13 +378,22 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
     # L3: startup precondition battery (R721 + #446 defense)
     failures = [r for r in startup_check.run_battery(cfg) if not r.ok]
     if failures:
+        exit_code = startup_check.battery_exit_code(failures)
         for r in failures:
             print(
                 f"STARTUP FAIL: {r.name}: {r.reason} | how-to-fix: {r.how_to_fix}",
                 file=sys.stderr,
             )
-            events.emit(log_dir, events.SMOKE_CHECK_FAILED, reason=f"{r.name}: {r.reason}")
-        sys.exit(startup_check.battery_exit_code(failures))
+            try:
+                events.emit(log_dir, events.SMOKE_CHECK_FAILED, reason=f"{r.name}: {r.reason}")
+            except OSError:
+                # Group A reachability fix: log_dir_writable is the flagship
+                # ENV_BATTERY_EXIT case, and this emit's own append can raise on
+                # the EXACT unwritable-log_dir condition it is reporting (the
+                # STARTUP FAIL line above already told the operator). Don't let
+                # a failed breadcrumb swallow the classified exit code below.
+                pass
+        sys.exit(exit_code)
 
     # Concurrency lock (per-project)
     lock_path = log_dir / "agent-runner.lock"
