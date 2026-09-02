@@ -38,7 +38,7 @@ def test_crashed_round_with_no_newer_open_round_stops_latching_once_next_round_c
     out of ``open_rounds`` entirely, so ``max(open_rounds)`` reverts to the
     ancient crashed round 1 and alerts `hung` on it forever (advisory-only, but
     every peek from then on). The comment's actual intent — only the
-    highest-numbered round OVERALL (open or closed) can be a live hang — means
+    highest-numbered STARTED round (open or closed) can be a live hang — means
     that once round 2 (higher than the crashed round 1) has closed, round 1's
     crash is superseded and must NOT alert."""
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
@@ -48,3 +48,22 @@ def test_crashed_round_with_no_newer_open_round_stops_latching_once_next_round_c
         _ev("round_end", 2, "2026-08-30T11:05:00Z"),  # round 2 completed normally
     ]
     assert detect_hung(events, now=now, round_timeout_s=1800) is None
+
+
+def test_pre_round_event_for_next_round_does_not_suppress_a_real_hang() -> None:
+    """runner._run_pre_round_hooks can emit prompt_overwritten (or any other
+    plugin-authored pre-round event) carrying the NEXT round's round_num BEFORE
+    that round's own round_start is ever written (a plugin extension point, not
+    a built-in hook today). "Highest-numbered round" must mean the
+    highest-numbered STARTED round — deriving it from every round_num-bearing
+    event would let this early, not-yet-started round_num suppress a real hang
+    still open on the prior (crashed) round."""
+    now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
+    events = [
+        _ev("round_start", 1, "2026-08-30T10:00:00Z"),  # 2h old, threshold 45m — genuinely hung
+        # Round 2's pre-round hook fired (round_num=2) but round_start never
+        # followed — round 1 is still the only STARTED round.
+        _ev("prompt_overwritten", 2, "2026-08-30T11:59:59Z"),
+    ]
+    a = detect_hung(events, now=now, round_timeout_s=1800)
+    assert a is not None and a.context["round_num"] == 1

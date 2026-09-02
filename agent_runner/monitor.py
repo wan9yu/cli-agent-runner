@@ -223,14 +223,14 @@ def detect_hung(
     highest_rn: int | None = None
     for e in events:
         kind, rn = e.get("event"), e.get("round_num")
-        if rn is None:
-            continue
-        highest_rn = rn if highest_rn is None else max(highest_rn, rn)
+        if rn is None or kind not in (ROUND_START, ROUND_END):
+            continue  # e.g. a plugin's pre-round event for a not-yet-started round
         if kind == ROUND_START:
             open_rounds[rn] = (e["ts"], e.get("phase"))
-        elif kind == ROUND_END:
+            highest_rn = rn if highest_rn is None else max(highest_rn, rn)
+        else:
             open_rounds.pop(rn, None)
-    # Serial rotation (§7): only the highest-numbered round OVERALL (open or
+    # Serial rotation (§7): only the highest-numbered STARTED round (open or
     # closed) can be a live hang — a lower still-open round is a dropped
     # round_end from a crash that a later, now-closed round already supersedes.
     if highest_rn not in open_rounds:
