@@ -3,7 +3,10 @@
 Project name, config path, unit filename and log_dir were each derived
 independently at several call sites and could disagree when ``work_dir`` and
 the TOML's own directory differ. This module is the single source for all
-four; the divergent call sites route through it instead of re-deriving.
+four; the divergent call sites route through it instead of re-deriving. It
+also carries ``guard_against_clobber``, ``api.install``'s same-basename
+sibling-unit guard — a natural fit since it works entirely off unit-file
+identity (``WorkingDirectory=``) rather than any install-specific state.
 
 INTERNAL ONLY -- not a public/documented contract. Exposing a resolver as a
 public contract is deferred to 0.3.
@@ -12,7 +15,7 @@ Leaf module: imports only ``agent_runner.config`` and
 ``agent_runner.service_unit`` (both leaves themselves), so anything in the
 package can import this without risking a cycle.
 
-Lenient/strict split (Fable spec review correction): validating the project
+Lenient/strict split (spec-review correction): validating the project
 name on the serve/round/init path would newly reject any ``work_dir`` whose
 basename has a space or CJK characters -- common on macOS dev boxes -- an
 unflagged BREAK, since only lifecycle/observe verbs validate today. So
@@ -84,3 +87,34 @@ def log_dir(work_dir: Path) -> Path:
     if cfg_path.exists():
         return load_config(cfg_path).runtime.log_dir
     return Path.home() / ".agent-runner" / project_name(work_dir, strict=True) / "logs"
+
+
+def _unit_owner(serve_path: Path) -> Path | None:
+    """Parse an existing unit's ``WorkingDirectory=`` line, or None if the file
+    doesn't exist / can't be read / has no such line."""
+    try:
+        text = serve_path.read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("WorkingDirectory="):
+            return Path(line.removeprefix("WorkingDirectory="))
+    return None
+
+
+def guard_against_clobber(serve_path: Path, work_dir: Path, *, force: bool) -> None:
+    """Refuse to overwrite a same-basename sibling project's unit.
+
+    The unit filename is derived from the project name (work_dir's basename)
+    alone, so two unrelated projects sharing a basename — or the same project
+    moved to a new path — would silently clobber each other's install.
+    force=True is the explicit override for the moved-repo case (``api.install``).
+    """
+    owner = _unit_owner(serve_path)
+    if owner is None or owner == work_dir or force:
+        return
+    raise FileExistsError(
+        f"{serve_path} already manages a different project at {owner} "
+        f"(this is {work_dir}); pass force=True to overwrite "
+        "(e.g. after moving/renaming that project's directory)."
+    )

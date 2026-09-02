@@ -194,38 +194,9 @@ def init(
 _SYSTEM_UNITS_DIR = Path("/etc/systemd/system")
 
 
-def _unit_work_dir(serve_path: Path) -> Path | None:
-    """Parse an existing unit's ``WorkingDirectory=`` line, or None if the file
-    doesn't exist / can't be read / has no such line."""
-    try:
-        text = serve_path.read_text()
-    except OSError:
-        return None
-    for line in text.splitlines():
-        if line.startswith("WorkingDirectory="):
-            return Path(line.removeprefix("WorkingDirectory="))
-    return None
-
-
-def _guard_against_clobber(serve_path: Path, work_dir: Path, *, force: bool) -> None:
-    """Refuse to overwrite a same-basename sibling project's unit.
-
-    The unit filename is derived from the project name (work_dir's basename)
-    alone, so two unrelated projects sharing a basename — or the same project
-    moved to a new path — would silently clobber each other's install.
-    force=True is the explicit override for the moved-repo case.
-    """
-    owner = _unit_work_dir(serve_path)
-    if owner is None or owner == work_dir or force:
-        return
-    raise FileExistsError(
-        f"{serve_path} already manages a different project at {owner} "
-        f"(this is {work_dir}); pass force=True to overwrite "
-        "(e.g. after moving/renaming that project's directory)."
-    )
-
-
-def _install_system(cfg: Config, project: str, *, with_monitor: bool) -> InstallResult:
+def _install_system(
+    cfg: Config, project: str, *, config_path: Path, with_monitor: bool
+) -> InstallResult:
     if os.geteuid() != 0:
         raise RuntimeError(
             "--system requires sudo; run via `sudo -E agent-runner install --system`"
@@ -238,11 +209,17 @@ def _install_system(cfg: Config, project: str, *, with_monitor: bool) -> Install
         )
     script_path = _agent_runner_script_path()
     serve_path = _SYSTEM_UNITS_DIR / serve_unit_filename(project)
-    serve_path.write_text(render_serve_unit(cfg, script_path=script_path, user=sudo_user))
+    serve_path.write_text(
+        render_serve_unit(cfg, script_path=script_path, config_path=config_path, user=sudo_user)
+    )
     monitor_path: Path | None = None
     if with_monitor:
         monitor_path = _SYSTEM_UNITS_DIR / monitor_unit_filename(project)
-        monitor_path.write_text(render_monitor_unit(cfg, script_path=script_path, user=sudo_user))
+        monitor_path.write_text(
+            render_monitor_unit(
+                cfg, script_path=script_path, config_path=config_path, user=sudo_user
+            )
+        )
     subprocess.run(["systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "enable", serve_unit_filename(project)], check=True)
     if with_monitor:
@@ -269,12 +246,12 @@ def install(
     project = _project_name(work_dir)
 
     units_dir = _SYSTEM_UNITS_DIR if system else lifecycle._user_systemd_dir()
-    _guard_against_clobber(
+    _resolve.guard_against_clobber(
         units_dir / serve_unit_filename(project), cfg.runtime.work_dir, force=force
     )
 
     if system:
-        return _install_system(cfg, project, with_monitor=with_monitor)
+        return _install_system(cfg, project, config_path=cfg_path, with_monitor=with_monitor)
 
     _check_user_systemd_available()
     script_path = _agent_runner_script_path()
@@ -282,12 +259,14 @@ def install(
     units_dir.mkdir(parents=True, exist_ok=True)
 
     serve_path = units_dir / serve_unit_filename(project)
-    serve_path.write_text(render_serve_unit(cfg, script_path=script_path))
+    serve_path.write_text(render_serve_unit(cfg, script_path=script_path, config_path=cfg_path))
 
     monitor_path: Path | None = None
     if with_monitor:
         monitor_path = units_dir / monitor_unit_filename(project)
-        monitor_path.write_text(render_monitor_unit(cfg, script_path=script_path))
+        monitor_path.write_text(
+            render_monitor_unit(cfg, script_path=script_path, config_path=cfg_path)
+        )
 
     _systemctl_user("daemon-reload")
     _systemctl_user("enable", serve_unit_filename(project))

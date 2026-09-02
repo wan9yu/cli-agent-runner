@@ -42,13 +42,19 @@ def monitor_unit_filename(project: str) -> str:
     return f"agent-runner-monitor@{project}.service"
 
 
-def _config_path(cfg: Config) -> Path:
-    """Where the config TOML lives (always relative to work_dir for now)."""
-    return cfg.runtime.work_dir / "agent-runner.toml"
+def render_serve_unit(
+    cfg: Config, *, script_path: Path, config_path: Path, user: str | None = None
+) -> str:
+    """Generate the serve systemd unit body.
 
-
-def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None) -> str:
-    """Generate the serve systemd unit body."""
+    ``config_path`` must be the ACTUAL toml the caller loaded ``cfg`` from
+    (``api.install``'s ``cfg_path``) — not re-derived from ``cfg.runtime.work_dir``.
+    ``runtime.work_dir`` is an independently-configurable field (an absolute
+    value is legal and can point anywhere; only a *relative* one anchors to
+    the toml's own directory — see ``config.load_config``), so the two can
+    legitimately diverge; embedding the wrong one silently breaks the unit's
+    ``--config`` flag (Group C, seam 3).
+    """
     # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
     # doesn't SIGKILL a mid-flight round in any phase.
     max_timeout = cfg.runtime.round_timeout_s
@@ -73,7 +79,7 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
         f"{user_lines}"
         f"WorkingDirectory={cfg.runtime.work_dir}\n"
         f"ExecStart={script_path} serve "
-        f"--config {_config_path(cfg)}\n"
+        f"--config {config_path}\n"
         # on-failure (not always) so a deliberate give-up stop — config_broken (78)
         # or crash_loop (75), both in RestartPreventExitStatus — stays stopped and
         # visibly failed, while an unexpected supervisor crash (any other non-zero)
@@ -93,8 +99,14 @@ def render_serve_unit(cfg: Config, *, script_path: Path, user: str | None = None
     )
 
 
-def render_monitor_unit(cfg: Config, *, script_path: Path, user: str | None = None) -> str:
-    """Generate the monitor sidekick systemd unit body."""
+def render_monitor_unit(
+    cfg: Config, *, script_path: Path, config_path: Path, user: str | None = None
+) -> str:
+    """Generate the monitor sidekick systemd unit body.
+
+    ``config_path``: see ``render_serve_unit`` — the actual toml the caller
+    loaded ``cfg`` from, not re-derived from ``cfg.runtime.work_dir``.
+    """
     user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"
@@ -107,7 +119,7 @@ def render_monitor_unit(cfg: Config, *, script_path: Path, user: str | None = No
         f"{user_lines}"
         f"WorkingDirectory={cfg.runtime.work_dir}\n"
         f"ExecStart={script_path} monitor "
-        f"--config {_config_path(cfg)}\n"
+        f"--config {config_path}\n"
         f"Restart=always\n"
         f"RestartSec=10\n"
         f"\n"

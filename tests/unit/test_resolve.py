@@ -1,7 +1,7 @@
 """Unit tests for agent_runner._resolve — the internal identity/location
 resolver (Group C, 0.2.13). INTERNAL ONLY: not a public contract.
 
-Lenient/strict split under test (Fable review correction): strict=True is for
+Lenient/strict split under test (spec-review correction): strict=True is for
 identity-interpolated sites (unit filenames / ssh / systemd); strict=False is
 for descriptive uses (hook_ctx.project, scaffold) where a spaced/CJK work_dir
 basename must keep working (no new break to dev-box paths).
