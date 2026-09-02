@@ -1,4 +1,4 @@
-"""detect_service_mode precedence — Fable-corrected: serve writes serve.pid in
+"""detect_service_mode precedence — spec-review correction: serve writes serve.pid in
 BOTH modes (serve_cmd.py), so a plain "pidfile exists" check cannot tell a
 healthy systemd serve from a hand-launched one. Precedence must be gated on
 `systemctl --user is-active`, not on pidfile-vs-unit-file existence, or

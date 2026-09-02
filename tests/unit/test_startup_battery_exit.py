@@ -61,7 +61,7 @@ def test_run_one_round_exits_76_on_environmental_failure(monkeypatch, tmp_path):
 def test_run_one_round_reaches_sys_exit_76_on_genuinely_unwritable_log_dir(
     tmp_git_repo: Path,
 ) -> None:
-    """Reachability regression (Group A / Fable Critical): log_dir_writable is the
+    """Reachability regression (Group A / spec-review critical): log_dir_writable is the
     SOLE permanent=False battery check, but events.emit's own append can raise on
     the EXACT unwritable-log_dir condition it is reporting -- BEFORE the
     sys.exit(76) below it ever runs -- because open(path, "a") only needs write on
