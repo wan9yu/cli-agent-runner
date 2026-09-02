@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from agent_runner.agent_runtime import RunResult, run
+from tests._test_helpers import poll_until
 
 
 def _bash_script(tmp_path: Path, body: str) -> Path:
@@ -127,13 +128,20 @@ def test_given_env_extra_when_run_then_envs_propagated_to_subprocess(tmp_path: P
 def test_given_subprocess_in_process_group_when_killed_then_descendants_terminate(
     tmp_path: Path,
 ) -> None:
-    """Spawn a subprocess that itself spawns a child; verify both die on timeout."""
+    """Spawn a subprocess that itself spawns a child; verify both die on timeout.
+
+    d3ece37 lesson: the pre-fix version used a hard-coded ``/tmp`` pidfile path
+    plus a sole assert guarded by ``if pid_file.exists()`` — under load, a
+    pidfile that hadn't appeared yet (or a stale one from a previous run) made
+    this PASS VACUOUSLY, verifying nothing. ``tmp_path`` isolates the pidfile
+    per test run; ``poll_until`` fails LOUDLY (not silently) when the
+    grandchild is never observed or never reaped.
+    """
+    pid_file = tmp_path / "child.pid"
     script = _bash_script(
         tmp_path,
-        "sleep 30 & echo $! > /tmp/agent_runner_test_child_pid; wait",
+        f"sleep 30 & echo $! > {pid_file} ; wait",
     )
-    pid_file = Path("/tmp/agent_runner_test_child_pid")
-    pid_file.unlink(missing_ok=True)
     run(
         work_dir=tmp_path,
         command=[str(script)],
@@ -143,13 +151,21 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         log_path=tmp_path / "out.log",
         env_extra={},
     )
-    time.sleep(0.5)  # let kill propagate
-    if pid_file.exists():
-        child_pid = int(pid_file.read_text().strip())
-        # Verify child died — sending signal 0 raises OSError if pid gone
-        with pytest.raises(ProcessLookupError):
-            os.kill(child_pid, 0)
-        pid_file.unlink(missing_ok=True)
+    assert poll_until(pid_file.exists, timeout_s=5), (
+        f"grandchild never wrote its pidfile at {pid_file} — script did not run"
+    )
+    child_pid = int(pid_file.read_text().strip())
+
+    def _child_is_dead() -> bool:
+        try:
+            os.kill(child_pid, 0)  # signal 0: no-op, raises once the pid is gone
+        except ProcessLookupError:
+            return True
+        return False
+
+    assert poll_until(_child_is_dead, timeout_s=5), (
+        f"grandchild pid {child_pid} survived the kill — orphaned, not reaped"
+    )
 
 
 def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(

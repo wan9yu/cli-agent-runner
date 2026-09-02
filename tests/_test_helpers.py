@@ -159,6 +159,26 @@ def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
     return toml
 
 
+def poll_until(predicate: Any, *, timeout_s: float = 5.0, interval_s: float = 0.02) -> bool:
+    """Poll ``predicate()`` until truthy or ``timeout_s`` elapses; return the last result.
+
+    Replaces the ``time.sleep(N)`` (or worse, ``if cond: assert ...``) shape a real
+    subprocess/OS-level race tempts a test into: a fixed sleep either wastes N seconds
+    every run or, under a busy full-suite run, is too short and either flakes the assert
+    or — if guarded by an ``if`` — makes it PASS VACUOUSLY (nothing was verified). Real
+    wall-clock only: this bounds an actual OS race, not application logic (that's what
+    FakeClock is for). Callers assert on the return value so a timeout fails LOUDLY.
+    """
+    import time as _time
+
+    deadline = _time.monotonic() + timeout_s
+    while _time.monotonic() < deadline:
+        if predicate():
+            return True
+        _time.sleep(interval_s)
+    return bool(predicate())
+
+
 def read_events_for_current_month(log_dir: Path) -> list[dict]:
     """Read all events from the current month's events-YYYY-MM.jsonl.
 
