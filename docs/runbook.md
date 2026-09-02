@@ -767,7 +767,7 @@ it back (the unit shows *failed*); intervention is needed.
 
 | Event | Trigger | Fix |
 |---|---|---|
-| `config_broken` | Startup battery failed permanently — broken config (missing/short prompt, non-git `work_dir`, agent CLI not on PATH). The round exits `78`. | Read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. |
+| `config_broken` | Any `ConfigError`-classified round exit (`78`) — not only a startup-battery failure. Most often the battery failing permanently (missing/short prompt, non-git `work_dir`, agent CLI not on PATH); also a stale-serve-cache phase error (`--phase` no longer matches a config `serve` edited since it started). | Battery failure: read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. Stale-cache phase error (no `smoke_check_failed` that round): `agent-runner restart`. |
 | `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
 
 Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
