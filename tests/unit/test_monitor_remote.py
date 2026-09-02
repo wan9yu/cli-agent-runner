@@ -318,3 +318,62 @@ def test_given_local_stop_raises_when_on_alert_then_emits_failed_event(tmp_log_d
     assert len(failed) == 1
     assert failed[0]["detector"] == "oauth_fail"
     assert "unit missing" in failed[0]["error"]
+
+
+def test_given_local_stop_no_ops_without_raising_when_on_alert_then_emits_failed_not_triggered(
+    tmp_log_dir: Path,
+) -> None:
+    """The real gap this closes: a mode mismatch (stale unit reference, wrong
+    pidfile) makes api.stop a SILENT no-op -- it returns normally with
+    active still True, it never raises. Before this fix, on_alert emitted
+    monitor_auto_stop_triggered unconditionally BEFORE even calling stop, so
+    this exact case was misreported as a successful stop and the `except`
+    branch never even had a chance to fire."""
+    from unittest.mock import patch
+
+    from agent_runner.api_types import ServiceMode, ServiceStatus
+
+    a = Alert(
+        severity="critical",
+        detector="oauth_fail",
+        message="m",
+        context={},
+        ts="t",
+        auto_action="stop_service",
+    )
+    still_running = ServiceStatus(mode=ServiceMode.SYSTEMD_USER, active=True)
+    with patch("agent_runner.monitor._call_local_stop", return_value=still_running) as stop:
+        on_alert(a, project="myproj", log_dir=tmp_log_dir)
+        stop.assert_called_once_with("myproj")
+
+    kinds = [e["event"] for e in _events(tmp_log_dir)]
+    assert "monitor_auto_stop_failed" in kinds
+    assert "monitor_auto_stop_triggered" not in kinds
+    failed = [e for e in _events(tmp_log_dir) if e["event"] == "monitor_auto_stop_failed"]
+    assert failed[0]["detector"] == "oauth_fail"
+
+
+def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_not_failed(
+    tmp_log_dir: Path,
+) -> None:
+    """The success path: api.stop returns active=False -> triggered fires,
+    failed does not."""
+    from unittest.mock import patch
+
+    from agent_runner.api_types import ServiceMode, ServiceStatus
+
+    a = Alert(
+        severity="critical",
+        detector="oauth_fail",
+        message="m",
+        context={},
+        ts="t",
+        auto_action="stop_service",
+    )
+    stopped = ServiceStatus(mode=ServiceMode.PID_FILE, active=False)
+    with patch("agent_runner.monitor._call_local_stop", return_value=stopped):
+        on_alert(a, project="myproj", log_dir=tmp_log_dir)
+
+    kinds = [e["event"] for e in _events(tmp_log_dir)]
+    assert "monitor_auto_stop_triggered" in kinds
+    assert "monitor_auto_stop_failed" not in kinds

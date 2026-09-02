@@ -885,11 +885,11 @@ class MonitorRemoteUnsupportedError(Exception):
         self.host = host
 
 
-def _call_local_stop(project: str) -> None:
+def _call_local_stop(project: str) -> ServiceStatus:
     # Late import: api imports monitor for peek, so we defer the reverse direction.
     from agent_runner import api
 
-    api.stop(project)
+    return api.stop(project)
 
 
 def on_alert(
@@ -907,6 +907,13 @@ def on_alert(
     pass it through so operators can opt plugin detectors in/out.
 
     The stop is always local: the monitor runs on the host it supervises.
+
+    ``MONITOR_AUTO_STOP_TRIGGERED`` is emitted only AFTER ``api.stop`` returns
+    ``active=False`` — a genuinely confirmed stop, not just an attempt. A mode
+    mismatch (stale unit reference, wrong pidfile) makes ``api.stop`` a silent
+    no-op that returns normally with ``active`` still True; without this
+    ordering that no-op would be misreported as a successful stop and the
+    ``except`` below (for a raise) would never even see it.
     """
     effective_allowed = (
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
@@ -924,14 +931,8 @@ def on_alert(
         return
     if alert.detector not in effective_allowed:
         return  # gated — operator has not opted this detector into auto-stop
-    if log_dir.is_dir():
-        emit_event(
-            log_dir,
-            MONITOR_AUTO_STOP_TRIGGERED,
-            detector=alert.detector,
-        )
     try:
-        _call_local_stop(project)
+        result = _call_local_stop(project)
     except Exception as e:
         # Any stop failure (unit missing, permission denied, stale pidfile) is
         # recorded and swallowed: crashing the monitor here would take out the
@@ -944,3 +945,23 @@ def on_alert(
                 detector=alert.detector,
                 error=f"{type(e).__name__}: {e}",
             )
+        return
+    if result.active:
+        # api.stop returned without raising but the service is STILL active —
+        # the silent no-op this fix closes (e.g. a mode mismatch that signaled
+        # nothing, or a graceful stop that hasn't taken effect yet). Recorded
+        # the same as a raise; the next poll retries while the alert persists.
+        if log_dir.is_dir():
+            emit_event(
+                log_dir,
+                MONITOR_AUTO_STOP_FAILED,
+                detector=alert.detector,
+                error=f"stop did not take effect (mode={result.mode.value}, still active)",
+            )
+        return
+    if log_dir.is_dir():
+        emit_event(
+            log_dir,
+            MONITOR_AUTO_STOP_TRIGGERED,
+            detector=alert.detector,
+        )
