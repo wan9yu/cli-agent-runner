@@ -106,11 +106,13 @@ def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
 def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() -> None:
     """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
     offenders: list[str] = []
+    scanned = 0
     for f in (PKG / "cli").glob("*_cmd.py"):
         # round/serve/events run the loop directly; migrate rewrites config file
         # text on disk and never touches the api/runner surface.
         if f.name in ("round_cmd.py", "serve_cmd.py", "events_cmd.py", "migrate_cmd.py"):
             continue
+        scanned += 1
         text = f.read_text()
         # Accept "from agent_runner import api" (standalone or merged with other names)
         # and "from agent_runner.api" / "import agent_runner.api" import forms.
@@ -121,6 +123,7 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
         )
         if not has_api_import:
             offenders.append(f.name)
+    assert scanned > 0, "no cli/*_cmd.py files scanned"  # vacuity-guard
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
 
 

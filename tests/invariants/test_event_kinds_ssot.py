@@ -62,6 +62,9 @@ def test_given_package_when_listed_then_scan_reaches_subpackages() -> None:
     """rglob, not glob: cli/ and builtin_plugins/ hold real emit sites."""
     names = {p.relative_to(PKG).as_posix() for p in package_modules()}
 
+    # vacuity-guard: proves package_modules() actually finds real files (not
+    # just that it's non-empty) — every other test in this file and in
+    # test_event_kind_registry.py shares this same corpus source.
     assert "cli/serve_cmd.py" in names
     assert "builtin_plugins/default_dirty_handler.py" in names
     assert "events.py" not in names  # events.py defines the kinds; it is the source

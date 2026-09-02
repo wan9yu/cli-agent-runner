@@ -14,9 +14,11 @@ TESTS = Path(__file__).resolve().parent.parent / "invariants"
 
 def test_given_invariant_test_files_when_scanned_then_no_pytest_skip_on_parse_fail() -> None:
     offenders: list[tuple[str, int]] = []
+    scanned = 0
     for f in TESTS.glob("test_*.py"):
         if f.name == "test_no_pytest_skip_on_parse_fail.py":
             continue
+        scanned += 1
         text = f.read_text()
         tree = ast.parse(text)
         for node in ast.walk(tree):
@@ -31,6 +33,7 @@ def test_given_invariant_test_files_when_scanned_then_no_pytest_skip_on_parse_fa
                     # check if it's inside an except block (likely error fallback)
                     # — for MVP we are strict: any pytest.skip in invariants/ is suspect
                     offenders.append((f.name, node.lineno))
+    assert scanned > 0, "no tests/invariants/test_*.py files scanned"  # vacuity-guard
     assert offenders == [], (
         f"pytest.skip in tests/invariants/ — use pytest.fail instead: {offenders}"
     )

@@ -15,8 +15,11 @@ LIMIT = 1000
 
 def test_given_production_module_when_counted_then_under_thousand_lines() -> None:
     offenders: list[tuple[str, int]] = []
+    scanned = 0
     for path in PKG.rglob("*.py"):
+        scanned += 1
         n = sum(1 for _ in path.read_text(encoding="utf-8").splitlines())
         if n > LIMIT:
             offenders.append((str(path.relative_to(PKG)), n))
+    assert scanned > 0, "no agent_runner/*.py modules scanned"  # vacuity-guard
     assert offenders == [], f"modules exceed {LIMIT} LOC; split overdue: {offenders}"

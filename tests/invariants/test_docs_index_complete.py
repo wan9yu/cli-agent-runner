@@ -30,5 +30,7 @@ def _published_pages() -> set[str]:
 def test_given_docs_dir_when_indexed_then_every_page_listed() -> None:
     text = (DOCS / "README.md").read_text(encoding="utf-8")
     linked = set(re.findall(r"\]\(([\w./-]+\.md)\)", text))
-    missing = _published_pages() - linked
+    published = _published_pages()
+    assert published, "no published docs found — DOCS.rglob scan broke"  # vacuity-guard
+    missing = published - linked
     assert not missing, f"docs/README.md's index omits published pages: {sorted(missing)}"

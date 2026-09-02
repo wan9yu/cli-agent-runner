@@ -59,7 +59,9 @@ def test_given_thesis_hook_list_when_scanned_then_names_every_protocol() -> None
     """thesis.md:26 claims 'That's the complete scope' — the list must be complete."""
     text = (REPO / "docs/thesis.md").read_text(encoding="utf-8")
     section = text.split("Exposes **plugin hooks**", 1)[-1].split("That's the complete scope", 1)[0]
-    missing = {p for p in _protocol_names() if p not in section}
+    protocols = _protocol_names()
+    assert protocols, "no Protocols found in hooks.py — AST scan broke"  # vacuity-guard
+    missing = {p for p in protocols if p not in section}
     assert not missing, (
         f"docs/thesis.md's hook list omits {sorted(missing)} yet claims completeness"
     )

@@ -61,6 +61,15 @@ def test_given_main_history_when_scanned_then_no_ai_attribution_in_commit_messag
 def test_given_tag_annotations_when_scanned_then_no_ai_attribution() -> None:
     """Every annotated tag's annotation body must be free of AI-tool attribution."""
     tags = _git("tag", "--list").splitlines()
+    # A checkout without tags fetched (e.g. a shallow clone, or CI configured
+    # without fetch-tags) would make the loop below a silent no-op. No network
+    # call here (tests must not touch the network) — fail loud instead, naming
+    # the fix, rather than pass vacuously on an empty tag list.
+    assert tags, (  # vacuity-guard
+        "no git tags visible in this checkout — run `git fetch --tags` "
+        "(this project is tag-driven; a tagless checkout can't verify tag "
+        "annotations, so this scan would otherwise pass on nothing)"
+    )
     offenders: list[tuple[str, str]] = []
     for tag in tags:
         tag = tag.strip()

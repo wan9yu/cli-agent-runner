@@ -46,6 +46,7 @@ def _real_entry_point_groups() -> set[str]:
 def test_given_doc_cli_examples_when_parsed_then_every_flag_exists() -> None:
     """Every --flag a doc hands an operator must exist on that verb's parser."""
     choices = _subparser_choices()
+    assert _CLI_DOCS, "no CLI docs to scan — _CLI_DOCS emptied"  # vacuity-guard
 
     failures: list[str] = []
     for fname in _CLI_DOCS:
@@ -63,13 +64,17 @@ def test_given_doc_cli_examples_when_parsed_then_every_flag_exists() -> None:
 
 def test_given_docs_when_scanned_then_no_notimplementederror_claim() -> None:
     """No doc may claim a code path raises NotImplementedError: none does."""
-    src = "\n".join(p.read_text(encoding="utf-8") for p in (REPO / "agent_runner").rglob("*.py"))
+    src_files = list((REPO / "agent_runner").rglob("*.py"))
+    assert src_files, "no agent_runner/*.py files found"  # vacuity-guard
+    src = "\n".join(p.read_text(encoding="utf-8") for p in src_files)
     assert "NotImplementedError" not in src, (
         "source now raises NotImplementedError — this invariant's premise changed"
     )
     # Non-recursive: docs/internal is gitignored, docs/migrations is frozen history.
+    doc_paths = sorted((REPO / "docs").glob("*.md"))
+    assert doc_paths, "no docs/*.md files found"  # vacuity-guard
     failures: list[str] = []
-    for path in sorted((REPO / "docs").glob("*.md")):
+    for path in doc_paths:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if "NotImplementedError" in line:
                 failures.append(f"docs/{path.name}:{lineno}: {line.strip()}")

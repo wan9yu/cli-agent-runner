@@ -58,9 +58,11 @@ def _raised_class_names() -> list[tuple[int, str]]:
 
 def test_given_config_module_when_scanned_then_user_facing_raises_are_config_error() -> None:
     """No bare ValueError in config.py — every invalid-field path is a ConfigError."""
+    raised = _raised_class_names()
+    assert raised, "no `raise` sites found in config.py — AST scan broke"  # vacuity-guard
     offenders = [
         f"config.py:{lineno}: raise {name}"
-        for lineno, name in sorted(_raised_class_names())
+        for lineno, name in sorted(raised)
         if name not in _ALLOWED_OTHER and name != "ConfigError"
     ]
     assert not offenders, (

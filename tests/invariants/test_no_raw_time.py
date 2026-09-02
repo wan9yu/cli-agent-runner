@@ -83,18 +83,39 @@ def _raw_time_calls(path: Path) -> list[str]:
             b = binds.get(func.id)
             if b is not None and b[0] == "func" and b[1] in _TIME_MOD_ATTRS:
                 hits.append(f"L{node.lineno} {func.id}()")
+        elif (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Attribute)
+            and isinstance(func.value.value, ast.Name)
+        ):
+            # Module-form: `import datetime` then `datetime.datetime.now()` /
+            # `datetime.date.today()` — a nested Attribute the branch above
+            # (single-level `x.attr`) never reaches. Latent: tree-clean today,
+            # but an unguarded gap is a silent future leak (defense in depth).
+            b = binds.get(func.value.value.id)
+            if b is not None and b[0] == "mod" and b[1] == "datetime":
+                cls_attrs = {
+                    "datetime": _DATETIME_CLS_ATTRS,
+                    "date": _DATE_CLS_ATTRS,
+                }.get(func.value.attr, set())
+                if func.attr in cls_attrs:
+                    name = f"{func.value.value.id}.{func.value.attr}.{func.attr}"
+                    hits.append(f"L{node.lineno} {name}")
     return hits
 
 
 def test_no_raw_time_outside_clock() -> None:
     offenders = {}
+    scanned = 0
     for path in _PKG.rglob("*.py"):
         rel = str(path.relative_to(_PKG))
         if rel == "clock.py" or rel in _ALLOWLIST:
             continue
+        scanned += 1
         hits = _raw_time_calls(path)
         if hits:
             offenders[rel] = hits
+    assert scanned > 0, "no agent_runner/*.py modules scanned"  # vacuity-guard
     assert not offenders, (
         f"current-time reads outside clock.py: {offenders}. Take a Clock (or "
         f"clock.SYSTEM_CLOCK) instead of time.time()/datetime.now()/time.sleep()/etc."
@@ -116,21 +137,27 @@ def test_scan_catches_aliased_and_from_import_dodges(tmp_path: Path) -> None:
         "import time as _t\n"
         "from time import sleep as _s\n"
         "from datetime import datetime as _dt\n"
+        "import datetime\n"
         "def f():\n"
         "    _t.strftime('%Y')\n"  # aliased module + strftime (the vcs_state dodge)
         "    _t.sleep(1)\n"  # aliased module sleep (the api.py dodge)
         "    _s(2)\n"  # bare from-imported sleep
         "    _dt.now()\n"  # aliased datetime class
+        "    datetime.datetime.now()\n"  # module-form (latent, tree clean today)
+        "    datetime.date.today()\n"  # module-form, date variant
     )
-    assert len(_raw_time_calls(caught)) == 4
+    assert len(_raw_time_calls(caught)) == 6
 
     clean = tmp_path / "clean.py"
     clean.write_text(
         "from datetime import datetime\n"
+        "import datetime as dtmod\n"
         "from agent_runner.clock import SYSTEM_CLOCK\n"
         "def g(ts):\n"
         "    SYSTEM_CLOCK.now_utc().strftime('%Y')\n"  # method on clock datetime — pure
         "    datetime.fromisoformat(ts)\n"  # parse — pure
         "    datetime.fromtimestamp(0)\n"  # conversion — pure
+        "    dtmod.datetime.fromisoformat(ts)\n"  # module-form parse — pure
+        "    dtmod.timedelta(seconds=1)\n"  # module-form, not a now/today attr
     )
     assert _raw_time_calls(clean) == []

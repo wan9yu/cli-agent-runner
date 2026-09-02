@@ -70,7 +70,9 @@ def _violations(tree: ast.AST) -> list[str]:
 
 def test_given_production_modules_when_scanned_then_no_unified_diff_marker_parsing() -> None:
     failures: list[str] = []
-    for path in sorted(PKG.rglob("*.py")):
+    paths = sorted(PKG.rglob("*.py"))
+    assert paths, "no agent_runner/*.py modules found"  # vacuity-guard
+    for path in paths:
         hits = _violations(ast.parse(path.read_text(encoding="utf-8")))
         failures.extend(f"{path.relative_to(PKG.parent)}: {h}" for h in hits)
     assert not failures, "unified-diff +/- line parsing is forbidden (R2110):\n" + "\n".join(

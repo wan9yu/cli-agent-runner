@@ -58,11 +58,14 @@ def test_given_defenses_invariant_paths_when_resolved_then_all_exist_or_none() -
 def test_given_codebase_when_scanned_then_no_paramiko_or_fabric_runtime_deps() -> None:
     """ssh stays subprocess-based; paramiko/fabric only allowed in tests/e2e."""
     offenders: list[tuple[str, str]] = []
+    scanned = 0
     for f in PKG.rglob("*.py"):
+        scanned += 1
         text = f.read_text()
         for forbidden in ("paramiko", "fabric"):
             if f"import {forbidden}" in text or f"from {forbidden}" in text:
                 offenders.append((str(f.relative_to(REPO)), forbidden))
+    assert scanned > 0, "no agent_runner modules scanned"  # vacuity-guard
     assert offenders == [], f"runtime modules import paramiko/fabric: {offenders}"
 
 

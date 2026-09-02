@@ -25,6 +25,21 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_stash_uses_sha_not_index.py",
     "test_monitor_self_exclusion.py",
     "test_event_int_coercion.py",
+    "test_architecture.py",
+    "test_authored_facts_declared.py",
+    "test_catalogs.py",
+    "test_config_error_consistency.py",
+    "test_doc_cli_claims.py",
+    "test_docs_index_complete.py",
+    "test_event_kind_registry.py",
+    "test_event_kinds_ssot.py",
+    "test_hook_contract_docs.py",
+    "test_module_sizes.py",
+    "test_no_ai_signatures.py",
+    "test_no_pytest_skip_on_parse_fail.py",
+    "test_no_raw_time.py",
+    "test_repo_constants_patched_in_tests.py",
+    "test_set_diff_for_auto_tool_classification.py",
 )
 
 
