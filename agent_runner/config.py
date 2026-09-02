@@ -619,6 +619,13 @@ def load_config(toml_path: Path) -> Config:
     agent_d = raw.get("agent", {})
     agent = _parse_agent(agent_d, field_prefix="[agent]")
     raw_work_dir = str(_require(raw, "runtime", "work_dir"))
+    # Checked on the RAW string BEFORE any path expansion/resolution: a NUL
+    # byte (a legal TOML basic-string escape) makes Path.resolve() raise a bare
+    # ValueError, which would never reach the post-resolve check below and
+    # so would never become a ConfigError (an unhandled traceback instead of
+    # a clean exit-78 config error). The post-resolve check stays too, as
+    # defense in depth.
+    _reject_control_chars(raw_work_dir, "runtime.work_dir")
     # A relative work_dir anchors to the config file's directory, not the loading
     # process's cwd — `--config /abs/proj/agent-runner.toml` must drive /abs/proj
     # no matter where the supervisor was launched from.
@@ -672,7 +679,13 @@ def load_config(toml_path: Path) -> Config:
             f"{sorted(_VALID_TRANSIENT_ERROR_ACTIONS)}"
         )
 
-    log_dir = _expand_and_resolve(str(_require(raw, "runtime", "log_dir")), project_name, work_dir)
+    raw_log_dir = str(_require(raw, "runtime", "log_dir"))
+    # Same raw-string-first ordering as work_dir above -- a relative log_dir
+    # goes through Path.resolve() inside _expand_and_resolve, which would
+    # raise a bare ValueError on a NUL byte before the post-resolve check
+    # below ever ran.
+    _reject_control_chars(raw_log_dir, "runtime.log_dir")
+    log_dir = _expand_and_resolve(raw_log_dir, project_name, work_dir)
     _reject_control_chars(str(log_dir), "runtime.log_dir")
 
     runtime = RuntimeConfig(
