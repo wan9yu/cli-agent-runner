@@ -18,8 +18,9 @@ REPO = Path(__file__).resolve().parents[2]
 # Docs that hand an operator a copy-pasteable command line. The recipes/ dir is
 # globbed in so every `agent-runner …` example in a per-agent recipe is pinned
 # against argparse too.
+_RECIPE_DOCS = sorted((REPO / "docs/recipes").glob("*.md"))
 _CLI_DOCS = ("docs/commands.md", "docs/runbook.md", "docs/quickstart.md") + tuple(
-    f"docs/recipes/{p.name}" for p in sorted((REPO / "docs/recipes").glob("*.md"))
+    f"docs/recipes/{p.name}" for p in _RECIPE_DOCS
 )
 
 # `agent-runner <verb> --flag ...` inside fenced blocks or prose. A leading
@@ -46,7 +47,11 @@ def _real_entry_point_groups() -> set[str]:
 def test_given_doc_cli_examples_when_parsed_then_every_flag_exists() -> None:
     """Every --flag a doc hands an operator must exist on that verb's parser."""
     choices = _subparser_choices()
-    assert _CLI_DOCS, "no CLI docs to scan — _CLI_DOCS emptied"  # vacuity-guard
+    # _CLI_DOCS itself can never be empty (3 hardcoded entries) — that would pass
+    # even if the recipes glob silently found nothing (dir renamed/moved), which
+    # would narrow the recipes-derived part of this scan to zero unnoticed. Guard
+    # the glob's own output directly.
+    assert _RECIPE_DOCS, "no docs/recipes/*.md found — glob emptied"  # vacuity-guard
 
     failures: list[str] = []
     for fname in _CLI_DOCS:
