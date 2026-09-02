@@ -179,7 +179,7 @@ def _matches_since(line: str, kind_set: set[str], since: datetime) -> bool:
         evt = json.loads(line)
     except json.JSONDecodeError:
         return False
-    if evt.get("event") not in kind_set:
+    if not isinstance(evt, dict) or evt.get("event") not in kind_set:
         return False
     ts = evt.get("ts")
     if not isinstance(ts, str):
@@ -243,7 +243,7 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if evt.get("event") in kind_set:
+                if isinstance(evt, dict) and evt.get("event") in kind_set:
                     matches.append(line)
     except OSError as e:
         print(f"Error: events file unreadable: {e}", file=sys.stderr)
@@ -266,7 +266,7 @@ def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
                 evt = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if evt.get("event") in kind_set:
+            if isinstance(evt, dict) and evt.get("event") in kind_set:
                 print(line, flush=True)
         return f.tell()
 

@@ -1132,3 +1132,35 @@ def test_given_git_timeout_during_dirty_check_when_run_then_round_still_complete
     events = read_events_for_current_month(cfg.runtime.log_dir)
     assert any(e["event"] == "round_end" for e in events)
     assert any(e["event"] == "dirty_check_failed" for e in events)
+
+
+def test_given_git_timeout_during_dirty_check_when_run_then_orphan_state_preserved(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec-review correction: the dirty_check_failed guard must not fall into
+    the "not dirty" branch and wipe a pre-existing orphan-state.json -- a
+    GitTimeout means we genuinely don't know the tree is clean, we just
+    failed to check it, so any existing stash bookkeeping must survive."""
+    from agent_runner import context_store, vcs_state
+
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+    cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
+    orphan = context_store.OrphanState(
+        round_num=0,
+        files=["scratch.md"],
+        stashed_ref="stash@{0}",
+        stash_message="ORPHAN R0",
+        timestamp="2026-05-11T15:25:30.000Z",
+    )
+    context_store.write_orphan_state(cfg.runtime.log_dir, orphan)
+
+    def _raise_git_timeout(_work_dir: Path) -> list[str]:
+        raise vcs_state.GitTimeout("git status timed out")
+
+    monkeypatch.setattr(vcs_state, "detect_dirty_files", _raise_git_timeout)
+
+    run_one_round(cfg)
+
+    assert context_store.read_orphan_state(cfg.runtime.log_dir) == orphan

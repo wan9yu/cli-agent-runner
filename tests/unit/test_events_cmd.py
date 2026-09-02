@@ -124,6 +124,53 @@ def test_events_query_no_match_returns_empty(tmp_path, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_events_query_skips_non_dict_json_line(tmp_path, capsys):
+    """A valid-JSON but non-dict line (bare list/number) must be skipped, not crash
+    (0.2.13 Group D: every events-*.jsonl reader assumes .get(...) shape)."""
+    from agent_runner.cli import events_cmd
+
+    path = tmp_path / f"events-{_current_month()}.jsonl"
+    path.write_text(
+        json.dumps(["not", "a", "dict"])
+        + "\n"
+        + json.dumps(42)
+        + "\n"
+        + json.dumps({"event": "round_end", "round_num": 1})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
+        args = _make_args(kind="round_end", window=10)
+        rc = events_cmd.cmd_events(args)
+
+    assert rc == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert [json.loads(line)["round_num"] for line in out] == [1]
+
+
+def test_events_since_skips_non_dict_json_line(tmp_path, capsys):
+    """Same as above but through the --since replay path (_matches_since)."""
+    from agent_runner.cli import events_cmd
+
+    path = tmp_path / f"events-{_current_month()}.jsonl"
+    path.write_text(
+        json.dumps(["not", "a", "dict"])
+        + "\n"
+        + json.dumps({"ts": "2026-07-01T10:00:00.000Z", "event": "round_end", "round_num": 1})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
+        args = _make_args(kind="round_end", since="2026-07-01T00:00:00.000Z")
+        rc = events_cmd.cmd_events(args)
+
+    assert rc == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert [json.loads(line)["round_num"] for line in out] == [1]
+
+
 def test_events_window_and_tail_mutually_exclusive(tmp_path, capsys):
     """--window with --tail explicitly should fail with exit 2."""
     from agent_runner.cli import events_cmd

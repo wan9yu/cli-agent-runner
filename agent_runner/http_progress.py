@@ -136,9 +136,13 @@ def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
                     if not line:
                         continue
                     try:
-                        events.append(json.loads(line))
+                        parsed = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    # _render_event_line does evt.get(...) -- a non-dict line
+                    # (bare number/string/list) must not reach it.
+                    if isinstance(parsed, dict):
+                        events.append(parsed)
         except (FileNotFoundError, OSError):
             continue
     return events[-max_count:]

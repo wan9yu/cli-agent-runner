@@ -761,6 +761,11 @@ def _tail_events_jsonl(
                         evt = _json.loads(line)
                     except _json.JSONDecodeError:
                         continue
+                    # narrate_events -> _format_narrate_line does evt.get(...)
+                    # -- a non-dict line must not reach it or stream_events_jsonl's
+                    # machine-consumption callers.
+                    if not isinstance(evt, dict):
+                        continue
                     yield evt
                     any_new = True
                 seen_positions[path] = f.tell()

@@ -76,6 +76,40 @@ def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_on
     assert emitted == [1, 2], f"expected each event once, got {emitted}"
 
 
+def test_given_non_dict_json_line_appended_when_tailing_then_skipped_not_crashed(
+    tmp_log_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A valid-JSON but non-dict line (bare list) appended mid-poll must be
+    skipped by ``_emit_new_lines``, not crash the tail loop (0.2.13 Group D)."""
+    events_file = _events_file(tmp_log_dir)
+    _append(events_file, "seed", 0)
+
+    polls = {"n": 0}
+
+    def fake_sleep(_interval: float) -> None:
+        polls["n"] += 1
+        if polls["n"] == 1:
+            with events_file.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(["not", "a", "dict"]) + "\n")
+            _append(events_file, "round_start", 1)
+        elif polls["n"] >= 4:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        events_cmd,
+        "signal",
+        SimpleNamespace(SIGINT=signal.SIGINT, signal=lambda *_a: None),
+    )
+
+    assert events_cmd._tail_events(tmp_log_dir, {"round_start"}) == 0
+
+    emitted = [json.loads(line)["n"] for line in capsys.readouterr().out.splitlines() if line]
+    assert emitted == [1]
+
+
 def test_given_since_when_tailing_then_replay_then_live_lines_each_once(
     tmp_log_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

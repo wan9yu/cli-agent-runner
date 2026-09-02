@@ -630,9 +630,14 @@ def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]
                     if not line:
                         continue
                     try:
-                        out.append(json.loads(line))
+                        parsed = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    # Every caller (detectors, round_view.build_round_view via
+                    # peek) assumes the ``.get(...)`` shape -- a bare number/
+                    # string/list line must not reach them.
+                    if isinstance(parsed, dict):
+                        out.append(parsed)
         except OSError:
             continue
     return out
@@ -673,9 +678,11 @@ class _EventTail:
                     if not line:
                         continue
                     try:
-                        self.buffer.append(json.loads(line))
+                        parsed = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if isinstance(parsed, dict):
+                        self.buffer.append(parsed)
                 self.offsets[path] = f.tell()
         return list(self.buffer)
 
