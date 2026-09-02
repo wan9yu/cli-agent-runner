@@ -4,6 +4,8 @@ raise or injected signal) instead of orphaning it."""
 from __future__ import annotations
 
 import os
+import signal
+import threading
 import time
 from pathlib import Path
 
@@ -62,3 +64,51 @@ def test_callback_raise_reaps_agent_pgroup(tmp_path):
             break
         time.sleep(0.1)
     assert not _alive(pid), "agent child was orphaned when the callback raised"
+
+
+def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
+    """The real SIGTERM path (not a raised-callback stand-in): round_cmd
+    installs a handler that converts every SIGTERM into a fresh
+    KeyboardInterrupt (round_cmd.py:24-33) so `run`'s BaseException reap path
+    fires and drains the agent -- the same mechanism api.kill's sidecar-pid
+    TERM-first sequence now drives. Before this task, only the full
+    serve+round+agent e2e (test_serve_loop.py) exercised this; no smaller,
+    non-e2e test covered it."""
+    childpid = tmp_path / "child.pid"
+    script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
+
+    def _raise_term(_sig, _frame):
+        raise KeyboardInterrupt("round received SIGTERM")
+
+    old_handler = signal.signal(signal.SIGTERM, _raise_term)
+
+    def _term_self_once_child_recorded():
+        for _ in range(80):
+            if childpid.exists() and childpid.read_text().strip():
+                break
+            time.sleep(0.1)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    sender = threading.Thread(target=_term_self_once_child_recorded, daemon=True)
+    sender.start()
+    try:
+        with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
+            run(
+                work_dir=tmp_path,
+                command=[str(script)],
+                prompt_arg_template=[],
+                prompt="x",
+                timeout_s=30,
+                log_path=tmp_path / "round.log",
+                env_extra={},
+            )
+    finally:
+        signal.signal(signal.SIGTERM, old_handler)
+        sender.join(timeout=5)
+
+    pid = int(childpid.read_text())
+    for _ in range(80):
+        if not _alive(pid):
+            break
+        time.sleep(0.1)
+    assert not _alive(pid), "agent child was orphaned when SIGTERM interrupted the round"

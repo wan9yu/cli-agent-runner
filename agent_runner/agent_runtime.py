@@ -65,6 +65,15 @@ def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str)
 
 
 def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
+    """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
+    the round-timeout path and ``run``'s BaseException handler (which fires on
+    a SIGTERM landing while the round is unwinding from a first one).
+    ``round_cmd``'s SIGTERM handler stays installed for the whole process life
+    (it converts every SIGTERM into a fresh ``KeyboardInterrupt``, not just the
+    first), so a re-entrant SIGTERM during the grace sleep below raises HERE —
+    shielded (caught and retried) so the SIGKILL escalation always runs. An
+    operator's impatient double-kill must not leave the agent outliving the
+    grace period unreaped."""
     pgid = proc.pid
     try:
         os.killpg(pgid, signal.SIGTERM)
@@ -74,15 +83,22 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
         clock.monotonic() + REAP_GRACE_S
     )  # monotonic: an NTP step must not stretch/skip the reap
     while clock.monotonic() < deadline and proc.poll() is None:
-        clock.sleep(0.1)
+        try:
+            clock.sleep(0.1)
+        except KeyboardInterrupt:
+            pass  # shielded: keep waiting out the grace window, never skip SIGKILL
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass
+    while True:
+        try:
+            proc.wait(timeout=10)
+            return
+        except subprocess.TimeoutExpired:
+            return
+        except KeyboardInterrupt:
+            continue  # shielded: still must reap before returning
 
 
 def _live_children(

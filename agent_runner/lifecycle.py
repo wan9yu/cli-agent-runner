@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess  # noqa: TID251 — lifecycle probes systemd, sanctioned like api.py
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,37 @@ import psutil
 
 from agent_runner.api_types import ServiceMode
 from agent_runner.context_store import atomic_write_json
+from agent_runner.service_unit import serve_unit_filename
+
+# Bounds every `systemctl --user` call this module makes. A wedged D-Bus
+# session (or a systemd that never answers) must not hang a lifecycle-safety
+# verb (stop/kill/status) forever — it should fail fast and let the caller
+# fall back (status) or surface the error (monitor's on_alert -> auto_stop_failed).
+_SYSTEMCTL_TIMEOUT_S = 10
+
+_SYSTEMD_ACTIVE_STATES = frozenset({"active", "activating", "reloading"})
+_SYSTEMD_INACTIVE_STATES = frozenset({"failed", "inactive"})
+
+
+def _systemctl_is_active(unit_name: str) -> str | None:
+    """Patchable seam. Return the unit's `systemctl --user is-active` state
+    string ("active"/"activating"/"failed"/...), or None when systemctl is
+    absent, the call times out, or it errors — callers then fall back to
+    serve.pid so status()/detect_service_mode() never crash or hang on a
+    non-systemd host (darwin dev, containers). is-active prints the state
+    even on a non-zero exit, so check=False keeps the string instead of
+    raising CalledProcessError."""
+    try:
+        proc = subprocess.run(
+            ["systemctl", "--user", "is-active", unit_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_SYSTEMCTL_TIMEOUT_S,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    return proc.stdout.strip() or None
 
 
 def _valid_pid(value: object) -> bool:
@@ -99,10 +131,30 @@ def _user_systemd_dir() -> Path:
 
 
 def detect_service_mode(project: str, *, log_dir: Path) -> ServiceMode:
-    """Decide how this project is managed: systemd unit, plain pidfile, or nothing."""
-    unit = _user_systemd_dir() / f"agent-runner@{project}.service"
-    if unit.exists():
+    """Decide how this project is managed: systemd unit, plain pidfile, or nothing.
+
+    Precedence is is-active-GATED, not pidfile-vs-unit — serve writes serve.pid
+    in BOTH modes (serve_cmd.py), so a plain "pidfile exists" check can't tell
+    a healthy systemd serve from a hand-launched one. Ranking a live pidfile
+    above an installed-but-healthy unit would misroute `restart` (which
+    requires SYSTEMD_USER) into "PID_FILE, refuse":
+    - unit exists AND is-active -> SYSTEMD_USER (systemd owns it; restart works)
+    - unit exists AND NOT active AND a live serve.pid -> PID_FILE (systemd's
+      record is stale/failed; something is actually running the plain way —
+      signal what's really alive, not the dead unit)
+    - unit exists AND NOT active AND no live pid -> SYSTEMD_USER (nothing to
+      signal directly; `start` needs the systemd path to respawn it)
+    - no unit: PID_FILE if a pidfile exists, else NONE
+    """
+    unit_name = serve_unit_filename(project)
+    unit = _user_systemd_dir() / unit_name
+    if not unit.exists():
+        if (log_dir / "serve.pid").exists():
+            return ServiceMode.PID_FILE
+        return ServiceMode.NONE
+    if _systemctl_is_active(unit_name) in _SYSTEMD_ACTIVE_STATES:
         return ServiceMode.SYSTEMD_USER
-    if (log_dir / "serve.pid").exists():
+    pid = PIDFile(log_dir / "serve.pid").read()
+    if pid is not None and pid_alive(pid):
         return ServiceMode.PID_FILE
-    return ServiceMode.NONE
+    return ServiceMode.SYSTEMD_USER

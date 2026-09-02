@@ -552,10 +552,16 @@ def _spawn_round(
         except BaseException:
             _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
             raise
+        # Safety kill BEFORE the observability write: the wedged round must not
+        # keep burning wall-clock (and, if its own reap hangs, its agent's
+        # budget) waiting on the least-reliable step (a disk write) to finish
+        # first. emit_round_supervisor_wedged reads proc.pid, which stays a
+        # valid attribute after the process has already been terminated.
+        returncode = _terminate_round(proc)
         emit_round_supervisor_wedged(
             log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
         )
-        return _terminate_round(proc)
+        return returncode
 
 
 def _add_max_rounds_arg(parser) -> None:

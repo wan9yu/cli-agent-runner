@@ -44,7 +44,11 @@ from agent_runner.api_types import (
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import Config, RuntimeConfig, load_config
 from agent_runner.lifecycle import (
+    _SYSTEMCTL_TIMEOUT_S,
+    _SYSTEMD_ACTIVE_STATES,
+    _SYSTEMD_INACTIVE_STATES,
     PIDFile,
+    _systemctl_is_active,
     detect_service_mode,
     pid_alive,
     send_signal_to_pid,
@@ -149,40 +153,23 @@ def _check_user_systemd_available() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=_SYSTEMCTL_TIMEOUT_S,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
             "systemctl binary not found in PATH; user systemd is not available. " + _LINGER_HINT
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"user systemd unavailable (systemctl did not respond within "
+            f"{_SYSTEMCTL_TIMEOUT_S}s -- a wedged D-Bus session). " + _LINGER_HINT
         ) from exc
     if "Failed to connect to bus" in (probe.stderr or ""):
         raise RuntimeError("user systemd unavailable (D-Bus session not running). " + _LINGER_HINT)
 
 
 def _systemctl_user(*args: str) -> None:
-    subprocess.run(["systemctl", "--user", *args], check=True)
-
-
-_SYSTEMD_ACTIVE_STATES = frozenset({"active", "activating", "reloading"})
-_SYSTEMD_INACTIVE_STATES = frozenset({"failed", "inactive"})
-
-
-def _systemctl_is_active(unit_name: str) -> str | None:
-    """Patchable seam. Return the unit's `systemctl --user is-active` state
-    string ("active"/"activating"/"failed"/...), or None when systemctl is
-    absent or the call errors — the caller then falls back to serve.pid so
-    status() never crashes on a non-systemd host (darwin dev, containers).
-    is-active prints the state even on a non-zero exit, so check=False keeps
-    the string instead of raising CalledProcessError."""
-    try:
-        proc = subprocess.run(
-            ["systemctl", "--user", "is-active", unit_name],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (FileNotFoundError, OSError):
-        return None
-    return proc.stdout.strip() or None
+    subprocess.run(["systemctl", "--user", *args], check=True, timeout=_SYSTEMCTL_TIMEOUT_S)
 
 
 def _systemd_active(unit_name: str, log_dir: Path) -> bool:
@@ -314,6 +301,68 @@ def start(project: str | Path) -> ServiceStatus:
     return status(project)
 
 
+# Bounded wait for a signaled PID_FILE-mode process to react before stop()/kill()
+# report their outcome. Monotonic (not epoch): an NTP step must not stretch or
+# skip the wait. Shared value: stop()'s confirm window and kill()'s pre-SIGKILL
+# grace are the same bound, just followed by different escalation.
+_PID_SIGNAL_GRACE_S = 5
+
+# Grace after TERMing the round-lock holder before escalating to SIGKILL: mirrors
+# serve_cmd._ROUND_TERM_GRACE_S (the round's own SIGTERM handler needs
+# agent_runtime.REAP_GRACE_S + margin to reap its agent pgroup and exit).
+# Cross-checked against serve_cmd's value by
+# test_round_kill_grace_matches_serve so the two never drift.
+_ROUND_TERM_GRACE_S = 15
+
+
+def _await_pid_exit(pid: int, timeout_s: float) -> bool:
+    """Poll ``pid_alive(pid)`` until it clears or ``timeout_s`` elapses.
+    Returns the final liveness (True = still alive)."""
+    deadline = SYSTEM_CLOCK.monotonic() + timeout_s
+    alive = True
+    while SYSTEM_CLOCK.monotonic() < deadline:
+        alive = pid_alive(pid)
+        if not alive:
+            break
+        SYSTEM_CLOCK.sleep(0.1)
+    return alive
+
+
+def _round_holder_pid(log_dir: Path) -> int | None:
+    """Read the live round-child pid from the round lock's ``.holder`` sidecar
+    (``runner._write_holder_sidecar``), or None when no round is currently in
+    flight, the sidecar is missing/corrupt, or the recorded pid is no longer
+    alive. This is the ONLY way ``kill()`` can reach an in-flight round: the
+    round is ``start_new_session=True`` (its own session, its own pgid), so it
+    sits outside whatever process group serve itself belongs to."""
+    from agent_runner.context_store import read_json
+
+    data = read_json(log_dir / "agent-runner.lock.holder")
+    if not isinstance(data, dict):
+        return None
+    pid = data.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
+        return None
+    return pid if pid_alive(pid) else None
+
+
+def _terminate_round_pid(pid: int) -> None:
+    """TERM-first -> grace -> SIGKILL a bare round-child pid.
+
+    Mirrors ``serve_cmd._terminate_round``'s shape, but this runs from a
+    SEPARATE CLI process (``kill()``) that only has the pid — not serve's own
+    ``Popen`` handle. Never ``killpg``: the round is ``start_new_session=True``,
+    so its own pgid holds only itself, and even a killpg on it cannot reach the
+    agent (itself a separate session again, ``agent_runtime.py``) — only the
+    round's own SIGTERM -> KeyboardInterrupt handler (``round_cmd.py``) walks
+    that link and reaps the agent pgroup via ``_kill_pgroup``. A plain SIGTERM
+    here fires exactly that handler; SIGKILL is only the last-resort escalation
+    for a round that doesn't even get to run its handler."""
+    send_signal_to_pid(pid, signal.SIGTERM)
+    if _await_pid_exit(pid, _ROUND_TERM_GRACE_S):
+        send_signal_to_pid(pid, signal.SIGKILL)
+
+
 def stop(project: str | Path) -> ServiceStatus:
     pname = _resolve_project(project)
     log_dir = _log_dir_for_project(project)
@@ -324,6 +373,11 @@ def stop(project: str | Path) -> ServiceStatus:
     pid = PIDFile(log_dir / "serve.pid").read()
     if pid is not None:
         send_signal_to_pid(pid, signal.SIGTERM)
+        # Confirm within a bounded window so a caller (monitor.on_alert) sees
+        # active=False for a graceful stop that actually took — otherwise
+        # every synchronous check would race the process's own shutdown and
+        # (correctly, but uselessly) report active=True every time.
+        _await_pid_exit(pid, _PID_SIGNAL_GRACE_S)
     return status(project)
 
 
@@ -337,14 +391,15 @@ def kill(project: str | Path) -> ServiceStatus:
     pid = PIDFile(log_dir / "serve.pid").read()
     if pid is None:
         return status(project)
+    # SIGTERM serve FIRST so its own graceful handler arms stop["requested"]
+    # before we forcibly end the in-flight round below. Otherwise serve's loop
+    # could see the round we are about to kill exit and spawn a NEW one before
+    # our own SIGTERM to serve has landed.
     send_signal_to_pid(pid, signal.SIGTERM)
-    deadline = SYSTEM_CLOCK.epoch() + 5
-    alive = True
-    while SYSTEM_CLOCK.epoch() < deadline:
-        alive = pid_alive(pid)
-        if not alive:
-            break
-        SYSTEM_CLOCK.sleep(0.1)
+    round_pid = _round_holder_pid(log_dir)
+    if round_pid is not None:
+        _terminate_round_pid(round_pid)
+    alive = _await_pid_exit(pid, _PID_SIGNAL_GRACE_S)
     if alive:
         send_signal_to_pid(pid, signal.SIGKILL)
         alive = pid_alive(pid)  # re-check: SIGKILL may have reaped it
@@ -617,6 +672,11 @@ def _monitor_loop_iter(
     while True:
         try:
             alerts = _poll_once(work_dir, event_tail=event_tail)
+            # Computed inside the SAME guard as the poll: work_dir is fixed for
+            # this generator's life, so a ValueError here (an invalid project
+            # name) must not crash monitor supervision any more than a poll
+            # crash does — both get the identical warn-and-retry treatment.
+            project_name = _project_name(work_dir)
         except Exception as e:  # noqa: BLE001 — a poll crash must not kill supervision
             warnings.warn(f"monitor poll failed: {type(e).__name__}: {e}", stacklevel=2)
             SYSTEM_CLOCK.sleep(interval_s)
@@ -632,7 +692,7 @@ def _monitor_loop_iter(
             yield alert
             monitor.on_alert(
                 alert,
-                project=_project_name(work_dir),
+                project=project_name,
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )

@@ -278,6 +278,54 @@ def test_live_children_matched_records_pattern_not_argv():
         p.wait()
 
 
+def test_kill_pgroup_reentrant_sigterm_during_grace_still_sigkills(tmp_path):
+    """round_cmd's SIGTERM handler stays installed for the whole process life
+    (every SIGTERM raises a fresh KeyboardInterrupt, not just the first), so a
+    second, impatient SIGTERM landing while _kill_pgroup waits out its grace
+    period re-raises INSIDE the grace-sleep loop. Unshielded, that interrupt
+    would propagate out of _kill_pgroup before SIGKILL ever ran, leaving a
+    TERM-ignoring agent alive forever. FakeClock makes this deterministic: the
+    first clock.sleep() call raises (simulating the re-entrant signal); the
+    function must swallow it and keep going until it SIGKILLs the child."""
+    from agent_runner.agent_runtime import _kill_pgroup
+    from tests._clock import FakeClock
+
+    ready = tmp_path / "trap.ready"
+    # A ready marker (not a fixed sleep) makes "the trap is installed before we
+    # TERM it" deterministic under load -- a fixed sleep raced bash startup
+    # under a busy full-suite run and could see the child die on the FIRST
+    # (un-trapped) SIGTERM, exiting the grace loop after only one flaky_sleep
+    # call instead of exercising the shield across the full grace window.
+    script = _write_fake_script(tmp_path, f'trap "" TERM\ntouch "{ready}"\nsleep 30\n')
+    proc = subprocess.Popen([str(script)], start_new_session=True)
+    try:
+        for _ in range(100):
+            if ready.exists():
+                break
+            time.sleep(0.05)
+        assert ready.exists(), "child never installed its SIGTERM trap"
+        clock = FakeClock()
+        real_sleep = clock.sleep
+        calls = {"n": 0}
+
+        def flaky_sleep(seconds):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise KeyboardInterrupt("re-entrant SIGTERM during grace")
+            real_sleep(seconds)
+
+        clock.sleep = flaky_sleep
+
+        _kill_pgroup(proc, clock)
+
+        assert calls["n"] >= 2, "the shield must retry after the re-entrant interrupt"
+        assert proc.wait(timeout=5) is not None  # SIGKILL reaped it despite the interrupt
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+
+
 def test_hard_wall_fires_on_monotonic_despite_epoch_warp(tmp_path):
     """R1128 hard-wall is measured on monotonic time: a mid-round NTP step (an
     epoch jump, routine on the RTC-less Pi fleet) must not disable or distort it.

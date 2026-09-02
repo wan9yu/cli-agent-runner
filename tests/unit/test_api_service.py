@@ -292,6 +292,117 @@ def test_given_pid_file_when_kill_then_rechecks_alive_after_sigkill(
     assert s.active is False  # re-checked AFTER SIGKILL
 
 
+def test_round_holder_pid_missing_sidecar_returns_none(tmp_path: Path) -> None:
+    assert api._round_holder_pid(tmp_path) is None
+
+
+def test_round_holder_pid_corrupt_sidecar_returns_none(tmp_path: Path) -> None:
+    (tmp_path / "agent-runner.lock.holder").write_text("not json")
+    assert api._round_holder_pid(tmp_path) is None
+
+
+def test_round_holder_pid_dead_pid_returns_none(tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / "agent-runner.lock.holder").write_text(json.dumps({"pid": 999999999}))
+    assert api._round_holder_pid(tmp_path) is None
+
+
+def test_round_holder_pid_live_pid_returned(tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / "agent-runner.lock.holder").write_text(json.dumps({"pid": os.getpid()}))
+    assert api._round_holder_pid(tmp_path) == os.getpid()
+
+
+def test_kill_sends_sigterm_to_round_holder_before_serve(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """api.kill's PID_FILE mode must reach the round via the .holder sidecar
+    (not killpg, which can't cross a start_new_session=True boundary) --
+    SIGTERM the round pid, and do it before waiting out serve's own grace."""
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text("12345")
+    (log_dir / "agent-runner.lock.holder").write_text(json.dumps({"pid": 54321}))
+
+    # The round holder must read as alive ONCE (so _round_holder_pid resolves
+    # it) and dead on every check thereafter -- keeps this on the fast (no
+    # escalation, no real grace wait) path; the escalation path is its own
+    # test below with a FakeClock.
+    calls = {"n": 0}
+
+    def fake_pid_alive(pid: int) -> bool:
+        calls["n"] += 1
+        return calls["n"] == 1
+
+    monkeypatch.setattr("agent_runner.api.pid_alive", fake_pid_alive)
+    sent: list[tuple[int, int]] = []
+
+    def fake_send(pid: int, sig: int) -> bool:
+        sent.append((pid, sig))
+        return True
+
+    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    with patch("os.killpg", side_effect=AssertionError("killpg must never be used here")):
+        api.kill(tmp_git_repo)
+
+    # The round holder (54321) is TERM'd; serve (12345) is TERM'd too (to arm
+    # stop["requested"]) but the round's own pid is what actually reaches the
+    # agent -- killpg is never used for either.
+    assert (54321, signal.SIGTERM) in sent
+    assert (12345, signal.SIGTERM) in sent
+
+
+def test_kill_escalates_round_holder_to_sigkill_when_term_ignored(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A round that ignores SIGTERM (fully wedged, never even runs its own
+    handler) must still be reaped -- SIGKILL as the last resort."""
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text("12345")
+    (log_dir / "agent-runner.lock.holder").write_text(json.dumps({"pid": 54321}))
+
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    # Both pids report alive forever (fully wedged) -- the round's own grace
+    # window must still expire and escalate.
+    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: True)
+    sent: list[tuple[int, int]] = []
+
+    def fake_send(pid: int, sig: int) -> bool:
+        sent.append((pid, sig))
+        return True
+
+    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    api.kill(tmp_git_repo)
+
+    assert (54321, signal.SIGKILL) in sent  # round holder escalated
+    assert (12345, signal.SIGKILL) in sent  # serve itself escalated too
+
+
+def test_round_kill_grace_matches_serve_cmd_grace() -> None:
+    """api._terminate_round_pid's grace (driven from a separate CLI process,
+    api.kill) must stay in lockstep with serve_cmd._terminate_round's own
+    grace (driven from serve's in-process Popen handle) -- both exist so the
+    round's SIGTERM handler has time to reap its agent pgroup before either
+    caller escalates to SIGKILL. A drift here would make one of the two paths
+    escalate before the round even gets a chance to drain."""
+    from agent_runner.cli import serve_cmd
+
+    assert api._ROUND_TERM_GRACE_S == serve_cmd._ROUND_TERM_GRACE_S
+
+
 def test_poll_once_forwards_supervisor_stale_threshold(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,

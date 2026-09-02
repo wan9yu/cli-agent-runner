@@ -62,6 +62,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_import_subproc
         "cli/install_cmd.py",
         "cli/serve_cmd.py",
         "cli/upgrade_cmd.py",
+        "lifecycle.py",
         "metrics.py",
         "monitor.py",
         "remote_relay.py",
