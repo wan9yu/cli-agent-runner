@@ -5,7 +5,8 @@ Markdown DSL on top of standard markdown:
 * ``` ```bash ``` block — code to execute.
 * ``<!-- assert: SUBSTR -->`` on the line(s) after the closing ``` — stdout must contain SUBSTR.
 * ``<!-- assert-status: N -->`` — block must exit with code N (default 0).
-* ``<!-- skip-test -->`` — skip executing the next-prior bash block.
+* ``<!-- skip-test: REASON -->`` — skip executing the next-prior bash block, with a
+  required, human-reviewable reason (why this block can't run as a real test).
 * ``<!-- env: KEY=VAL -->`` — inject env vars (may repeat).
 
 Markers must be contiguous — a blank line after a block's markers ends the
@@ -25,6 +26,7 @@ class LiterateBlock:
     expected_substring: str | None = None
     expected_status: int = 0
     skip: bool = False
+    skip_reason: str | None = None
     env: dict[str, str] = field(default_factory=dict)
     line: int = 0  # markdown line number of the opening ```bash fence
 
@@ -33,7 +35,7 @@ _BASH_RE = re.compile(r"^```bash\s*$", re.MULTILINE)
 _FENCE_CLOSE = re.compile(r"^```\s*$", re.MULTILINE)
 _ASSERT_RE = re.compile(r"<!--\s*assert:\s*(.+?)\s*-->")
 _STATUS_RE = re.compile(r"<!--\s*assert-status:\s*(-?\d+)\s*-->")
-_SKIP_RE = re.compile(r"<!--\s*skip-test\s*-->")
+_SKIP_RE = re.compile(r"<!--\s*skip-test(?::\s*(.+?))?\s*-->")
 _ENV_RE = re.compile(r"<!--\s*env:\s*([A-Z_][A-Z0-9_]*)=(.*?)\s*-->")
 
 
@@ -64,8 +66,9 @@ def parse_literate_blocks(md_text: str) -> list[LiterateBlock]:
                     block.expected_substring = m.group(1)
                 elif m := _STATUS_RE.search(ln):
                     block.expected_status = int(m.group(1))
-                elif _SKIP_RE.search(ln):
+                elif m := _SKIP_RE.search(ln):
                     block.skip = True
+                    block.skip_reason = m.group(1)
                 elif m := _ENV_RE.search(ln):
                     block.env[m.group(1)] = m.group(2)
                 # Unknown comments are ignored (treated as plain markdown comments).

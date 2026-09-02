@@ -35,9 +35,18 @@ def test_given_quickstart_when_each_bash_block_run_then_passes(
     blocks = parse_literate_blocks(QUICKSTART.read_text(encoding="utf-8"))
     assert blocks, "quickstart.md has no bash blocks — literate runner is a no-op"
 
+    executed = 0
     for i, block in enumerate(blocks):
         if block.skip:
+            # A skip must say WHY (or assert why not) — a silent, unjustified
+            # `<!-- skip-test -->` is how a docs-as-tests suite quietly rots
+            # into 1-of-9 real coverage with nobody noticing.
+            assert block.skip_reason, (
+                f"block #{i} at quickstart.md:{block.line} is skip-test with no "
+                f"reason — use `<!-- skip-test: why -->`"
+            )
             continue
+        executed += 1
         env = {**os.environ, **block.env}
         r = subprocess.run(
             ["bash", "-c", block.code],
@@ -57,3 +66,4 @@ def test_given_quickstart_when_each_bash_block_run_then_passes(
                 f"block #{i} at quickstart.md:{block.line} stdout missing "
                 f"substring {block.expected_substring!r}\nstdout: {r.stdout}"
             )
+    assert executed > 0, "every quickstart.md block is skip-test — nothing actually ran"

@@ -30,6 +30,14 @@ def test_given_md_with_skip_marker_when_parsed_then_marks_block_skipped() -> Non
     md = "```bash\nclaude /login\n```\n<!-- skip-test -->\n"
     [block] = parse_literate_blocks(md)
     assert block.skip is True
+    assert block.skip_reason is None
+
+
+def test_given_md_with_skip_reason_when_parsed_then_records_reason() -> None:
+    md = "```bash\nclaude /login\n```\n<!-- skip-test: needs interactive OAuth -->\n"
+    [block] = parse_literate_blocks(md)
+    assert block.skip is True
+    assert block.skip_reason == "needs interactive OAuth"
 
 
 def test_given_md_with_env_marker_when_parsed_then_records_env() -> None:

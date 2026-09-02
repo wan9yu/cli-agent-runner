@@ -11,7 +11,7 @@ installed CLI command is `agent-runner`:
 ```bash
 pip install cli-agent-runner
 ```
-<!-- skip-test -->
+<!-- skip-test: installs the real published PyPI package; unsafe/pointless in a test run -->
 
 On systems that block `pip install` into the system Python (Debian/Ubuntu PEP 668),
 use `pipx` (recommended for CLI tools) or a venv:
@@ -23,7 +23,7 @@ python3 -m venv ~/.agent-runner-venv
 ~/.agent-runner-venv/bin/pip install cli-agent-runner
 export PATH="$HOME/.agent-runner-venv/bin:$PATH"
 ```
-<!-- skip-test -->
+<!-- skip-test: installs the real published PyPI package; unsafe/pointless in a test run -->
 
 ## 2. Initialise your project
 
@@ -31,7 +31,7 @@ export PATH="$HOME/.agent-runner-venv/bin:$PATH"
 cd ~/myproject               # must be a git repo
 agent-runner init            # writes agent-runner.toml + prompts/main.md + .gitignore
 ```
-<!-- skip-test -->
+<!-- skip-test: illustrative fixed path (~/myproject); the git-init + `init --no-commit` block below (with an assert) is this same call, exercised for real in tmp_path -->
 
 Edit `prompts/main.md` to describe what the agent should do per round.
 Edit `agent-runner.toml` if you need to change `round_timeout_s` or `[phases]`.
@@ -46,7 +46,6 @@ to its prompt-argument syntax — for example:
 command = ["your-cli", "--flag1", "--flag2"]
 prompt_arg_template = ["--prompt", "{prompt}"]
 ```
-<!-- skip-test -->
 
 > **Using aider instead?** Run `agent-runner init --preset aider`.
 > See [docs/recipes/aider.md](recipes/aider.md) for prereqs and the full preset.
@@ -64,7 +63,7 @@ agent-runner init --no-commit
 ```bash
 agent-runner round
 ```
-<!-- skip-test -->
+<!-- skip-test: needs a real agent CLI (claude by default) with live credentials; no API access in the test run -->
 
 Expect the agent (Claude by default) to start, run, commit, and exit. Logs
 land in `~/.agent-runner/<project>/logs/`.
@@ -74,7 +73,7 @@ land in `~/.agent-runner/<project>/logs/`.
 ```bash
 agent-runner install --monitor
 ```
-<!-- skip-test -->
+<!-- skip-test: writes + starts real systemd user units; unsafe to run against the test host -->
 
 This writes two systemd units (`agent-runner@<project>.service` and
 `agent-runner-monitor@<project>.service`), enables them, and starts them.
@@ -92,7 +91,7 @@ agent-runner monitor                    # tail anomaly stream
 
 journalctl --user -u agent-runner@myproject -f   # systemd logs
 ```
-<!-- skip-test -->
+<!-- skip-test: reads a running service + journal this test never installed or started -->
 
 To stop:
 
@@ -100,7 +99,7 @@ To stop:
 agent-runner stop          # graceful (waits for current round)
 agent-runner kill          # force (5s grace then SIGKILL)
 ```
-<!-- skip-test -->
+<!-- skip-test: targets a running service this test never installed or started -->
 
 ## 中文摘要
 
