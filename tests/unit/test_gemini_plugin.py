@@ -364,3 +364,47 @@ def test_given_non_gemini_binary_when_after_round_then_no_event(tmp_path):
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         GeminiErrorDetector().after_round(ctx, result)
     emit.assert_not_called()
+
+
+def test_given_malformed_stats_field_when_after_round_then_transient_error_still_emitted(
+    tmp_path,
+):
+    """0.2.13 Group D: gemini used to run usage extraction BEFORE error
+    classification, so one malformed stats field (a non-numeric token count, a
+    non-dict models table) voided the round's transient signal entirely --
+    serve would then hot-loop a real outage instead of backing off. Error
+    classification must survive a malformed stats field, and usage extraction
+    itself must degrade instead of raising."""
+    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
+
+    write_round_log(
+        tmp_path,
+        1,
+        [
+            {
+                "type": "result",
+                "status": "error",
+                "error": {"code": 500, "message": "Internal server error"},
+                "stats": {
+                    "total_tokens": "not-a-number",
+                    "input_tokens": "not-a-number",
+                    "output_tokens": None,
+                    "cached": "bogus",
+                    "duration_ms": "bogus",
+                    "models": "not-a-dict",
+                },
+            }
+        ],
+    )
+    with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
+        with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
+            with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
+                GeminiErrorDetector().after_round(
+                    make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
+                )
+    err_emit.assert_called_once()
+    assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
+    assert err_emit.call_args.kwargs["reset_at_epoch"] == 1060
+    # usage extraction must degrade (fallback 0), never raise/void the round
+    usage_emit.assert_called_once()
+    assert usage_emit.call_args.kwargs["input_tokens"] == 0

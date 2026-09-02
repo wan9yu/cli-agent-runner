@@ -7,6 +7,7 @@ agent_usage_recorded event families without any agent-runner core changes.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +53,13 @@ class GeminiErrorDetector:
 
 
 def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
-    """Scan the JSON tail window; extract usage from result.stats; classify any error.
+    """Scan the JSON tail window; classify any error; extract usage from result.stats.
 
-    Returns dict with optional 'usage' and 'transient_error' keys.
+    Returns dict with optional 'transient_error' and 'usage' keys. Error
+    classification runs BEFORE usage extraction: gemini's stats schema is
+    foreign/untrusted (a malformed numeric field is exactly the kind of
+    corruption that should not void the round's transient signal — a real
+    outage would otherwise hot-loop serve instead of backing off).
     """
     result_event: dict | None = None
     for event in json_events(log_path):
@@ -65,12 +70,7 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
 
     out: dict[str, Any] = {}
 
-    # Usage extraction
-    stats = result_event.get("stats") or {}
-    if stats:
-        out["usage"] = _extract_usage(stats)
-
-    # Error classification (best-effort; gemini error schema less documented)
+    # Error classification first (best-effort; gemini error schema less documented).
     if result_event.get("status") == "error" or result_event.get("error"):
         err = result_event.get("error") or {}
         code = err.get("code") if isinstance(err, dict) else None
@@ -87,7 +87,31 @@ def _parse_gemini_log(log_path: Path) -> dict[str, Any]:
                 "reset_at_epoch": int(SYSTEM_CLOCK.epoch() + duration),
                 "raw": raw,
             }
+
+    # Usage extraction — every numeric field is coerced (_as_int), never raised,
+    # so a malformed stats field degrades to a fallback instead of voiding the
+    # transient signal computed above.
+    stats = result_event.get("stats")
+    stats = stats if isinstance(stats, dict) else {}
+    if stats:
+        out["usage"] = _extract_usage(stats)
     return out
+
+
+def _as_int(value: Any, fallback: int) -> int:
+    """Coerce a foreign numeric field to int; a present-null, non-numeric, or
+    non-finite (NaN/Infinity) value degrades to ``fallback`` instead of raising
+    and voiding the round. Plugin-local (deliberately not the core
+    ``_throttle._coerce_int``): gemini's stats schema is untrusted CLI output,
+    a different trust boundary from core's own event-derived reads."""
+    if isinstance(value, bool) or value is None:
+        return fallback
+    if isinstance(value, float) and not math.isfinite(value):
+        return fallback
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return fallback
 
 
 def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
@@ -95,19 +119,28 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
 
     Uses ``stats.input`` directly (gemini provides net non-cached input in
     that field; ``stats.input_tokens`` is gross including cached, so the
-    subtraction in earlier code was unnecessary).
+    subtraction in earlier code was unnecessary). Every numeric field goes
+    through ``_as_int`` — a malformed token count degrades to 0 rather than
+    raising and voiding the round's already-computed transient signal.
     """
-    models = stats.get("models") or {}
+    raw_models = stats.get("models")
+    models = (
+        {name: m for name, m in raw_models.items() if isinstance(m, dict)}
+        if isinstance(raw_models, dict)
+        else {}
+    )
     primary_model = (
-        max(models, key=lambda m: models[m].get("total_tokens", 0)) if models else "unknown"
+        max(models, key=lambda m: _as_int(models[m].get("total_tokens"), 0))
+        if models
+        else "unknown"
     )
     breakdown = (
         {
             name: {
-                "total_tokens": int(m.get("total_tokens", 0)),
-                "input_tokens": int(m.get("input_tokens", m.get("input", 0))),
-                "output_tokens": int(m.get("output_tokens", 0)),
-                "cached_tokens": int(m.get("cached", 0)),
+                "total_tokens": _as_int(m.get("total_tokens"), 0),
+                "input_tokens": _as_int(m.get("input_tokens", m.get("input")), 0),
+                "output_tokens": _as_int(m.get("output_tokens"), 0),
+                "cached_tokens": _as_int(m.get("cached"), 0),
             }
             for name, m in models.items()
         }
@@ -117,14 +150,14 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
     return {
         "agent": "gemini",
         "model": primary_model,
-        "input_tokens": int(stats.get("input", 0)),
-        "output_tokens": int(stats.get("output_tokens", 0)),
-        "cached_tokens": int(stats.get("cached", 0)),
+        "input_tokens": _as_int(stats.get("input"), 0),
+        "output_tokens": _as_int(stats.get("output_tokens"), 0),
+        "cached_tokens": _as_int(stats.get("cached"), 0),
         "cache_creation_tokens": 0,  # gemini has no cache-creation concept
         "cost_usd": None,  # gemini doesn't expose USD
-        "duration_ms": int(stats.get("duration_ms", 0)),
+        "duration_ms": _as_int(stats.get("duration_ms"), 0),
         "models_breakdown": breakdown,
-        "tool_call_count": int(stats.get("tool_calls", 0)),
+        "tool_call_count": _as_int(stats.get("tool_calls"), 0),
     }
 
 
