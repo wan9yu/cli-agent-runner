@@ -783,7 +783,11 @@ def load_config(toml_path: Path) -> Config:
             field="monitor.auth_fail_patterns",
         ),
         auth_fail_hint=str(monitor_d.get("auth_fail_hint", _DEFAULT_AUTH_HINT)),
-        auto_stop_on=list(monitor_d.get("auto_stop_on", _DEFAULT_AUTO_STOP_ON)),
+        auto_stop_on=(
+            list(_DEFAULT_AUTO_STOP_ON)
+            if "auto_stop_on" not in monitor_d
+            else _require_str_list(monitor_d["auto_stop_on"], field="monitor.auto_stop_on")
+        ),
         remote_failure_tolerance_s=_validate_remote_failure_tolerance(
             monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),
         ),
@@ -820,7 +824,11 @@ def load_config(toml_path: Path) -> Config:
             f"the detector can never fire otherwise; run `agent-runner migrate`"
         )
     plugins_raw = dict(raw.get("plugins") or {})  # copy so we can pop
-    disable = list(plugins_raw.pop("disable", []))
+    disable = (
+        _require_str_list(plugins_raw.pop("disable"), field="plugins.disable")
+        if "disable" in plugins_raw
+        else []
+    )
     plugins = PluginsConfig(disable=disable, raw=plugins_raw)
 
     schedule_cfg = _parse_schedule(raw.get("schedule", {}))

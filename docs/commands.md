@@ -259,6 +259,8 @@ The transforms `migrate` applies (generated from the registry):
 - [agent] prompt_arg_template is a quoted string with spaces; rewrite it as a list, e.g. prompt_arg_template = ["-p", "{prompt}"]
 - phases.list "x" → ["x"]
 - prompt.files "x" → ["x"]
+- monitor.auto_stop_on "x" → ["x"]
+- plugins.disable "x" → ["x"]
 - [agent] command is empty; set a real argv list, e.g. command = ["claude"] (no auto-fix — a real value is needed)
 - empty top-level [prompt] files; give it real paths or remove the key (per-phase [phases.<name>.prompt] files = [] stays valid)
 - a [phases.<name>.agent] command is empty; set a real argv list (no auto-fix — a real value is needed)

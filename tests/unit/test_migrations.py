@@ -122,6 +122,20 @@ def test_wrap_bare_top_level_prompt_files():
     assert 'files = ["main.md"]' in r.new_text
 
 
+def test_wrap_bare_monitor_auto_stop_on():
+    text = '[monitor]\nauto_stop_on = "oauth_fail"\n'
+    r = _run(text)
+    assert 'auto_stop_on = ["oauth_fail"]' in r.new_text
+    assert r.manual == []
+
+
+def test_wrap_bare_plugins_disable():
+    text = '[plugins]\ndisable = "my_plugin"\n'
+    r = _run(text)
+    assert 'disable = ["my_plugin"]' in r.new_text
+    assert r.manual == []
+
+
 def test_unknown_prompt_key_is_manual():
     text = '[prompt]\nfile = "x.md"\nbogus = 1\n'
     r = _run(text)

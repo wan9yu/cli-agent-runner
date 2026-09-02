@@ -251,6 +251,16 @@ MIGRATIONS: list[Migration] = [
         describe='prompt.files "x" → ["x"]',
     ),
     Migration(
+        detect=lambda p: _bare_str(p, "monitor", "auto_stop_on") is not None,
+        apply=_wrap_bare_string_list("auto_stop_on", "monitor"),
+        describe='monitor.auto_stop_on "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: _bare_str(p, "plugins", "disable") is not None,
+        apply=_wrap_bare_string_list("disable", "plugins"),
+        describe='plugins.disable "x" → ["x"]',
+    ),
+    Migration(
         detect=lambda p: p.get("agent", {}).get("command") == [],
         apply=None,
         describe=(

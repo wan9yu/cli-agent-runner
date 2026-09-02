@@ -365,6 +365,31 @@ auto_stop_on = ["oauth_fail", "disk_critical", "my_plugin_critical"]
     ]
 
 
+def test_given_bare_string_auto_stop_on_when_loaded_then_config_error(tmp_path: Path) -> None:
+    """A bare string would silently list()-explode into single characters,
+    which never match a real detector name -- auto-stop for that detector
+    goes silently dark with no error. Must be rejected, not accepted."""
+    from agent_runner.config import ConfigError
+
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[monitor]
+auto_stop_on = "oauth_fail"
+""",
+    )
+    with pytest.raises(ConfigError, match="monitor.auto_stop_on"):
+        load_config(toml)
+
+
 def test_given_agent_env_block_when_loaded_then_env_populated(tmp_path: Path) -> None:
     toml = _write_toml(
         tmp_path,
@@ -699,6 +724,24 @@ def test_given_plugins_disable_list_when_load_config_then_parsed(
         cfg = load_config(cfg_path)
     assert cfg.plugins.disable == ["argus_prompt_assembly", "argus_chain_state"]
     assert cfg.plugins.raw == {}
+
+
+def test_given_bare_string_plugins_disable_when_load_config_then_config_error(
+    tmp_path: Path,
+) -> None:
+    """A bare string would silently list()-explode into single-character
+    "plugin names", never matching the intended plugin -- disable() becomes a
+    silent no-op. Must be rejected, not accepted."""
+    from agent_runner.config import ConfigError, load_config
+
+    (tmp_path / "prompt.md").write_text("p")
+    cfg_path = _write_toml(
+        tmp_path,
+        _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path)
+        + '\n[plugins]\ndisable = "argus_prompt_assembly"\n',
+    )
+    with pytest.raises(ConfigError, match="plugins.disable"):
+        load_config(cfg_path)
 
 
 def test_given_plugins_unknown_keys_when_load_config_then_preserved_in_raw(
