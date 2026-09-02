@@ -91,6 +91,13 @@ class RoundView:
 
 @dataclass(frozen=True)
 class ProjectState:
+    """Snapshot returned by ``agent_runner.api.peek()`` / ``monitor.assemble_project_state()``.
+
+    ``recent_rounds`` is reserved — populated in 0.3. Every producer today sets it
+    to ``[]``; kept (not removed) so existing ``peek --json`` consumers don't break.
+    See ``tests/invariants/test_dataclass_fields_have_producers.py``.
+    """
+
     project: str
     status: dict[str, Any]
     defenses: list[dict[str, Any]]

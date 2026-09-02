@@ -29,6 +29,7 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_authored_facts_declared.py",
     "test_catalogs.py",
     "test_config_error_consistency.py",
+    "test_dataclass_fields_have_producers.py",
     "test_doc_cli_claims.py",
     "test_docs_index_complete.py",
     "test_event_kind_registry.py",

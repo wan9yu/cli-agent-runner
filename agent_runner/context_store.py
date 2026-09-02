@@ -16,6 +16,14 @@ ORPHAN_FILE = "orphan-state.json"
 
 @dataclass(frozen=True)
 class Status:
+    """Persisted round-loop status (``status.json``), also surfaced on the HTTP page.
+
+    ``running`` is reserved — populated in 0.3. The round loop is synchronous, so
+    every write today happens between rounds with ``running=False``; kept (not
+    removed) so existing status.json / HTTP-page consumers don't break. See
+    ``tests/invariants/test_dataclass_fields_have_producers.py``.
+    """
+
     round_num: int
     running: bool
     last_completed_at: str | None = None
