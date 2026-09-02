@@ -250,6 +250,21 @@ class Config:
         return Profile(ov.agent or self.agent, runtime, sched, ov.prompt_files)
 
 
+def _reject_control_chars(value: str, field: str) -> None:
+    """Fail closed on a control or other non-printable character (``\\n``,
+    ``\\r``, ``\\t``, NUL, ...).
+
+    ``work_dir``/``log_dir``/the config path itself are interpolated verbatim
+    into a rendered systemd unit (``service_unit.py``'s ``WorkingDirectory=``
+    / ``--config``); an embedded newline injects an arbitrary extra directive
+    (e.g. ``User=root``). Checked here at load AND again at render time
+    (``service_unit.py`` imports this too) since a ``Config`` can be built
+    directly, bypassing this loader entirely.
+    """
+    if not value.isprintable():
+        raise ConfigError(f"{field}: contains a control or non-printable character")
+
+
 def _require(d: dict, *path: str) -> object:
     cur: object = d
     for p in path:
@@ -595,6 +610,7 @@ def _parse_schedule(schedule_d: dict) -> ScheduleConfig:
 
 
 def load_config(toml_path: Path) -> Config:
+    _reject_control_chars(str(toml_path), "config path")
     if not toml_path.exists():
         raise FileNotFoundError(f"config not found: {toml_path}")
     with toml_path.open("rb") as f:
@@ -610,6 +626,7 @@ def load_config(toml_path: Path) -> Config:
     if not work_dir.is_absolute():
         work_dir = toml_path.parent / work_dir
     work_dir = work_dir.resolve()
+    _reject_control_chars(str(work_dir), "runtime.work_dir")
     project_name = work_dir.name or "default"
 
     # Phases first — needed for per-phase round_timeout validation below.
@@ -655,11 +672,12 @@ def load_config(toml_path: Path) -> Config:
             f"{sorted(_VALID_TRANSIENT_ERROR_ACTIONS)}"
         )
 
+    log_dir = _expand_and_resolve(str(_require(raw, "runtime", "log_dir")), project_name, work_dir)
+    _reject_control_chars(str(log_dir), "runtime.log_dir")
+
     runtime = RuntimeConfig(
         work_dir=work_dir,
-        log_dir=_expand_and_resolve(
-            str(_require(raw, "runtime", "log_dir")), project_name, work_dir
-        ),
+        log_dir=log_dir,
         round_timeout_s=_require_positive_int(
             runtime_d.get("round_timeout_s", 1800), field="runtime.round_timeout_s"
         ),

@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_runner._serve_policy import timeout_budget
-from agent_runner.config import Config
+from agent_runner.config import Config, _reject_control_chars
 
 
 def _unit_mode_lines(user: str | None) -> tuple[str, str]:
@@ -54,7 +54,14 @@ def render_serve_unit(
     the toml's own directory — see ``config.load_config``), so the two can
     legitimately diverge; embedding the wrong one silently breaks the unit's
     ``--config`` flag (Group C, seam 3).
+
+    Rejects a control/non-printable character in ``work_dir`` or
+    ``config_path`` (defense in depth — ``config.load_config`` already
+    rejects these at load, but a ``Config`` built directly bypasses that, and
+    this is the function that actually interpolates both into the unit).
     """
+    _reject_control_chars(str(cfg.runtime.work_dir), "runtime.work_dir")
+    _reject_control_chars(str(config_path), "config path")
     # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
     # doesn't SIGKILL a mid-flight round in any phase.
     max_timeout = cfg.runtime.round_timeout_s
@@ -107,6 +114,8 @@ def render_monitor_unit(
     ``config_path``: see ``render_serve_unit`` — the actual toml the caller
     loaded ``cfg`` from, not re-derived from ``cfg.runtime.work_dir``.
     """
+    _reject_control_chars(str(cfg.runtime.work_dir), "runtime.work_dir")
+    _reject_control_chars(str(config_path), "config path")
     user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"
