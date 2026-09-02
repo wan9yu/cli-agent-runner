@@ -34,7 +34,7 @@ def _run(monkeypatch, result: RoundResult) -> int:
     # (the suite runs in one interpreter) — a test-isolation leak, not just a
     # unit-test concern. See test_round_cmd_sigterm.py for the handler's own tests.
     monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
-    monkeypatch.setattr(round_cmd, "cfg_from_args", lambda _a: object())
+    monkeypatch.setattr(round_cmd, "cfg_from_args_or_config_error", lambda _a: object())
     with patch.object(round_cmd, "run_one_round", return_value=result):
         return round_cmd.cmd(Namespace(config="x", phase=None))
 
@@ -62,7 +62,7 @@ def test_timeout_returns_0(monkeypatch):
 
 def _run_raising(monkeypatch, exc: BaseException) -> int:
     monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
-    monkeypatch.setattr(round_cmd, "cfg_from_args", lambda _a: object())
+    monkeypatch.setattr(round_cmd, "cfg_from_args_or_config_error", lambda _a: object())
 
     def boom(*_a, **_k):
         raise exc
@@ -71,10 +71,17 @@ def _run_raising(monkeypatch, exc: BaseException) -> int:
     return round_cmd.cmd(Namespace(config="x", phase=None))
 
 
-def test_config_error_from_run_one_round_returns_78(monkeypatch):
+def test_config_error_from_run_one_round_returns_78(monkeypatch, capsys):
+    """A ConfigError raised by run_one_round itself (e.g. _phase_for's
+    stale-serve-cache one) is NOT the cfg-loading ConfigError -- it carries its
+    OWN remedy text and goes through the generic traceback branch, not the
+    migrate-hint print reserved for cfg_from_args_or_config_error's failures."""
     from agent_runner.config import ConfigError
 
     assert _run_raising(monkeypatch, ConfigError("bad field")) == 78
+    err = capsys.readouterr().err
+    assert "bad field" in err  # the exception's own message, via the traceback
+    assert "Run `agent-runner migrate`" not in err
 
 
 def test_lock_held_error_from_run_one_round_returns_76(monkeypatch):
@@ -97,15 +104,21 @@ def test_unclassified_exception_returns_1_and_prints_traceback(monkeypatch, caps
     assert "RuntimeError" in capsys.readouterr().err
 
 
-def test_missing_config_file_returns_78(monkeypatch, tmp_path):
+def test_missing_config_file_returns_78(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
     rc = round_cmd.cmd(Namespace(config=tmp_path / "nope.toml", phase=None))
     assert rc == 78
+    # Same friendly, actionable message serve's boot-time ConfigError gets via
+    # main()'s handler -- not a raw traceback (round-<N>.log captures stderr).
+    err = capsys.readouterr().err
+    assert "Run `agent-runner migrate`" in err
+    assert "Traceback" not in err
 
 
-def test_broken_toml_syntax_returns_78(monkeypatch, tmp_path):
+def test_broken_toml_syntax_returns_78(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
     bad_toml = tmp_path / "agent-runner.toml"
     bad_toml.write_text("this is not [valid toml")
     rc = round_cmd.cmd(Namespace(config=bad_toml, phase=None))
     assert rc == 78
+    assert "Run `agent-runner migrate`" in capsys.readouterr().err

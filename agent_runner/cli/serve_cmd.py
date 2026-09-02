@@ -15,7 +15,6 @@ import os
 import signal
 import subprocess  # noqa: TID251
 import sys
-import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -52,9 +51,8 @@ from agent_runner.api import (
     emit_transient_error_recovered,
     outer_round_ceiling_s,
 )
-from agent_runner.cli.common import cfg_from_args
+from agent_runner.cli.common import cfg_from_args_or_config_error
 from agent_runner.clock import SYSTEM_CLOCK, Clock
-from agent_runner.config import ConfigError
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
@@ -583,15 +581,12 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    try:
-        cfg = cfg_from_args(args)
-    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
-        # config.py's own raise sites stay FileNotFoundError/TOMLDecodeError
-        # (other CLI commands distinguish "no config yet" from "bad config");
-        # serve's boot-time load alone needs this typed so main()'s ConfigError
-        # catch gives 78 (Group A: a bad load is fatal to serve, not a
-        # 5-consecutive-restart crash loop before systemd's StartLimit trips).
-        raise ConfigError(str(e)) from e
+    # A missing/unparseable config at boot raises ConfigError (not the raw
+    # FileNotFoundError/tomllib.TOMLDecodeError config.py itself uses) so
+    # main()'s ConfigError catch gives 78 -- Group A: a single bad load is
+    # fatal to serve, not a 5-consecutive-restart crash loop before systemd's
+    # StartLimit trips. See cfg_from_args_or_config_error's own docstring.
+    cfg = cfg_from_args_or_config_error(args)
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 

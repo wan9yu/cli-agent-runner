@@ -5,12 +5,13 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+import tomllib
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from agent_runner.api_types import ProjectState
-from agent_runner.config import Config, load_config
+from agent_runner.config import Config, ConfigError, load_config
 from agent_runner.events import plugin_event_kinds
 from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_round_hooks
 from agent_runner.monitor import plugin_detectors
@@ -21,6 +22,28 @@ PEEK_SCHEMA_VERSION = "1.10"
 
 def cfg_from_args(args) -> Config:
     return load_config(args.config)
+
+
+def cfg_from_args_or_config_error(args) -> Config:
+    """``cfg_from_args``, but a missing file or unparseable TOML is raised as
+    ``ConfigError`` instead of ``FileNotFoundError``/``tomllib.TOMLDecodeError``.
+
+    ``config.py``'s own raise sites stay untyped-by-permanence on purpose —
+    other CLI commands (``peek``, ``events``, ``install``, ``upgrade``)
+    distinguish "no config file yet" (silent/expected) from "config exists but
+    is broken" (logged) around plain ``cfg_from_args``. The round and serve
+    entry points alone need this typed, so ``classify_round_exit``/``main()``'s
+    ``ConfigError`` catch recognizes it as PERMANENT (78) instead of falling to
+    the default 1 — a single bad load is fatal to both (serve's
+    ``post_round_decision`` reads a round child's 78 as ``config_broken``;
+    serve's own boot-time load raises the same way here so ``main()``'s
+    ``ConfigError`` catch gives the identical verdict), not a
+    5-consecutive-restart crash loop.
+    """
+    try:
+        return cfg_from_args(args)
+    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+        raise ConfigError(str(e)) from e
 
 
 def work_dir_from_args(args) -> Path:

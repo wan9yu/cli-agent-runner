@@ -186,8 +186,11 @@ class ServeStartupHook(Protocol):
     state that subsequent rounds depend on (e.g. a default prompt file).
 
     Failure semantics: if a hook raises, ``agent-runner serve`` aborts with
-    exit code 1 and emits ``serve_startup_hook_failed`` (best-effort). Hooks
-    are plugin contracts — failing fast beats mysterious per-round errors.
+    exit code 78 (deterministic — stays stopped, no retry) and emits
+    ``serve_startup_hook_failed`` (best-effort). Hooks are plugin contracts —
+    the same hook fails the same way every restart, so failing fast and
+    staying stopped beats burning through restart attempts before mysterious
+    per-round errors.
     """
 
     name: str

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import signal
-import tomllib
+import sys
 import traceback
 
 from agent_runner._serve_policy import classify_round_exit
-from agent_runner.cli.common import cfg_from_args
+from agent_runner.cli.common import cfg_from_args_or_config_error
 from agent_runner.config import ConfigError
 from agent_runner.runner import run_one_round
 
@@ -47,16 +47,20 @@ def cmd(args) -> int:
     battery propagates through untouched (SystemExit is not an Exception)."""
     _install_term_handler()
     try:
-        try:
-            cfg = cfg_from_args(args)
-        except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
-            # config.py's own raise sites stay FileNotFoundError/TOMLDecodeError
-            # (other CLI commands distinguish "no config yet" from "bad config");
-            # the round/serve path alone needs this typed so classify_round_exit
-            # recognizes it as permanent instead of falling to the default 1 —
-            # a single bad load is fatal to serve (post_round_decision reads 78
-            # as config_broken), not a 5-consecutive-restart crash loop.
-            raise ConfigError(str(e)) from e
+        cfg = cfg_from_args_or_config_error(args)
+    except ConfigError as exc:
+        # Same friendly, actionable message serve's boot-time ConfigError gets
+        # via main()'s handler -- not a raw traceback. stderr is captured into
+        # round-<N>.log, so the operator sees the remedy right there. (A
+        # DIFFERENT ConfigError -- _phase_for's stale-serve-cache one, raised
+        # below from run_one_round -- carries its own "restart serve" remedy
+        # and deliberately does NOT go through this migrate-hint branch.)
+        print(
+            f"agent-runner: config error: {exc}\nRun `agent-runner migrate` then retry.",
+            file=sys.stderr,
+        )
+        return classify_round_exit(exc)
+    try:
         result = run_one_round(cfg, phase_override=args.phase)
     except KeyboardInterrupt as exc:
         # SIGTERM/SIGINT: run_one_round's inner run() already reaped the agent
@@ -66,9 +70,12 @@ def cmd(args) -> int:
     except Exception as exc:
         # classify_round_exit is now the single whitelist (was: only
         # KeyboardInterrupt here; everything else fell through to Python's own
-        # uncaught-exception traceback + exit 1). Still print the traceback --
-        # serve captures this subprocess's stderr into round-<N>.log, and a
-        # classified 78/76 verdict is no less worth diagnosing than a bare 1.
+        # uncaught-exception traceback + exit 1). Still print the traceback for
+        # anything else -- including _phase_for's ConfigError, whose own
+        # "restart serve" remedy text belongs IN the traceback, not overwritten
+        # by the generic migrate hint above -- serve captures this subprocess's
+        # stderr into round-<N>.log, and it's no less worth diagnosing than a
+        # bare 1.
         traceback.print_exc()
         return classify_round_exit(exc)
     # Surface a real agent crash as a non-zero exit so serve's crash-loop breaker

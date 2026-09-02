@@ -21,13 +21,11 @@ ALLOWED_SERVE_IMPORTS = {
     "signal",
     "subprocess",
     "time",
-    "tomllib",
     "pathlib",
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"phase_select", "schedule"}),
-    ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     (
@@ -56,7 +54,7 @@ ALLOWED_SERVE_FROM = [
         {"CRASH_LOOP_EXIT", "PERMANENT_CONFIG_EXIT", "post_round_decision"},
     ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
-    ("agent_runner.cli.common", {"cfg_from_args"}),
+    ("agent_runner.cli.common", {"cfg_from_args_or_config_error"}),
     ("agent_runner.lifecycle", {"PIDFile"}),
     (
         "agent_runner.round_log",
