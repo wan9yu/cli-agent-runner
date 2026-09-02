@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-09-02
+
+### Breaking
+- Config validation now rejects unknown keys in base `[agent]`/`[runtime]`/`[vcs]`/`[monitor]`, a table given as a scalar, unknown per-phase `[phases.<name>.prompt]` keys, and an argv `prompt_arg_template` missing `{prompt}`. **Run `agent-runner migrate` before `upgrade`**, as in 0.2.12.
+- systemd `serve` units grow `TimeoutStopSec` (now `round_timeout_s + 210`, up from `+60`) — re-render after upgrading.
+
+### Fixed
+- Round-child exit codes are classified by permanence, not a type whitelist: a config break stays 78, a self-healing environmental failure (lock contention, a git-status timeout, an unwritable log dir) now reliably reaches retryable 76, and everything else still falls to 1 so the crash-loop breaker bounds a genuine bug; serve itself still never exits 76.
+- `kill` reaps the whole round-and-agent process group, service-mode detection checks systemd `is-active` instead of guessing, and `monitor_auto_stop_triggered` fires only after a confirmed stop.
+- `install --system` rejects control characters in `work_dir`/`log_dir`/config path, closing a root-injection path through the rendered unit.
+- `read_json`/orphan-state reads survive a non-UTF-8 byte or a directory instead of crashing serve; a git-status timeout mid-round no longer drops the round's own bookkeeping (`dirty_check_failed`).
+- Throttle readers (serve's loop-top gate, the skip path, `peek`, monitor) converge on one reset source; the back-off sleep now wakes early on an NTP clock jump.
+
+### Notes
+- New event kind: `dirty_check_failed`. `peek --json` schema is unchanged this release.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.12] - 2026-08-31
 
 ### Breaking
