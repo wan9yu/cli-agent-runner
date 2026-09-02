@@ -176,7 +176,9 @@ def _session_start_ms(log_path: Path) -> int | None:
     Read from the head of the file, not the tail window: the header is the
     round's first record and would otherwise be evicted by a long round.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+    from agent_runner.round_log import open_round_log  # lazy: avoids api<->monitor cycle
+
+    with open_round_log(log_path) as f:
         head = list(islice(f, _SESSION_HEAD_LINES))
     for line in head:
         try:

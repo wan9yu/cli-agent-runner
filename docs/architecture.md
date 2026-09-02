@@ -193,6 +193,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `crash_loop`
 - `detector_error`
 - `dirty_auto_committed`
+- `dirty_check_failed`
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`

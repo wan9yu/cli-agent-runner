@@ -556,7 +556,17 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         phase=phase,
     )
 
-    dirty = vcs_state.detect_dirty_files(cfg.runtime.work_dir)
+    # A GitTimeout here must not lose the round's OWN bookkeeping (status.json /
+    # round_end / post-round hooks, all below) — it degrades to "dirty unknown"
+    # (skip dispatch, leave any existing orphan state alone since we genuinely
+    # don't know the tree is clean) rather than aborting the round entirely.
+    dirty_check_failed = False
+    try:
+        dirty = vcs_state.detect_dirty_files(cfg.runtime.work_dir)
+    except vcs_state.GitTimeout as exc:
+        dirty = []
+        dirty_check_failed = True
+        events.emit(log_dir, events.DIRTY_CHECK_FAILED, round_num=round_num, reason=str(exc)[:200])
     if dirty:
         events.emit(log_dir, events.DIRTY_DETECTED, round_num=round_num, files=dirty[:20])
 
@@ -566,7 +576,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         # is done, so its dirty tree must still be dispatched (the lingering-CLI
         # users grace-kill targets are exactly who need this).
         dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, log_dir=log_dir)
-    elif not dirty:
+    elif not dirty and not dirty_check_failed:
         context_store.clear_orphan_state(log_dir)
     stashed = bool(dirty_outcome and dirty_outcome.kind == "stashed")
 

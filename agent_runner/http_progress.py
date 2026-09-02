@@ -113,20 +113,24 @@ def _read_tail(path: Path, *, max_lines: int) -> str:
     """Return last ``max_lines`` lines of ``path``, or empty string if missing."""
     from collections import deque
 
+    from agent_runner.round_log import open_round_log
+
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as f:
+        with open_round_log(path) as f:
             lines = deque(f, maxlen=max_lines)
-    except (FileNotFoundError, OSError):
+    except OSError:
         return ""
     return "".join(lines)
 
 
 def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
     """Section 3: last ``max_count`` events from events-*.jsonl files."""
+    from agent_runner.events import open_events_jsonl
+
     events: list[dict[str, Any]] = []
     for path in sorted(log_dir.glob("events-*.jsonl"))[-3:]:
         try:
-            with path.open("r", encoding="utf-8", errors="replace") as f:
+            with open_events_jsonl(path) as f:
                 for line in f:
                     line = line.strip()
                     if not line:

@@ -43,7 +43,9 @@ def json_events(log_path: Path) -> Iterator[dict]:
     object. Non-JSON lines are expected — the round log merges stdout+stderr,
     and every CLI writes some plain text there.
     """
-    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+    from agent_runner.round_log import open_round_log  # lazy: avoids api<->monitor cycle
+
+    with open_round_log(log_path) as f:
         tail = json_tail(f)
     for line in tail:
         line = line.strip()

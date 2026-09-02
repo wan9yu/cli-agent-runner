@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.events import parse_iso_ms
+from agent_runner.events import open_events_jsonl, parse_iso_ms
 
 # Sentinel for "user did not explicitly set --window" so we can detect
 # --window + --tail combinations. argparse mutually-exclusive group would
@@ -214,7 +214,7 @@ def _replay_since(log_dir: Path, kind_set: set[str], since: datetime) -> tuple[P
             if path == current:
                 offset = path.stat().st_size
             continue
-        with path.open("r", encoding="utf-8") as f:
+        with open_events_jsonl(path) as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -234,7 +234,7 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
 
     matches: list[str] = []
     try:
-        with events_file.open("r", encoding="utf-8") as f:
+        with open_events_jsonl(events_file) as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -256,7 +256,7 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
 
 def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
     """Print matching lines of ``path`` from byte ``start`` to true EOF; return EOF."""
-    with path.open("r", encoding="utf-8") as f:
+    with open_events_jsonl(path) as f:
         f.seek(start)
         for line in f:
             line = line.strip()

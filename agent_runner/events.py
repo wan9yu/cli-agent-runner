@@ -22,7 +22,7 @@ import json
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from agent_runner.clock import SYSTEM_CLOCK
 
@@ -40,6 +40,7 @@ CONFIG_MIGRATED = "config_migrated"
 CRASH_LOOP = "crash_loop"
 DETECTOR_ERROR = "detector_error"
 DIRTY_AUTO_COMMITTED = "dirty_auto_committed"
+DIRTY_CHECK_FAILED = "dirty_check_failed"
 DIRTY_COMMIT_FAILED = "dirty_commit_failed"
 DIRTY_DETECTED = "dirty_detected"
 FRESH_EYES_ROUND_TRIGGERED = "fresh_eyes_round_triggered"
@@ -194,3 +195,17 @@ def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
     payload = {"ts": ts, "event": kind, **fields}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def open_events_jsonl(path: Path) -> TextIO:
+    """Text-mode opener for events-*.jsonl reads, pinning the read-side decode
+    policy: utf-8 with a lossy fallback on bad bytes.
+
+    Every ``events-*.jsonl`` reader (serve's throttle scan, monitor, peek, the
+    ``events`` verb, the HTTP progress page) goes through here so one place
+    owns the decode policy — mirrors ``round_log.open_round_log``'s role for
+    round logs. A single corrupt byte (SD-card bit-rot on the Pi targets)
+    degrades to a replacement char instead of raising ``UnicodeDecodeError``
+    at every reader.
+    """
+    return path.open("r", encoding="utf-8", errors="replace")

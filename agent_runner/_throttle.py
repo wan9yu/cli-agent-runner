@@ -25,6 +25,7 @@ from agent_runner.events import (
     AGENT_USAGE_RECORDED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
+    open_events_jsonl,
     parse_iso_ms,
 )
 
@@ -95,16 +96,20 @@ def _coerce_float(value: Any, default: float) -> float:
 
 
 def _iter_events(path: Path):
-    """Yield parsed event dicts from a JSONL file; skip blank / corrupt lines."""
-    with path.open() as f:
+    """Yield parsed event dicts from a JSONL file; skip blank / corrupt lines
+    and any line that decodes to something other than an object (a bare
+    number/string/list) -- every caller assumes the shape ``ev.get(...)``."""
+    with open_events_jsonl(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                parsed = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(parsed, dict):
+                yield parsed
 
 
 def _scan_events_for_transient(path: Path):

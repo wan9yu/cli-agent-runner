@@ -1103,3 +1103,32 @@ def test_given_retention_zero_when_round_runs_then_no_prune_and_no_event(
         for e in read_events_for_current_month(cfg.runtime.log_dir)
         if e["event"] == "round_logs_prune_deferred"
     ]
+
+
+def test_given_git_timeout_during_dirty_check_when_run_then_round_still_completes_bookkeeping(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lost-round bookkeeping (0.2.13 Group D): detect_dirty_files -> _git(status)
+    precedes status.json / round_end / post-round hooks with no try. A GitTimeout
+    there must not lose the round's own bookkeeping -- it degrades to "dirty
+    unknown" (skip dirty dispatch) and the round still completes."""
+    from agent_runner import vcs_state
+    from tests._test_helpers import read_events_for_current_month
+
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+
+    def _raise_git_timeout(_work_dir: Path) -> list[str]:
+        raise vcs_state.GitTimeout("git status timed out")
+
+    monkeypatch.setattr(vcs_state, "detect_dirty_files", _raise_git_timeout)
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0  # the agent's own exit code, unaffected
+    status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
+    assert status["round_num"] == 1
+    events = read_events_for_current_month(cfg.runtime.log_dir)
+    assert any(e["event"] == "round_end" for e in events)
+    assert any(e["event"] == "dirty_check_failed" for e in events)

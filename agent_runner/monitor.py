@@ -57,6 +57,7 @@ from agent_runner.events import (
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     now_iso_ms,
+    open_events_jsonl,
     parse_iso_ms,
 )
 from agent_runner.events import (
@@ -621,19 +622,19 @@ class LocalSource:
 
 def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for f in files:
+    for path in files:
         try:
-            text = f.read_text(encoding="utf-8")
-        except FileNotFoundError:
+            with open_events_jsonl(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        out.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
             continue
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
     return out
 
 
@@ -665,7 +666,7 @@ class _EventTail:
                 pos = 0  # rotated/truncated underneath us
             if size == pos:
                 continue
-            with path.open("r", encoding="utf-8", errors="replace") as f:
+            with open_events_jsonl(path) as f:
                 f.seek(pos)
                 for line in f:
                     line = line.strip()

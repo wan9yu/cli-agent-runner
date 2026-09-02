@@ -70,7 +70,7 @@ def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path
     from agent_runner.events import CRASH_LOOP, emit
 
     try:
-        reason = redact_secrets(log_path.read_text(errors="replace")[-2000:])
+        reason = redact_secrets(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
     except OSError:
         reason = ""
     emit(log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)

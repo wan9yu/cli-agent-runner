@@ -51,13 +51,18 @@ def atomic_write_json(path: Path, payload: dict[str, Any] | list[Any]) -> None:
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
-    """Read + parse JSON; return None on missing file or parse failure.
+    """Read + parse JSON; return None on a missing file, an unreadable one (a
+    non-UTF-8 byte -- SD-card bit-rot on the Pi targets -- a directory, a
+    permission denial), or invalid JSON. Every caller already treats "no
+    state yet" and "corrupt state" as the same signal, so a broad
+    ``(OSError, ValueError)`` degrades uniformly instead of crashing serve's
+    loop-top / round / peek / monitor / HTTP on the corrupt cases.
 
     Single TOCTOU-free read replaces three near-identical exists+read patterns.
     """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return None
 
 
@@ -69,6 +74,9 @@ def write_status(log_dir: Path, status: Status) -> None:
 def read_status(log_dir: Path) -> Status | None:
     data = read_json(log_dir / STATUS_FILE)
     if not isinstance(data, dict):
+        return None
+    round_num = data.get("round_num")
+    if "round_num" in data and (isinstance(round_num, bool) or not isinstance(round_num, int)):
         return None
     known = {f.name for f in fields(Status)}
     try:
@@ -83,10 +91,11 @@ def write_orphan_state(log_dir: Path, state: OrphanState) -> None:
 
 def read_orphan_state(log_dir: Path) -> OrphanState | None:
     data = read_json(log_dir / ORPHAN_FILE)
-    if data is None:
+    if not isinstance(data, dict):
         return None
+    known = {f.name for f in fields(OrphanState)}
     try:
-        return OrphanState(**data)
+        return OrphanState(**{k: v for k, v in data.items() if k in known})
     except TypeError:
         return None
 

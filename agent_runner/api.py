@@ -731,6 +731,8 @@ def _tail_events_jsonl(
     """
     import json as _json
 
+    from agent_runner.events import open_events_jsonl
+
     seen_positions: dict[Path, int] = {}
     if start_at_now:
         for path in sorted(log_dir.glob("events-*.jsonl")):
@@ -750,7 +752,7 @@ def _tail_events_jsonl(
                 continue
             if size <= pos:
                 continue
-            with path.open("r", encoding="utf-8") as f:
+            with open_events_jsonl(path) as f:
                 f.seek(pos)
                 for line in f:
                     if not line.strip():
