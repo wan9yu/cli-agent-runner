@@ -424,10 +424,16 @@ def detect_network_fail(
 
 
 def detect_rate_limit_active(
-    events: list[dict[str, Any]], *, now: float | None = None
+    events: list[dict[str, Any]], *, now: float | None = None, log_dir: Path | None = None
 ) -> Alert | None:
     """Fire warning alert if currently throttled (latest transient_error_detected
-    has reset_at_epoch in future, no matching recovered after)."""
+    has reset_at_epoch in future, no matching recovered after).
+
+    Reads the SAME ladder-extended reset serve's loop-top gate / skip path / peek
+    converge on (``agent_runner._throttle._events_derived_reset``) when ``log_dir``
+    is given — ``run_all_detectors``'s real caller always supplies one; it stays
+    optional only so a caller with no on-disk events dir degrades to the emitter's
+    raw reset rather than raising."""
     if now is None:
         now = SYSTEM_CLOCK.epoch()
     for ev in reversed(events):
@@ -435,12 +441,15 @@ def detect_rate_limit_active(
         if kind == TRANSIENT_ERROR_RECOVERED:
             return None
         if kind == TRANSIENT_ERROR_DETECTED:
-            from agent_runner._throttle import _coerce_int
+            from agent_runner._throttle import _coerce_int, _events_derived_reset
 
+            agent = str(ev.get("agent", "unknown"))
+            classification = ev.get("classification", "unknown")
             reset = _coerce_int(ev.get("reset_at_epoch"), 0)
+            if log_dir is not None:
+                reset = _events_derived_reset(log_dir, agent, str(classification), reset)
             if reset > now:
                 iso = datetime.fromtimestamp(reset, UTC).isoformat()
-                classification = ev.get("classification", "unknown")
                 return _alert(
                     "rate_limit_active",
                     "warning",
@@ -448,7 +457,7 @@ def detect_rate_limit_active(
                     {
                         "throttled_until_iso": iso,
                         "classification": classification,
-                        "agent": ev.get("agent", "unknown"),
+                        "agent": agent,
                     },
                 )
             return None
@@ -826,7 +835,10 @@ def run_all_detectors(
             ),
         ),
         ("network_fail", lambda: detect_network_fail(events, log_tails)),
-        ("rate_limit_active", lambda: detect_rate_limit_active(events, now=now.timestamp())),
+        (
+            "rate_limit_active",
+            lambda: detect_rate_limit_active(events, now=now.timestamp(), log_dir=log_dir),
+        ),
         ("anomaly_repetitive_active", lambda: detect_anomaly_repetitive_active(events)),
         (
             "supervisor_stale",

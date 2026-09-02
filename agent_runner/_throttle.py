@@ -212,6 +212,20 @@ def _extend_reset(classification: str, reset_at_epoch: int, exponent: int) -> in
     return reset_at_epoch + min(base * (2 ** min(exponent, _EXP_CAP) - 1), _ABSOLUTE_CAP_S)
 
 
+def _events_derived_reset(
+    log_dir: Path, agent: str, classification: str, reset_at_epoch: int
+) -> int:
+    """The ONE ladder-extended reset every throttle reader converges on:
+    :func:`_active_throttles` (skip path / crash-loop excuse via its map),
+    :func:`_check_throttle_state` (serve's loop-top non-skip gate — this global-latest
+    scalar used to compare the emitter's RAW ``reset_at_epoch`` instead, so a
+    non-default ``restart_delay_s`` sleeping past the raw reset between rounds could
+    make the gate wave a round through with no back-off while the ladder was still
+    active), and ``monitor.detect_rate_limit_active`` (via its optional ``log_dir``).
+    One function so the three can never compute this differently again."""
+    return _extend_reset(classification, reset_at_epoch, _backoff_exponent(log_dir, agent))
+
+
 def _active_throttles(
     log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
 ) -> dict[str, TransientErrorState]:
@@ -222,19 +236,17 @@ def _active_throttles(
     Rate limits are per-provider (per API key / agent binary), not per-phase — so the
     serve skip-policy routes around EVERY phase sharing a throttled agent while a
     healthy agent's phase keeps running. Restart-safe (events-derived). The effective
-    reset applies the events-derived exp-backoff ladder (:func:`_backoff_exponent` +
-    :func:`_extend_reset`) so a permanently-failing agent escalates here too, not just
-    on the wait/back_off path — ONE ladder, shared by both regimes."""
+    reset applies the events-derived exp-backoff ladder (:func:`_events_derived_reset`)
+    so a permanently-failing agent escalates here too, not just on the wait/back_off
+    path — ONE ladder, shared by both regimes."""
     now = clock.epoch()
     active: dict[str, TransientErrorState] = {}
     for agent, detected in _latest_transient_per_agent(log_dir).items():
         if detected is None:
             continue
         classification = str(detected.get("classification", "rate_limit_account"))
-        reset_at = _extend_reset(
-            classification,
-            _coerce_int(detected.get("reset_at_epoch"), 0),
-            _backoff_exponent(log_dir, agent),
+        reset_at = _events_derived_reset(
+            log_dir, agent, classification, _coerce_int(detected.get("reset_at_epoch"), 0)
         )
         if reset_at <= now:
             continue
@@ -253,17 +265,15 @@ def effective_throttle_view(
 ) -> tuple[TransientErrorState | None, dict[str, TransientErrorState]]:
     """The scalar throttle view + the active-by-agent map, composed once.
 
-    ``active`` carries the events-derived exp-backoff escalation
-    (:func:`_active_throttles` → :func:`_backoff_exponent` + :func:`_extend_reset`);
-    the raw scalar from :func:`_check_throttle_state` does not — it reads the
-    emitter's ``reset_at_epoch`` verbatim. Reconcile the two here: when the
-    scalar's agent has an entry in ``active``, swap the scalar for that
-    (escalated) entry, so every consumer of the scalar — not just the
-    None-fallback case below — sees the SAME reset the skip loop is actually
-    gating on. Without this, a permanently-failing agent's escalation would
-    reach the skip loop but not ``api.peek`` / the HTTP dashboard, which would
-    keep reporting the original (shorter) reset and confuse an operator
-    watching the stated time pass with the agent still throttled.
+    Both the scalar (:func:`_check_throttle_state`) and ``active``
+    (:func:`_active_throttles`) already read the SAME ladder-extended reset
+    (:func:`_events_derived_reset`), so the swap below is now a no-op in the common
+    case — it stays as a backstop for the one place the two functions still scan
+    differently: the scalar is the single GLOBAL-latest transient event (early-exits
+    at the first monthly file holding any transient), while ``active`` merges BOTH
+    monthly files PER AGENT. When the scalar's agent has an entry in ``active``, swap
+    the scalar for that entry so every consumer sees the identical value the skip loop
+    gates on, even in that edge case.
 
     Separately, the global-latest scalar can be None while a sibling agent is
     still throttled (the newest transient event is another agent's recovered).
@@ -289,6 +299,12 @@ def _check_throttle_state(
     Returns TransientErrorState if currently throttled (reset still in future,
     no matching recovered after). Restart-safe.
 
+    The reset is the ladder-EXTENDED one (:func:`_events_derived_reset`), the same
+    :func:`_active_throttles` computes — not the emitter's raw ``reset_at_epoch`` —
+    so this scalar (serve's loop-top non-skip gate) never disagrees with the skip
+    path / crash-loop excuse / peek about whether an estimated-class transient is
+    still active.
+
     ``clock`` supplies the wall clock the reset is compared against — inject a
     ``FakeClock`` in tests to pin an exact instant. Only the reset comparison
     reads it; the event scan is pure.
@@ -297,16 +313,18 @@ def _check_throttle_state(
     latest_detected = _latest_unrecovered_detected(log_dir)
     if latest_detected is None:
         return None
-    reset_at = _coerce_int(latest_detected.get("reset_at_epoch"), 0)
-    if reset_at <= now:
-        return None  # Reset already passed without recovery emit; treat as recovered
-
+    agent = str(latest_detected.get("agent", "unknown"))
     classification = str(latest_detected.get("classification", "rate_limit_account"))
+    reset_at = _events_derived_reset(
+        log_dir, agent, classification, _coerce_int(latest_detected.get("reset_at_epoch"), 0)
+    )
+    if reset_at <= now:
+        return None  # Ladder-extended reset already passed without recovery emit
 
     return TransientErrorState(
         reset_at_epoch=reset_at,
         classification=classification,
-        agent=str(latest_detected.get("agent", "unknown")),
+        agent=agent,
         since_round=_coerce_int(latest_detected.get("round_num"), 0),
         phase=str(latest_detected.get("phase", "")),
     )
@@ -461,6 +479,7 @@ def _interruptible_sleep(
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
     should_stop: Callable[[], bool] | None = None,
+    deadline_epoch: float | None = None,
 ) -> bool:
     """Sleep ``total_s`` in ``<= chunk_s`` slices, re-checking ``stop`` (and, if given,
     ``should_stop()``) at each boundary; return True iff ``stop["requested"]`` OR
@@ -475,11 +494,24 @@ def _interruptible_sleep(
     Counts down the *intended* nap per slice rather than measuring a wall/monotonic
     deadline: NTP-step immune (no clock read for the deadline) AND does not busy-spin
     when ``clock.sleep`` is a no-op (a test patching ``time.sleep`` runs it instantly
-    instead of looping until real time advances)."""
+    instead of looping until real time advances).
+
+    ``deadline_epoch``, when given, additionally re-checks ``clock.epoch() >=
+    deadline_epoch`` at each chunk boundary and returns False (completed, NOT
+    interrupted) the moment it's reached — mirroring the skip path's self-correcting
+    ``clock.epoch() >= wake_epoch`` (serve_cmd.py:251). Only :func:`_apply_back_off`
+    passes this: its ``total_s`` is computed against the caller's OWN clock reading at
+    call time, which on an RTC-less host booting hours behind is stale, inflating
+    ``total_s`` well past the real wall-clock target; re-checking the target itself
+    (not just counting down the inflated duration) lets an NTP correction landing
+    mid-sleep wake it early instead of riding out the full pre-computed nap. The plain
+    restart-delay sleep has no such target and never passes this."""
     remaining = float(total_s)
     while remaining > 0:
         if stop["requested"] or (should_stop is not None and should_stop()):
             return True
+        if deadline_epoch is not None and clock.epoch() >= deadline_epoch:
+            return False
         nap = min(float(chunk_s), remaining)
         clock.sleep(nap)
         remaining -= nap
@@ -503,13 +535,18 @@ def _apply_back_off(
 
     The sleep is chunked and re-checks ``stop`` (and ``should_stop``) at each boundary
     (see :func:`_interruptible_sleep`), so a SIGTERM or a stop_file lands within one
-    chunk instead of after a multi-hour window.
+    chunk instead of after a multi-hour window. It ALSO re-checks the wall-clock
+    deadline itself each chunk (RTC-less back-off): an already-expired throttle on a
+    host whose clock is still catching up via NTP wakes as soon as the correction
+    lands, instead of sleeping out a duration computed against the stale clock.
 
     For estimated-class classifications (rate_limit_model / api_transient_5xx /
     api_timeout), applies exp backoff on consecutive failures via
     :func:`compute_adjusted_reset_at`. For server-authoritative rate_limit_account, the
     original reset_at_epoch is used verbatim. The 8h cap is a last-line defense against a
-    malformed (far-future) reset epoch (e.g. a manual event with a far-future ts).
+    malformed (far-future) reset epoch (e.g. a manual event with a far-future ts) — it
+    bounds the SLEEP, not the deadline re-check, so a legitimate-but-clock-skewed
+    target can still wake the capped sleep early.
     """
     from agent_runner._emit import (
         emit_transient_error_backoff_capped,
@@ -524,11 +561,12 @@ def _apply_back_off(
         clock=clock,
     )
 
-    requested = (
-        adjusted_reset_at
-        - clock.epoch()
-        + random.uniform(_BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S)
+    # The real wall-clock target (+ jitter) — re-checked every chunk below so an NTP
+    # correction landing mid-sleep wakes this early, even under the magnitude cap.
+    deadline_epoch = adjusted_reset_at + random.uniform(
+        _BACK_OFF_JITTER_MIN_S, _BACK_OFF_JITTER_MAX_S
     )
+    requested = deadline_epoch - clock.epoch()
     if requested > _BACK_OFF_CAP_S:
         # Defensive: malformed reset epoch. The exp-backoff layer caps at 30min, so
         # legitimate flow never reaches this branch.
@@ -544,7 +582,14 @@ def _apply_back_off(
         sleep_s = max(requested, 0.0)
 
     sleep_start = clock.epoch()
-    if _interruptible_sleep(sleep_s, stop, clock=clock, chunk_s=chunk_s, should_stop=should_stop):
+    if _interruptible_sleep(
+        sleep_s,
+        stop,
+        clock=clock,
+        chunk_s=chunk_s,
+        should_stop=should_stop,
+        deadline_epoch=deadline_epoch,
+    ):
         return True  # SIGTERM/stop_file during back-off — leave throttle active, no breadcrumb
 
     emit_transient_error_recovered(

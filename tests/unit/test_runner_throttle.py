@@ -89,6 +89,36 @@ def test_check_throttle_state_carries_phase(tmp_path):
     assert state is not None and state.phase == "deepseek"
 
 
+def test_check_throttle_state_reads_ladder_extended_reset_not_raw(tmp_path):
+    """The loop-top NON-skip gate (serve_cmd.py:382 -> _check_throttle_state) must
+    read the SAME ladder-extended reset as _active_throttles (skip path /
+    crash-loop excuse) and effective_throttle_view (peek) -- not the emitter's raw
+    reset_at_epoch. Two consecutive api_timeout detections push the exponent to 1,
+    extending the reset 30s (base) past the RAW one. Placing `now` past the raw
+    reset but before the extended one reproduces the bug: pre-fix this returned
+    None, so a non-default restart_delay_s (>=15s for api_timeout) sleeping past
+    the raw reset between rounds would wave the next round through with NO
+    back-off at all -- a flat loop, breaker disarmed (the agent-agnostic crash-loop
+    excuse still sees the ladder via _active_throttles), while peek kept correctly
+    reporting still-throttled."""
+    from agent_runner._throttle import _active_throttles, _check_throttle_state
+
+    raw_reset = 10_000  # api_timeout base=30s
+    _write_events(
+        tmp_path,
+        [
+            _detected(raw_reset, ts=_iso(raw_reset - 30), cls="api_timeout"),
+            _detected(raw_reset, ts=_iso(raw_reset - 1), cls="api_timeout"),
+        ],
+    )
+    clock = FakeClock(epoch=float(raw_reset + 5))  # past raw (+0), before extended (+30)
+    state = _check_throttle_state(tmp_path, clock=clock)
+    active = _active_throttles(tmp_path, clock=clock)
+    assert state is not None  # still throttled per the ladder, not "cleared" per raw
+    assert state.reset_at_epoch == raw_reset + 30
+    assert state.reset_at_epoch == active["claude"].reset_at_epoch  # agrees with the skip map
+
+
 def _detected(reset_at, *, ts="2026-05-16T00:00:00Z", agent="claude", cls="rate_limit_account"):
     return {
         "event": "transient_error_detected",
@@ -377,6 +407,66 @@ def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp
     assert clock.slept[0] <= 28800 + 30  # 8h cap + max jitter
     mock_new_capped.assert_called_once()
     mock_new_recovered.assert_called_once()
+
+
+def test_given_clock_jump_forward_during_capped_back_off_wakes_early(tmp_path):
+    """RTC-less back-off: an on-host clock reading hours behind real time inflates
+    the pre-computed sleep past the 8h magnitude cap (a Pi booting with no battery
+    RTC, before NTP has synced). Once NTP corrects the clock MID-SLEEP, the back-off
+    must wake as soon as the real wall-clock target passes rather than riding out
+    the full pre-computed (stale-clock) duration on an already-expired throttle."""
+    from agent_runner._throttle import _apply_back_off
+    from agent_runner.api_types import TransientErrorState
+
+    base = FakeClock(epoch=1_700_000_000.0)
+
+    class _NTPJumpClock:
+        """Clock adapter whose SECOND sleep() call also warps the wall clock far
+        forward — simulating an NTP correction landing mid chunked sleep."""
+
+        def __init__(self, inner):
+            self._c = inner
+            self.slept: list[float] = []
+            self._sleep_calls = 0
+
+        def epoch(self):
+            return self._c.epoch()
+
+        def monotonic(self):
+            return self._c.monotonic()
+
+        def sleep(self, seconds):
+            self.slept.append(seconds)
+            self._c.sleep(seconds)
+            self._sleep_calls += 1
+            if self._sleep_calls == 2:
+                self._c.warp_epoch(60_000.0)  # NTP catches the stale clock up
+
+        def now_utc(self):
+            return self._c.now_utc()
+
+        def now_in_zone(self, tz_name):
+            return self._c.now_in_zone(tz_name)
+
+    clock = _NTPJumpClock(base)
+    # 50_000s out from the clock's (stale) view — past the 8h cap, so this hits the
+    # magnitude-cap branch, but the target itself is a real, reachable wall-clock time.
+    throttle = TransientErrorState(
+        reset_at_epoch=int(base.epoch()) + 50_000,
+        classification="rate_limit_account",
+        agent="claude",
+        since_round=1,
+    )
+    with patch("agent_runner._emit.emit_transient_error_backoff_capped"):
+        with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
+            interrupted = _apply_back_off(
+                tmp_path, throttle, stop={"requested": False}, clock=clock, chunk_s=30
+            )
+    assert interrupted is False
+    # Woke 2 chunks in, right after the jump — nowhere near the 960 chunks
+    # (28800 / 30) the un-fixed 8h cap would otherwise require.
+    assert clock.slept == [30.0, 30.0]
+    mock_recovered.assert_called_once()
 
 
 def test_given_stop_set_mid_back_off_then_returns_true_and_no_recovered(tmp_path):
