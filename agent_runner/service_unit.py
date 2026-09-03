@@ -34,6 +34,15 @@ def _unit_mode_lines(user: str | None) -> tuple[str, str]:
     return "", "default.target"
 
 
+def _validate_unit_paths(cfg: Config, config_path: Path) -> None:
+    """Fail closed on a control/non-printable character in either path that
+    gets interpolated verbatim into a rendered unit (``WorkingDirectory=`` /
+    ``--config``) -- defense in depth, since ``config.load_config`` already
+    rejects these at load but a ``Config`` built directly bypasses that."""
+    _reject_control_chars(str(cfg.runtime.work_dir), "runtime.work_dir")
+    _reject_control_chars(str(config_path), "config path")
+
+
 def serve_unit_filename(project: str) -> str:
     return f"agent-runner@{project}.service"
 
@@ -60,8 +69,7 @@ def render_serve_unit(
     rejects these at load, but a ``Config`` built directly bypasses that, and
     this is the function that actually interpolates both into the unit).
     """
-    _reject_control_chars(str(cfg.runtime.work_dir), "runtime.work_dir")
-    _reject_control_chars(str(config_path), "config path")
+    _validate_unit_paths(cfg, config_path)
     # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
     # doesn't SIGKILL a mid-flight round in any phase.
     max_timeout = cfg.runtime.round_timeout_s
@@ -114,8 +122,7 @@ def render_monitor_unit(
     ``config_path``: see ``render_serve_unit`` — the actual toml the caller
     loaded ``cfg`` from, not re-derived from ``cfg.runtime.work_dir``.
     """
-    _reject_control_chars(str(cfg.runtime.work_dir), "runtime.work_dir")
-    _reject_control_chars(str(config_path), "config path")
+    _validate_unit_paths(cfg, config_path)
     user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"
