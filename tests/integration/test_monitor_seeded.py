@@ -114,7 +114,7 @@ def test_given_cache_poor_host_field_bug_shape_when_poll_once_then_fires_pressur
             # shape from the field bug, where the gate never gets low enough to fire.
             "mem_available_mb": 250,
             "mem_free_mb": 8,
-            "swap_sout": 1_000_000,
+            "swap_sout": 0,
             "disk_used_pct": 50.0,
             "disk_free_gb": 1.0,
         },
@@ -124,7 +124,7 @@ def test_given_cache_poor_host_field_bug_shape_when_poll_once_then_fires_pressur
             "mem_total_mb": 462,
             "mem_available_mb": 250,
             "mem_free_mb": 5,
-            "swap_sout": 9_000_000,
+            "swap_sout": 50 * 1024 * 1024,
             "disk_used_pct": 50.0,
             "disk_free_gb": 1.0,
         },

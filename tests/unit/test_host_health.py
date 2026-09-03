@@ -19,24 +19,31 @@ def _cfg(mem_avail_min_mb: int = 40) -> MonitorHostHealthConfig:
     return MonitorHostHealthConfig(mem_avail_min_mb=mem_avail_min_mb)
 
 
+_50MB = 50 * 1024 * 1024
+
+
 def test_pressure_from_sout_delta_when_memavailable_high() -> None:
     """swap actively climbing is real pressure even while MemAvailable reads high
     (the cache-poor host's own defect — this is the signal that should NOT be
     fooled by it)."""
-    prev = {"swap_sout": 1000, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
-    cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+    prev = {"swap_sout": 0, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
+    cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
     assert host_health.memory_pressure(cur, prev, _cfg()) is not None
 
 
-def test_sustained_heavy_swap_delta_escalates_to_critical_without_psi() -> None:
-    """A gigabyte-scale swap-out delta is critical on its own -- the ONLY path
-    to critical on a PSI-off host (no /proc/pressure/memory, or psi=0), which
-    is exactly the field host this ladder exists for: MemAvailable stays high
-    right up to the coma, so only the swap-rate tier can ever see it."""
-    prev = {"swap_sout": 0, "mem_free_mb": 30, "mem_available_mb": 82, "psi_some_avg10": None}
+def test_given_realistic_field_episode_when_sustained_swap_and_low_memfree_then_critical() -> None:
+    """The real field-bug shape: PSI unreadable, MemAvailable inflated at 82MB
+    (well above mem_avail_min_mb=40 -- combined-low genuinely cannot fire),
+    MemFree critically low (~5MB on a small host), and swap_out climbing by a
+    REALISTIC per-interval amount (300MB -- not a gigabyte-scale spike a slow
+    SD-card/USB swap device could never produce in one interval). Critical is
+    gated on MemFree, not on the swap-out RATE's magnitude, so this fires
+    regardless of the swap device's actual throughput."""
+    field_swap_delta = 300 * 1024 * 1024  # realistic per-interval rate, not a GiB spike
+    prev = {"swap_sout": 0, "mem_free_mb": 5, "mem_available_mb": 82, "psi_some_avg10": None}
     cur = {
-        "swap_sout": 2 * 1024 * 1024 * 1024,
-        "mem_free_mb": 30,
+        "swap_sout": field_swap_delta,
+        "mem_free_mb": 5,
         "mem_available_mb": 82,
         "psi_some_avg10": None,
     }
@@ -46,22 +53,37 @@ def test_sustained_heavy_swap_delta_escalates_to_critical_without_psi() -> None:
     assert pressure.signal == "swap_out_rate"
 
 
-def test_moderate_swap_delta_stays_warning_not_critical() -> None:
-    """A real but modest swap delta (well under the critical floor) stays a
-    warning -- the escalation is deliberately a HIGH bar, not the same
-    noise-floor threshold that already distinguishes signal from noise."""
-    prev = {"swap_sout": 1000, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
-    cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+def test_real_swap_delta_with_ample_memfree_stays_warning_not_critical() -> None:
+    """A real, above-floor swap-out delta with MemFree comfortably high (not
+    the field host's dying state) stays a warning -- critical is gated on
+    MemFree being critically low, not on the delta's magnitude alone."""
+    prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 150, "psi_some_avg10": None}
+    cur = {"swap_sout": _50MB, "mem_free_mb": 200, "mem_available_mb": 150, "psi_some_avg10": None}
     pressure = host_health.memory_pressure(cur, prev, _cfg())
     assert pressure is not None
     assert pressure.severity == "warning"
 
 
 def test_no_swap_delta_below_noise_floor_reports_no_pressure() -> None:
-    """A trivial (<= one page) sout delta is a benign one-time idle-page swap,
-    not active paging — must NOT be reported as pressure."""
+    """A trivial sout delta is a benign one-time idle-page swap, not active
+    paging — must NOT be reported as pressure."""
     prev = {"swap_sout": 1000, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
     cur = {"swap_sout": 1500, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
+    assert host_health.memory_pressure(cur, prev, _cfg()) is None
+
+
+def test_moderate_few_mb_swap_churn_below_raised_floor_reports_no_pressure() -> None:
+    """A few MB of swap movement between successive samples (round-boundary
+    startup/idle churn) is common and meaningless -- the noise floor was
+    raised from one page to tens of MB precisely so a PSI-off host does not
+    spuriously defer/resume every round on benign churn like this."""
+    prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
+    cur = {
+        "swap_sout": 5 * 1024 * 1024,
+        "mem_free_mb": 200,
+        "mem_available_mb": 6000,
+        "psi_some_avg10": None,
+    }
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
 
 
@@ -120,8 +142,8 @@ def test_signal_available_true_when_any_tier_has_data() -> None:
 
 
 def test_inert_gate_flagged_when_pressure_but_avail_above_threshold() -> None:
-    cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
-    assert host_health.configured_gate_inert(cur, {"swap_sout": 1000}, _cfg(40)) is True
+    cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+    assert host_health.configured_gate_inert(cur, {"swap_sout": 0}, _cfg(40)) is True
 
 
 def test_inert_gate_not_flagged_on_healthy_warm_cache_host() -> None:

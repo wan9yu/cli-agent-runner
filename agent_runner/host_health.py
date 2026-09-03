@@ -11,14 +11,21 @@ defined signal ladder with graceful degrade:
 1. **PSI** (``psi_some_avg10``/``psi_full_avg10``) if readable — the kernel's
    own "reclaim is slowing progress" measure, immune to cache inflation.
 2. else **swap-out rate** — the delta of ``swap_sout`` (cumulative) between
-   two samples; more than a noise floor of one page means active paging, not
-   a benign one-time idle-page swap. A sustained heavy delta (gigabyte-scale
-   between samples) escalates to **critical** on its own — a host without PSI
-   (``psi=0``, or non-Linux) has no other way to ever reach critical, and an
-   actively-paging host is critical whether or not PSI is readable.
+   two samples; more than a noise floor (tens of MB) means active paging, not
+   benign startup/idle churn. Escalates to **critical** when ``mem_free_mb``
+   is ALSO critically low (the same absolute floor tier 3 uses below) WHILE
+   swap-out is positive — the unambiguous "actively dying" state. This is
+   gated on MemFree, not on the swap-out RATE's magnitude: a small,
+   memory-starved host on a slow SD-card/USB-backed swap device may push only
+   a few hundred MB across an entire dying episode, far below any defensible
+   flat per-sample byte-rate, so a rate-only critical bar was inert on
+   exactly the host this ladder exists for. A host without PSI (``psi=0``, or
+   non-Linux) has no OTHER way to ever reach critical.
 3. else **combined-low** — ``mem_free_mb`` AND ``mem_available_mb`` both low
    together. Never a MemFree-only gate: a cache-heavy healthy host's MemFree
-   is always low, which would false-positive on every such host.
+   is always low, which would false-positive on every such host. (Tier 2's
+   critical escalation above is not a MemFree-only gate either — it also
+   requires an actual measured, above-floor swap-out delta.)
 4. else **no usable signal** — the caller (``detect_mem_pressure``) should
    warn once via ``mem_signal_unavailable`` rather than silently trusting
    ``MemAvailable`` alone (the original bug).
@@ -34,23 +41,20 @@ from typing import Any
 _PSI_SOME_AVG10_WARNING = 5.0
 _PSI_FULL_AVG10_CRITICAL = 1.0
 
-# Tier 2 -- swap-out delta (bytes) between two samples. A single page (4096B)
-# is the kind of benign one-time idle-page swap a fresh boot does; more than
-# that between two samples means paging is actively happening now.
-_SWAP_SOUT_DELTA_NOISE_FLOOR_BYTES = 4096
-
-# A sustained multi-gigabyte-per-sample swap-out rate is critical on its own,
-# PSI or not -- this is the ONLY path to "critical" on a PSI-off host (no
-# /proc/pressure/memory, or a kernel built without psi=1), which is exactly
-# the field host this ladder exists for: MemAvailable stays inflated right up
-# to the coma, so mid-round/pre-round admission gates that only ever escalate
-# through PSI would be permanently inert on such a host. 1 GiB between two
-# samples is unambiguously heavy, active paging, not noise.
-_SWAP_SOUT_DELTA_CRITICAL_BYTES = 1024 * 1024 * 1024
+# Tier 2 -- swap-out delta (bytes) between two samples. Below this is noise:
+# tens of MB is ordinary startup/idle churn between successive samples (round
+# boundaries, or the mid-round loop's own ~10s ticks) and is NOT, on its own,
+# a real paging signal -- a single page (4096B, the old floor) is far too
+# sensitive and made the pre-round gate defer/resume on a few idle KB of
+# swap movement every round.
+_SWAP_SOUT_DELTA_NOISE_FLOOR_BYTES = 32 * 1024 * 1024  # 32 MiB
 
 # Tier 3 -- combined-low. MemFree alone is always low on a cache-heavy host
 # (the kernel prefers to keep it near-zero and use spare RAM for cache), so
-# it must never gate alone -- only together with a low MemAvailable too.
+# it must never gate alone -- only together with a low MemAvailable (tier 3)
+# or an actual measured, above-floor swap-out delta (tier 2's critical
+# escalation, below). Also doubles as the critical-escalation MemFree floor:
+# "critically low" is the same absolute bar either way.
 _MEM_FREE_LOW_MB = 16
 
 
@@ -114,12 +118,14 @@ def memory_pressure(
 
     delta = _swap_sout_delta(sample, prev_sample)
     if delta is not None and delta > _SWAP_SOUT_DELTA_NOISE_FLOOR_BYTES:
-        if delta >= _SWAP_SOUT_DELTA_CRITICAL_BYTES:
+        mem_free = sample.get("mem_free_mb")
+        if mem_free is not None and mem_free < _MEM_FREE_LOW_MB:
             return Pressure(
                 "critical",
                 "swap_out_rate",
-                f"swap sout +{delta}B since last sample (sustained heavy paging)",
-                {"swap_sout_delta": delta},
+                f"swap sout +{delta}B since last sample while mem_free_mb {mem_free} "
+                f"< {_MEM_FREE_LOW_MB} (actively dying, independent of swap-device speed)",
+                {"swap_sout_delta": delta, "mem_free_mb": mem_free},
             )
         return Pressure(
             "warning",

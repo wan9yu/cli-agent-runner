@@ -269,28 +269,34 @@ def _pause_until_selectable(
 
 
 # Serve-loop-local memory-pressure state for the PRE-ROUND gate: the previous
-# sample, so the swap-rate delta tier (host_health's ONLY path to "critical"
-# on a PSI-off host — the field bug's own host has no /proc/pressure/memory,
-# and its MemAvailable stays inflated right up to the coma) is evaluable
-# across successive _select_and_gate calls, not just within one
-# _spawn_round's own mid-round loop. _select_and_gate has no call-to-call
-# state of its own (cmd() constructs its arguments fresh every iteration), and
-# cmd()'s loop body cannot grow to thread one through (it is at its 140-line
-# budget) — so this single mutable dict is a stable default, exactly like
-# SYSTEM_CLOCK: cmd() never passes state= explicitly, so production gets one
-# shared dict for the whole serve process lifetime at zero extra loop LOC.
-# Tests inject a fresh {} to stay isolated from each other.
-_PRE_ROUND_MEM_STATE: dict = {}
+# sample, so the swap-rate delta tier is evaluable across successive
+# _select_and_gate calls, not just within one _spawn_round's own mid-round
+# loop. _select_and_gate has no call-to-call state of its own (cmd()
+# constructs its arguments fresh every iteration), and cmd()'s loop body
+# cannot grow to thread one through (it is at its 140-line budget) — so this
+# dict-of-dicts is a stable default, exactly like SYSTEM_CLOCK: cmd() never
+# passes anything for it explicitly, so production gets one entry for the
+# whole serve process lifetime at zero extra loop LOC.
+#
+# Keyed by log_dir rather than a single flat dict: a real `agent-runner serve`
+# process only ever has ONE log_dir for its lifetime, so this is operationally
+# identical to a flat per-process dict in production. The keying exists so
+# many _select_and_gate calls across many different tests, in the SAME pytest
+# process, stay hermetic from each other automatically (every test already
+# uses its own unique tmp_path as log_dir) without any call site having to
+# remember to pass an explicit override.
+_PRE_ROUND_MEM_STATE_BY_LOG_DIR: dict[Path, dict] = {}
 
 
-def _memory_pressure_now(cfg, sample_fn, state: dict) -> host_health.Pressure | None:
-    """Pre-round host_health read, using (and updating) ``state["prev"]`` — the
-    previous pre-round sample — so the swap-rate delta tier is evaluable, not
-    just PSI/combined-low. The very first call on a fresh ``state`` has no
+def _memory_pressure_now(cfg, log_dir, sample_fn) -> host_health.Pressure | None:
+    """Pre-round host_health read, using (and updating) this ``log_dir``'s
+    persisted previous sample so the swap-rate delta tier is evaluable, not
+    just PSI/combined-low. The very first call for a given ``log_dir`` has no
     baseline yet (``prev={}``) and so cannot see a swap-rate signal until the
     NEXT call — an honest limitation (there is nothing to diff against), not a
     bug. The mid-round hot loop in :func:`_spawn_round` keeps its own separate
     ``prev_sample`` across its own ticks."""
+    state = _PRE_ROUND_MEM_STATE_BY_LOG_DIR.setdefault(log_dir, {})
     cur = sample_fn()
     pressure = host_health.memory_pressure(cur, state.get("prev", {}), cfg.monitor.host_health)
     state["prev"] = cur
@@ -305,7 +311,6 @@ def _maybe_pause_for_memory_pressure(
     sample_fn=metrics.sample,
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
-    state: dict = _PRE_ROUND_MEM_STATE,
 ) -> bool:
     """Pre-round admission gate (Group 3 action half): defer the next round while
     host_health reports real memory pressure. This is only HALF the
@@ -318,7 +323,7 @@ def _maybe_pause_for_memory_pressure(
     (like ``schedule_paused``/``schedule_resumed``) so a long defer does not
     trip ``detect_supervisor_stale`` (see its suppression set in
     ``_monitor_detectors.py``)."""
-    pressure = _memory_pressure_now(cfg, sample_fn, state)
+    pressure = _memory_pressure_now(cfg, log_dir, sample_fn)
     if pressure is None:
         return False
     started = clock.monotonic()
@@ -328,7 +333,7 @@ def _maybe_pause_for_memory_pressure(
     if _pause_poll(
         stop,
         cfg.runtime.stop_file,
-        lambda: _memory_pressure_now(cfg, sample_fn, state) is None,
+        lambda: _memory_pressure_now(cfg, log_dir, sample_fn) is None,
         clock.sleep,
         chunk_s,
     ):
@@ -475,7 +480,6 @@ def _select_and_gate(
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
     sample_fn=metrics.sample,
-    mem_state: dict = _PRE_ROUND_MEM_STATE,
 ):
     """Resolve the phase to launch this round, gating on memory pressure, on
     schedule, and on ``throttled_phases`` — the phases whose agent is currently
@@ -488,7 +492,7 @@ def _select_and_gate(
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.
-    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn, state=mem_state):
+    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn):
         return _PAUSED_CONTINUE
     if args.ignore_schedule:
         return None  # rotation self-resolves in the round; no --phase, no gate

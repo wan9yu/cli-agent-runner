@@ -7,11 +7,11 @@ lines to serve_cmd.cmd's loop body -- see test_layer_2_loop_size.py) and mirrors
 _maybe_pause_for_schedule's paired-event shape (round_deferred/round_resumed
 instead of schedule_paused/schedule_resumed).
 
-Every call below passes an explicit ``state={}`` (or ``mem_state={}``): the
-production default is one dict shared for the whole serve process lifetime
-(so the swap-rate delta tier survives across rounds without threading a new
-line through cmd()'s loop body), and tests must not share that module-level
-default with each other.
+The previous-sample state persists per log_dir (serve_cmd._PRE_ROUND_MEM_STATE_BY_LOG_DIR),
+not behind an explicit test parameter -- every test here uses its own unique
+tmp_path as log_dir, so tests stay hermetic from each other automatically;
+a test that deliberately wants two calls to share a baseline (see the
+field-host test below) just reuses the same tmp_path across both calls.
 """
 
 from __future__ import annotations
@@ -40,21 +40,22 @@ _HEALTHY_SAMPLE = {
 }
 
 # The field-host shape: PSI unreadable (no /proc/pressure/memory, or psi=0),
-# MemAvailable idling comfortably above the configured floor right up to the
-# coma, and only the swap-out-rate delta -- gigabytes climbing sample over
-# sample -- ever tells the true story. mem_avail_min_mb=40 (well below the 82
-# these samples report) proves the combined-low tier genuinely cannot fire
-# here; only the swap-rate delta can.
+# MemAvailable inflated at 82MB (comfortably above the configured floor --
+# combined-low genuinely cannot fire), MemFree critically low (~5MB on a
+# small host -- the "actively dying" condition critical is gated on), and
+# swap_out climbing by a REALISTIC per-interval amount (hundreds of MB, not a
+# gigabyte-scale spike a slow SD-card/USB swap device could never produce).
 _FIELD_HOST_MEM_AVAIL_MIN_MB = 40
+_FIELD_HOST_SWAP_DELTA_BYTES = 300 * 1024 * 1024  # realistic per-interval rate
 
 
-def _field_host_sample(swap_sout_gib: int) -> dict:
+def _field_host_sample(swap_sout_intervals: int) -> dict:
     return {
         "psi_some_avg10": None,
         "psi_full_avg10": None,
-        "mem_free_mb": 30,
+        "mem_free_mb": 5,
         "mem_available_mb": 82,
-        "swap_sout": swap_sout_gib * 1024 * 1024 * 1024,
+        "swap_sout": swap_sout_intervals * _FIELD_HOST_SWAP_DELTA_BYTES,
     }
 
 
@@ -82,7 +83,7 @@ def test_no_pause_when_sample_reports_healthy(tmp_path):
     cfg = _real_cfg(tmp_path)
     stop = {"requested": False}
     paused = serve_cmd._maybe_pause_for_memory_pressure(
-        cfg, tmp_path, stop, sample_fn=lambda: _HEALTHY_SAMPLE, state={}
+        cfg, tmp_path, stop, sample_fn=lambda: _HEALTHY_SAMPLE
     )
     assert paused is False
     assert _events(tmp_path) == []
@@ -102,7 +103,7 @@ def test_pressure_defers_then_resumes_and_emits_paired_events(tmp_path):
 
     clock = FakeClock()
     paused = serve_cmd._maybe_pause_for_memory_pressure(
-        cfg, tmp_path, stop, sample_fn=fake_sample, clock=clock, chunk_s=5, state={}
+        cfg, tmp_path, stop, sample_fn=fake_sample, clock=clock, chunk_s=5
     )
     assert paused is True
     evs = _events(tmp_path)
@@ -126,9 +127,7 @@ def test_pressure_defer_interrupted_by_stop(tmp_path):
         stop["requested"] = True
         return _CRITICAL_SAMPLE
 
-    paused = serve_cmd._maybe_pause_for_memory_pressure(
-        cfg, tmp_path, stop, sample_fn=fake_sample, state={}
-    )
+    paused = serve_cmd._maybe_pause_for_memory_pressure(cfg, tmp_path, stop, sample_fn=fake_sample)
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["round_deferred"]
 
@@ -146,9 +145,7 @@ def test_select_and_gate_defers_on_pressure_before_ignore_schedule_check(tmp_pat
         calls["n"] += 1
         return _CRITICAL_SAMPLE if calls["n"] == 1 else _HEALTHY_SAMPLE
 
-    out = serve_cmd._select_and_gate(
-        cfg, args, tmp_path, stop, 1, sample_fn=fake_sample, mem_state={}
-    )
+    out = serve_cmd._select_and_gate(cfg, args, tmp_path, stop, 1, sample_fn=fake_sample)
     assert out is serve_cmd._PAUSED_CONTINUE
     assert [e["event"] for e in _events(tmp_path)] == ["round_deferred", "round_resumed"]
 
@@ -161,13 +158,14 @@ def test_memory_pressure_cfg_duck_type_is_monitor_host_health_config(tmp_path):
 
 
 def test_given_cache_poor_psi_off_host_when_pre_round_checked_twice_then_defers(tmp_path):
-    """The real field-bug shape: PSI unreadable, MemAvailable idling at 82MB
-    (comfortably above mem_avail_min_mb=40 -- combined-low genuinely cannot
-    fire), only a gigabyte-scale swap-out-rate delta tells the truth. The
-    FIRST pre-round check has no baseline (state starts empty) and correctly
-    reports healthy -- there is nothing to diff against yet, an honest
-    limitation, not a bug. The SECOND check (next round-start, swap_sout up
-    2 GiB) has a real delta against the persisted state and defers.
+    """The real field-bug shape: PSI unreadable, MemFree critically low (~5MB),
+    MemAvailable inflated at 82MB (comfortably above mem_avail_min_mb=40 --
+    combined-low genuinely cannot fire), swap_out climbing by a realistic
+    300MB/interval rate (not a gigabyte-scale spike). The FIRST pre-round
+    check has no baseline (nothing persisted yet for this tmp_path) and
+    correctly reports healthy -- there is nothing to diff against yet, an
+    honest limitation, not a bug. The SECOND check (next round-start, same
+    tmp_path so it shares the persisted baseline) has a real delta and defers.
 
     The stub keeps swap_sout climbing forever (a genuinely ballooning field
     host never stops paging), so once round 2 defers, its own re-check inside
@@ -177,30 +175,30 @@ def test_given_cache_poor_psi_off_host_when_pre_round_checked_twice_then_defers(
     path itself is already covered by the PSI-based test above)."""
     cfg = _real_cfg(tmp_path, mem_avail_min_mb=_FIELD_HOST_MEM_AVAIL_MIN_MB)
     stop = {"requested": False}
-    state: dict = {}
     calls = {"n": 0}
 
     def fake_sample():
         calls["n"] += 1
         if calls["n"] == 1:
-            return _field_host_sample(swap_sout_gib=0)  # round 1: establishes the baseline
+            return _field_host_sample(swap_sout_intervals=0)  # round 1: baseline
         if calls["n"] == 2:
-            return _field_host_sample(swap_sout_gib=2)  # round 2: +2 GiB delta -> critical
+            return _field_host_sample(swap_sout_intervals=1)  # round 2: +300MB -> critical
         stop["requested"] = True  # the _pause_poll re-check: stop instead of racing a real sleep
-        return _field_host_sample(swap_sout_gib=4)
+        return _field_host_sample(swap_sout_intervals=2)
 
-    # Round 1 (first-ever pre-round check on this state): no baseline yet.
+    # Round 1 (first-ever pre-round check for this tmp_path/log_dir): no baseline yet.
     paused_round1 = serve_cmd._maybe_pause_for_memory_pressure(
-        cfg, tmp_path, stop, sample_fn=fake_sample, state=state, clock=FakeClock()
+        cfg, tmp_path, stop, sample_fn=fake_sample, clock=FakeClock()
     )
     assert paused_round1 is False
     assert _events(tmp_path) == []
 
-    # Round 2: a real delta against round 1's persisted sample. clock=FakeClock()
-    # makes _pause_poll's one sleep_fn(chunk_s) call instant (virtual time only)
-    # instead of racing a real 30s wait before the stub's stop["requested"] lands.
+    # Round 2: a real delta against round 1's persisted sample (same tmp_path).
+    # clock=FakeClock() makes _pause_poll's one sleep_fn(chunk_s) call instant
+    # (virtual time only) instead of racing a real 30s wait before the stub's
+    # stop["requested"] lands.
     paused_round2 = serve_cmd._maybe_pause_for_memory_pressure(
-        cfg, tmp_path, stop, sample_fn=fake_sample, state=state, clock=FakeClock()
+        cfg, tmp_path, stop, sample_fn=fake_sample, clock=FakeClock()
     )
     assert paused_round2 is True
     evs = _events(tmp_path)
@@ -209,3 +207,37 @@ def test_given_cache_poor_psi_off_host_when_pre_round_checked_twice_then_defers(
     assert deferred[0]["signal"] == "swap_out_rate"
     assert deferred[0]["severity"] == "critical"
     assert [e["event"] for e in evs] == ["round_deferred"]  # interrupted, not resumed
+
+
+def test_pre_round_gate_isolated_per_log_dir(tmp_path):
+    """Two distinct log_dirs (as two different serve invocations, or two
+    different tests, would have) never share a persisted previous sample --
+    the isolation finding: a shared module-level dict would let one test's
+    swap baseline leak into another's, at risk of a spurious defer on a
+    machine that happens to be swapping during the test run."""
+    log_dir_a = tmp_path / "a"
+    log_dir_b = tmp_path / "b"
+    log_dir_a.mkdir()
+    log_dir_b.mkdir()
+    cfg = _real_cfg(tmp_path, mem_avail_min_mb=_FIELD_HOST_MEM_AVAIL_MIN_MB)
+    stop = {"requested": False}
+
+    # Establish a baseline for log_dir_a only.
+    serve_cmd._maybe_pause_for_memory_pressure(
+        cfg,
+        log_dir_a,
+        stop,
+        sample_fn=lambda: _field_host_sample(swap_sout_intervals=0),
+    )
+
+    # log_dir_b's first-ever check must NOT see log_dir_a's baseline: a swap
+    # delta this large (+300MB against a fresh {} prev) is None (no prior
+    # sample), so it must fall through to combined-low/unavailable, not defer.
+    paused_b = serve_cmd._maybe_pause_for_memory_pressure(
+        cfg,
+        log_dir_b,
+        stop,
+        sample_fn=lambda: _field_host_sample(swap_sout_intervals=1),
+    )
+    assert paused_b is False
+    assert _events(log_dir_b) == []

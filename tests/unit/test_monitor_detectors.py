@@ -163,8 +163,8 @@ def test_given_swap_climbing_while_mem_available_stays_high_when_detect_gate_ine
     from agent_runner.config import MonitorHostHealthConfig
 
     metrics = [
-        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 1000},
-        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 9000},
+        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 0},
+        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 50 * 1024 * 1024},
     ]
     a = detect_mem_pressure_gate_inert(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=40))
     assert a is not None

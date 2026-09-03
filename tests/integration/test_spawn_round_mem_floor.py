@@ -7,10 +7,13 @@ pressure.
 The PSI-based test below exercises the mechanism, but is NOT the field-bug
 coverage: the field host has no /proc/pressure/memory (PSI off), so it can
 never produce a psi_full_avg10 sample. `test_given_cache_poor_psi_off_host_*`
-is the real field-bug coverage -- a gigabyte-scale swap-out-rate delta is the
+is the real field-bug coverage -- a REALISTIC (hundreds-of-MB, not
+gigabyte-scale) swap-out-rate delta while MemFree is critically low is the
 ONLY signal such a host can ever show, and host_health.memory_pressure now
-escalates a sustained one to "critical" on its own (Fix #1), which is what
-makes this floor an actual coma-preventer on that host, not just a PSI one.
+escalates that combination to "critical" on its own, gated on MemFree rather
+than on the delta's exact rate (robust to a slow SD-card/USB swap device),
+which is what makes this floor an actual coma-preventer on that host, not
+just a PSI one.
 
 Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
 but with an injected clock that fakes elapsed wall time so the test does not
@@ -33,12 +36,18 @@ _CRITICAL_SAMPLE = {
 }
 
 
+_FIELD_HOST_SWAP_DELTA_BYTES = 300 * 1024 * 1024  # realistic per-interval rate, not a GiB spike
+
+
 def _field_host_sample_fn():
-    """PSI unreadable, MemAvailable idling at 82MB (comfortably above
-    mem_avail_min_mb=40 -- combined-low genuinely cannot fire, and mem_free_mb
-    stays above the 16MB combined-low floor too), swap_sout climbing 2 GiB
-    every sample -- the field host's own shape: the ONLY tier that can ever
-    see it is the swap-out-rate delta."""
+    """PSI unreadable, MemAvailable inflated at 82MB (comfortably above
+    mem_avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
+    alone), MemFree critically low (~5MB -- the "actively dying" condition
+    critical is gated on), swap_sout climbing by a realistic 300MB/interval --
+    the field host's own shape: a slow SD-card/USB swap device could never
+    sustain a gigabyte-scale delta in one ~10s interval, but this combination
+    (critically-low MemFree + any sustained positive swap-out) is critical
+    regardless of the exact rate."""
     calls = {"n": 0}
 
     def _fn():
@@ -46,9 +55,9 @@ def _field_host_sample_fn():
         return {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
-            "mem_free_mb": 30,
+            "mem_free_mb": 5,
             "mem_available_mb": 82,
-            "swap_sout": calls["n"] * 2 * 1024 * 1024 * 1024,
+            "swap_sout": calls["n"] * _FIELD_HOST_SWAP_DELTA_BYTES,
         }
 
     return _fn
@@ -100,13 +109,14 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
 
 
 def test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_terminates(tmp_path):
-    """The real field-bug shape (Fix #1): PSI unreadable, MemAvailable idling
-    at 82MB well above mem_avail_min_mb=40 (combined-low genuinely cannot
-    fire), only the swap-out-rate delta -- climbing 2 GiB every sample -- ever
-    tells the truth. Before Fix #1, swap_out_rate could only ever reach
-    "warning", so this exact host shape could NEVER trip the mid-round floor;
-    host_health's sustained-heavy-delta escalation to "critical" is what makes
-    this floor an actual coma-preventer here, not just on a PSI host."""
+    """The real field-bug shape: PSI unreadable, MemAvailable inflated at 82MB
+    well above mem_avail_min_mb=40 (combined-low genuinely cannot fire),
+    MemFree critically low (~5MB), swap_out climbing by a realistic
+    300MB/interval rate (not a gigabyte-scale spike a slow SD-card/USB swap
+    device could never produce). Critical is gated on MemFree, not on the
+    swap-out rate's magnitude, so this fires regardless of the swap device's
+    actual throughput -- which is what makes this floor an actual
+    coma-preventer on the field host, not just on a PSI one."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "import time; time.sleep(30)"]
