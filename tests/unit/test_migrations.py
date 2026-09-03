@@ -312,6 +312,15 @@ def test_unknown_monitor_key_is_manual():
     assert any("bogus" in m and "[monitor]" in m for m in r.manual)
 
 
+def test_unknown_monitor_host_health_key_is_manual():
+    """0.2.14: [monitor.host_health] unknown keys are MANUAL, like every
+    sibling unknown-key rejection — auto-deleting a typo'd threshold would
+    silently discard the operator's intended value."""
+    text = "[monitor.host_health]\nbogus = 1\n"
+    r = _run(text)
+    assert any("bogus" in m and "[monitor.host_health]" in m for m in r.manual)
+
+
 def test_phases_scalar_key_is_manual():
     text = '[phases]\nlist = ["dev"]\nbogus = 1\n[phases.dev]\n'
     r = _run(text)

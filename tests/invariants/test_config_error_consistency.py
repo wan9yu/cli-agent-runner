@@ -6,8 +6,8 @@ CHANGELOG.md all tell operators to expect it.
 
 Two complementary techniques:
 
-- An AST scan pins that config.py never raises a bare ``ValueError`` at a
-  literal ``raise`` site — the coarse, structural guard.
+- An AST scan pins that no module under config/ ever raises a bare
+  ``ValueError`` at a literal ``raise`` site — the coarse, structural guard.
 - A parametrized BEHAVIORAL suite feeds each footgun shape through
   ``load_config`` and asserts ``ConfigError``. The AST scan is blind to the
   **table-as-scalar** class (``agent = 1`` instead of ``[agent]``): the raise
@@ -26,7 +26,10 @@ import pytest
 from tests._test_helpers import write_min_config
 
 REPO = Path(__file__).resolve().parents[2]
-CONFIG_PY = REPO / "agent_runner/config.py"
+# The 0.2.14 package split turned config.py into a config/ package — every
+# module in it can raise, so the scan rglobs the whole package rather than
+# naming one file.
+CONFIG_PY = sorted((REPO / "agent_runner/config").rglob("*.py"))
 
 # Non-config failures that legitimately use a different class.
 _ALLOWED_OTHER = {"FileNotFoundError"}
@@ -44,25 +47,26 @@ _TOP_LEVEL_TABLES = (
 )
 
 
-def _raised_class_names() -> list[tuple[int, str]]:
-    out: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(CONFIG_PY.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Raise) and node.exc is not None:
-            exc = node.exc
-            if isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name):
-                out.append((node.lineno, exc.func.id))
-            elif isinstance(exc, ast.Name):
-                out.append((node.lineno, exc.id))
+def _raised_class_names() -> list[tuple[str, int, str]]:
+    out: list[tuple[str, int, str]] = []
+    for path in CONFIG_PY:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Raise) and node.exc is not None:
+                exc = node.exc
+                if isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name):
+                    out.append((path.name, node.lineno, exc.func.id))
+                elif isinstance(exc, ast.Name):
+                    out.append((path.name, node.lineno, exc.id))
     return out
 
 
 def test_given_config_module_when_scanned_then_user_facing_raises_are_config_error() -> None:
-    """No bare ValueError in config.py — every invalid-field path is a ConfigError."""
+    """No bare ValueError in config/ — every invalid-field path is a ConfigError."""
     raised = _raised_class_names()
-    assert raised, "no `raise` sites found in config.py — AST scan broke"  # vacuity-guard
+    assert raised, "no `raise` sites found in config/*.py — AST scan broke"  # vacuity-guard
     offenders = [
-        f"config.py:{lineno}: raise {name}"
-        for lineno, name in sorted(raised)
+        f"config/{fname}:{lineno}: raise {name}"
+        for fname, lineno, name in sorted(raised)
         if name not in _ALLOWED_OTHER and name != "ConfigError"
     ]
     assert not offenders, (

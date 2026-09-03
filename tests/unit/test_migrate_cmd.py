@@ -159,6 +159,31 @@ def test_table_as_scalar_round_trip(tmp_path):
     load_config(cfg)  # now loads clean
 
 
+def test_monitor_host_health_unknown_key_round_trip(tmp_path):
+    """0.2.14 (BREAKING): [monitor.host_health] unknown key: load_config
+    raises, migrate reports it (exit 1, guided — not a crash), and deleting
+    the stray key by hand makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "[monitor.host_health]\nbogus = 1\n"
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
 def test_argv_missing_placeholder_round_trip(tmp_path):
     """argv prompt_arg_template missing {prompt}: load_config raises, migrate
     reports it (no safe auto-fix — the insertion point is a real decision),

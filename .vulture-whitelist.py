@@ -109,14 +109,14 @@ agent
 since_round
 phase
 
-# agent_runner.config.AgentConfig
+# agent_runner.config.models.AgentConfig
 command
 prompt_arg_template
 name
 env
 prompt_delivery
 
-# agent_runner.config.Config
+# agent_runner.config.models.Config
 agent
 runtime
 prompt
@@ -126,7 +126,7 @@ phases
 plugins
 schedule
 
-# agent_runner.config.MonitorConfig
+# agent_runner.config.models.MonitorConfig
 auth_fail_patterns
 auth_fail_hint
 auto_stop_on
@@ -137,34 +137,34 @@ host_health
 round_progress_interval_s
 supervisor_stale_threshold_s
 
-# agent_runner.config.MonitorHostHealthConfig
+# agent_runner.config.models.MonitorHostHealthConfig
 mem_avail_min_mb
 disk_warning_pct
 disk_critical_pct
 
-# agent_runner.config.PhaseOverride
+# agent_runner.config.models.PhaseOverride
 round_timeout_s
 disable_pre_round_hooks
 prompt_files
 agent
 schedule
 
-# agent_runner.config.PhasesConfig
+# agent_runner.config.models.PhasesConfig
 list
 overrides
 phase_policy
 
-# agent_runner.config.PluginsConfig
+# agent_runner.config.models.PluginsConfig
 disable
 raw
 
-# agent_runner.config.Profile
+# agent_runner.config.models.Profile
 agent
 runtime
 schedule
 prompt_files
 
-# agent_runner.config.PromptConfig
+# agent_runner.config.models.PromptConfig
 file
 files
 inject_context
@@ -172,7 +172,7 @@ context_injection_mode
 concat_separator
 strip_yaml_frontmatter
 
-# agent_runner.config.RuntimeConfig
+# agent_runner.config.models.RuntimeConfig
 work_dir
 log_dir
 round_timeout_s
@@ -189,12 +189,12 @@ dry_run
 max_grace_after_result_s
 grace_kill_ignore_patterns
 
-# agent_runner.config.ScheduleConfig
+# agent_runner.config.models.ScheduleConfig
 timezone
 run_windows
 pause_windows
 
-# agent_runner.config.VcsConfig
+# agent_runner.config.models.VcsConfig
 stash_idempotency_s
 dirty_action
 

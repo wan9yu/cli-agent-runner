@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from agent_runner.config import (
     _AGENT_ALLOWED_FIELDS,
     _MONITOR_ALLOWED_FIELDS,
+    _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_PROMPT_ALLOWED_FIELDS,
     _PROMPT_ALLOWED_FIELDS,
     _RUNTIME_ALLOWED_FIELDS,
@@ -269,6 +270,36 @@ def _unknown_key_desc(
         offending = f": {bad}" if bad else ""
         return (
             f"unknown [{table}] key(s) rejected in {year}{offending}; delete them "
+            f"(allowed: {sorted(allowed)})"
+        )
+
+    return _describe
+
+
+def _unknown_key_desc_nested(
+    label: str,
+    path: tuple[str, ...],
+    allowed: frozenset[str],
+    *,
+    year: str = "0.2.12",
+) -> Callable[[dict], str]:
+    """Nested-table variant of ``_unknown_key_desc``: ``_table`` only reads a
+    TOP-LEVEL key, so this walks ``path`` (e.g. ``("monitor", "host_health")``)
+    through nested ``_table`` calls before diffing against ``allowed``.
+    ``label`` is the dotted-bracket name in the message (e.g.
+    ``"monitor.host_health"``). MANUAL by design like every sibling
+    unknown-key entry: auto-deleting an unknown threshold key would silently
+    discard the operator's intended value — the exact harm this rejection
+    exists to prevent."""
+
+    def _describe(parsed: dict) -> str:
+        cur = parsed
+        for seg in path:
+            cur = _table(cur, seg)
+        bad = sorted(set(cur) - allowed)
+        offending = f": {bad}" if bad else ""
+        return (
+            f"unknown [{label}] key(s) rejected in {year}{offending}; delete them "
             f"(allowed: {sorted(allowed)})"
         )
 
@@ -538,6 +569,22 @@ MIGRATIONS: list[Migration] = [
         describe=(
             "a [phases.<name>.agent] prompt_arg_template has no {prompt} placeholder; "
             "add one, or set that phase's prompt.files = [] if it truly sends no prompt"
+        ),
+    ),
+    # --- 0.2.14 strictness completion: [monitor.host_health] unknown keys.
+    # MANUAL like every sibling above — auto-deleting an unknown threshold key
+    # would silently discard the operator's intended value, the exact harm
+    # this rejection exists to prevent. ---
+    Migration(
+        detect=lambda p: bool(
+            set(_table(_table(p, "monitor"), "host_health")) - _MONITOR_HOST_HEALTH_ALLOWED_FIELDS
+        ),
+        apply=None,
+        describe=_unknown_key_desc_nested(
+            "monitor.host_health",
+            ("monitor", "host_health"),
+            _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
+            year="0.2.14",
         ),
     ),
 ]
