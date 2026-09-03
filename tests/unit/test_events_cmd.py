@@ -171,6 +171,29 @@ def test_events_since_skips_non_dict_json_line(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
+def test_events_since_skips_blank_lines(tmp_path, capsys):
+    """Blank lines through the --since replay path are skipped identically to
+    the query path (0.2.14 Group 5: _replay_since shares events._iter_parsed_lines)."""
+    from agent_runner.cli import events_cmd
+
+    path = tmp_path / f"events-{_current_month()}.jsonl"
+    path.write_text(
+        "\n"
+        + "\n"
+        + json.dumps({"ts": "2026-07-01T10:00:00.000Z", "event": "round_end", "round_num": 1})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
+        args = _make_args(kind="round_end", since="2026-07-01T00:00:00.000Z")
+        rc = events_cmd.cmd_events(args)
+
+    assert rc == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert [json.loads(line)["round_num"] for line in out] == [1]
+
+
 def test_events_window_and_tail_mutually_exclusive(tmp_path, capsys):
     """--window with --tail explicitly should fail with exit 2."""
     from agent_runner.cli import events_cmd

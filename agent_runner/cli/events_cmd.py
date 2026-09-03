@@ -215,10 +215,7 @@ def _replay_since(log_dir: Path, kind_set: set[str], since: datetime) -> tuple[P
                 offset = path.stat().st_size
             continue
         with open_events_jsonl(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+            for line, _ in _iter_parsed_lines(f):
                 if _matches_since(line, kind_set, since):
                     print(line, flush=True)
             if path == current:

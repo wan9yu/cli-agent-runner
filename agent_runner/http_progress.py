@@ -125,24 +125,12 @@ def _read_tail(path: Path, *, max_lines: int) -> str:
 
 def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
     """Section 3: last ``max_count`` events from events-*.jsonl files."""
-    from agent_runner.events import open_events_jsonl
+    from agent_runner.events import iter_event_dicts
 
     events: list[dict[str, Any]] = []
     for path in sorted(log_dir.glob("events-*.jsonl"))[-3:]:
         try:
-            with open_events_jsonl(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        parsed = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    # _render_event_line does evt.get(...) -- a non-dict line
-                    # (bare number/string/list) must not reach it.
-                    if isinstance(parsed, dict):
-                        events.append(parsed)
+            events.extend(iter_event_dicts(path))
         except (FileNotFoundError, OSError):
             continue
     return events[-max_count:]

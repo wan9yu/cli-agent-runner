@@ -107,6 +107,42 @@ def test_given_non_dict_json_line_when_recent_events_then_skipped(tmp_path: Path
     assert result == [{"event": "round_end", "round_num": 1}]
 
 
+def test_given_blank_and_malformed_lines_when_recent_events_then_skipped(
+    tmp_path: Path,
+) -> None:
+    """Blank lines and undecodable JSON are skipped just like non-dict lines
+    (0.2.14 Group 5: _recent_events shares events._iter_parsed_lines)."""
+    p = tmp_path / "events-2026-08.jsonl"
+    p.write_text(
+        "\n"
+        + "not valid json at all\n"
+        + json.dumps(["not", "a", "dict"])
+        + "\n"
+        + json.dumps({"event": "round_end", "round_num": 1})
+        + "\n",
+        encoding="utf-8",
+    )
+    result = _recent_events(tmp_path, max_count=20)
+    assert result == [{"event": "round_end", "round_num": 1}]
+
+
+def test_given_good_file_when_recent_events_then_output_unchanged(tmp_path: Path) -> None:
+    """A well-formed file's events are returned in file order, unaffected by the dedup."""
+    p = tmp_path / "events-2026-08.jsonl"
+    _write_lines(
+        p,
+        [
+            {"event": "round_start", "round_num": 1},
+            {"event": "round_end", "round_num": 1},
+        ],
+    )
+    result = _recent_events(tmp_path, max_count=20)
+    assert result == [
+        {"event": "round_start", "round_num": 1},
+        {"event": "round_end", "round_num": 1},
+    ]
+
+
 def test_given_non_dict_json_line_when_narrate_events_then_skipped(tmp_path: Path) -> None:
     """api._tail_events_jsonl (narrate_events / stream_events_jsonl's shared
     reader) -- a non-dict line must not reach _format_narrate_line's .get(...)."""
