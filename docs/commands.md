@@ -62,6 +62,8 @@ Generate and install systemd user unit(s):
   requires root (`sudo -E agent-runner install --system` — `-E` preserves
   `SUDO_USER`, which becomes the unit's `User=`). Enables but does **not** start:
   finish with `systemctl start agent-runner@<project>`.
+- `--force`: overwrite a same-basename sibling project's unit (the clobber guard
+  otherwise refuses, e.g. after moving/renaming a project directory).
 
 After writing, runs `systemctl --user daemon-reload`, `enable`, `start`.
 
