@@ -638,7 +638,16 @@ def _spawn_round(
     seconds this resamples host_health and, on CRITICAL pressure,
     ``_terminate_round``s the round and emits ``round_mem_terminated`` — the
     actual coma-preventer for a single round that balloons mid-flight (the
-    pre-round gate in ``_select_and_gate`` only samples at round boundaries)."""
+    pre-round gate in ``_select_and_gate`` only samples at round boundaries).
+
+    The floor's critical swap decision is CUMULATIVE swap-out SINCE ROUND-START:
+    the first mid-round sample is pinned as the baseline for every later tick
+    (``prev`` passed to ``host_health.memory_pressure``), so the delta grows
+    across the whole round rather than resetting each ~10s interval. A slow
+    SD/USB-backed swap device pages only a few MB per interval — below the
+    32 MiB floor — but crosses it over a long round; a per-interval delta would
+    stay inert on exactly that host. PSI-full stays an independent immediate
+    critical path (it reads the current sample alone, no baseline needed)."""
     log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
@@ -653,7 +662,14 @@ def _spawn_round(
             next_mem_check = (
                 clock.monotonic() + _MEM_CHECK_INTERVAL_S if host_health_cfg is not None else None
             )
-            prev_sample: dict = {}
+            # Baseline pinned at the first mid-round sample (round-start), held
+            # fixed so the swap-out delta the floor tests is CUMULATIVE SINCE
+            # ROUND-START, not per-interval: a slow SD/USB swap device trickles
+            # only a few MB per ~10s tick (below the 32 MiB floor) yet crosses
+            # it over a long round, so a per-interval comparison stayed inert on
+            # exactly the field host this floor exists for. PSI-full stays an
+            # independent immediate path (it reads the current sample alone).
+            round_start_sample: dict | None = None
             while True:
                 try:
                     return proc.wait(timeout=1)
@@ -663,8 +679,11 @@ def _spawn_round(
                     break
                 if next_mem_check is not None and clock.monotonic() >= next_mem_check:
                     cur_sample = sample_fn()
-                    pressure = host_health.memory_pressure(cur_sample, prev_sample, host_health_cfg)
-                    prev_sample = cur_sample
+                    if round_start_sample is None:
+                        round_start_sample = cur_sample
+                    pressure = host_health.memory_pressure(
+                        cur_sample, round_start_sample, host_health_cfg
+                    )
                     if pressure is not None and pressure.severity == "critical":
                         returncode = _terminate_round(proc)
                         emit_round_mem_terminated(

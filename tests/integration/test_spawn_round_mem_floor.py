@@ -7,13 +7,15 @@ pressure.
 The PSI-based test below exercises the mechanism, but is NOT the field-bug
 coverage: the field host has no /proc/pressure/memory (PSI off), so it can
 never produce a psi_full_avg10 sample. `test_given_cache_poor_psi_off_host_*`
-is the real field-bug coverage -- a REALISTIC (hundreds-of-MB, not
-gigabyte-scale) swap-out-rate delta while MemFree is critically low is the
-ONLY signal such a host can ever show, and host_health.memory_pressure now
-escalates that combination to "critical" on its own, gated on MemFree rather
-than on the delta's exact rate (robust to a slow SD-card/USB swap device),
-which is what makes this floor an actual coma-preventer on that host, not
-just a PSI one.
+is the real field-bug coverage. The mid-round floor's critical swap decision
+is CUMULATIVE swap-out SINCE ROUND-START (the round-start sample is pinned as
+the baseline for every subsequent tick), not a per-interval delta between two
+~10s samples: on that host's SLOW SD/USB-backed swap (< ~3.2 MB/s once zram
+fills) the per-10s delta never crosses the 32 MiB floor, so a per-interval
+comparison stayed inert and one ballooning round could squeeze the host for
+up to round_timeout_s. Cumulative-since-round-start crosses the floor over a
+long round even at a slow trickle, gated on MemFree (~5MB, the "actively
+dying" condition) rather than on the delta's exact rate.
 
 Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
 but with an injected clock that fakes elapsed wall time so the test does not
@@ -36,18 +38,29 @@ _CRITICAL_SAMPLE = {
 }
 
 
-_FIELD_HOST_SWAP_DELTA_BYTES = 300 * 1024 * 1024  # realistic per-interval rate, not a GiB spike
+# ~10 MB per ~10s tick -- well BELOW the 32 MiB per-interval noise floor, so an
+# old per-interval comparison never fired; the field host's slow SD/USB swap
+# can only trickle at roughly this rate once zram fills.
+_SLOW_SWAP_STEP_BYTES = 10 * 1024 * 1024
+
+_HEALTHY_SAMPLE = {
+    "psi_some_avg10": None,
+    "psi_full_avg10": None,
+    "mem_free_mb": 4000,
+    "mem_available_mb": 4000,
+    "swap_sout": 1000,  # constant -- near-zero cumulative swap-out
+}
 
 
-def _field_host_sample_fn():
+def _slow_swap_sample_fn():
     """PSI unreadable, MemAvailable inflated at 82MB (comfortably above
     mem_avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
     alone), MemFree critically low (~5MB -- the "actively dying" condition
-    critical is gated on), swap_sout climbing by a realistic 300MB/interval --
-    the field host's own shape: a slow SD-card/USB swap device could never
-    sustain a gigabyte-scale delta in one ~10s interval, but this combination
-    (critically-low MemFree + any sustained positive swap-out) is critical
-    regardless of the exact rate."""
+    critical is gated on), swap_sout climbing only ~10MB per ~10s tick -- a
+    realistic SLOW SD/USB swap trickle whose PER-INTERVAL delta never crosses
+    the 32 MiB floor. Only the CUMULATIVE swap-out since round-start crosses
+    it, and only after enough ticks -- which is exactly the field episode this
+    floor must terminate."""
     calls = {"n": 0}
 
     def _fn():
@@ -57,7 +70,7 @@ def _field_host_sample_fn():
             "psi_full_avg10": None,
             "mem_free_mb": 5,
             "mem_available_mb": 82,
-            "swap_sout": calls["n"] * _FIELD_HOST_SWAP_DELTA_BYTES,
+            "swap_sout": calls["n"] * _SLOW_SWAP_STEP_BYTES,
         }
 
     return _fn
@@ -108,15 +121,16 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
 
 
-def test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_terminates(tmp_path):
+def test_given_cache_poor_psi_off_host_slow_swap_when_cumulative_crosses_then_terminates(tmp_path):
     """The real field-bug shape: PSI unreadable, MemAvailable inflated at 82MB
     well above mem_avail_min_mb=40 (combined-low genuinely cannot fire),
-    MemFree critically low (~5MB), swap_out climbing by a realistic
-    300MB/interval rate (not a gigabyte-scale spike a slow SD-card/USB swap
-    device could never produce). Critical is gated on MemFree, not on the
-    swap-out rate's magnitude, so this fires regardless of the swap device's
-    actual throughput -- which is what makes this floor an actual
-    coma-preventer on the field host, not just on a PSI one."""
+    MemFree critically low (~5MB), swap_out climbing only ~10MB per ~10s tick
+    -- a SLOW SD/USB swap trickle whose per-interval delta stays below the
+    32 MiB floor, so an old per-interval comparison would NEVER terminate.
+    The floor now measures CUMULATIVE swap-out since round-start, so across
+    enough ticks the accumulated delta crosses 32 MiB while MemFree stays
+    critically low, and the round is terminated -- which is what makes this an
+    actual coma-preventer on the field host regardless of swap-device speed."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "import time; time.sleep(30)"]
@@ -128,7 +142,7 @@ def test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_term
         timeout_s=300,
         host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
         clock=_TickingClock(),
-        sample_fn=_field_host_sample_fn(),
+        sample_fn=_slow_swap_sample_fn(),
     )
     assert rc != 0  # terminated, not a clean exit
 
@@ -137,6 +151,32 @@ def test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_term
     assert len(terminated) == 1
     assert terminated[0]["severity"] == "critical"
     assert terminated[0]["signal"] == "swap_out_rate"
+    assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
+
+
+def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_terminate(tmp_path):
+    """The negative control for the cumulative-swap floor: a healthy host with
+    ample MemFree (~4000MB) and near-zero cumulative swap-out (constant
+    swap_sout) is sampled across several ~10s ticks and never reaches
+    critical, so the round runs to its own clean exit -- no round_mem_terminated
+    and no round_supervisor_wedged."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(3)"]  # exits on its own
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
+        clock=_TickingClock(),
+        sample_fn=lambda: _HEALTHY_SAMPLE,
+    )
+    assert rc == 0  # clean exit, never terminated by the floor
+
+    events = read_events_for_current_month(log_dir)
+    assert [e for e in events if e.get("event") == "round_mem_terminated"] == []
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
 
 

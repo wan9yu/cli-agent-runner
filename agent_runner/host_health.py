@@ -10,17 +10,22 @@ defined signal ladder with graceful degrade:
 
 1. **PSI** (``psi_some_avg10``/``psi_full_avg10``) if readable — the kernel's
    own "reclaim is slowing progress" measure, immune to cache inflation.
-2. else **swap-out rate** — the delta of ``swap_sout`` (cumulative) between
-   two samples; more than a noise floor (tens of MB) means active paging, not
-   benign startup/idle churn. Escalates to **critical** when ``mem_free_mb``
-   is ALSO critically low (the same absolute floor tier 3 uses below) WHILE
-   swap-out is positive — the unambiguous "actively dying" state. This is
-   gated on MemFree, not on the swap-out RATE's magnitude: a small,
-   memory-starved host on a slow SD-card/USB-backed swap device may push only
-   a few hundred MB across an entire dying episode, far below any defensible
-   flat per-sample byte-rate, so a rate-only critical bar was inert on
-   exactly the host this ladder exists for. A host without PSI (``psi=0``, or
-   non-Linux) has no OTHER way to ever reach critical.
+2. else **swap-out rate** — the delta of ``swap_sout`` (cumulative bytes) over
+   the ``prev_sample`` the caller passes; more than a noise floor (tens of MB)
+   means active paging, not benign startup/idle churn. Escalates to
+   **critical** when ``mem_free_mb`` is ALSO critically low (the same absolute
+   floor tier 3 uses below) WHILE swap-out is positive — the unambiguous
+   "actively dying" state. This is gated on MemFree, not on the swap-out
+   RATE's magnitude: a small, memory-starved host on a slow SD-card/USB-backed
+   swap device may push only a few hundred MB across an entire dying episode,
+   far below any defensible flat per-sample byte-rate, so a rate-only critical
+   bar was inert on exactly the host this ladder exists for. What ``prev``
+   spans is the caller's choice: the pre-round gate diffs successive round
+   boundaries, while ``serve``'s mid-round floor pins the round-start sample as
+   ``prev`` for the whole round, making its delta CUMULATIVE swap-out SINCE
+   ROUND-START — so even a slow trickle crosses the floor over a long round. A
+   host without PSI (``psi=0``, or non-Linux) has no OTHER way to reach
+   critical.
 3. else **combined-low** — ``mem_free_mb`` AND ``mem_available_mb`` both low
    together. Never a MemFree-only gate: a cache-heavy healthy host's MemFree
    is always low, which would false-positive on every such host. (Tier 2's
