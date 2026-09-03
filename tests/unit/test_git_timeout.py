@@ -128,6 +128,42 @@ def test_foreign_lock_untouched_on_normal_git_failure(tmp_path, monkeypatch):
     assert evs == []
 
 
+def test_stash_push_timeout_clears_self_caused_lock_and_raises_stash_error(tmp_path, monkeypatch):
+    """Mirrors test_commit_timeout_clears_self_caused_lock_and_emits for
+    stash_orphan: a killed `git stash push` can strand .git/index.lock exactly
+    like a killed commit, so it must get the same self-caused-lock clearing +
+    typed-error translation (StashError, not a bare GitTimeout) so the dirty
+    handler can emit ORPHAN_STASH_FAILED cleanly instead of a generic
+    hook_failed."""
+    (tmp_path / ".git").mkdir()
+    lock = tmp_path / ".git" / "index.lock"
+    lock.write_text("")
+    (tmp_path / "f.txt").write_text("x")
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    def fake_git(repo, *args, pre_flags=(), timeout=10):
+        if args and args[0] == "status":
+            return subprocess.CompletedProcess(["git", *args], 0, "?? f.txt\x00", "")
+        if args[:2] == ("stash", "list"):
+            return subprocess.CompletedProcess(["git", *args], 0, "", "")
+        if args[:2] == ("stash", "push"):
+            raise vcs_state.GitTimeout("stash push exceeded 30s")
+        return subprocess.CompletedProcess(["git", *args], 0, "", "")
+
+    monkeypatch.setattr(vcs_state, "_git", fake_git)
+    with pytest.raises(vcs_state.StashError):
+        vcs_state.stash_orphan(tmp_path, round_num=7, phase="dev", log_dir=log_dir)
+
+    assert not lock.exists()
+    evs = [
+        e
+        for e in read_events_for_current_month(log_dir)
+        if e.get("event") == "stale_index_lock_cleared"
+    ]
+    assert len(evs) == 1 and evs[0]["round_num"] == 7
+
+
 def test_lock_removal_unblocks_next_commit(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)

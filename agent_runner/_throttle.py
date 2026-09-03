@@ -619,9 +619,25 @@ def _apply_back_off(
         emit_transient_error_recovered,
     )
 
+    # throttle.reset_at_epoch is already ladder-EXTENDED (_check_throttle_state
+    # applies _events_derived_reset before constructing it, by design — see its
+    # docstring). compute_adjusted_reset_at's own emitted event needs the RAW
+    # detector reset for original_reset_at_epoch, not this already-extended
+    # value, or a 2nd+ consecutive failure would report an inflated "original"
+    # (0.3's structured-event consumers would inherit the wrong field). Re-read
+    # the same latest-unrecovered-detected event _check_throttle_state itself
+    # scanned (no write happens between that call and this one) and fall back
+    # to the extended value only if it's since disappeared or names another agent.
+    raw_detected = _latest_unrecovered_detected(log_dir)
+    raw_reset_at_epoch = throttle.reset_at_epoch
+    if raw_detected is not None and str(raw_detected.get("agent", "unknown")) == throttle.agent:
+        raw_reset_at_epoch = _coerce_int(
+            raw_detected.get("reset_at_epoch"), throttle.reset_at_epoch
+        )
+
     adjusted_reset_at, _consecutive_count, _capped = compute_adjusted_reset_at(
         classification=throttle.classification,
-        original_reset_at_epoch=throttle.reset_at_epoch,
+        original_reset_at_epoch=raw_reset_at_epoch,
         agent=throttle.agent,
         log_dir=log_dir,
         clock=clock,

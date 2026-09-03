@@ -362,8 +362,12 @@ def stash_orphan(
       unreachable.
 
     Raises StashError when ``git stash push`` itself fails — e.g. intent-to-add
-    index entries ("Entry '<f>' not uptodate. Cannot merge."). Callers must not
-    read that as a clean tree: the WIP is still on disk.
+    index entries ("Entry '<f>' not uptodate. Cannot merge."), OR when the push
+    times out (``GitTimeout``, translated here): either way callers must not
+    read that as a clean tree — the WIP is still on disk. A timed-out push can
+    also strand a ``.git/index.lock`` behind our own killed git; that (and only
+    that) path clears it, mirroring ``try_auto_commit``'s
+    ``_clear_self_caused_index_lock`` use.
 
     ``log_dir`` (when under ``repo``) and every dirty plugin-owned path are
     excluded so ``git stash push -u`` sweeps neither the runner's own bookkeeping
@@ -382,7 +386,11 @@ def stash_orphan(
     if owned:
         # _log_dir_exclude_pathspec already opens the pathspec with "--" when non-empty.
         exclude = [*exclude, *owned] if exclude else ["--", *owned]
-    push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
+    try:
+        push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
+    except GitTimeout as e:
+        _clear_self_caused_index_lock(repo, round_num, log_dir)
+        raise StashError(str(e)[:200]) from e
     if push.returncode != 0:
         raise StashError((push.stderr or "git stash push failed")[:200])
     listing = _git(repo, "stash", "list", "-1", "--format=%H %s")

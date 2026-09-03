@@ -76,9 +76,22 @@ def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckR
 
 
 def _check_work_dir_is_git(cfg: Config) -> CheckResult:
-    from agent_runner.vcs_state import is_git_repo
+    from agent_runner.vcs_state import GitTimeout, is_git_repo
 
-    if not is_git_repo(cfg.runtime.work_dir):
+    try:
+        is_repo = is_git_repo(cfg.runtime.work_dir)
+    except GitTimeout as e:
+        # Self-heals (a hung git process under host load, not a broken config)
+        # -- degrade to a clean CheckResult like sibling _check_log_dir catches
+        # OSError, instead of a raw traceback out of run_battery. permanent
+        # defaults False (environmental): retry, don't give up for good.
+        return CheckResult(
+            "work_dir_is_git_repo",
+            False,
+            reason=f"git check on {cfg.runtime.work_dir} timed out: {e}",
+            how_to_fix="investigate a hung git process or host load; retry",
+        )
+    if not is_repo:
         return CheckResult(
             "work_dir_is_git_repo",
             False,

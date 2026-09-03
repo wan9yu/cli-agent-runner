@@ -721,6 +721,42 @@ def test_elapsed_s_clamps_backward_clock_step_to_zero() -> None:
     assert _elapsed_s(900.0, clock=clk) == 0  # never negative
 
 
+def test_apply_back_off_emits_raw_detector_reset_not_ladder_extended(tmp_path):
+    """_apply_back_off hands compute_adjusted_reset_at the RAW detector reset for
+    the transient_error_backoff_capped event's original_reset_at_epoch field --
+    not throttle.reset_at_epoch, which _check_throttle_state already ladder-
+    extends (see test_check_throttle_state_reads_ladder_extended_reset_not_raw).
+    0.3's structured-event consumers would otherwise inherit the wrong field."""
+    from agent_runner._throttle import _apply_back_off, _check_throttle_state
+
+    clock = FakeClock(epoch=1_700_000_000.0)
+    raw_reset = int(clock.epoch()) + 100  # api_timeout base=30s
+    _write_events(
+        tmp_path,
+        [
+            _detected(raw_reset, ts=_iso(raw_reset - 60), cls="api_timeout"),
+            _detected(raw_reset, ts=_iso(raw_reset - 30), cls="api_timeout"),
+        ],
+    )
+    throttle = _check_throttle_state(tmp_path, clock=clock)
+    assert throttle is not None
+    assert throttle.reset_at_epoch == raw_reset + 30  # ladder-extended (exponent=1)
+
+    with patch("agent_runner._emit.emit_transient_error_recovered"):
+        interrupted = _apply_back_off(tmp_path, throttle, stop={"requested": True}, clock=clock)
+    assert interrupted is True
+
+    capped = [
+        json.loads(line)
+        for f in sorted(tmp_path.glob("events-*.jsonl"))
+        for line in f.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    capped = [e for e in capped if e.get("event") == "transient_error_backoff_capped"]
+    assert len(capped) == 1
+    assert capped[0]["original_reset_at_epoch"] == raw_reset  # RAW, not raw_reset + 30
+
+
 def test_apply_back_off_recovered_throttled_for_s_matches_sleep(tmp_path) -> None:
     from agent_runner._throttle import _apply_back_off
     from agent_runner.api_types import TransientErrorState

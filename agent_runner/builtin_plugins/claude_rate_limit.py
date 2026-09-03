@@ -197,7 +197,11 @@ def _as_int(value: Any, fallback: int) -> int:
     non-finite (NaN/Infinity — both valid ``json.loads`` float tokens) value
     degrades to ``fallback`` instead of raising and voiding the round. Shared
     guard behind ``_as_epoch`` (reset-time fields) and ``_extract_usage``
-    (token/duration counts) — never fabricates a value beyond the fallback."""
+    (token/duration counts) — never fabricates a value beyond the fallback.
+
+    Plugin-local (deliberately not the core ``_throttle._coerce_int``):
+    claude's rate-limit/usage JSON is untrusted CLI output, a different trust
+    boundary from core's own event-derived reads."""
     if isinstance(value, bool) or value is None:
         return fallback
     if isinstance(value, float) and not math.isfinite(value):

@@ -49,6 +49,26 @@ def test_given_non_git_workdir_when_battery_runs_then_git_check_fails(tmp_path: 
     assert any(r.name == "work_dir_is_git_repo" for r in failed)
 
 
+def test_given_git_timeout_when_battery_runs_then_git_check_fails_clean(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A GitTimeout out of is_git_repo (host under load / a hung git process)
+    must degrade to a clean, environmental CheckResult -- like sibling
+    _check_log_dir catches OSError -- instead of a raw traceback out of
+    run_battery."""
+    from agent_runner.vcs_state import GitTimeout
+
+    def boom(_path):
+        raise GitTimeout("git rev-parse --is-inside-work-tree exceeded 10s")
+
+    monkeypatch.setattr("agent_runner.vcs_state.is_git_repo", boom)
+    results = run_battery(_cfg(tmp_git_repo))
+    failed = [r for r in results if not r.ok]
+    git = next(r for r in failed if r.name == "work_dir_is_git_repo")
+    assert "exceeded 10s" in git.reason
+    assert git.permanent is False  # self-heals (hung git, not a broken config) -> environmental
+
+
 def test_given_agent_cli_not_in_path_when_battery_runs_then_cli_check_fails(
     tmp_git_repo: Path,
 ) -> None:

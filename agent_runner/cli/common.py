@@ -26,10 +26,11 @@ def cfg_from_args(args) -> Config:
 
 
 def cfg_from_args_or_config_error(args) -> Config:
-    """``cfg_from_args``, but a missing file or unparseable TOML is raised as
-    ``ConfigError`` instead of ``FileNotFoundError``/``tomllib.TOMLDecodeError``.
+    """``cfg_from_args``, but a missing/unreadable file or unparseable TOML is
+    raised as ``ConfigError`` instead of ``FileNotFoundError``/``OSError``/
+    ``tomllib.TOMLDecodeError``.
 
-    ``config.py``'s own raise sites stay untyped-by-permanence on purpose —
+    ``config/``'s own raise sites stay untyped-by-permanence on purpose —
     other CLI commands (``peek``, ``events``, ``install``, ``upgrade``)
     distinguish "no config file yet" (silent/expected) from "config exists but
     is broken" (logged) around plain ``cfg_from_args``. The round and serve
@@ -40,10 +41,15 @@ def cfg_from_args_or_config_error(args) -> Config:
     serve's own boot-time load raises the same way here so ``main()``'s
     ``ConfigError`` catch gives the identical verdict), not a
     5-consecutive-restart crash loop.
+
+    ``OSError`` (covers ``PermissionError`` and ``IsADirectoryError``, and
+    subsumes ``FileNotFoundError``) catches a config that exists but can't be
+    read — a chmod-000 file, or ``--config`` pointed at a directory — which
+    won't self-heal on restart any more than a missing or unparseable one.
     """
     try:
         return cfg_from_args(args)
-    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+    except (OSError, tomllib.TOMLDecodeError) as e:
         raise ConfigError(str(e)) from e
 
 
