@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Round-child exit codes are classified by permanence, not a type whitelist: a config break stays 78, a self-healing environmental failure (lock contention, a git-status timeout, an unwritable log dir) now reliably reaches retryable 76, and everything else still falls to 1 so the crash-loop breaker bounds a genuine bug; serve itself still never exits 76.
-- `kill` reaps the whole round-and-agent process group, service-mode detection checks systemd `is-active` instead of guessing, and `monitor_auto_stop_triggered` fires only after a confirmed stop.
+- `kill` reaps the whole round-and-agent process group; `stop`/`restart`/`uninstall` are drain-aware so a mid-round stop no longer leaves a systemd serve stopped or raises; service-mode detection checks systemd `is-active` instead of guessing; and `monitor_auto_stop_triggered` fires only after a confirmed stop.
 - `install --system` rejects control characters in `work_dir`/`log_dir`/config path, closing a root-injection path through the rendered unit.
 - `read_json`/orphan-state reads survive a non-UTF-8 byte or a directory instead of crashing serve; a git-status timeout mid-round no longer drops the round's own bookkeeping (`dirty_check_failed`).
 - Throttle readers (serve's loop-top gate, the skip path, `peek`, monitor) converge on one reset source; the back-off sleep now wakes early on an NTP clock jump.
