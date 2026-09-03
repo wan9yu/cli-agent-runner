@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from agent_runner.api import PERMANENT_CONFIG_EXIT
 from agent_runner.cli import main
@@ -43,9 +46,13 @@ def test_given_syntax_broken_toml_when_main_round_then_exit_78_not_traceback(
     assert rc == PERMANENT_CONFIG_EXIT
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file perms")
 def test_given_unreadable_config_when_main_serve_then_exit_78_not_traceback(
     tmp_path: Path,
 ) -> None:
+    # Under euid 0 this asserts VACUOUSLY: root can read a 000 file, so open()
+    # succeeds and the path taken is TOMLDecodeError, not the PermissionError
+    # this test exists to cover -- skip so it fails loudly only when it can.
     # chmod-000: the file exists (passes load_config's own exists() check) but
     # open() raises PermissionError -- an OSError subclass, not FileNotFoundError
     # or TOMLDecodeError, so it used to escape cfg_from_args_or_config_error's
