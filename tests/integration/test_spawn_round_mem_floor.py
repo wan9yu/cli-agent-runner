@@ -2,7 +2,15 @@
 cannot stop a single round that balloons mid-flight (metrics only sample at
 round boundaries), so _spawn_round's existing 1s proc.wait loop also samples
 host_health roughly every ~10s and _terminate_round's the round on critical
-pressure -- the actual coma-preventer for the field bug this closes.
+pressure.
+
+The PSI-based test below exercises the mechanism, but is NOT the field-bug
+coverage: the field host has no /proc/pressure/memory (PSI off), so it can
+never produce a psi_full_avg10 sample. `test_given_cache_poor_psi_off_host_*`
+is the real field-bug coverage -- a gigabyte-scale swap-out-rate delta is the
+ONLY signal such a host can ever show, and host_health.memory_pressure now
+escalates a sustained one to "critical" on its own (Fix #1), which is what
+makes this floor an actual coma-preventer on that host, not just a PSI one.
 
 Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
 but with an injected clock that fakes elapsed wall time so the test does not
@@ -25,6 +33,27 @@ _CRITICAL_SAMPLE = {
 }
 
 
+def _field_host_sample_fn():
+    """PSI unreadable, MemAvailable idling at 82MB (comfortably above
+    mem_avail_min_mb=40 -- combined-low genuinely cannot fire, and mem_free_mb
+    stays above the 16MB combined-low floor too), swap_sout climbing 2 GiB
+    every sample -- the field host's own shape: the ONLY tier that can ever
+    see it is the swap-out-rate delta."""
+    calls = {"n": 0}
+
+    def _fn():
+        calls["n"] += 1
+        return {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 30,
+            "mem_available_mb": 82,
+            "swap_sout": calls["n"] * 2 * 1024 * 1024 * 1024,
+        }
+
+    return _fn
+
+
 class _TickingClock:
     """monotonic() advances by `step` on every call -- fakes elapsed wall time
     across _spawn_round's real-subprocess poll loop so a ~10s sample interval
@@ -40,6 +69,10 @@ class _TickingClock:
 
 
 def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
+    """PSI-based critical pressure exercises the mechanism (sampling cadence,
+    terminate-and-emit, distinctness from round_supervisor_wedged) -- see
+    test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_terminates
+    below for the actual field-bug coverage (that host has no PSI at all)."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "import time; time.sleep(30)"]
@@ -63,6 +96,37 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
 
     # Distinct from the wall-clock-ceiling path: this is a memory-pressure kill,
     # not a wedged-round kill, so round_supervisor_wedged must NOT also fire.
+    assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
+
+
+def test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_terminates(tmp_path):
+    """The real field-bug shape (Fix #1): PSI unreadable, MemAvailable idling
+    at 82MB well above mem_avail_min_mb=40 (combined-low genuinely cannot
+    fire), only the swap-out-rate delta -- climbing 2 GiB every sample -- ever
+    tells the truth. Before Fix #1, swap_out_rate could only ever reach
+    "warning", so this exact host shape could NEVER trip the mid-round floor;
+    host_health's sustained-heavy-delta escalation to "critical" is what makes
+    this floor an actual coma-preventer here, not just on a PSI host."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
+        clock=_TickingClock(),
+        sample_fn=_field_host_sample_fn(),
+    )
+    assert rc != 0  # terminated, not a clean exit
+
+    events = read_events_for_current_month(log_dir)
+    terminated = [e for e in events if e.get("event") == "round_mem_terminated"]
+    assert len(terminated) == 1
+    assert terminated[0]["severity"] == "critical"
+    assert terminated[0]["signal"] == "swap_out_rate"
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
 
 

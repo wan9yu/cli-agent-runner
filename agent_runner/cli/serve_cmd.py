@@ -32,6 +32,7 @@ from agent_runner._throttle import (
     _check_throttle_state,
     _interruptible_sleep,
     pending_recovered,
+    round_was_mem_terminated,
 )
 from agent_runner.api import (
     check_self_terminated_sentinel,
@@ -267,16 +268,33 @@ def _pause_until_selectable(
         emit_schedule_resumed(log_dir, paused_for_s=int(clock.monotonic() - started))
 
 
-def _memory_pressure_now(cfg, sample_fn) -> host_health.Pressure | None:
-    """Single-sample host_health read for the pre-round gate.
+# Serve-loop-local memory-pressure state for the PRE-ROUND gate: the previous
+# sample, so the swap-rate delta tier (host_health's ONLY path to "critical"
+# on a PSI-off host — the field bug's own host has no /proc/pressure/memory,
+# and its MemAvailable stays inflated right up to the coma) is evaluable
+# across successive _select_and_gate calls, not just within one
+# _spawn_round's own mid-round loop. _select_and_gate has no call-to-call
+# state of its own (cmd() constructs its arguments fresh every iteration), and
+# cmd()'s loop body cannot grow to thread one through (it is at its 140-line
+# budget) — so this single mutable dict is a stable default, exactly like
+# SYSTEM_CLOCK: cmd() never passes state= explicitly, so production gets one
+# shared dict for the whole serve process lifetime at zero extra loop LOC.
+# Tests inject a fresh {} to stay isolated from each other.
+_PRE_ROUND_MEM_STATE: dict = {}
 
-    Swap-rate deltas need two samples spaced by wall time — a once-per-round
-    check can't supply that continuity — so this checks only the two ladder
-    tiers that read off one sample (PSI, combined-low); PSI is the strongest,
-    cache-inflation-immune signal anyway. The mid-round hot loop in
-    :func:`_spawn_round` keeps a real ``prev_sample`` across its own ticks and
-    gets the swap-rate tier too."""
-    return host_health.memory_pressure(sample_fn(), {}, cfg.monitor.host_health)
+
+def _memory_pressure_now(cfg, sample_fn, state: dict) -> host_health.Pressure | None:
+    """Pre-round host_health read, using (and updating) ``state["prev"]`` — the
+    previous pre-round sample — so the swap-rate delta tier is evaluable, not
+    just PSI/combined-low. The very first call on a fresh ``state`` has no
+    baseline yet (``prev={}``) and so cannot see a swap-rate signal until the
+    NEXT call — an honest limitation (there is nothing to diff against), not a
+    bug. The mid-round hot loop in :func:`_spawn_round` keeps its own separate
+    ``prev_sample`` across its own ticks."""
+    cur = sample_fn()
+    pressure = host_health.memory_pressure(cur, state.get("prev", {}), cfg.monitor.host_health)
+    state["prev"] = cur
+    return pressure
 
 
 def _maybe_pause_for_memory_pressure(
@@ -287,6 +305,7 @@ def _maybe_pause_for_memory_pressure(
     sample_fn=metrics.sample,
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
+    state: dict = _PRE_ROUND_MEM_STATE,
 ) -> bool:
     """Pre-round admission gate (Group 3 action half): defer the next round while
     host_health reports real memory pressure. This is only HALF the
@@ -299,7 +318,7 @@ def _maybe_pause_for_memory_pressure(
     (like ``schedule_paused``/``schedule_resumed``) so a long defer does not
     trip ``detect_supervisor_stale`` (see its suppression set in
     ``_monitor_detectors.py``)."""
-    pressure = _memory_pressure_now(cfg, sample_fn)
+    pressure = _memory_pressure_now(cfg, sample_fn, state)
     if pressure is None:
         return False
     started = clock.monotonic()
@@ -309,7 +328,7 @@ def _maybe_pause_for_memory_pressure(
     if _pause_poll(
         stop,
         cfg.runtime.stop_file,
-        lambda: _memory_pressure_now(cfg, sample_fn) is None,
+        lambda: _memory_pressure_now(cfg, sample_fn, state) is None,
         clock.sleep,
         chunk_s,
     ):
@@ -408,14 +427,22 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
 
 
 def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
-    """Was the agent that JUST ran throttled? — so the crash-loop breaker excuses a
-    fast throttle-induced exit rather than counting it as a crash.
+    """Was the round that JUST ran throttled, or killed by the mid-round
+    memory-pressure hard floor? — so the crash-loop breaker excuses either a
+    fast throttle-induced exit or a mem-terminated round (round_mem_terminated
+    — a coma-preventer kill, not a crash) rather than counting it as a crash.
+    Checked first: a mem-terminated round can happen within ~10s, far under
+    the crash-loop breaker's 60s short-crash window, so — unlike a wall-clock
+    wedge kill, whose long duration alone dodges the breaker — it needs this
+    explicit exemption.
 
     When serve chose the phase (``phase_arg`` set) we check that exact agent. When the
     round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
     serve does NOT know which agent ran, so fall back to "any agent throttled" — the
     pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
     being misread as a crash (a false ``crash_loop`` permanent stop)."""
+    if round_was_mem_terminated(log_dir):
+        return True
     active = _active_throttles(log_dir)
     if phase_arg is None:
         return bool(active)
@@ -448,6 +475,7 @@ def _select_and_gate(
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
     sample_fn=metrics.sample,
+    mem_state: dict = _PRE_ROUND_MEM_STATE,
 ):
     """Resolve the phase to launch this round, gating on memory pressure, on
     schedule, and on ``throttled_phases`` — the phases whose agent is currently
@@ -460,7 +488,7 @@ def _select_and_gate(
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.
-    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn):
+    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn, state=mem_state):
         return _PAUSED_CONTINUE
     if args.ignore_schedule:
         return None  # rotation self-resolves in the round; no --phase, no gate

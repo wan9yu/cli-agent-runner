@@ -28,6 +28,35 @@ def test_pressure_from_sout_delta_when_memavailable_high() -> None:
     assert host_health.memory_pressure(cur, prev, _cfg()) is not None
 
 
+def test_sustained_heavy_swap_delta_escalates_to_critical_without_psi() -> None:
+    """A gigabyte-scale swap-out delta is critical on its own -- the ONLY path
+    to critical on a PSI-off host (no /proc/pressure/memory, or psi=0), which
+    is exactly the field host this ladder exists for: MemAvailable stays high
+    right up to the coma, so only the swap-rate tier can ever see it."""
+    prev = {"swap_sout": 0, "mem_free_mb": 30, "mem_available_mb": 82, "psi_some_avg10": None}
+    cur = {
+        "swap_sout": 2 * 1024 * 1024 * 1024,
+        "mem_free_mb": 30,
+        "mem_available_mb": 82,
+        "psi_some_avg10": None,
+    }
+    pressure = host_health.memory_pressure(cur, prev, _cfg(40))
+    assert pressure is not None
+    assert pressure.severity == "critical"
+    assert pressure.signal == "swap_out_rate"
+
+
+def test_moderate_swap_delta_stays_warning_not_critical() -> None:
+    """A real but modest swap delta (well under the critical floor) stays a
+    warning -- the escalation is deliberately a HIGH bar, not the same
+    noise-floor threshold that already distinguishes signal from noise."""
+    prev = {"swap_sout": 1000, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
+    cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+    pressure = host_health.memory_pressure(cur, prev, _cfg())
+    assert pressure is not None
+    assert pressure.severity == "warning"
+
+
 def test_no_swap_delta_below_noise_floor_reports_no_pressure() -> None:
     """A trivial (<= one page) sout delta is a benign one-time idle-page swap,
     not active paging — must NOT be reported as pressure."""

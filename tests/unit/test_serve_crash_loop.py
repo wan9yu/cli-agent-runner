@@ -32,6 +32,27 @@ def _fake_spawn(round_returncodes: list[int]):
     return spawn
 
 
+def _fake_spawn_mem_terminated():
+    """serve_cmd._spawn_round stand-in: every round is killed by the mid-round
+    memory-pressure hard floor -- emits round_mem_terminated (like the real
+    _spawn_round does on critical pressure) and returns a short, non-zero
+    signal-death-style returncode."""
+    from agent_runner.api import emit_round_mem_terminated
+
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
+        round_log_path.write_text("round output\n")
+        emit_round_mem_terminated(
+            round_log_path.parent,
+            pid=12345,
+            severity="critical",
+            signal="swap_out_rate",
+            message="swap sout +2147483648B since last sample (sustained heavy paging)",
+        )
+        return -15
+
+    return spawn
+
+
 def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -105,6 +126,33 @@ def test_given_success_between_crashes_when_serve_then_counter_resets(
     assert len(crash) == 1
     # 5 (post-reset run), not 8 (total crashes) — proves the success reset it.
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
+
+
+def test_given_repeated_mem_terminations_when_serve_then_no_crash_loop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A round killed by the mid-round memory-pressure hard floor is a
+    coma-prevented retry, not a crash: the floor can fire within ~10s (its own
+    sample cadence), far under the crash-loop breaker's 60s short-crash
+    window, so unlike a wall-clock-ceiling wedge (whose long duration alone
+    dodges the breaker) this needs an explicit exemption. 8 consecutive
+    mem-terminations -- more than CRASH_LOOP_THRESHOLD (5) -- must NOT trip
+    crash_loop; the host is expected to recover and keeps being retried at
+    the doubled back-off, exactly like an active throttle."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_mem_terminated())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=8))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "crash_loop" not in kinds
+    assert kinds.count("round_mem_terminated") == 8
+    assert "max_rounds_reached" in kinds
+    assert rc == 0
 
 
 # --- pure-function tests for the extracted restart policy ---

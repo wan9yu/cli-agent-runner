@@ -22,6 +22,8 @@ from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.events import (
     AGENT_USAGE_RECORDED,
+    ROUND_MEM_TERMINATED,
+    ROUND_SUBSTRATE_BEFORE,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
     iter_event_dicts,
@@ -36,6 +38,7 @@ __all__ = [
     "compute_adjusted_reset_at",
     "effective_throttle_view",
     "pending_recovered",
+    "round_was_mem_terminated",
 ]
 
 # _scan_events_for_transient sentinel: file held no transient event at all
@@ -269,6 +272,47 @@ def _active_throttles(
             phase=str(detected.get("phase", "")),
         )
     return active
+
+
+def round_was_mem_terminated(log_dir: Path) -> bool:
+    """True iff the round that JUST ran was killed by ``_spawn_round``'s
+    mid-round memory-pressure hard floor (``round_mem_terminated``) rather
+    than a genuine crash — so ``serve_cmd._ran_agent_throttled`` can excuse it
+    from the crash-loop breaker exactly like an active throttle (flat
+    back-off, ``consecutive`` reset to 0), the same treatment
+    ``ENV_BATTERY_EXIT`` already gets. A mem-terminated round can be killed
+    within the first ~10s (the mid-round check's own cadence) — far under the
+    crash-loop breaker's 60s "short crash" window — so, unlike a wall-clock-
+    ceiling wedge (whose long duration alone dodges the breaker), this needs
+    an explicit signal.
+
+    Scoped to "this round" (not some earlier one) by comparing the newest
+    ``round_mem_terminated`` event's timestamp against the newest
+    ``round_substrate_before``'s: ``round_substrate_before(N)`` always
+    precedes round N's own attempt, and no later round's
+    ``round_substrate_before(N+1)`` has been emitted yet at the point
+    ``_ran_agent_throttled`` runs (right after ``_spawn_round`` returns) —
+    ``round_substrate_after``, also emitted before this check runs, cannot
+    serve as that boundary, since it always comes AFTER any
+    ``round_mem_terminated`` within the very round it is scoping. ``>=``, not
+    ``>``: a fast loop (or millisecond-resolution ties) can legitimately stamp
+    both events in the same millisecond; erring toward "this round's" on a tie
+    only risks over-excusing, never mistaking a genuine crash for a rescue."""
+    newest_before_ts: str | None = None
+    newest_terminated_ts: str | None = None
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
+        for ev in _iter_events(path):
+            ts = ev.get("ts")
+            if not ts:
+                continue
+            kind = ev.get("event")
+            if kind == ROUND_SUBSTRATE_BEFORE:
+                newest_before_ts = ts
+            elif kind == ROUND_MEM_TERMINATED:
+                newest_terminated_ts = ts
+    if newest_before_ts is None or newest_terminated_ts is None:
+        return False
+    return parse_iso_ms(newest_terminated_ts) >= parse_iso_ms(newest_before_ts)
 
 
 def effective_throttle_view(
