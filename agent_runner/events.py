@@ -209,3 +209,37 @@ def open_events_jsonl(path: Path) -> TextIO:
     at every reader.
     """
     return path.open("r", encoding="utf-8", errors="replace")
+
+
+def _iter_parsed_lines(f: TextIO) -> Iterator[tuple[str, dict]]:
+    """Parse an already-open JSONL stream, skipping blank/malformed lines and
+    any line that decodes to something other than a JSON object.
+
+    Yields ``(stripped_line, parsed_dict)`` so a caller that also needs the
+    original text (to print it verbatim) or the file's post-read position
+    (offset-tailing) keeps both without re-parsing. The dict-only surface for
+    the common whole-file case is :func:`iter_event_dicts`, below.
+    """
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            yield line, obj
+
+
+def iter_event_dicts(path: Path) -> Iterator[dict]:
+    """Parse an entire events-*.jsonl file into dicts.
+
+    The shared parse+dict-guard every whole-file events-*.jsonl reader needs:
+    skip blank/malformed lines and any line that decodes to something other
+    than a JSON object (a bare number/string/list line must not reach a
+    caller's ``.get(...)``).
+    """
+    with open_events_jsonl(path) as f:
+        for _, obj in _iter_parsed_lines(f):
+            yield obj

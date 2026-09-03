@@ -16,7 +16,6 @@ an event relay, ``agent_runner/remote_relay.py``.
 
 from __future__ import annotations
 
-import json
 import re
 from collections import deque
 from collections.abc import Callable, Iterable
@@ -56,6 +55,8 @@ from agent_runner.events import (
     SCHEDULE_RESUMED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
+    _iter_parsed_lines,
+    iter_event_dicts,
     now_iso_ms,
     open_events_jsonl,
     parse_iso_ms,
@@ -632,23 +633,13 @@ class LocalSource:
 
 
 def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]:
+    # Every caller (detectors, round_view.build_round_view via peek) assumes
+    # the ``.get(...)`` shape -- iter_event_dicts already skips a bare
+    # number/string/list line so it never reaches them.
     out: list[dict[str, Any]] = []
     for path in files:
         try:
-            with open_events_jsonl(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        parsed = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    # Every caller (detectors, round_view.build_round_view via
-                    # peek) assumes the ``.get(...)`` shape -- a bare number/
-                    # string/list line must not reach them.
-                    if isinstance(parsed, dict):
-                        out.append(parsed)
+            out.extend(iter_event_dicts(path))
         except OSError:
             continue
     return out
@@ -684,16 +675,8 @@ class _EventTail:
                 continue
             with open_events_jsonl(path) as f:
                 f.seek(pos)
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        parsed = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(parsed, dict):
-                        self.buffer.append(parsed)
+                for _, parsed in _iter_parsed_lines(f):
+                    self.buffer.append(parsed)
                 self.offsets[path] = f.tell()
         return list(self.buffer)
 

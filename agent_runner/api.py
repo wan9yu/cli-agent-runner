@@ -739,9 +739,7 @@ def _tail_events_jsonl(
     Follows file rotation transparently — when a new events-YYYY-MM.jsonl
     appears, it is picked up from byte 0.
     """
-    import json as _json
-
-    from agent_runner.events import open_events_jsonl
+    from agent_runner.events import _iter_parsed_lines, open_events_jsonl
 
     seen_positions: dict[Path, int] = {}
     if start_at_now:
@@ -764,18 +762,10 @@ def _tail_events_jsonl(
                 continue
             with open_events_jsonl(path) as f:
                 f.seek(pos)
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        evt = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    # narrate_events -> _format_narrate_line does evt.get(...)
-                    # -- a non-dict line must not reach it or stream_events_jsonl's
-                    # machine-consumption callers.
-                    if not isinstance(evt, dict):
-                        continue
+                # narrate_events -> _format_narrate_line does evt.get(...) --
+                # a non-dict line must not reach it or stream_events_jsonl's
+                # machine-consumption callers.
+                for _, evt in _iter_parsed_lines(f):
                     yield evt
                     any_new = True
                 seen_positions[path] = f.tell()

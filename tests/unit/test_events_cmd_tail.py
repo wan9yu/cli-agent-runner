@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent_runner import events
 from agent_runner.cli import events_cmd
 
 
@@ -58,9 +59,11 @@ def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_on
 
     # Rebind the module's own globals, never the shared stdlib modules: patching
     # json.loads / time.sleep process-wide would reach unrelated test machinery.
+    # The line parse+dict-guard loop lives in agent_runner.events (shared by
+    # every events-*.jsonl reader) since 0.2.13, not in events_cmd itself.
     monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
     monkeypatch.setattr(
-        events_cmd,
+        events,
         "json",
         SimpleNamespace(loads=loads_appending_midloop, JSONDecodeError=json.JSONDecodeError),
     )

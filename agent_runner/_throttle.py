@@ -10,7 +10,6 @@ throttle state this module scans.
 
 from __future__ import annotations
 
-import json
 import math
 import random
 import warnings
@@ -25,7 +24,7 @@ from agent_runner.events import (
     AGENT_USAGE_RECORDED,
     TRANSIENT_ERROR_DETECTED,
     TRANSIENT_ERROR_RECOVERED,
-    open_events_jsonl,
+    iter_event_dicts,
     parse_iso_ms,
 )
 
@@ -99,17 +98,7 @@ def _iter_events(path: Path):
     """Yield parsed event dicts from a JSONL file; skip blank / corrupt lines
     and any line that decodes to something other than an object (a bare
     number/string/list) -- every caller assumes the shape ``ev.get(...)``."""
-    with open_events_jsonl(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                parsed = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                yield parsed
+    return iter_event_dicts(path)
 
 
 def _scan_events_for_transient(path: Path):
