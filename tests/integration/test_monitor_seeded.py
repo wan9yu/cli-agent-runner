@@ -94,11 +94,11 @@ def test_given_cache_poor_host_field_bug_shape_when_poll_once_then_fires_pressur
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The Gateway field-bug shape: MemAvailable stays high (inflated ~15x on a
-    cache-poor host) while swap-out climbs across two samples. mem_pressure must
-    fire from the swap-out-rate signal, AND the fail-loud self-check must say the
-    configured mem_avail_min_mb gate is inert on this host -- the two independent
-    defects the field report named."""
+    """The cache-poor-host field-bug shape: MemAvailable stays high (inflated ~15x
+    on a small-memory host) while swap-out climbs across two samples. mem_pressure
+    must fire from the swap-out-rate signal, AND the fail-loud self-check must say
+    the configured mem_avail_min_mb gate is inert on this host -- the two
+    independent defects this fix closes."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     cfg = load_config(tmp_git_repo / "agent-runner.toml")
