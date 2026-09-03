@@ -206,6 +206,163 @@ def test_monitor_host_health_unknown_key_round_trip(tmp_path):
     load_config(cfg)  # now loads clean
 
 
+def test_unknown_agent_key_round_trip(tmp_path):
+    """0.2.13: unknown [agent] key: load_config raises, migrate reports it
+    (exit 1, guided — not a crash), and deleting the stray key by hand makes
+    the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\nbogus = 1\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_unknown_vcs_key_round_trip(tmp_path):
+    """0.2.13: unknown [vcs] key: load_config raises, migrate reports it
+    (exit 1, guided — not a crash), and deleting the stray key by hand makes
+    the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "[vcs]\nbogus = 1\n"
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_unknown_monitor_key_round_trip(tmp_path):
+    """0.2.13: unknown [monitor] key: load_config raises, migrate reports it
+    (exit 1, guided — not a crash), and deleting the stray key by hand makes
+    the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "[monitor]\nbogus = 1\n"
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_phases_scalar_key_round_trip(tmp_path):
+    """0.2.13: a [phases] key that isn't 'list'/'phase_policy' and isn't a
+    phase sub-table ([phases.<name>]): load_config raises, migrate reports it
+    (exit 1, guided — not a crash), and deleting the stray key by hand makes
+    the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        '[phases]\nlist = ["dev"]\nbogus = 1\n[phases.dev]\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("bogus = 1\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_unknown_phase_prompt_key_round_trip(tmp_path):
+    """0.2.13: unknown [phases.<name>.prompt] key: load_config raises,
+    migrate reports it (exit 1, guided — not a crash), and deleting the stray
+    key by hand makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        '[phases]\nlist = ["dev"]\n'
+        '[phases.dev.prompt]\nfiles = ["a.md"]\ninject_context = false\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    cfg.write_text(cfg.read_text().replace("inject_context = false\n", ""))
+    load_config(cfg)  # now loads clean
+
+
+def test_phase_agent_missing_placeholder_round_trip(tmp_path):
+    """0.2.13: a [phases.<name>.agent] prompt_arg_template with no {prompt}
+    placeholder: load_config raises, migrate reports it (no safe auto-fix —
+    the insertion point is a real decision), and adding the token by hand
+    makes the config load clean again."""
+    from agent_runner.config import ConfigError, load_config
+
+    body = (
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        '[phases]\nlist = ["dev"]\n'
+        '[phases.dev.agent]\nprompt_arg_template = ["-p"]\n'
+    )
+    cfg = _write(tmp_path, body)
+    (tmp_path / "p.md").write_text("hi")
+
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 1  # manual: guided, not a crash
+
+    fixed = cfg.read_text().replace(
+        '[phases.dev.agent]\nprompt_arg_template = ["-p"]',
+        '[phases.dev.agent]\nprompt_arg_template = ["-p", "{prompt}"]',
+    )
+    cfg.write_text(fixed)
+    load_config(cfg)  # now loads clean
+
+
 def test_argv_missing_placeholder_round_trip(tmp_path):
     """argv prompt_arg_template missing {prompt}: load_config raises, migrate
     reports it (no safe auto-fix — the insertion point is a real decision),
