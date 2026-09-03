@@ -202,7 +202,12 @@ def _extend_reset(classification: str, reset_at_epoch: int, exponent: int) -> in
 
 
 def _events_derived_reset(
-    log_dir: Path, agent: str, classification: str, reset_at_epoch: int
+    log_dir: Path,
+    agent: str,
+    classification: str,
+    reset_at_epoch: int,
+    *,
+    _exponent_cache: dict[str, int] | None = None,
 ) -> int:
     """The ONE ladder-extended reset every throttle reader converges on:
     :func:`_active_throttles` (skip path / crash-loop excuse via its map),
@@ -211,12 +216,25 @@ def _events_derived_reset(
     non-default ``restart_delay_s`` sleeping past the raw reset between rounds could
     make the gate wave a round through with no back-off while the ladder was still
     active), and ``monitor.detect_rate_limit_active`` (via its optional ``log_dir``).
-    One function so the three can never compute this differently again."""
-    return _extend_reset(classification, reset_at_epoch, _backoff_exponent(log_dir, agent))
+    One function so the three can never compute this differently again.
+
+    ``_exponent_cache``, when given, memoizes ``_backoff_exponent`` per agent for
+    the caller's duration -- :func:`effective_throttle_view` threads ONE cache
+    through both its scalar and active-map computations so the same agent's
+    events-file scan runs once, not twice (the exponent depends only on
+    ``log_dir``'s contents and ``agent``, never on ``classification``/``reset_at_epoch``,
+    so this is a pure memoization, not an approximation)."""
+    if _exponent_cache is not None:
+        if agent not in _exponent_cache:
+            _exponent_cache[agent] = _backoff_exponent(log_dir, agent)
+        exponent = _exponent_cache[agent]
+    else:
+        exponent = _backoff_exponent(log_dir, agent)
+    return _extend_reset(classification, reset_at_epoch, exponent)
 
 
 def _active_throttles(
-    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
+    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK, _exponent_cache: dict[str, int] | None = None
 ) -> dict[str, TransientErrorState]:
     """Currently-active throttles keyed by AGENT label (binary basename), one entry
     per agent whose latest transient event is an unrecovered ``detected`` with its
@@ -235,7 +253,11 @@ def _active_throttles(
             continue
         classification = str(detected.get("classification", "rate_limit_account"))
         reset_at = _events_derived_reset(
-            log_dir, agent, classification, _coerce_int(detected.get("reset_at_epoch"), 0)
+            log_dir,
+            agent,
+            classification,
+            _coerce_int(detected.get("reset_at_epoch"), 0),
+            _exponent_cache=_exponent_cache,
         )
         if reset_at <= now:
             continue
@@ -264,14 +286,19 @@ def effective_throttle_view(
     the scalar for that entry so every consumer sees the identical value the skip loop
     gates on, even in that edge case.
 
+    A shared exponent cache is threaded through both calls below, so an agent
+    the scalar and the active map both need (the common case) gets its
+    events-file scan run once, not twice — see :func:`_events_derived_reset`.
+
     Separately, the global-latest scalar can be None while a sibling agent is
     still throttled (the newest transient event is another agent's recovered).
     When that happens fall back to the active throttle that clears LAST, so the
     scalar fields stay coherent. Both :func:`api.peek` and
     ``http_progress._rate_limit_state`` consume this — the two had drifted (peek had
     the fallback, http_progress did not)."""
-    throttle = _check_throttle_state(log_dir, clock=clock)
-    active = _active_throttles(log_dir, clock=clock)
+    exponent_cache: dict[str, int] = {}
+    throttle = _check_throttle_state(log_dir, clock=clock, _exponent_cache=exponent_cache)
+    active = _active_throttles(log_dir, clock=clock, _exponent_cache=exponent_cache)
     if throttle is not None and throttle.agent in active:
         throttle = active[throttle.agent]
     elif throttle is None and active:
@@ -280,7 +307,7 @@ def effective_throttle_view(
 
 
 def _check_throttle_state(
-    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK
+    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK, _exponent_cache: dict[str, int] | None = None
 ) -> TransientErrorState | None:
     """Scan events.jsonl tail for latest unmatched transient error.
 
@@ -296,7 +323,9 @@ def _check_throttle_state(
 
     ``clock`` supplies the wall clock the reset is compared against — inject a
     ``FakeClock`` in tests to pin an exact instant. Only the reset comparison
-    reads it; the event scan is pure.
+    reads it; the event scan is pure. ``_exponent_cache`` — see
+    :func:`_events_derived_reset` — lets :func:`effective_throttle_view` share
+    the backoff-exponent scan with :func:`_active_throttles`.
     """
     now = clock.epoch()
     latest_detected = _latest_unrecovered_detected(log_dir)
@@ -305,7 +334,11 @@ def _check_throttle_state(
     agent = str(latest_detected.get("agent", "unknown"))
     classification = str(latest_detected.get("classification", "rate_limit_account"))
     reset_at = _events_derived_reset(
-        log_dir, agent, classification, _coerce_int(latest_detected.get("reset_at_epoch"), 0)
+        log_dir,
+        agent,
+        classification,
+        _coerce_int(latest_detected.get("reset_at_epoch"), 0),
+        _exponent_cache=_exponent_cache,
     )
     if reset_at <= now:
         return None  # Ladder-extended reset already passed without recovery emit
