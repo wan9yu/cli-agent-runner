@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.14] - 2026-09-03
+
+### Breaking
+- `[monitor.host_health]` unknown keys are now rejected, and a nested table given as a scalar (`[agent] env = "x"`, `[monitor] host_health = 1`) now raises `ConfigError` instead of crashing. **Run `agent-runner migrate` before `upgrade`**, as in 0.2.12/0.2.13.
+
+### Fixed
+- `mem_pressure` now gates on a cache-poor-valid signal (PSI, then swap-out rate, then combined low `MemFree`+`MemAvailable`) instead of the inflated `MemAvailable` alone, and warns once when the configured `mem_avail_min_mb` gate is provably inert on the host; `serve` defers starting a new round while the host reports pressure and terminates a ballooning round mid-flight before it goes unresponsive.
+- An unreadable config (bad permissions, a directory) now fails cleanly with `ConfigError`/exit 78 instead of a raw traceback; a startup git-status timeout no longer crashes the check; a killed stash no longer strands `.git/index.lock`.
+- `transient_error_backoff_capped` reports the raw detector reset time, not the ladder-extended one.
+
+### Notes
+- New event kinds: `round_deferred`, `round_resumed`, `round_mem_terminated`; new alert kinds: `mem_signal_unavailable`, `mem_pressure_gate_inert`. `peek --json` schema is unchanged this release.
+- `config.py`/`monitor.py`/api's round-input helpers were reorganized into internal modules this release — no public API change.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.13] - 2026-09-02
 
 ### Breaking
