@@ -151,10 +151,24 @@ def test_given_mem_available_below_threshold_when_detect_then_returns_alert() ->
 def test_given_bare_mem_available_with_no_other_signal_when_detect_then_reports_unavailable() -> (
     None
 ):
-    metrics = [{"event": "round_end", "mem_available_mb": 150}]
+    # A 0.2.14-shaped entry (carries a new sample key -- psi_some_avg10 -- so it
+    # is past the pre-0.2.14 grace) but with no usable signal at all: PSI None,
+    # no swap history, MemFree unknown. That must report mem_signal_unavailable,
+    # not silently trust the bare mem_available_mb.
+    metrics = [{"event": "round_end", "mem_available_mb": 150, "psi_some_avg10": None}]
     a = detect_mem_pressure(metrics)
     assert a is not None
     assert a.detector == "mem_signal_unavailable"
+
+
+def test_given_pre_0214_metrics_entry_when_detect_then_grace_not_spurious_unavailable() -> None:
+    # First poll after upgrade: the last metrics-*.jsonl entry is pre-0.2.14
+    # shape (only the old mem_available_mb, none of the new mem-sample keys). It
+    # is "not yet sampled" by the new sampler, so detect_mem_pressure must grace
+    # it (return None) rather than fire a spurious mem_signal_unavailable before
+    # the first 0.2.14-shaped sample lands.
+    metrics = [{"event": "round_end", "mem_available_mb": 150}]
+    assert detect_mem_pressure(metrics) is None
 
 
 def test_given_swap_climbing_while_mem_available_stays_high_when_detect_gate_inert_then_fires() -> (

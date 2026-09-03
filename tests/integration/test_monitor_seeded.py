@@ -58,13 +58,15 @@ def test_given_seeded_mem_pressure_when_poll_once_then_emits_warning(
     assert any(a.detector == "mem_pressure" for a in alerts)
 
 
-def test_given_bare_low_mem_available_with_no_other_signal_when_poll_once_then_reports_unavailable(
+def test_given_pre_0214_metrics_entry_when_poll_once_then_grace_not_spurious_unavailable(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The field-bug shape: MemAvailable alone reads low but nothing else is known
-    about this host (no MemFree, no swap history, no PSI) -- the honest detector
-    must say it cannot tell, not silently trust MemAvailable (the original bug)."""
+    """First poll after upgrade, end-to-end: the newest metrics-*.jsonl entry is
+    pre-0.2.14 shape (only the old mem_available_mb -- no MemFree, no swap
+    history, no PSI). It has not yet been sampled by the 0.2.14 sampler, so
+    _poll_once must grace it silently -- no spurious mem_signal_unavailable
+    before the first new-shape sample lands, and no mem_pressure either."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     cfg = load_config(tmp_git_repo / "agent-runner.toml")
@@ -86,7 +88,7 @@ def test_given_bare_low_mem_available_with_no_other_signal_when_poll_once_then_r
     )
     (log_dir / "status.json").write_text(json.dumps({"round_num": 0, "running": False}))
     alerts = api._poll_once(tmp_git_repo)
-    assert any(a.detector == "mem_signal_unavailable" for a in alerts)
+    assert not any(a.detector == "mem_signal_unavailable" for a in alerts)
     assert not any(a.detector == "mem_pressure" for a in alerts)
 
 

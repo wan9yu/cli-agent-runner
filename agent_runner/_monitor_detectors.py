@@ -228,6 +228,14 @@ def _latest_two(metrics: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str
     return cur, prev
 
 
+# The mem-sample keys 0.2.14's metrics.sample() added. A metrics entry carrying
+# NONE of them is pre-0.2.14 shape (only the old mem_available_mb) and has not
+# yet been sampled by the new sampler -- treat it as "not yet sampled" grace so
+# the first poll after an upgrade does not fire a spurious mem_signal_unavailable
+# before the first 0.2.14-shaped sample lands.
+_NEW_MEM_SAMPLE_KEYS = ("mem_free_mb", "swap_sout", "psi_some_avg10", "psi_full_avg10")
+
+
 def detect_mem_pressure(
     metrics: list[dict[str, Any]], *, cfg: MonitorHostHealthConfig | None = None
 ) -> Alert | None:
@@ -241,8 +249,13 @@ def detect_mem_pressure(
     """
     cfg = cfg if cfg is not None else MonitorHostHealthConfig()
     cur, prev = _latest_two(metrics)
-    if not cur:
-        return None  # nothing sampled yet -- a startup grace period, not a bug
+    if not cur or not any(k in cur for k in _NEW_MEM_SAMPLE_KEYS):
+        # Nothing sampled yet, OR the latest entry is pre-0.2.14 shape (no new
+        # mem-sample keys) -- a startup / post-upgrade grace period, not a bug.
+        # Without this, the first poll after an upgrade would read that stale
+        # pre-0.2.14 entry, find no cache-poor-valid signal, and fire a spurious
+        # mem_signal_unavailable before the first 0.2.14-shaped sample lands.
+        return None
     pressure = host_health.memory_pressure(cur, prev, cfg)
     if pressure is not None:
         return _alert("mem_pressure", pressure.severity, pressure.message, pressure.context)
