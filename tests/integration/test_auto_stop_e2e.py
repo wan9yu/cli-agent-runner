@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 import psutil
@@ -21,7 +20,7 @@ from agent_runner import api
 from agent_runner.api_types import Alert
 from agent_runner.lifecycle import PIDFile, pid_alive
 from agent_runner.monitor import on_alert
-from tests._test_helpers import read_events_for_current_month
+from tests._test_helpers import poll_until, read_events_for_current_month
 
 
 def _write_toml(
@@ -66,15 +65,6 @@ def _reap_in_background(proc: subprocess.Popen) -> None:
     threading.Thread(target=proc.wait, daemon=True).start()
 
 
-def _wait_for(predicate, *, timeout_s: float, interval_s: float = 0.1) -> bool:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval_s)
-    return predicate()
-
-
 def test_alert_drives_real_serve_to_stop(
     tmp_git_repo: Path,
     fake_agent_script: Path,
@@ -105,7 +95,7 @@ def test_alert_drives_real_serve_to_stop(
     )
     _reap_in_background(proc)
     try:
-        assert _wait_for((log_dir / "serve.pid").exists, timeout_s=20), (
+        assert poll_until((log_dir / "serve.pid").exists, timeout_s=20), (
             "serve never wrote its pidfile"
         )
 
@@ -124,10 +114,10 @@ def test_alert_drives_real_serve_to_stop(
             allowed_stop_names=["oauth_fail"],
         )
 
-        assert _wait_for(lambda: not api.status(tmp_git_repo).active, timeout_s=20), (
+        assert poll_until(lambda: not api.status(tmp_git_repo).active, timeout_s=20), (
             "serve was not stopped by the auto-stop alert"
         )
-        assert _wait_for(lambda: proc.poll() is not None, timeout_s=20)
+        assert poll_until(lambda: proc.poll() is not None, timeout_s=20)
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -167,7 +157,7 @@ def test_kill_reaps_round_and_agent_pgroup_via_holder_sidecar(
     _reap_in_background(serve_stub)
     try:
         holder = log_dir / "agent-runner.lock.holder"
-        assert _wait_for(holder.exists, timeout_s=15), "round never wrote its lock holder sidecar"
+        assert poll_until(holder.exists, timeout_s=15), "round never wrote its lock holder sidecar"
 
         round_ps = psutil.Process(round_proc.pid)
         agent_pid: list[int] = []
@@ -179,14 +169,14 @@ def test_kill_reaps_round_and_agent_pgroup_via_holder_sidecar(
                 return True
             return False
 
-        assert _wait_for(_agent_spawned, timeout_s=15), "round never spawned its hanging agent"
+        assert poll_until(_agent_spawned, timeout_s=15), "round never spawned its hanging agent"
 
         PIDFile(log_dir / "serve.pid").write(serve_stub.pid)
 
         result = api.kill(tmp_git_repo)
 
         assert result.active is False
-        assert _wait_for(lambda: round_proc.poll() is not None, timeout_s=20), (
+        assert poll_until(lambda: round_proc.poll() is not None, timeout_s=20), (
             "the round process was left running"
         )
         assert not pid_alive(agent_pid[0]), "the round's agent was orphaned by kill()"
