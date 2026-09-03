@@ -50,15 +50,20 @@ def test_given_config_literals_when_compared_then_match_valid_frozensets() -> No
 
 
 def test_given_monitor_module_source_when_scanned_then_detector_count_matches() -> None:
-    """monitor.py states its own detector count in two docstrings. Guard both —
-    the doc-claims registry covers markdown only, and this number drifted to 12."""
+    """The detector count is stated in two docstrings, split across modules by
+    the monitor.py pure-layer extraction: _monitor_detectors.py's module
+    docstring ("11 built-in detectors") and monitor.py's run_all_detectors
+    docstring ("Run all 11 detectors"). Guard both — the doc-claims registry
+    covers markdown only, and this number drifted to 12 once already."""
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
-    src = (REPO / "agent_runner/monitor.py").read_text(encoding="utf-8")
     expected = len(KNOWN_ALERT_KINDS)
-    found = re.findall(r"(\d+) built-in detectors|Run all (\d+) detectors", src)
-    claims = [int(a or b) for a, b in found]
-    assert claims, "monitor.py no longer states a detector count (reworded? update guard)"
+    claims: list[int] = []
+    for name in ("agent_runner/_monitor_detectors.py", "agent_runner/monitor.py"):
+        src = (REPO / name).read_text(encoding="utf-8")
+        found = re.findall(r"(\d+) built-in detectors|Run all (\d+) detectors", src)
+        claims += [int(a or b) for a, b in found]
+    assert claims, "no module states a detector count (reworded? update guard)"
     assert all(c == expected for c in claims), (
-        f"monitor.py claims {claims} detectors; KNOWN_ALERT_KINDS has {expected}"
+        f"detector-count docstrings claim {claims}; KNOWN_ALERT_KINDS has {expected}"
     )

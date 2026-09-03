@@ -33,8 +33,9 @@ def _assert_reader_uses_helper(module_name: str, func_name: str) -> None:
     assert "read_text" not in names, f"{func_name} must not read_text() a round log outside helper"
 
 
-def test_monitor_tail_reader_uses_helper_not_bare_open() -> None:
-    _assert_reader_uses_helper("monitor.py", "load_round_log_tails")
+def test_monitor_state_tail_reader_uses_helper_not_bare_open() -> None:
+    # load_round_log_tails lives in _monitor_state.py (monitor.py pure-layer split).
+    _assert_reader_uses_helper("_monitor_state.py", "load_round_log_tails")
 
 
 def test_round_view_log_reader_uses_helper_not_bare_read_text() -> None:

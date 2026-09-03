@@ -1,13 +1,18 @@
-"""Monitor — anomaly detectors over events + metrics + log tails.
+"""Monitor — the cycle-edge: running detectors and dispatching on their alerts.
 
-11 built-in detectors. Two trigger ``auto_action="stop_service"``:
+11 built-in detectors run every poll (see ``_monitor_detectors``); two trigger
+``auto_action="stop_service"``:
   * oauth_fail  — agent-reported auth failures, or an auth pattern in
     short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
-The detectors are pure functions; state assembly and the auto-stop wiring live
-further down. Plugin detectors register via :func:`register_detector` and run
-alongside the builtins on every poll.
+The detector logic, the plugin registry, and state assembly are pure and live
+in ``_monitor_detectors``/``_monitor_registry``/``_monitor_state`` — split out
+for module-size hygiene. This module keeps only the cycle edge: running every
+detector in isolation (``run_all_detectors``), running plugin detectors
+(``run_plugin_detectors``), and auto-stop dispatch (``on_alert``). Every name
+those three pure modules define is re-exported below so ``agent_runner.monitor``
+stays the one import surface for callers and plugin authors.
 
 Detection is always on-host: every source reads the local filesystem and
 auto-stop stops the local service. Remote observation is a separate concern —
@@ -17,738 +22,44 @@ an event relay, ``agent_runner/remote_relay.py``.
 from __future__ import annotations
 
 import re
-from collections import deque
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-from agent_runner._registry import ensure_unique
-from agent_runner.api_types import (
-    Alert,
-    Detector,
-    ProjectState,
-    ServiceMode,
-    ServiceStatus,
-    SystemMetrics,
+# Detectors are imported by BARE NAME (not `_monitor_detectors.detect_x`) so
+# `run_all_detectors` calls them as plain globals — the pattern
+# `monkeypatch.setattr("agent_runner.monitor.detect_timeout_rate", ...)`
+# (tests/unit/test_detector_isolation.py) replaces the name in THIS module's
+# namespace, which is exactly what a bare-name call looks up at call time.
+# Patching `_monitor_detectors.detect_timeout_rate` instead would silently not
+# land here — see that test's docstring.
+from agent_runner._monitor_detectors import (
+    detect_anomaly_repetitive_active,
+    detect_disk_critical,
+    detect_disk_warning,
+    detect_hung,
+    detect_mem_pressure,
+    detect_network_fail,
+    detect_oauth_fail,
+    detect_orphan_chain,
+    detect_rate_limit_active,
+    detect_supervisor_stale,
+    detect_timeout_rate,
 )
-from agent_runner.builtin_plugins._constants import _TAIL_LINES
+from agent_runner._monitor_registry import _PLUGIN_DETECTORS, AUTO_STOP_ALERTS
+from agent_runner.api_types import Alert, ProjectState, ServiceStatus
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.config import _DEFAULT_AUTH_PATTERNS, _DEFAULT_AUTO_STOP_ON, PhaseOverride
-from agent_runner.context_store import read_json
+from agent_runner.config import PhaseOverride
 from agent_runner.events import (
-    AGENT_AUTH_ERROR_DETECTED,
-    AGENT_EXIT,
-    ANOMALY_REPETITIVE_TOOL,
     DETECTOR_ERROR,
     MONITOR_ALERT_EMITTED,
     MONITOR_AUTO_STOP_FAILED,
     MONITOR_AUTO_STOP_TRIGGERED,
-    MONITOR_REMOTE_BLIP,
-    MONITOR_REMOTE_GIVEUP,
-    MONITOR_STARTED,
-    ORPHAN_STASHED,
-    ROUND_END,
-    ROUND_START,
-    SCHEDULE_PAUSED,
-    SCHEDULE_RESUMED,
-    TRANSIENT_ERROR_DETECTED,
-    TRANSIENT_ERROR_RECOVERED,
-    _iter_parsed_lines,
-    iter_event_dicts,
-    now_iso_ms,
-    open_events_jsonl,
-    parse_iso_ms,
 )
 from agent_runner.events import (
     emit as emit_event,
 )
-
-KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
-    {
-        "timeout_rate",
-        "hung",
-        "orphan_chain",
-        "disk_warning",
-        "disk_critical",
-        "mem_pressure",
-        "oauth_fail",
-        "network_fail",
-        "rate_limit_active",
-        "anomaly_repetitive_active",
-        "supervisor_stale",
-    }
-)
-
-_MONITOR_SELF_KINDS: frozenset[str] = frozenset(
-    {
-        MONITOR_ALERT_EMITTED,
-        MONITOR_AUTO_STOP_FAILED,
-        MONITOR_AUTO_STOP_TRIGGERED,
-        MONITOR_REMOTE_BLIP,
-        MONITOR_REMOTE_GIVEUP,
-        MONITOR_STARTED,
-        DETECTOR_ERROR,
-    }
-)
-"""Kinds a monitor process writes into the very stream it reads. Excluded from
-detect_supervisor_stale's freshness baseline (ouroboros: the monitor must not
-measure its own emissions, or a busy monitor over a dead supervisor never alarms)."""
-
-# Built-in detectors whose ``auto_action="stop_service"`` is honored by default
-# (continuing in either state actively harms the host: burning API quota / writing
-# to a near-full disk). Runtime gating reads ``cfg.monitor.auto_stop_on``; this is
-# ``on_alert``'s fallback when no allow-list is supplied, and is what ``_docgen``
-# renders as the default policy in docs/architecture.md. Derived from config's
-# SSOT so the doc cannot publish a policy the loader does not apply --
-# tests/invariants/test_auto_stop_policy_ssot.py pins it.
-AUTO_STOP_ALERTS: frozenset[str] = frozenset(_DEFAULT_AUTO_STOP_ON)
-
-_ALERT_IDENTITY_FIELDS: dict[str, tuple[str, ...]] = {
-    # Volatile fields (elapsed_s / streak / age_s / matches / value) are excluded;
-    # only fields that name the *episode* remain, so one episode dedups to one alert.
-    "hung": ("round_num",),
-    "orphan_chain": ("last_round",),
-    "rate_limit_active": ("agent", "throttled_until_iso"),
-    "anomaly_repetitive_active": ("latest_tool", "latest_target"),
-    "supervisor_stale": ("last_ts",),
-}
-
-
-def alert_identity(alert: Alert) -> str:
-    """Stable dedup key for one alert episode. Rate-crossing detectors (timeout_rate,
-    disk_*, mem_pressure, oauth_fail, network_fail) key on the detector name alone;
-    others key on the episode-identifying context fields enumerated above."""
-    fields = _ALERT_IDENTITY_FIELDS.get(alert.detector)
-    if not fields:
-        return alert.detector
-    parts = "|".join(f"{k}={alert.context.get(k)!r}" for k in fields)
-    return f"{alert.detector}:{parts}"
-
-
-_PLUGIN_DETECTORS: list[Detector] = []
-
-
-def register_detector(detector: Detector) -> None:
-    """Register a plugin detector. Rejects duplicate names."""
-    ensure_unique(detector.name, _PLUGIN_DETECTORS, "detector")
-    _PLUGIN_DETECTORS.append(detector)
-
-
-def plugin_detectors() -> list[str]:
-    """Sorted list of registered plugin detector names (for peek --json)."""
-    return sorted(d.name for d in _PLUGIN_DETECTORS)
-
-
-SHORT_EXIT_THRESHOLD_S = 60
-
-NETWORK_PATTERNS = re.compile(
-    r"\b(connection refused|econnrefused|dns|"
-    r"name or service not known|connect(ion)? timed out|"
-    r"nodename nor servname|network unreachable|"
-    r"50[023] (service unavailable|bad gateway|gateway timeout)|"
-    r"connection reset)\b",
-    re.IGNORECASE,
-)
-
-
-def _alert(
-    detector: str, severity: str, message: str, context: dict[str, Any], auto_action: str = "none"
-) -> Alert:
-    # Builtin-only helper. Plugin detectors construct Alert directly; their
-    # names are not in KNOWN_ALERT_KINDS (validated by docgen + test_catalogs).
-    return Alert(
-        severity=severity,
-        detector=detector,
-        message=message,
-        context=context,
-        ts=now_iso_ms(),
-        auto_action=auto_action,
-    )
-
-
-def _last_n_round_exits(events: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
-    exits = [e for e in events if e.get("event") == AGENT_EXIT]
-    return exits[-n:]
-
-
-def detect_timeout_rate(
-    events: list[dict[str, Any]], *, window: int = 10, threshold: float = 0.2
-) -> Alert | None:
-    recent = _last_n_round_exits(events, window)
-    if len(recent) < window:
-        return None
-    # A grace-kill sets timed_out too but is NOT a hung round (agent produced a
-    # result then lingered) — exclude it so the rate reflects real timeouts.
-    timed = sum(1 for e in recent if e.get("timed_out") and e.get("exit_cause") != "grace_kill")
-    rate = timed / len(recent)
-    if rate < threshold:
-        return None
-    return _alert(
-        "timeout_rate",
-        "warning",
-        f"{timed}/{len(recent)} recent rounds timed out (>{threshold:.0%})",
-        {"rate": rate, "threshold": threshold, "window": window},
-    )
-
-
-def _phase_timeout(
-    phases_overrides: dict[str, PhaseOverride] | None, phase: str | None, fallback: int
-) -> int:
-    """Return effective timeout for the given phase, falling back to ``fallback``."""
-    if phase is None or phases_overrides is None:
-        return fallback
-    override = phases_overrides.get(phase)
-    if override is None or override.round_timeout_s is None:
-        return fallback
-    return override.round_timeout_s
-
-
-def detect_hung(
-    events: list[dict[str, Any]],
-    *,
-    now: datetime,
-    factor: float = 1.5,
-    round_timeout_s: int = 1800,
-    phases_overrides: dict[str, PhaseOverride] | None = None,
-) -> Alert | None:
-    """A round_start without a matching round_end after timeout * factor.
-
-    When ``phases_overrides`` is supplied and the round's ``phase`` is in it
-    with a ``round_timeout_s`` override, that value applies. Otherwise falls
-    back to ``round_timeout_s``. Rounds with no recorded phase always use the
-    global timeout.
-    """
-    open_rounds: dict[int, tuple[str, str | None]] = {}
-    highest_rn: int | None = None
-    for e in events:
-        kind, rn = e.get("event"), e.get("round_num")
-        if rn is None or kind not in (ROUND_START, ROUND_END):
-            continue  # e.g. a plugin's pre-round event for a not-yet-started round
-        if kind == ROUND_START:
-            open_rounds[rn] = (e["ts"], e.get("phase"))
-            highest_rn = rn if highest_rn is None else max(highest_rn, rn)
-        else:
-            open_rounds.pop(rn, None)
-    # Serial rotation (§7): only the highest-numbered STARTED round (open or
-    # closed) can be a live hang — a lower still-open round is a dropped
-    # round_end from a crash that a later, now-closed round already supersedes.
-    if highest_rn not in open_rounds:
-        return None
-    rn = highest_rn
-    started_ts, phase = open_rounds[rn]
-    started = parse_iso_ms(started_ts)
-    elapsed = (now - started).total_seconds()
-    effective_timeout = _phase_timeout(phases_overrides, phase, round_timeout_s)
-    threshold = effective_timeout * factor
-    if elapsed > threshold:
-        return _alert(
-            "hung",
-            "warning",
-            f"Round {rn} started {elapsed:.0f}s ago with no round_end",
-            {"round_num": rn, "elapsed_s": elapsed, "threshold_s": threshold},
-        )
-    return None
-
-
-def detect_orphan_chain(events: list[dict[str, Any]], *, threshold: int = 3) -> Alert | None:
-    rounds_in_order = [e for e in events if e.get("event") in (ROUND_END, ORPHAN_STASHED)]
-    orphan_rounds = {
-        e.get("round_num") for e in rounds_in_order if e.get("event") == ORPHAN_STASHED
-    }
-    streak = 0
-    last_round_with_orphan: int | None = None
-    for e in rounds_in_order:
-        if e.get("event") == ORPHAN_STASHED:
-            streak += 1
-            last_round_with_orphan = e.get("round_num")
-        elif e.get("event") == ROUND_END and e.get("round_num") not in orphan_rounds:
-            streak = 0
-    if streak >= threshold:
-        return _alert(
-            "orphan_chain",
-            "warning",
-            f"{streak} consecutive rounds with orphan_stashed (>= {threshold})",
-            {"streak": streak, "threshold": threshold, "last_round": last_round_with_orphan},
-        )
-    return None
-
-
-def _latest(metrics: list[dict[str, Any]], key: str) -> Any:
-    for m in reversed(metrics):
-        if key in m:
-            return m[key]
-    return None
-
-
-def detect_disk_warning(
-    metrics: list[dict[str, Any]],
-    *,
-    threshold_pct: float = 90.0,
-    critical_pct: float = 95.0,
-) -> Alert | None:
-    val = _latest(metrics, "disk_used_pct")
-    if val is None or val < threshold_pct or val >= critical_pct:
-        # >=critical_pct handled by detect_disk_critical
-        return None
-    return _alert(
-        "disk_warning",
-        "warning",
-        f"disk_used_pct {val} >= {threshold_pct}",
-        {
-            "value": val,
-            "threshold": threshold_pct,
-            "hint": "Free space soon — clean ~/.agent-runner/<project>/logs/",
-        },
-    )
-
-
-def detect_disk_critical(
-    metrics: list[dict[str, Any]], *, threshold_pct: float = 95.0
-) -> Alert | None:
-    val = _latest(metrics, "disk_used_pct")
-    if val is None or val < threshold_pct:
-        return None
-    return _alert(
-        "disk_critical",
-        "critical",
-        f"disk_used_pct {val} >= {threshold_pct} — auto-stopping service",
-        {"value": val, "threshold": threshold_pct, "hint": "Stop and clean disk before resuming"},
-        auto_action="stop_service",
-    )
-
-
-def detect_mem_pressure(metrics: list[dict[str, Any]], *, threshold_mb: int = 200) -> Alert | None:
-    val = _latest(metrics, "mem_available_mb")
-    if val is None or val >= threshold_mb:
-        return None
-    return _alert(
-        "mem_pressure",
-        "warning",
-        f"mem_available_mb {val} < {threshold_mb}",
-        {
-            "value": val,
-            "threshold": threshold_mb,
-            "hint": "Investigate memory leak or move to a larger host",
-        },
-    )
-
-
-def detect_oauth_fail(
-    events: list[dict[str, Any]],
-    log_tails: dict[int, str],
-    *,
-    window: int = 10,
-    threshold: float = 0.2,
-    patterns: list[re.Pattern[str]] | None = None,
-    hint: str | None = None,
-) -> Alert | None:
-    """Auth-failure loop over the last ``window`` rounds, from two evidence paths.
-
-    1. **Text heuristic** — an auth pattern in the round's log tail, gated on a
-       short *nonzero* exit that did not time out. The gate is the false-positive
-       shield: the tail is free text, and prose mentioning "401" in a round that
-       exited cleanly is not an auth failure.
-    2. **Structured** — the round carries an ``agent_auth_error_detected`` event,
-       emitted by a per-CLI plugin that read the failure out of the agent's own
-       output. That is certain, not inferred, so it needs no exit-code shield —
-       and the shield would in fact hide it, since some agent CLIs exit 0 even
-       when the provider rejected the credential.
-
-    A round matching either path counts once; both paths share this window,
-    threshold, and auto-stop.
-    """
-    pats = patterns or [re.compile(p, re.IGNORECASE) for p in _DEFAULT_AUTH_PATTERNS]
-    recent = _last_n_round_exits(events, window)
-    auth_rounds = {
-        e.get("round_num")
-        for e in events
-        if e.get("event") == AGENT_AUTH_ERROR_DETECTED and e.get("round_num") is not None
-    }
-    matches = sum(
-        1
-        for e in recent
-        if e.get("round_num") in auth_rounds
-        or (
-            (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
-            and e.get("exit_code", 0) != 0
-            and not e.get("timed_out", False)
-            and any(p.search(log_tails.get(e.get("round_num"), "")) for p in pats)
-        )
-    )
-    total = len(recent)
-    if total < window or matches / total < threshold:
-        return None
-    return _alert(
-        "oauth_fail",
-        "critical",
-        f"{matches}/{total} recent rounds failed auth (agent-reported or short-exit pattern)",
-        {
-            "matches": matches,
-            "window": total,
-            "threshold": threshold,
-            "hint": hint if hint is not None else "",
-        },
-        auto_action="stop_service",
-    )
-
-
-def detect_network_fail(
-    events: list[dict[str, Any]],
-    log_tails: dict[int, str],
-    *,
-    window: int = 10,
-    threshold: float = 0.2,
-) -> Alert | None:
-    recent = _last_n_round_exits(events, window)
-    matches = sum(
-        1
-        for e in recent
-        if (e.get("duration_s") or 0.0) < SHORT_EXIT_THRESHOLD_S
-        and e.get("exit_code", 0) != 0
-        and not e.get("timed_out", False)
-        and NETWORK_PATTERNS.search(log_tails.get(e.get("round_num"), ""))
-    )
-    total = len(recent)
-    if total < window or matches / total < threshold:
-        return None
-    return _alert(
-        "network_fail",
-        "warning",
-        f"{matches}/{total} recent rounds short-exited with network error pattern",
-        {
-            "matches": matches,
-            "window": total,
-            "threshold": threshold,
-            "hint": "Check upstream Anthropic status or local DNS / VPN",
-        },
-    )
-
-
-def detect_rate_limit_active(
-    events: list[dict[str, Any]], *, now: float | None = None, log_dir: Path | None = None
-) -> Alert | None:
-    """Fire warning alert if currently throttled (latest transient_error_detected
-    has reset_at_epoch in future, no matching recovered after).
-
-    Reads the SAME ladder-extended reset serve's loop-top gate / skip path / peek
-    converge on (``agent_runner._throttle._events_derived_reset``) when ``log_dir``
-    is given — ``run_all_detectors``'s real caller always supplies one; it stays
-    optional only so a caller with no on-disk events dir degrades to the emitter's
-    raw reset rather than raising."""
-    if now is None:
-        now = SYSTEM_CLOCK.epoch()
-    for ev in reversed(events):
-        kind = ev.get("event")
-        if kind == TRANSIENT_ERROR_RECOVERED:
-            return None
-        if kind == TRANSIENT_ERROR_DETECTED:
-            from agent_runner._throttle import _coerce_int, _events_derived_reset
-
-            agent = str(ev.get("agent", "unknown"))
-            classification = ev.get("classification", "unknown")
-            reset = _coerce_int(ev.get("reset_at_epoch"), 0)
-            if log_dir is not None:
-                reset = _events_derived_reset(log_dir, agent, str(classification), reset)
-            if reset > now:
-                iso = datetime.fromtimestamp(reset, UTC).isoformat()
-                return _alert(
-                    "rate_limit_active",
-                    "warning",
-                    f"throttled until {iso} ({classification})",
-                    {
-                        "throttled_until_iso": iso,
-                        "classification": classification,
-                        "agent": agent,
-                    },
-                )
-            return None
-    return None
-
-
-def detect_anomaly_repetitive_active(
-    events: list[dict[str, Any]],
-    *,
-    threshold: int = 1,
-    window_rounds: int = 5,
-) -> Alert | None:
-    """Notify-severity alert when anomaly_repetitive_tool events appear in recent rounds.
-
-    Activates 0.1.31's anomaly_repetitive_tool event in monitor's alert flow,
-    mirroring the rate_limit_active pattern (event consumer → alert).
-
-    Default: any anomaly event in last 5 rounds triggers a warning. Operators can
-    widen window_rounds or raise threshold if the default is too sensitive.
-    """
-    round_nums = [e["round_num"] for e in events if "round_num" in e]
-    if not round_nums:
-        return None
-    max_round = max(round_nums)
-    window_start = max_round - window_rounds + 1
-    anomalies = [
-        e
-        for e in events
-        if e.get("event") == ANOMALY_REPETITIVE_TOOL and e.get("round_num", 0) >= window_start
-    ]
-    if len(anomalies) < threshold:
-        return None
-    latest = anomalies[-1]
-    count = len(anomalies)
-    return _alert(
-        "anomaly_repetitive_active",
-        "warning",
-        (
-            f"{count} anomaly_repetitive_tool event(s) in last {window_rounds} rounds; "
-            f"latest: {latest.get('tool_name')} on {latest.get('target')!r} "
-            f"({latest.get('count')}x in window {latest.get('window')})"
-        ),
-        {
-            "count": count,
-            "window_rounds": window_rounds,
-            "latest_tool": latest.get("tool_name"),
-            "latest_target": latest.get("target"),
-        },
-    )
-
-
-def _latest_schedule_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Newest schedule_paused/schedule_resumed event by stream order, or None.
-
-    Reverse-walk with early break — events grows unboundedly over a project's life."""
-    for e in reversed(events):
-        if e.get("event") in (SCHEDULE_PAUSED, SCHEDULE_RESUMED):
-            return e
-    return None
-
-
-def detect_supervisor_stale(
-    events: list[dict[str, Any]],
-    *,
-    now: datetime,
-    stale_threshold_s: int,
-) -> Alert | None:
-    """Alert when the most recent event is older than ``stale_threshold_s``.
-
-    Catches supervisor "silent-death": stuck between rounds (after round_end,
-    before the next round_start) emitting no events. The event stream cannot
-    distinguish that from a normal idle gap — only a deadline check can.
-
-    ``stale_threshold_s <= 0`` disables the check (caller resolves the
-    sentinel). Empty event list → no alert: that is "never started", not
-    silent-death, and there is no baseline to measure staleness against.
-    """
-    supervised = [e for e in events if e.get("event") not in _MONITOR_SELF_KINDS]
-    if stale_threshold_s <= 0 or not supervised:
-        return None
-    last_ts_str = max((e["ts"] for e in supervised if "ts" in e), default=None)
-    if last_ts_str is None:
-        return None
-    age_s = (now - parse_iso_ms(last_ts_str)).total_seconds()
-    if age_s <= stale_threshold_s:
-        return None
-
-    newest = _latest_schedule_event(events)
-    if newest is not None and newest.get("event") == SCHEDULE_PAUSED:
-        # Suppress only while the pause is plausibly still live: until its
-        # announced resume_at plus one staleness window. A supervisor that died
-        # mid-pause therefore still alarms once that bound passes.
-        paused = newest
-        bound = None
-        try:
-            resume_dt = parse_iso_ms(paused.get("resume_at") or "")
-            if resume_dt.tzinfo is not None:
-                bound = resume_dt
-        except (ValueError, TypeError):
-            bound = None
-        if bound is None:
-            # No usable resume_at (empty/unparseable/naive) → bound by the pause's
-            # own timestamp + the 8-day resume horizon, so an always-paused config
-            # is not a permanent silent-death blind spot.
-            try:
-                bound = parse_iso_ms(paused["ts"]) + timedelta(days=8)
-            except (KeyError, ValueError, TypeError):
-                return None  # truly no anchor → suppress conservatively
-        if now <= bound + timedelta(seconds=stale_threshold_s):
-            return None
-    return _alert(
-        "supervisor_stale",
-        "warning",
-        f"No events for {int(age_s)}s (threshold {stale_threshold_s}s) — "
-        f"supervisor may be stuck or dead. Last event: {last_ts_str}.",
-        {"age_s": int(age_s), "threshold_s": stale_threshold_s, "last_ts": last_ts_str},
-    )
-
-
-def latest_schedule_state(events: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Current schedule-pause state derived from the event stream.
-
-    Returns None when there is no pause in effect (no schedule events, or the
-    newest one is a resume). When paused, returns the paused indicator dict."""
-    newest = _latest_schedule_event(events)
-    if newest is None or newest.get("event") != SCHEDULE_PAUSED:
-        return None
-    return {
-        "paused": True,
-        "resume_at": newest.get("resume_at", ""),
-        "active_window": newest.get("active_window", ""),
-        "phase": newest.get("phase", ""),
-    }
-
-
-# ---------------------------------------------------------------------------
-# State-tree assembly (Task 3.2)
-# ---------------------------------------------------------------------------
-
-
-class StateSource(Protocol):
-    """The paths a poll reads. ``LocalSource`` is the only implementation:
-    detection runs on the supervised host, so every path is local."""
-
-    def events_files(self) -> list[Path]: ...
-    def metrics_files(self) -> list[Path]: ...
-    def rounds_dir(self) -> Path: ...
-    def status_path(self) -> Path: ...
-    def orphan_path(self) -> Path: ...
-
-
-@dataclass(frozen=True)
-class LocalSource:
-    log_dir: Path
-
-    def events_files(self) -> list[Path]:
-        return sorted(self.log_dir.glob("events-*.jsonl"))
-
-    def metrics_files(self) -> list[Path]:
-        return sorted(self.log_dir.glob("metrics-*.jsonl"))
-
-    def rounds_dir(self) -> Path:
-        return self.log_dir / "rounds"
-
-    def status_path(self) -> Path:
-        return self.log_dir / "status.json"
-
-    def orphan_path(self) -> Path:
-        return self.log_dir / "orphan-state.json"
-
-
-def parse_events_from_jsonl_files(files: Iterable[Path]) -> list[dict[str, Any]]:
-    # Every caller (detectors, round_view.build_round_view via peek) assumes
-    # the ``.get(...)`` shape -- iter_event_dicts already skips a bare
-    # number/string/list line so it never reaches them.
-    out: list[dict[str, Any]] = []
-    for path in files:
-        try:
-            out.extend(iter_event_dicts(path))
-        except OSError:
-            continue
-    return out
-
-
-_MONITOR_EVENT_BUFFER = 20000
-"""Rolling window for `_EventTail.buffer` — enough history for every built-in
-detector's lookback (round-timeout chains, orphan streaks, dedup identity)
-without holding a project's entire events history in memory forever."""
-
-
-@dataclass
-class _EventTail:
-    """Per-poll byte-offset carry + bounded rolling event buffer, so a monitor poll
-    parses only bytes appended since the previous poll instead of re-reading the
-    entire events history every interval (as _tail_events_jsonl already carries)."""
-
-    offsets: dict[Path, int] = field(default_factory=dict)
-    buffer: deque[dict[str, Any]] = field(
-        default_factory=lambda: deque(maxlen=_MONITOR_EVENT_BUFFER)
-    )
-
-    def read(self, files: list[Path]) -> list[dict[str, Any]]:
-        for path in files:
-            pos = self.offsets.get(path, 0)
-            try:
-                size = path.stat().st_size
-            except FileNotFoundError:
-                continue
-            if size < pos:
-                pos = 0  # rotated/truncated underneath us
-            if size == pos:
-                continue
-            with open_events_jsonl(path) as f:
-                f.seek(pos)
-                for _, parsed in _iter_parsed_lines(f):
-                    self.buffer.append(parsed)
-                self.offsets[path] = f.tell()
-        return list(self.buffer)
-
-
-_MAX_TAIL_FILES = 20
-"""Newest round logs to tail per poll — detectors only inspect the last 10
-round exits, and reading every historical log fully on every poll is
-O(all-logs-ever) waste."""
-
-
-def load_round_log_tails(rounds_dir: Path, *, tail_lines: int = _TAIL_LINES) -> dict[int, str]:
-    """Tail the newest round logs as plain text (merged stdout+stderr).
-
-    Window shares _TAIL_LINES with the plugin parsers: oauth/network
-    detectors regex stderr text out of these tails, and a stderr burst must
-    not evict the line they scan for (same eviction argument, rawer input).
-    """
-    tails: dict[int, str] = {}
-    if not rounds_dir.is_dir():
-        return tails
-
-    def _mtime(p: Path) -> float:
-        try:
-            return p.stat().st_mtime
-        except OSError:
-            return 0.0
-
-    for f in sorted(rounds_dir.glob("R*-*.log"), key=_mtime)[-_MAX_TAIL_FILES:]:
-        try:
-            num = int(f.name.split("-", 1)[0][1:])
-        except (ValueError, IndexError):
-            continue
-        try:
-            from agent_runner.round_log import open_round_log  # lazy: avoids api<->monitor cycle
-
-            with open_round_log(f) as fh:
-                tails[num] = "".join(deque(fh, maxlen=tail_lines))
-        except FileNotFoundError:
-            continue
-    return tails
-
-
-def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
-    return metrics[-1] if metrics else {}
-
-
-def assemble_project_state(source: StateSource, *, project: str) -> ProjectState:
-    metrics = parse_events_from_jsonl_files(source.metrics_files())
-    status = read_json(source.status_path()) or {}
-    orphan = read_json(source.orphan_path())
-    latest = _latest_metric_dict(metrics)
-    from agent_runner._throttle import _coerce_float, _coerce_int
-
-    system = SystemMetrics(
-        mem_total_mb=_coerce_int(latest.get("mem_total_mb"), 0),
-        mem_available_mb=_coerce_int(latest.get("mem_available_mb"), 0),
-        disk_used_pct=_coerce_float(latest.get("disk_used_pct"), 0.0),
-        disk_free_gb=_coerce_float(latest.get("disk_free_gb"), 0.0),
-        load_1m=latest.get("load_1m"),
-        cpu_pct=latest.get("cpu_pct"),
-        agent_process_count=_coerce_int(latest.get("agent_process_count"), 0),
-    )
-    return ProjectState(
-        project=project,
-        status=status,
-        defenses=[],
-        current_round=None,
-        recent_rounds=[],
-        orphan=orphan,
-        system=system,
-        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
-    )
 
 
 def _run_detector(
@@ -961,3 +272,41 @@ def on_alert(
         )
         return
     _emit_if_dir(MONITOR_AUTO_STOP_TRIGGERED)
+
+
+# ---------------------------------------------------------------------------
+# Facade — re-export the pure layers so `agent_runner.monitor` stays the one
+# import surface (attribute access AND `from agent_runner.monitor import X`)
+# for runner.py (NETWORK_PATTERNS), _docgen.py (KNOWN_ALERT_KINDS), cli.common
+# (plugin_detectors), __init__.py (_PLUGIN_DETECTORS — same list object, so
+# in-place mutation through either name stays visible to both), api.py
+# (LocalSource/StateSource/assemble_project_state/load_round_log_tails/
+# alert_identity/_EventTail), and every existing test patch target.
+# ---------------------------------------------------------------------------
+from agent_runner._monitor_detectors import (  # noqa: E402,F401 — intentional bottom re-export
+    NETWORK_PATTERNS,
+    SHORT_EXIT_THRESHOLD_S,
+    _alert,
+    _last_n_round_exits,
+    _latest,
+    _latest_schedule_event,
+    _phase_timeout,
+    latest_schedule_state,
+)
+from agent_runner._monitor_registry import (  # noqa: E402,F401 — intentional bottom re-export
+    _ALERT_IDENTITY_FIELDS,
+    _MONITOR_SELF_KINDS,
+    KNOWN_ALERT_KINDS,
+    alert_identity,
+    plugin_detectors,
+    register_detector,
+)
+from agent_runner._monitor_state import (  # noqa: E402,F401 — intentional bottom re-export
+    LocalSource,
+    StateSource,
+    _EventTail,
+    _latest_metric_dict,
+    assemble_project_state,
+    load_round_log_tails,
+    parse_events_from_jsonl_files,
+)

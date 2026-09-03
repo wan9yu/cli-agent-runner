@@ -13,7 +13,13 @@ import ast
 
 from tests.invariants._event_scan import PKG
 
-_SCANNED = ["_throttle.py", "monitor.py"]
+_SCANNED = [
+    "_throttle.py",
+    "monitor.py",
+    "_monitor_detectors.py",
+    "_monitor_registry.py",
+    "_monitor_state.py",
+]
 
 
 def _bare_int_or_float_on_get(tree: ast.Module) -> list[int]:

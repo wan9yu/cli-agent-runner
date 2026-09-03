@@ -6,6 +6,13 @@
 # bare name below marks one field "used". SSOT = the @dataclass definitions in
 # agent_runner/; a new field is covered by regenerating, never by editing here.
 
+# agent_runner._monitor_state.LocalSource
+log_dir
+
+# agent_runner._monitor_state._EventTail
+offsets
+buffer
+
 # agent_runner.agent_runtime.RunResult
 exit_code
 duration_s
@@ -254,13 +261,6 @@ new_text
 applied
 manual
 advisory
-
-# agent_runner.monitor.LocalSource
-log_dir
-
-# agent_runner.monitor._EventTail
-offsets
-buffer
 
 # agent_runner.phase_select.Selection
 phase
