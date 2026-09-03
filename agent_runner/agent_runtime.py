@@ -94,11 +94,11 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     while True:
         try:
             proc.wait(timeout=10)
-            return
         except subprocess.TimeoutExpired:
-            return
+            pass  # reaped via the SIGKILL above regardless; nothing more to wait for
         except KeyboardInterrupt:
             continue  # shielded: still must reap before returning
+        return
 
 
 def _live_children(
