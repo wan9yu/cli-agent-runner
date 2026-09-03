@@ -40,7 +40,7 @@ from agent_runner.api_types import (
     ServiceStatus,
     select_path,
 )
-from agent_runner.clock import SYSTEM_CLOCK
+from agent_runner.clock import SYSTEM_CLOCK, wait_until
 from agent_runner.config import Config, RuntimeConfig, load_config
 from agent_runner.lifecycle import (
     _SYSTEMCTL_TIMEOUT_S,
@@ -286,7 +286,11 @@ def uninstall(work_dir: Path | None = None) -> bool:
     monitor = units_dir / monitor_unit_filename(project)
     for p in (serve, monitor):
         if p.exists():
-            _systemctl_user("stop", p.name)
+            # Drain-aware (see stop_unit_draining, the same primitive api.stop/
+            # api.restart use): a blocking `systemctl stop` would TimeoutExpired
+            # while serve drains its round -- queue it and confirm within a
+            # bounded window instead, same as stop(), before disabling/unlinking.
+            lifecycle.stop_unit_draining(p.name, clock=SYSTEM_CLOCK, confirm_s=_PID_SIGNAL_GRACE_S)
             _systemctl_user("disable", p.name)
             p.unlink(missing_ok=True)
     _systemctl_user("daemon-reload")
@@ -323,14 +327,8 @@ _ROUND_TERM_GRACE_S = 15
 def _await_pid_exit(pid: int, timeout_s: float) -> bool:
     """Poll ``pid_alive(pid)`` until it clears or ``timeout_s`` elapses.
     Returns the final liveness (True = still alive)."""
-    deadline = SYSTEM_CLOCK.monotonic() + timeout_s
-    alive = True
-    while SYSTEM_CLOCK.monotonic() < deadline:
-        alive = pid_alive(pid)
-        if not alive:
-            break
-        SYSTEM_CLOCK.sleep(0.1)
-    return alive
+    exited = wait_until(SYSTEM_CLOCK, lambda: not pid_alive(pid), timeout_s=timeout_s)
+    return not exited
 
 
 def _round_holder_pid(log_dir: Path) -> int | None:
@@ -346,7 +344,7 @@ def _round_holder_pid(log_dir: Path) -> int | None:
     if not isinstance(data, dict):
         return None
     pid = data.get("pid")
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
+    if not lifecycle._valid_pid(pid):
         return None
     return pid if pid_alive(pid) else None
 

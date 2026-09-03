@@ -85,9 +85,18 @@ def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
+    # True on the first liveness check, False on every one after -- robust to
+    # exactly how many times the poll re-checks before it settles (an
+    # implementation detail of the underlying wait, not this test's concern).
+    calls = {"n": 0}
+
+    def fake_pid_alive(_pid: int) -> bool:
+        calls["n"] += 1
+        return calls["n"] == 1
+
     with (
         patch("agent_runner.api.send_signal_to_pid", return_value=True) as send,
-        patch("agent_runner.api.pid_alive", side_effect=[True, False]),
+        patch("agent_runner.api.pid_alive", side_effect=fake_pid_alive),
     ):
         api.kill(tmp_git_repo)
         sent = [c.args[1] for c in send.call_args_list]
@@ -141,6 +150,8 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
     fake_systemd = tmp_git_repo / "fake-systemd"
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "inactive")
     monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
         "agent_runner.api._agent_runner_script_path",
@@ -150,6 +161,38 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
     api.uninstall(tmp_git_repo)
     unit_name = f"agent-runner@{tmp_git_repo.name}.service"
     assert not (fake_systemd / unit_name).exists()
+
+
+def test_given_draining_unit_when_uninstall_then_does_not_raise(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """uninstall against a unit whose stop blocks past the confirm bound (serve
+    draining an in-flight round) must NOT raise TimeoutExpired: it drains via
+    lifecycle.stop_unit_draining -- the same primitive stop()/restart() use --
+    before disabling and unlinking the unit file (0.2.13 correctness fix: a
+    raw blocking `systemctl stop` here TimeoutExpired's once _systemctl_user
+    got a timeout, half-executing the uninstall)."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    fake_systemd = tmp_git_repo / "fake-systemd"
+    fake_systemd.mkdir(exist_ok=True)
+    unit_name = f"agent-runner@{tmp_git_repo.name}.service"
+    (fake_systemd / unit_name).write_text("[Unit]\n")
+    monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
+    )
+    calls: list[tuple[str, ...]] = []
+    stub = _draining_systemctl_user(calls)
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+
+    result = api.uninstall(tmp_git_repo)  # must not raise TimeoutExpired
+
+    assert result is True
+    assert not (fake_systemd / unit_name).exists()  # unlinked even though still draining
+    assert any(a[:2] == ("--no-block", "stop") for a in calls)  # queued, never a blocking stop
 
 
 def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_to_monitor(

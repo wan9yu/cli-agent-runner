@@ -272,6 +272,10 @@ EXPECTED_API_SURFACE = {
     "sysconfig",
     "try_auto_commit",
     "uninstall",
+    # "wait_until" added 0.2.13 (simplify pass): api._await_pid_exit now shares
+    # the poll-and-confirm loop with lifecycle.stop_unit_draining via
+    # clock.wait_until, imported at module scope alongside SYSTEM_CLOCK.
+    "wait_until",
 }
 
 

@@ -21,6 +21,7 @@ call site. ``SYSTEM_CLOCK`` is a stable singleton — safe as a parameter defaul
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -77,3 +78,22 @@ class RealClock:
 # stable reference, so it is a safe parameter default) and read directly by the
 # paths that do not thread a clock (event/metric timestamps, detector reset_at).
 SYSTEM_CLOCK: Clock = RealClock()
+
+
+def wait_until(
+    clock: Clock, predicate: Callable[[], bool], *, timeout_s: float, interval_s: float = 0.5
+) -> bool:
+    """Poll ``predicate()`` until it's truthy or ``timeout_s`` elapses; return
+    the final ``predicate()`` result.
+
+    Monotonic-timed (an NTP step must not stretch or skip the wait). The
+    shared poll-and-confirm shape behind ``api._await_pid_exit`` (waiting for
+    a signaled pid to exit) and ``lifecycle.stop_unit_draining`` (waiting for
+    a draining systemd unit to go inactive) — both bound a real wait with a
+    caller-supplied ``clock`` so a test injects a ``FakeClock`` instead of
+    racing wall time.
+    """
+    deadline = clock.monotonic() + timeout_s
+    while not predicate() and clock.monotonic() < deadline:
+        clock.sleep(interval_s)
+    return predicate()

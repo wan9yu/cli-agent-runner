@@ -17,7 +17,7 @@ import psutil
 
 from agent_runner import _resolve
 from agent_runner.api_types import ServiceMode
-from agent_runner.clock import Clock
+from agent_runner.clock import Clock, wait_until
 from agent_runner.context_store import atomic_write_json
 
 # Bounds every `systemctl --user` call this module makes. A wedged D-Bus
@@ -75,12 +75,11 @@ def stop_unit_draining(unit_name: str, *, clock: Clock, confirm_s: float) -> boo
     ``TimeoutExpired`` for a normal drain. Mirrors ``api``'s PID_FILE
     ``_await_pid_exit`` best-effort confirm, one mode over."""
     _systemctl_user("--no-block", "stop", unit_name)
-    deadline = clock.monotonic() + confirm_s
-    while _systemctl_is_active(unit_name) not in _SYSTEMD_INACTIVE_STATES:
-        if clock.monotonic() >= deadline:
-            return False
-        clock.sleep(0.1)
-    return True
+    return wait_until(
+        clock,
+        lambda: _systemctl_is_active(unit_name) in _SYSTEMD_INACTIVE_STATES,
+        timeout_s=confirm_s,
+    )
 
 
 def _valid_pid(value: object) -> bool:
