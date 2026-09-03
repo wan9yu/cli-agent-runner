@@ -123,7 +123,7 @@ def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
     log_dir = tmp_path / "logs"
     ran = []
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         ran.append(1)
         round_log_path.write_text("")
         return 0

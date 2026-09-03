@@ -96,7 +96,7 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
 
     cfg_path = make_toml(tmp_path)
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         round_log_path.write_text("")
         return 0
 

@@ -25,7 +25,7 @@ ALLOWED_SERVE_IMPORTS = {
     "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
-    ("agent_runner", {"phase_select", "schedule"}),
+    ("agent_runner", {"host_health", "metrics", "phase_select", "schedule"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
     (
@@ -36,7 +36,10 @@ ALLOWED_SERVE_FROM = [
             "emit_crash_loop",
             "emit_max_rounds_reached",
             "emit_rate_limit_stop",
+            "emit_round_deferred",
             "emit_round_logs_prune_deferred",
+            "emit_round_mem_terminated",
+            "emit_round_resumed",
             "emit_stop_file_detected",
             "emit_round_substrate_before",
             "emit_round_substrate_after",

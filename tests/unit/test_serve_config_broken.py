@@ -20,7 +20,7 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         round_log_path.write_text("")
         return PERMANENT_CONFIG_EXIT
 

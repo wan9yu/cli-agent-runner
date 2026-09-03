@@ -83,7 +83,7 @@ def _capturing_spawn(captured: list[dict]):
     """serve_cmd._spawn_round stand-in: records the round subprocess env,
     writes the round log, and returns a clean exit."""
 
-    def spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         captured.append(dict(round_env))
         round_log_path.write_text("")
         return 0

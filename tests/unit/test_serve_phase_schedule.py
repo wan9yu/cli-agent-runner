@@ -32,7 +32,7 @@ def _capture_run(monkeypatch):
     spawning a real subprocess; returns the list of round-argv invocations."""
     argvs: list[list[str]] = []
 
-    def _fake(round_argv, round_log_path, round_env, *, timeout_s):
+    def _fake(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         argvs.append(round_argv)
         round_log_path.write_text("")
         return 0

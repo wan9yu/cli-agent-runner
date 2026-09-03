@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-from agent_runner import phase_select, schedule
+from agent_runner import host_health, metrics, phase_select, schedule
 from agent_runner._serve_policy import (
     CRASH_LOOP_EXIT,
     PERMANENT_CONFIG_EXIT,
@@ -40,7 +40,10 @@ from agent_runner.api import (
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
     emit_rate_limit_stop,
+    emit_round_deferred,
     emit_round_logs_prune_deferred,
+    emit_round_mem_terminated,
+    emit_round_resumed,
     emit_round_substrate_after,
     emit_round_substrate_before,
     emit_round_supervisor_wedged,
@@ -264,6 +267,56 @@ def _pause_until_selectable(
         emit_schedule_resumed(log_dir, paused_for_s=int(clock.monotonic() - started))
 
 
+def _memory_pressure_now(cfg, sample_fn) -> host_health.Pressure | None:
+    """Single-sample host_health read for the pre-round gate.
+
+    Swap-rate deltas need two samples spaced by wall time — a once-per-round
+    check can't supply that continuity — so this checks only the two ladder
+    tiers that read off one sample (PSI, combined-low); PSI is the strongest,
+    cache-inflation-immune signal anyway. The mid-round hot loop in
+    :func:`_spawn_round` keeps a real ``prev_sample`` across its own ticks and
+    gets the swap-rate tier too."""
+    return host_health.memory_pressure(sample_fn(), {}, cfg.monitor.host_health)
+
+
+def _maybe_pause_for_memory_pressure(
+    cfg,
+    log_dir,
+    stop,
+    *,
+    sample_fn=metrics.sample,
+    clock: Clock = SYSTEM_CLOCK,
+    chunk_s: int = 30,
+) -> bool:
+    """Pre-round admission gate (Group 3 action half): defer the next round while
+    host_health reports real memory pressure. This is only HALF the
+    coma-preventer — metrics sample at round boundaries, so a single round that
+    balloons mid-flight still needs :func:`_spawn_round`'s mid-round hard floor;
+    that is what actually stops a ballooning round before unresponsiveness.
+
+    Polls exactly like :func:`_maybe_pause_for_schedule` via the shared
+    :func:`_pause_poll`. Emits a paired ``round_deferred``/``round_resumed``
+    (like ``schedule_paused``/``schedule_resumed``) so a long defer does not
+    trip ``detect_supervisor_stale`` (see its suppression set in
+    ``_monitor_detectors.py``)."""
+    pressure = _memory_pressure_now(cfg, sample_fn)
+    if pressure is None:
+        return False
+    started = clock.monotonic()
+    emit_round_deferred(
+        log_dir, severity=pressure.severity, signal=pressure.signal, message=pressure.message
+    )
+    if _pause_poll(
+        stop,
+        cfg.runtime.stop_file,
+        lambda: _memory_pressure_now(cfg, sample_fn) is None,
+        clock.sleep,
+        chunk_s,
+    ):
+        emit_round_resumed(log_dir, deferred_for_s=int(clock.monotonic() - started))
+    return True
+
+
 def _maybe_emit_recovered(log_dir, active=None) -> None:
     """Emit ``transient_error_recovered`` for every agent whose throttle cleared via
     skip-around (rotation, no back-off sleep) and so left no breadcrumb. Per-agent, so
@@ -394,14 +447,21 @@ def _select_and_gate(
     *,
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
+    sample_fn=metrics.sample,
 ):
-    """Resolve the phase to launch this round, gating on schedule and on
-    ``throttled_phases`` — the phases whose agent is currently throttled, injected by
-    :func:`_round_throttle_gate` (empty for every non-skip config).
+    """Resolve the phase to launch this round, gating on memory pressure, on
+    schedule, and on ``throttled_phases`` — the phases whose agent is currently
+    throttled, injected by :func:`_round_throttle_gate` (empty for every
+    non-skip config).
 
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
     paused and should ``continue`` from the loop top."""
+    # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
+    # windows only — a safety gate on a different axis (memory pressure) must
+    # not be bypassable by a scheduling override.
+    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn):
+        return _PAUSED_CONTINUE
     if args.ignore_schedule:
         return None  # rotation self-resolves in the round; no --phase, no gate
     if not _phase_aware(cfg):
@@ -516,12 +576,21 @@ def _terminate_round(proc: subprocess.Popen) -> int:
         return proc.wait(timeout=10)
 
 
+# Mid-round hard floor: how often (in clock.monotonic() seconds, not per-tick)
+# _spawn_round resamples host_health while a round is in flight. Coarser than
+# the 1s proc.wait tick so a healthy round pays no real sampling cost.
+_MEM_CHECK_INTERVAL_S = 10
+
+
 def _spawn_round(
     round_argv: list[str],
     round_log_path: Path,
     round_env: dict,
     *,
     timeout_s: int,
+    host_health_cfg=None,
+    clock: Clock = SYSTEM_CLOCK,
+    sample_fn=metrics.sample,
 ) -> int:
     """Spawn `agent-runner round` in its OWN process group under an outer wall-clock
     ceiling. Breaks on the timeout DEADLINE only: on breach, emit
@@ -530,7 +599,14 @@ def _spawn_round(
     Graceful serve stop is NOT handled here — the serve loop's existing top-of-loop
     `while not stop["requested"]` check + post-round break let the current round
     finish (the documented stop contract: runbook.md, 0.2.11 CHANGELOG). Returns
-    the round returncode."""
+    the round returncode.
+
+    ``host_health_cfg`` (None by default — existing callers get byte-identical
+    behavior) arms the mid-round hard floor: every ~``_MEM_CHECK_INTERVAL_S``
+    seconds this resamples host_health and, on CRITICAL pressure,
+    ``_terminate_round``s the round and emits ``round_mem_terminated`` — the
+    actual coma-preventer for a single round that balloons mid-flight (the
+    pre-round gate in ``_select_and_gate`` only samples at round boundaries)."""
     log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
@@ -541,14 +617,33 @@ def _spawn_round(
             start_new_session=True,
         )
         try:
-            deadline = SYSTEM_CLOCK.monotonic() + timeout_s
+            deadline = clock.monotonic() + timeout_s
+            next_mem_check = (
+                clock.monotonic() + _MEM_CHECK_INTERVAL_S if host_health_cfg is not None else None
+            )
+            prev_sample: dict = {}
             while True:
                 try:
                     return proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-                if SYSTEM_CLOCK.monotonic() >= deadline:
+                if clock.monotonic() >= deadline:
                     break
+                if next_mem_check is not None and clock.monotonic() >= next_mem_check:
+                    cur_sample = sample_fn()
+                    pressure = host_health.memory_pressure(cur_sample, prev_sample, host_health_cfg)
+                    prev_sample = cur_sample
+                    if pressure is not None and pressure.severity == "critical":
+                        returncode = _terminate_round(proc)
+                        emit_round_mem_terminated(
+                            log_dir,
+                            pid=proc.pid,
+                            severity=pressure.severity,
+                            signal=pressure.signal,
+                            message=pressure.message,
+                        )
+                        return returncode
+                    next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
             _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
             raise
@@ -706,6 +801,7 @@ def cmd(args) -> int:
                 round_log_path,
                 round_env,
                 timeout_s=outer_round_ceiling_s(cfg, phase_arg),
+                host_health_cfg=cfg.monitor.host_health,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)

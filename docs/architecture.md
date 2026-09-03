@@ -212,11 +212,14 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `orphan_stashed`
 - `package_upgraded`
 - `prompt_overwritten`
+- `round_deferred`
 - `round_end`
 - `round_grace_extended`
 - `round_grace_kill`
 - `round_logs_prune_deferred`
+- `round_mem_terminated`
 - `round_progress`
+- `round_resumed`
 - `round_start`
 - `round_substrate_after`
 - `round_substrate_before`

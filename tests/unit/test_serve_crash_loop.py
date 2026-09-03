@@ -24,7 +24,7 @@ def _fake_spawn(round_returncodes: list[int]):
     readers (round-current.log relink, crash_loop's log tail) don't choke."""
     seq = list(round_returncodes)
 
-    def spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         rc = seq.pop(0) if len(seq) > 1 else seq[0]
         round_log_path.write_text("round output\n")
         return rc

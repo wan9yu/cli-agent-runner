@@ -9,7 +9,7 @@ import pytest
 from tests._test_helpers import FakeArgs, make_toml
 
 
-def _fake_spawn_ok(round_argv, round_log_path, round_env, *, timeout_s) -> int:
+def _fake_spawn_ok(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs) -> int:
     """serve_cmd._spawn_round stand-in: clean exit, empty round log."""
     round_log_path.write_text("")
     return 0
@@ -52,7 +52,7 @@ def test_given_round_runs_when_serve_then_round_log_file_created(
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         round_log_path.write_text("round 1 output\n")
         return 0
 

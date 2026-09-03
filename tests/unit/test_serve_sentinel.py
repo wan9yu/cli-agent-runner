@@ -20,7 +20,7 @@ def test_given_stale_sentinel_when_serve_starts_then_cleaned(
     sentinel = log_dir / ".agent-done"
     sentinel.write_text("stale")
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         round_log_path.write_text("")
         return 0
 
@@ -44,7 +44,7 @@ def test_given_sentinel_present_pre_round_when_serve_then_break_loop_exit_0(
 
     call_count = [0]
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         # After first round, write sentinel so the SECOND iteration finds it.
         call_count[0] += 1
         round_log_path.write_text("")
@@ -82,7 +82,7 @@ def test_given_empty_sentinel_when_serve_then_still_stops_with_empty_reason(
 
     call_count = [0]
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         call_count[0] += 1
         round_log_path.write_text("")
         if call_count[0] == 1:
@@ -116,7 +116,7 @@ def test_given_long_reason_when_serve_then_event_payload_capped_200(
 
     call_count = [0]
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         call_count[0] += 1
         round_log_path.write_text("")
         if call_count[0] == 1:
@@ -149,7 +149,7 @@ def test_given_non_utf8_sentinel_when_serve_then_handled_with_replace(
 
     call_count = [0]
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         call_count[0] += 1
         round_log_path.write_text("")
         if call_count[0] == 1:
@@ -179,7 +179,7 @@ def test_given_serve_running_round_when_subprocess_invoked_then_env_has_log_dir(
 
     captured_env = {}
 
-    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s):
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
         captured_env.update(round_env)
         round_log_path.write_text("")
         return 0

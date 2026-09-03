@@ -28,7 +28,9 @@ from agent_runner.events import (
     AGENT_EXIT,
     ANOMALY_REPETITIVE_TOOL,
     ORPHAN_STASHED,
+    ROUND_DEFERRED,
     ROUND_END,
+    ROUND_RESUMED,
     ROUND_START,
     SCHEDULE_PAUSED,
     SCHEDULE_RESUMED,
@@ -470,6 +472,26 @@ def _latest_schedule_event(events: list[dict[str, Any]]) -> dict[str, Any] | Non
     return None
 
 
+# Event kinds that, like schedule_paused/resumed, mark a live pause/defer window
+# for detect_supervisor_stale's suppression check below. round_deferred (the
+# memory-pressure admission gate, 0.2.14) joins schedule_paused here so a long
+# defer is not mistaken for a dead supervisor. Kept separate from
+# _latest_schedule_event/latest_schedule_state above, which peek's schedule
+# display reads and must stay schedule-only.
+_STALE_SUPPRESSING_PAUSE_KINDS = (SCHEDULE_PAUSED, ROUND_DEFERRED)
+_STALE_SUPPRESSING_RESUME_KINDS = (SCHEDULE_RESUMED, ROUND_RESUMED)
+
+
+def _latest_stale_pause_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Newest schedule_paused/round_deferred/*_resumed event by stream order, or
+    None -- the suppression check for detect_supervisor_stale."""
+    kinds = _STALE_SUPPRESSING_PAUSE_KINDS + _STALE_SUPPRESSING_RESUME_KINDS
+    for e in reversed(events):
+        if e.get("event") in kinds:
+            return e
+    return None
+
+
 def detect_supervisor_stale(
     events: list[dict[str, Any]],
     *,
@@ -496,11 +518,13 @@ def detect_supervisor_stale(
     if age_s <= stale_threshold_s:
         return None
 
-    newest = _latest_schedule_event(events)
-    if newest is not None and newest.get("event") == SCHEDULE_PAUSED:
-        # Suppress only while the pause is plausibly still live: until its
-        # announced resume_at plus one staleness window. A supervisor that died
-        # mid-pause therefore still alarms once that bound passes.
+    newest = _latest_stale_pause_event(events)
+    if newest is not None and newest.get("event") in _STALE_SUPPRESSING_PAUSE_KINDS:
+        # Suppress only while the pause/defer is plausibly still live: until its
+        # announced resume_at plus one staleness window (round_deferred carries
+        # no resume_at, so it always falls to the ts+8d horizon below). A
+        # supervisor that died mid-pause therefore still alarms once that bound
+        # passes.
         paused = newest
         bound = None
         try:

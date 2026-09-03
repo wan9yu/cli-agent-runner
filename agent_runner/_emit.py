@@ -21,10 +21,13 @@ __all__ = [
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
     "emit_rate_limit_stop",
+    "emit_round_deferred",
     "emit_round_grace_extended",
     "emit_round_grace_kill",
     "emit_round_logs_prune_deferred",
+    "emit_round_mem_terminated",
     "emit_round_progress",
+    "emit_round_resumed",
     "emit_round_substrate_after",
     "emit_round_substrate_before",
     "emit_round_supervisor_wedged",
@@ -148,6 +151,36 @@ def emit_schedule_resumed(log_dir: Path, *, paused_for_s: int) -> None:
     from agent_runner.events import SCHEDULE_RESUMED, emit
 
     emit(log_dir, SCHEDULE_RESUMED, paused_for_s=paused_for_s)
+
+
+def emit_round_deferred(log_dir: Path, *, severity: str, signal: str, message: str) -> None:
+    """Emit round_deferred when the pre-round admission gate defers the next
+    round under host_health memory pressure (Group 3 action half). Paired with
+    emit_round_resumed once pressure clears -- like schedule_paused/resumed --
+    so a long defer does not trip detect_supervisor_stale (see its suppression
+    set in _monitor_detectors.py)."""
+    from agent_runner.events import ROUND_DEFERRED, emit
+
+    emit(log_dir, ROUND_DEFERRED, severity=severity, signal=signal, message=message)
+
+
+def emit_round_resumed(log_dir: Path, *, deferred_for_s: int) -> None:
+    """Emit round_resumed when a memory-pressure round deferral clears."""
+    from agent_runner.events import ROUND_RESUMED, emit
+
+    emit(log_dir, ROUND_RESUMED, deferred_for_s=deferred_for_s)
+
+
+def emit_round_mem_terminated(
+    log_dir: Path, *, pid: int, severity: str, signal: str, message: str
+) -> None:
+    """Emit when _spawn_round's mid-round hard floor terminated a ballooning
+    round on critical host_health pressure -- the actual coma-preventer (a
+    pre-round-only gate can't stop a single round mid-flight). Distinct from
+    round_supervisor_wedged (a wall-clock ceiling breach, unrelated cause)."""
+    from agent_runner.events import ROUND_MEM_TERMINATED, emit
+
+    emit(log_dir, ROUND_MEM_TERMINATED, pid=pid, severity=severity, signal=signal, message=message)
 
 
 def emit_round_substrate_before(
