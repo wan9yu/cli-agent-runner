@@ -550,7 +550,9 @@ def _describe(m: Migration, parsed: dict) -> str:
     return m.describe(parsed) if callable(m.describe) else m.describe
 
 
-def run_migrations(text: str, parsed: dict) -> MigrationResult:
+def _run_migrations_pass(text: str, parsed: dict) -> tuple[str, list[str], list[str], list[str]]:
+    """One detect+rewrite pass over ``MIGRATIONS`` against a fixed ``parsed``.
+    Returns ``(new_text, applied, manual, advisory)``."""
     new_text = text
     applied: list[str] = []
     manual: list[str] = []
@@ -586,4 +588,42 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
             continue
         new_text = rewritten
         applied.append(desc)
-    return MigrationResult(new_text=new_text, applied=applied, manual=manual, advisory=advisory)
+    return new_text, applied, manual, advisory
+
+
+# A rewrite can expose a footgun that only a re-parse reveals, so migration runs
+# to a fixpoint (see run_migrations). Generous bound: each pass must apply at
+# least one NEW rewrite to continue, and the distinct footgun count is small — so
+# only a pathological apply/detect cycle could exhaust this.
+_MAX_MIGRATION_PASSES = 12
+
+
+def run_migrations(text: str, parsed: dict) -> MigrationResult:
+    """Apply migrations to a FIXPOINT.
+
+    A single pass can rewrite one footgun into a shape that only THEN trips a
+    second detector — e.g. a bare-string ``prompt_arg_template = "-p"`` is wrapped
+    to ``["-p"]``, which the re-parse reveals has no ``{prompt}`` placeholder. A
+    one-shot pass would print the rewrite and exit clean on a config that still
+    won't ``load_config`` (``upgrade`` then proceeds on the false-clean and the
+    new serve exits 78). So re-parse the rewritten text and re-run detectors until
+    a pass applies no further rewrite; only that terminal pass's ``manual`` /
+    ``advisory`` reports are returned (an intermediate pass may flag a blocker a
+    later rewrite resolves). Bounded so an apply/detect cycle can't loop forever.
+    """
+    new_text = text
+    cur = parsed
+    applied: list[str] = []
+    for _ in range(_MAX_MIGRATION_PASSES):
+        rewritten, pass_applied, manual, advisory = _run_migrations_pass(new_text, cur)
+        applied.extend(pass_applied)
+        if rewritten == new_text:
+            return MigrationResult(
+                new_text=new_text, applied=applied, manual=manual, advisory=advisory
+            )
+        new_text = rewritten
+        cur = tomllib.loads(rewritten)  # each rewrite was TOML-validated in the pass
+    raise RuntimeError(
+        f"config migration did not converge after {_MAX_MIGRATION_PASSES} passes — "
+        "two migrations appear to undo each other; please file a bug"
+    )

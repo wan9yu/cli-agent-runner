@@ -175,6 +175,38 @@ def test_empty_top_level_prompt_files_is_manual():
     assert any("[prompt] files" in m for m in r.manual)
 
 
+def test_bare_prompt_arg_template_reaches_manual_in_one_migrate():
+    """Fixpoint: a bare-string prompt_arg_template is wrapped to a list on pass 1,
+    which the re-parse then reveals has no {prompt} placeholder — a single pass
+    would exit clean on a config that still won't load_config. ONE run_migrations
+    must reach the correctly-reported MANUAL, not the false clean."""
+    text = '[agent]\ncommand = ["claude"]\nprompt_arg_template = "-p"\n'
+    r = _run(text)
+    assert any("prompt_arg_template" in a for a in r.applied)  # pass 1 wrapped it
+    assert any("{prompt} placeholder" in m for m in r.manual)  # fixpoint caught it
+    assert 'prompt_arg_template = ["-p"]' in r.new_text
+
+
+def test_bare_prompt_arg_template_with_placeholder_is_loadable_in_one_migrate(tmp_path):
+    """The converging case: a bare template that DOES carry {prompt} wraps to a
+    genuinely-loadable list in one invocation — no lingering manual blocker."""
+    from agent_runner.config import load_config
+
+    prompt = tmp_path / "main.md"
+    prompt.write_text("hi")
+    text = (
+        '[agent]\ncommand = ["claude"]\nprompt_arg_template = "{prompt}"\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path / "logs"}"\n'
+        f'[prompt]\nfile = "{prompt}"\n'
+    )
+    r = _run(text)
+    assert any("prompt_arg_template" in a for a in r.applied)
+    assert r.manual == []
+    cfg_path = tmp_path / "agent-runner.toml"
+    cfg_path.write_text(r.new_text)
+    load_config(cfg_path)  # must not raise — genuinely loadable after ONE migrate
+
+
 def test_wrap_bare_per_phase_command_and_prompt_files():
     text = (
         '[phases]\nlist = ["dev"]\n'
