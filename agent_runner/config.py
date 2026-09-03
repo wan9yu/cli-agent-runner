@@ -291,6 +291,23 @@ def _require_table(raw: dict, key: str) -> dict:
     return value
 
 
+def _reject_unknown_fields(d: dict, allowed: frozenset[str], label: str) -> None:
+    """Raise ``ConfigError`` if ``d`` has any key outside ``allowed``.
+
+    ``label`` names the TOML table in the message (e.g. ``"runtime"`` or
+    ``"phases.dev.prompt"``) without its own brackets -- this wraps it. The
+    single source for the "unknown [X] field(s): ...; run `agent-runner
+    migrate`" wording shared by every base-table and per-phase-sub-table
+    strictness check.
+    """
+    unknown = set(d) - allowed
+    if unknown:
+        raise ConfigError(
+            f"unknown [{label}] field(s): {sorted(unknown)}; "
+            f"allowed: {sorted(allowed)}; run `agent-runner migrate`"
+        )
+
+
 def _expand_path(s: str, project_name: str) -> Path:
     return Path(s.replace("{project}", project_name)).expanduser()
 
@@ -456,12 +473,7 @@ def _parse_agent(
     is mandatory and non-empty) — callers other than the per-phase resolver
     leave this at its default.
     """
-    unknown = set(agent_d) - _AGENT_ALLOWED_FIELDS
-    if unknown:
-        raise ConfigError(
-            f"unknown {field_prefix} field(s): {sorted(unknown)}; "
-            f"allowed: {sorted(_AGENT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-        )
+    _reject_unknown_fields(agent_d, _AGENT_ALLOWED_FIELDS, field_prefix.strip("[]"))
     prompt_delivery = str(agent_d.get("prompt_delivery", "argv"))
     prompt_arg_template = _require_str_list(
         _require(agent_d, "prompt_arg_template"), field=f"{field_prefix} prompt_arg_template"
@@ -586,12 +598,9 @@ def _parse_phase_overrides(
             prompt_sub = value["prompt"]
             if not isinstance(prompt_sub, dict) or "files" not in prompt_sub:
                 raise ConfigError(f"[phases.{phase_name}].prompt must have a 'files' list")
-            unknown_prompt = set(prompt_sub) - _PHASE_PROMPT_ALLOWED_FIELDS
-            if unknown_prompt:
-                raise ConfigError(
-                    f"unknown [phases.{phase_name}.prompt] field(s): {sorted(unknown_prompt)}; "
-                    f"allowed: {sorted(_PHASE_PROMPT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-                )
+            _reject_unknown_fields(
+                prompt_sub, _PHASE_PROMPT_ALLOWED_FIELDS, f"phases.{phase_name}.prompt"
+            )
             files_raw = _require_str_list(
                 prompt_sub["files"], field=f"phases.{phase_name}.prompt.files"
             )
@@ -736,12 +745,7 @@ def load_config(toml_path: Path) -> Config:
             "back_off / skip / stop). Run `agent-runner migrate`."
         )
 
-    unknown_runtime = set(runtime_d) - _RUNTIME_ALLOWED_FIELDS
-    if unknown_runtime:
-        raise ConfigError(
-            f"unknown [runtime] field(s): {sorted(unknown_runtime)}; "
-            f"allowed: {sorted(_RUNTIME_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-        )
+    _reject_unknown_fields(runtime_d, _RUNTIME_ALLOWED_FIELDS, "runtime")
 
     transient_error_action_raw = runtime_d.get("transient_error_action")
     transient_error_action = str(
@@ -804,12 +808,7 @@ def load_config(toml_path: Path) -> Config:
         ),
     )
     prompt_d = _require_table(raw, "prompt")
-    unknown_prompt = set(prompt_d) - _PROMPT_ALLOWED_FIELDS
-    if unknown_prompt:
-        raise ConfigError(
-            f"unknown [prompt] field(s): {sorted(unknown_prompt)}; "
-            f"allowed: {sorted(_PROMPT_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-        )
+    _reject_unknown_fields(prompt_d, _PROMPT_ALLOWED_FIELDS, "prompt")
     mode = prompt_d.get("context_injection_mode", "prepend")
     if mode not in _VALID_INJECTION_MODES:
         raise ConfigError(
@@ -854,12 +853,7 @@ def load_config(toml_path: Path) -> Config:
         raise ConfigError(
             "vcs.orphan_action removed in 0.1.18; use vcs.dirty_action. Run `agent-runner migrate`."
         )
-    unknown_vcs = set(vcs_d) - _VCS_ALLOWED_FIELDS
-    if unknown_vcs:
-        raise ConfigError(
-            f"unknown [vcs] field(s): {sorted(unknown_vcs)}; "
-            f"allowed: {sorted(_VCS_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-        )
+    _reject_unknown_fields(vcs_d, _VCS_ALLOWED_FIELDS, "vcs")
     dirty_action = str(vcs_d.get("dirty_action", "stash"))
     if dirty_action not in _VALID_DIRTY_ACTIONS:
         raise ConfigError(
@@ -873,12 +867,7 @@ def load_config(toml_path: Path) -> Config:
         dirty_action=dirty_action,
     )
     monitor_d = _require_table(raw, "monitor")
-    unknown_monitor = set(monitor_d) - _MONITOR_ALLOWED_FIELDS
-    if unknown_monitor:
-        raise ConfigError(
-            f"unknown [monitor] field(s): {sorted(unknown_monitor)}; "
-            f"allowed: {sorted(_MONITOR_ALLOWED_FIELDS)}; run `agent-runner migrate`"
-        )
+    _reject_unknown_fields(monitor_d, _MONITOR_ALLOWED_FIELDS, "monitor")
     hh_d = monitor_d.get("host_health", {})
     host_health = MonitorHostHealthConfig(
         mem_avail_min_mb=_require_non_negative_int(
