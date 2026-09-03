@@ -211,7 +211,7 @@ host's logs and stop its service, so they must run there (see
 [runbook.md](runbook.md) § "Remote event relay & SSH trust").
 
 Relay behavior — reconnect-with-`--since`, the `[monitor]
-remote_failure_tolerance_s` (default 90s) give-up deadline, and ssh <!-- authored: registry-pinned tolerance default; SSOT agent_runner/config.py -->
+remote_failure_tolerance_s` (default 90s) give-up deadline, and ssh <!-- authored: registry-pinned tolerance default; SSOT agent_runner/config/models.py -->
 process-group teardown — is documented in
 [runbook.md](runbook.md) § "Remote event relay & SSH trust".
 

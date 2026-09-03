@@ -20,7 +20,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 ## TOML schema
 
 <!-- gen:config-schema -->
-<!-- source: agent_runner/config.py dataclasses -->
+<!-- source: agent_runner/config/models.py dataclasses -->
 ### `[agent]`
 
 | Field | Type | Default |
@@ -225,7 +225,7 @@ own env; unset (empty string) does not unset an inherited variable.
 
 ## `[monitor].auth_fail_hint` (preset-supplied)
 
-<!-- authored: canonical auth_fail_hint sentinel; SSOT agent_runner/config.py -->
+<!-- authored: canonical auth_fail_hint sentinel; SSOT agent_runner/config/models.py -->
 The TOML schema default for `auth_fail_hint` is `""` — that's the "no-hint"
 sentinel. **Presets supply a per-CLI hint** so operators get actionable
 guidance without authoring it themselves:
@@ -464,7 +464,7 @@ phase, orphan stash info, etc.) is delivered to the agent:
 ## Monitor pattern overrides
 
 `monitor.auth_fail_patterns` and `monitor.auth_fail_hint` let you tune the OAuth-fail
-detector per agent CLI. The default `auth_fail_patterns` regex is broad <!-- authored: describes the default auth_fail_patterns regex; SSOT agent_runner/config.py -->
+detector per agent CLI. The default `auth_fail_patterns` regex is broad <!-- authored: describes the default auth_fail_patterns regex; SSOT agent_runner/config/models.py -->
 (`401`, `unauthorized`, `oauth`, generic `auth*_failed/error/expired`, expired
 sessions) and matches most providers' auth error vocabulary; the
 `auth_fail_hint` is empty out of the box (see the `[monitor].auth_fail_hint`
@@ -505,7 +505,7 @@ pause_windows = ["Mon-Fri 09:00-12:00", "Mon-Fri 14:00-18:00"]
 |---|---|
 | `timezone` | IANA zone name (e.g. `"Asia/Shanghai"`) the windows are evaluated in. Omit → the supervisor host's local time. An unknown zone is rejected at config load. |
 | `pause_windows` | List of windows during which serve must **not** start a round. |
-| `run_windows` | List of windows during which serve **may** start a round. Empty (the default) means "every time is runnable". <!-- authored: empty run_windows default; SSOT agent_runner/config.py --> |
+| `run_windows` | List of windows during which serve **may** start a round. Empty (the default) means "every time is runnable". <!-- authored: empty run_windows default; SSOT agent_runner/config/models.py --> |
 
 Gating happens **only between rounds**. An in-flight round is never interrupted
 by a window boundary — a round that starts at 08:59 runs to completion even

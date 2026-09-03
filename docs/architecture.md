@@ -76,17 +76,28 @@ surfacing everywhere.
 
 Three categories by `auto_action`:
 
-**Notify only** (severity `warning`):
+**Notify only** (`auto_action="none"`; severity `warning`, except `mem_pressure`
+which can also report `critical`):
 `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`, `mem_pressure`,
-`network_fail`, `rate_limit_active`, `anomaly_repetitive_active`,
-`supervisor_stale`.
+`mem_pressure_gate_inert`, `mem_signal_unavailable`, `network_fail`,
+`rate_limit_active`, `anomaly_repetitive_active`, `supervisor_stale`.
 
 **Auto-stop service** (severity `critical`, `auto_action="stop_service"`):
 `oauth_fail`, `disk_critical`. Continuing in either state is harmful (burning
 API quota / writing to a near-full disk).
 
+`mem_pressure`'s own `auto_action` stays `"none"` — the graded, plugin-
+configurable admission lever through `on_alert` is 0.3. The actual
+coma-preventer is a separate, serve-local admission gate
+(`agent_runner/host_health.py` + `cli/serve_cmd.py`), independent of the
+monitor's `auto_action`: before starting a round the loop samples
+`host_health` and **defers** while it reports pressure (`round_deferred` /
+`round_resumed`, mirroring `schedule_paused`/`resumed`); while a round is in
+flight it resamples every ~10s and, on `critical` pressure, **terminates**
+the round (`round_mem_terminated`).
+
 <!-- gen:detector-list -->
-<!-- source: agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS -->
+<!-- source: agent_runner/_monitor_registry.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS -->
 - `anomaly_repetitive_active`
 - `disk_critical` — **auto-stop**
 - `disk_warning`
@@ -130,7 +141,7 @@ Operators sometimes conflate them. The flags are independent.
 
 Before each round, the supervisor writes `round-context.json` to `{log_dir}/round-context.json`
 with phase, round_num, plugin-provided context fields (from ContextEnricher), and
-recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended <!-- authored: documents the shipped inject_context default; SSOT agent_runner/config.py -->
+recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended <!-- authored: documents the shipped inject_context default; SSOT agent_runner/config/models.py -->
 to the agent's prompt file.
 
 To disable this path: `[prompt] inject_context = false`.

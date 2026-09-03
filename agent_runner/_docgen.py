@@ -255,10 +255,12 @@ RENDERERS: dict[str, Renderer] = {
     "defenses-table": Renderer(render_defenses_table, "agent_runner/defenses.py catalog()"),
     "detector-list": Renderer(
         render_detector_list,
-        "agent_runner/monitor.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS",
+        "agent_runner/_monitor_registry.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS",
     ),
     "event-kinds": Renderer(render_event_kinds_list, "agent_runner/events.py KNOWN_EVENT_KINDS"),
-    "config-schema": Renderer(render_config_schema_table, "agent_runner/config.py dataclasses"),
+    "config-schema": Renderer(
+        render_config_schema_table, "agent_runner/config/models.py dataclasses"
+    ),
     "verb-table": Renderer(render_verb_table, "agent_runner/cli argparse subparsers"),
     "migrate-transforms": Renderer(
         _render_migrate_transforms, "agent_runner/migrations.py MIGRATIONS"

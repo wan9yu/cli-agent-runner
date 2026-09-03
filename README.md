@@ -78,8 +78,11 @@ of [`docs/configuration.md`](docs/configuration.md).
 ## Monitor: 13 detectors
 
 Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
-`mem_pressure`, `network_fail`, `rate_limit_active`,
-`anomaly_repetitive_active`, `supervisor_stale`.
+`mem_pressure`, `mem_pressure_gate_inert`, `mem_signal_unavailable`,
+`network_fail`, `rate_limit_active`, `anomaly_repetitive_active`,
+`supervisor_stale`. `mem_pressure` also drives a separate serve-loop
+admission gate that defers or terminates rounds under real memory pressure —
+see `docs/architecture.md`.
 
 **Auto-stop the service** (continuing is harmful):
 - `oauth_fail` — burning API quota on auth-rejected rounds

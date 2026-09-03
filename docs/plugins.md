@@ -496,7 +496,7 @@ NOT actually stop the supervisor unless its `name` appears in
 auto_stop_on = ["oauth_fail", "disk_critical", "my_detector"]
 ```
 
-<!-- authored: default auto_stop_on membership; SSOT agent_runner/config.py -->
+<!-- authored: default auto_stop_on membership; SSOT agent_runner/config/models.py -->
 The default `auto_stop_on` includes only the two built-in critical detectors
 (`oauth_fail`, `disk_critical`). This prevents a buggy or aggressive plugin
 detector from stopping production services without explicit operator consent.
