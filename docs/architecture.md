@@ -72,7 +72,7 @@ surfacing everywhere.
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
 
-## Monitor: 11 detectors
+## Monitor: 13 detectors
 
 Three categories by `auto_action`:
 
@@ -92,6 +92,8 @@ API quota / writing to a near-full disk).
 - `disk_warning`
 - `hung`
 - `mem_pressure`
+- `mem_pressure_gate_inert`
+- `mem_signal_unavailable`
 - `network_fail`
 - `oauth_fail` — **auto-stop**
 - `orphan_chain`

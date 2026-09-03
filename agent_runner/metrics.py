@@ -16,14 +16,74 @@ import psutil
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import now_iso_ms
 
+_PSI_MEMORY_PATH = Path("/proc/pressure/memory")
+
+
+def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float] | None:
+    """Parse ``/proc/pressure/memory``'s ``some``/``full`` ``avg10`` fields.
+
+    Returns ``None`` when the file is absent (non-Linux, or a kernel built
+    without ``CONFIG_PSI``) or unreadable (``psi=0`` boot param) — the
+    caller (``host_health``) degrades gracefully down the signal ladder.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    some_avg10: float | None = None
+    full_avg10: float | None = None
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        fields = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
+        raw = fields.get("avg10")
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if parts[0] == "some":
+            some_avg10 = value
+        elif parts[0] == "full":
+            full_avg10 = value
+    if some_avg10 is None:
+        return None
+    return some_avg10, full_avg10 if full_avg10 is not None else 0.0
+
+
+def sample() -> dict[str, Any]:
+    """Lean, non-blocking read of the cache-poor-valid pressure signals.
+
+    Deliberately NOT ``collect()`` (which shells out to ``pgrep`` for
+    ``agent_process_count``, see ``_count_agent_processes`` below) — this is
+    psutil counters + one optional ``/proc`` file read, safe to call every
+    ~10s in a hot loop (e.g. a serve-loop mid-round check). ``host_health``
+    is the pure interpreter of what this returns; this function only samples.
+
+    ``swap_sout`` is cumulative (bytes swapped out since boot) — callers
+    wanting a rate/delta diff two samples themselves.
+    """
+    vm = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    psi = _read_psi()
+    return {
+        "mem_available_mb": vm.available // (1024 * 1024),
+        "mem_free_mb": vm.free // (1024 * 1024),
+        "swap_sout": swap.sout,
+        "psi_some_avg10": psi[0] if psi is not None else None,
+        "psi_full_avg10": psi[1] if psi is not None else None,
+    }
+
 
 def collect(disk_path: Path, *, agent_binary: str | None = None) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     du = psutil.disk_usage(str(disk_path))
     out: dict[str, Any] = {
         "mem_total_mb": vm.total // (1024 * 1024),
-        "mem_available_mb": vm.available // (1024 * 1024),
         "mem_used_pct": round(vm.percent, 1),
+        **sample(),
         "disk_total_gb": round(du.total / (1024**3), 1),
         "disk_free_gb": round(du.free / (1024**3), 1),
         "disk_used_pct": round(du.percent, 1),

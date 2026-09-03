@@ -247,6 +247,12 @@ vcs
 dirty_action
 stash_idempotency_s
 
+# agent_runner.host_health.Pressure
+severity
+signal
+message
+context
+
 # agent_runner.lifecycle.PIDFile
 path
 

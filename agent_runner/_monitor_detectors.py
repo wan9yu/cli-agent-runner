@@ -1,6 +1,6 @@
 """Pure anomaly detectors over events + metrics + log tails.
 
-11 built-in detectors. Two trigger ``auto_action="stop_service"``:
+13 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — agent-reported auth failures, or an auth pattern in
     short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
@@ -18,10 +18,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from agent_runner import host_health
 from agent_runner._monitor_registry import _MONITOR_SELF_KINDS
 from agent_runner.api_types import Alert
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.config import _DEFAULT_AUTH_PATTERNS, PhaseOverride
+from agent_runner.config import _DEFAULT_AUTH_PATTERNS, MonitorHostHealthConfig, PhaseOverride
 from agent_runner.events import (
     AGENT_AUTH_ERROR_DETECTED,
     AGENT_EXIT,
@@ -215,18 +216,69 @@ def detect_disk_critical(
     )
 
 
-def detect_mem_pressure(metrics: list[dict[str, Any]], *, threshold_mb: int = 200) -> Alert | None:
-    val = _latest(metrics, "mem_available_mb")
-    if val is None or val >= threshold_mb:
+def _latest_two(metrics: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return (current, previous) full metric dicts -- the last two history
+    entries (or ``{}`` when shorter). The mem-pressure ladder needs a delta
+    across samples, unlike the single-key lookback ``_latest`` gives the
+    other host-health detectors."""
+    cur = metrics[-1] if metrics else {}
+    prev = metrics[-2] if len(metrics) >= 2 else {}
+    return cur, prev
+
+
+def detect_mem_pressure(
+    metrics: list[dict[str, Any]], *, cfg: MonitorHostHealthConfig | None = None
+) -> Alert | None:
+    """Cache-poor-valid memory pressure via ``host_health``'s signal ladder
+    (PSI -> swap-out rate -> combined-low -> unavailable). ``auto_action``
+    stays ``"none"`` this release -- the graded admission lever is 0.3.
+
+    When no tier has a usable reading, this does NOT silently trust
+    ``mem_available_mb`` alone (the original bug) -- it emits a distinct
+    ``mem_signal_unavailable`` warning instead.
+    """
+    cfg = cfg if cfg is not None else MonitorHostHealthConfig()
+    cur, prev = _latest_two(metrics)
+    if not cur:
+        return None  # nothing sampled yet -- a startup grace period, not a bug
+    pressure = host_health.memory_pressure(cur, prev, cfg)
+    if pressure is not None:
+        return _alert("mem_pressure", pressure.severity, pressure.message, pressure.context)
+    if not host_health.signal_available(cur, prev):
+        return _alert(
+            "mem_signal_unavailable",
+            "warning",
+            "no cache-poor-valid memory signal available on this host (PSI "
+            "unreadable, no swap-out history, MemFree unknown) -- mem_pressure "
+            "cannot detect pressure here",
+            {"mem_available_mb": cur.get("mem_available_mb")},
+        )
+    return None
+
+
+def detect_mem_pressure_gate_inert(
+    metrics: list[dict[str, Any]], *, cfg: MonitorHostHealthConfig | None = None
+) -> Alert | None:
+    """Fail-loud self-check: fires when a cache-poor-valid signal (PSI or
+    swap-out rate) shows real pressure WHILE ``mem_available_mb`` stays at or
+    above ``cfg.mem_avail_min_mb`` -- i.e. the configured gate is provably
+    inert on this host. Does NOT fire on "MemAvailable >> MemFree" alone,
+    which is true on every healthy warm-cache host."""
+    cfg = cfg if cfg is not None else MonitorHostHealthConfig()
+    cur, prev = _latest_two(metrics)
+    if not host_health.configured_gate_inert(cur, prev, cfg):
         return None
     return _alert(
-        "mem_pressure",
+        "mem_pressure_gate_inert",
         "warning",
-        f"mem_available_mb {val} < {threshold_mb}",
+        f"mem_avail_min_mb={cfg.mem_avail_min_mb} cannot fire on this host: a "
+        f"cache-poor-valid signal shows real pressure while mem_available_mb="
+        f"{cur.get('mem_available_mb')} stays >= threshold",
         {
-            "value": val,
-            "threshold": threshold_mb,
-            "hint": "Investigate memory leak or move to a larger host",
+            "mem_avail_min_mb": cfg.mem_avail_min_mb,
+            "mem_available_mb": cur.get("mem_available_mb"),
+            "hint": "MemAvailable is inflated on this host -- lower mem_avail_min_mb "
+            "won't help; rely on the mem_pressure alert itself instead",
         },
     )
 

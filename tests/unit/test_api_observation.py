@@ -58,7 +58,8 @@ def _seed_logs(work_dir: Path) -> None:
         '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","round_num":1}\n'
     )
     (log_dir / "metrics-2026-05.jsonl").write_text(
-        '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","mem_total_mb":8000,"mem_available_mb":4000,"disk_used_pct":50.0,"disk_free_gb":100.0}\n'
+        '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","mem_total_mb":8000,'
+        '"mem_available_mb":4000,"mem_free_mb":3000,"disk_used_pct":50.0,"disk_free_gb":100.0}\n'
     )
     (log_dir / "status.json").write_text(
         json.dumps({"round_num": 1, "running": False, "last_exit_code": 0})

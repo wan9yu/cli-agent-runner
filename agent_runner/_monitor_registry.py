@@ -28,6 +28,8 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "disk_warning",
         "disk_critical",
         "mem_pressure",
+        "mem_signal_unavailable",
+        "mem_pressure_gate_inert",
         "oauth_fail",
         "network_fail",
         "rate_limit_active",

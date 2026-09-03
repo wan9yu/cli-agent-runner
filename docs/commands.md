@@ -178,7 +178,7 @@ you were disconnected is lost.
 
 ### `agent-runner monitor [--mode MODE] [--host SSH-ALIAS] [--kind K,...] [--remote-config PATH] [--interval N] [--port PORT] [--json]`
 
-Anomaly-detection daemon. Runs the 11 detectors against the live state on every
+Anomaly-detection daemon. Runs the 13 detectors against the live state on every
 poll, watching the project's local logs at a default 30s interval.
 
 When OAuth-fail or disk-critical detectors fire, monitor automatically issues a
@@ -201,7 +201,7 @@ Mode × `--host` matrix:
 
 | `--mode` | local | `--host X` |
 |---|---|---|
-| `anomaly` (default) | 11 detectors + auto-stop | rejected (exit 1) |
+| `anomaly` (default) | 13 detectors + auto-stop | rejected (exit 1) |
 | `narrate` | human-readable stream | rejected (exit 1) |
 | `events` | JSONL stream of local events | **managed ssh relay** |
 | `http` | progress page on 127.0.0.1 | rejected (exit 1) |

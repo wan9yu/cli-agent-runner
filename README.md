@@ -13,7 +13,7 @@ full disks, runaway memory.
 
 ```
 ┌──────────────────────────────────────────┐
-│ Layer 3: The Witness (monitor)           │  11 detectors + auto-stop
+│ Layer 3: The Witness (monitor)           │  13 detectors + auto-stop
 ├──────────────────────────────────────────┤
 │ Layer 2: The Loop (serve)                │  signal-trapping restart loop
 ├──────────────────────────────────────────┤
@@ -50,7 +50,7 @@ Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 |---|---|
 | `init` / `install` / `uninstall` | `peek` — state snapshot |
 | `start` / `stop` / `kill` | `watch` — peek in a refresh loop |
-| `restart` / `status` | `monitor` — 11 detectors, alerts, auto-stop |
+| `restart` / `status` | `monitor` — 13 detectors, alerts, auto-stop |
 | `round` / `serve` | `events` — query / stream events.jsonl |
 | `upgrade` / `migrate` | |
 
@@ -75,7 +75,7 @@ Optionally pause the loop during off-hours: `[schedule]` run/pause windows gate
 `serve` (override with `serve --ignore-schedule`) — see the `[schedule]` section
 of [`docs/configuration.md`](docs/configuration.md).
 
-## Monitor: 11 detectors
+## Monitor: 13 detectors
 
 Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
 `mem_pressure`, `network_fail`, `rate_limit_active`,

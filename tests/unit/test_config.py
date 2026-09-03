@@ -1652,9 +1652,10 @@ def test_given_custom_mem_threshold_in_config_when_detect_mem_pressure_then_uses
     host_health = MonitorHostHealthConfig(mem_avail_min_mb=500)
     monitor_cfg = MonitorConfig(host_health=host_health)
 
-    # Value=300 is below custom threshold (500) but above default (200)
-    metrics = [{"mem_available_mb": 300}]
-    alert = detect_mem_pressure(metrics, threshold_mb=monitor_cfg.host_health.mem_avail_min_mb)
+    # mem_available=300 is below custom threshold (500) but above default (200);
+    # mem_free=5 (low) makes it a genuine combined-low signal, not silence.
+    metrics = [{"mem_available_mb": 300, "mem_free_mb": 5}]
+    alert = detect_mem_pressure(metrics, cfg=monitor_cfg.host_health)
     assert alert is not None
     assert alert.detector == "mem_pressure"
 
@@ -1669,8 +1670,9 @@ def test_given_host_health_overrides_when_run_all_detectors_then_thresholds_appl
     """
     from agent_runner.monitor import run_all_detectors
 
-    # mem_available_mb=300: below custom mem_avail_min_mb=500 but above default 200
-    metrics = [{"mem_available_mb": 300, "disk_used_pct": 92.0}]
+    # mem_available_mb=300: below custom mem_avail_min_mb=500 but above default 200;
+    # mem_free_mb=5 (low) makes it a genuine combined-low signal, not silence.
+    metrics = [{"mem_available_mb": 300, "mem_free_mb": 5, "disk_used_pct": 92.0}]
 
     alerts = run_all_detectors(
         events=[],

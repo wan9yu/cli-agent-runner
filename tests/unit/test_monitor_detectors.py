@@ -12,6 +12,7 @@ from agent_runner.monitor import (
     detect_disk_warning,
     detect_hung,
     detect_mem_pressure,
+    detect_mem_pressure_gate_inert,
     detect_network_fail,
     detect_oauth_fail,
     detect_orphan_chain,
@@ -23,7 +24,7 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> None:
+def test_given_known_alert_kinds_when_inspected_then_contains_all_thirteen() -> None:
     expected = {
         "timeout_rate",
         "hung",
@@ -31,6 +32,8 @@ def test_given_known_alert_kinds_when_inspected_then_contains_all_eleven() -> No
         "disk_warning",
         "disk_critical",
         "mem_pressure",
+        "mem_signal_unavailable",
+        "mem_pressure_gate_inert",
         "oauth_fail",
         "network_fail",
         "rate_limit_active",
@@ -134,10 +137,56 @@ def test_given_disk_used_pct_above_warning_below_critical_then_warning_only() ->
 
 
 def test_given_mem_available_below_threshold_when_detect_then_returns_alert() -> None:
-    metrics = [{"event": "round_end", "mem_available_mb": 150}]
-    a = detect_mem_pressure(metrics, threshold_mb=200)
+    # mem_free_mb low alongside mem_available_mb low is a genuine combined-low
+    # signal; a bare mem_available_mb (the old dumb gate) now reports
+    # mem_signal_unavailable instead -- see test_host_health.py for the ladder.
+    from agent_runner.config import MonitorHostHealthConfig
+
+    metrics = [{"event": "round_end", "mem_available_mb": 150, "mem_free_mb": 5}]
+    a = detect_mem_pressure(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=200))
     assert a is not None
     assert a.detector == "mem_pressure"
+
+
+def test_given_bare_mem_available_with_no_other_signal_when_detect_then_reports_unavailable() -> (
+    None
+):
+    metrics = [{"event": "round_end", "mem_available_mb": 150}]
+    a = detect_mem_pressure(metrics)
+    assert a is not None
+    assert a.detector == "mem_signal_unavailable"
+
+
+def test_given_swap_climbing_while_mem_available_stays_high_when_detect_gate_inert_then_fires() -> (
+    None
+):
+    from agent_runner.config import MonitorHostHealthConfig
+
+    metrics = [
+        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 1000},
+        {"event": "round_end", "mem_available_mb": 150, "swap_sout": 9000},
+    ]
+    a = detect_mem_pressure_gate_inert(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=40))
+    assert a is not None
+    assert a.detector == "mem_pressure_gate_inert"
+
+
+def test_given_healthy_warm_cache_host_when_detect_gate_inert_then_none() -> None:
+    """MemAvailable >> MemFree alone (every healthy warm-cache host) must not
+    trip the self-check."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    metrics = [
+        {
+            "event": "round_end",
+            "mem_available_mb": 6000,
+            "mem_free_mb": 200,
+            "swap_sout": 100,
+            "psi_some_avg10": 0.0,
+        }
+    ]
+    a = detect_mem_pressure_gate_inert(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=40))
+    assert a is None
 
 
 def test_given_short_exit_with_oauth_pattern_when_detect_then_returns_auto_stop_alert() -> None:

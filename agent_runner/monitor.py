@@ -1,6 +1,6 @@
 """Monitor — the cycle-edge: running detectors and dispatching on their alerts.
 
-11 built-in detectors run every poll (see ``_monitor_detectors``); two trigger
+13 built-in detectors run every poll (see ``_monitor_detectors``); two trigger
 ``auto_action="stop_service"``:
   * oauth_fail  — agent-reported auth failures, or an auth pattern in
     short-exit logs (retrying burns API quota)
@@ -40,6 +40,7 @@ from agent_runner._monitor_detectors import (
     detect_disk_warning,
     detect_hung,
     detect_mem_pressure,
+    detect_mem_pressure_gate_inert,
     detect_network_fail,
     detect_oauth_fail,
     detect_orphan_chain,
@@ -50,7 +51,7 @@ from agent_runner._monitor_detectors import (
 from agent_runner._monitor_registry import _PLUGIN_DETECTORS, AUTO_STOP_ALERTS
 from agent_runner.api_types import Alert, ProjectState, ServiceStatus
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.config import PhaseOverride
+from agent_runner.config import MonitorHostHealthConfig, PhaseOverride
 from agent_runner.events import (
     DETECTOR_ERROR,
     MONITOR_ALERT_EMITTED,
@@ -92,7 +93,7 @@ def run_all_detectors(
     disk_critical_pct: float = 95.0,
     log_dir: Path | None = None,
 ) -> list[Alert]:
-    """Run all 11 detectors; returns alerts (empty = healthy).
+    """Run all 13 detectors; returns alerts (empty = healthy).
 
     Each detector is isolated via ``_run_detector``: a crash in one emits
     ``detector_error`` (when ``log_dir`` is given) and does not stop the rest.
@@ -106,6 +107,11 @@ def run_all_detectors(
         int(round_timeout_s * 1.5)
         if supervisor_stale_threshold_s is None
         else supervisor_stale_threshold_s
+    )
+    host_health_cfg = MonitorHostHealthConfig(
+        mem_avail_min_mb=mem_avail_min_mb,
+        disk_warning_pct=disk_warning_pct,
+        disk_critical_pct=disk_critical_pct,
     )
     detectors: list[tuple[str, Callable[[], Alert | None]]] = [
         ("timeout_rate", lambda: detect_timeout_rate(events)),
@@ -123,7 +129,11 @@ def run_all_detectors(
             ),
         ),
         ("disk_critical", lambda: detect_disk_critical(metrics, threshold_pct=disk_critical_pct)),
-        ("mem_pressure", lambda: detect_mem_pressure(metrics, threshold_mb=mem_avail_min_mb)),
+        ("mem_pressure", lambda: detect_mem_pressure(metrics, cfg=host_health_cfg)),
+        (
+            "mem_pressure_gate_inert",
+            lambda: detect_mem_pressure_gate_inert(metrics, cfg=host_health_cfg),
+        ),
         (
             "oauth_fail",
             lambda: detect_oauth_fail(

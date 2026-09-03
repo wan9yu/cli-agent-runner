@@ -3,7 +3,7 @@
 - serve_cmd.py imports from a strict allowlist (no business logic)
 - cli command files call api.X (not direct module imports)
 - All api_types are frozen dataclasses
-- KNOWN_ALERT_KINDS in monitor.py matches the 11 builtin detectors
+- KNOWN_ALERT_KINDS in monitor.py matches the 13 builtin detectors
 """
 
 from __future__ import annotations
@@ -150,5 +150,5 @@ def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
 def test_given_known_alert_kinds_when_inspected_then_well_formed() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
-    assert len(KNOWN_ALERT_KINDS) == 11
+    assert len(KNOWN_ALERT_KINDS) == 13
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", k) for k in KNOWN_ALERT_KINDS)
