@@ -17,6 +17,7 @@ import psutil
 
 from agent_runner import _resolve
 from agent_runner.api_types import ServiceMode
+from agent_runner.clock import Clock
 from agent_runner.context_store import atomic_write_json
 
 # Bounds every `systemctl --user` call this module makes. A wedged D-Bus
@@ -48,6 +49,38 @@ def _systemctl_is_active(unit_name: str) -> str | None:
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return None
     return proc.stdout.strip() or None
+
+
+def _systemctl_user(*args: str) -> None:
+    """Run a NON-draining ``systemctl --user`` verb under the fixed timeout
+    (enable/start/kill/daemon-reload). The draining ``stop`` verb goes through
+    ``stop_unit_draining`` instead: a plain blocking ``systemctl --user stop``
+    waits for the unit to go inactive, and serve DRAINS its in-flight round on
+    SIGTERM (up to round_timeout_s), so a blocking stop under this timeout would
+    raise ``TimeoutExpired`` for a stop systemd is completing normally."""
+    subprocess.run(["systemctl", "--user", *args], check=True, timeout=_SYSTEMCTL_TIMEOUT_S)
+
+
+def stop_unit_draining(unit_name: str, *, clock: Clock, confirm_s: float) -> bool:
+    """Queue a graceful stop for a possibly-draining unit and poll ``is-active``
+    until it reaches an inactive state or ``confirm_s`` elapses.
+
+    A plain ``systemctl --user stop`` blocks until the unit is inactive, but
+    serve DRAINS its in-flight round on SIGTERM (up to round_timeout_s), so a
+    blocking stop under a subprocess timeout raises ``TimeoutExpired`` for a stop
+    systemd is completing normally — the half-execution that leaves a healthy
+    serve stopped. ``--no-block`` returns once the stop job is enqueued; this
+    then polls. Returns True once confirmed inactive, False if still draining
+    past the bound (best-effort "stop requested; not confirmed") — never raises
+    ``TimeoutExpired`` for a normal drain. Mirrors ``api``'s PID_FILE
+    ``_await_pid_exit`` best-effort confirm, one mode over."""
+    _systemctl_user("--no-block", "stop", unit_name)
+    deadline = clock.monotonic() + confirm_s
+    while _systemctl_is_active(unit_name) not in _SYSTEMD_INACTIVE_STATES:
+        if clock.monotonic() >= deadline:
+            return False
+        clock.sleep(0.1)
+    return True
 
 
 def _valid_pid(value: object) -> bool:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -401,6 +402,120 @@ def test_round_kill_grace_matches_serve_cmd_grace() -> None:
     from agent_runner.cli import serve_cmd
 
     assert api._ROUND_TERM_GRACE_S == serve_cmd._ROUND_TERM_GRACE_S
+
+
+def _draining_is_active(state: str):
+    """is-active stub for a unit stuck in a draining/active state — never reaches
+    an inactive state within a bounded confirm poll."""
+    return lambda _u: state
+
+
+def _draining_systemctl_user(calls: list[tuple[str, ...]]):
+    """systemctl-user stub that reproduces the drain: a BLOCKING `stop` (no
+    --no-block) hangs on the round drain and is killed by the subprocess timeout,
+    exactly the bug; a --no-block stop/start returns once the job is enqueued."""
+
+    def run(*args: str) -> None:
+        calls.append(args)
+        if args and args[0] == "stop":
+            raise subprocess.TimeoutExpired(cmd="systemctl", timeout=10)
+
+    return run
+
+
+def test_systemd_stop_draining_does_not_raise_and_reports_active(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `systemctl stop` that blocks past the confirm bound (serve draining the
+    in-flight round) must NOT raise TimeoutExpired: stop queues via --no-block,
+    confirms within a bounded poll, and reports active=True while still draining."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    # Draining: the unit stays in an active state throughout the confirm window.
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("activating"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
+    )
+    calls: list[tuple[str, ...]] = []
+    stub = _draining_systemctl_user(calls)
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+
+    s = api.stop(tmp_git_repo)  # must not raise TimeoutExpired
+
+    assert s.mode == ServiceMode.SYSTEMD_USER
+    assert s.active is True  # still draining -> best-effort "stop requested, not confirmed"
+    assert calls and calls[0][0] == "--no-block" and calls[0][1] == "stop"  # queued, not blocking
+
+
+def test_systemd_stop_draining_confirms_when_unit_goes_inactive(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the stop DOES complete inside the confirm window, stop reports
+    active=False (a genuinely confirmed stop, not just requested)."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+
+    s = api.stop(tmp_git_repo)
+    assert s.mode == ServiceMode.SYSTEMD_USER
+    assert s.active is False  # drained within the bound -> confirmed stopped
+
+
+def test_systemd_restart_still_starts_when_stop_is_draining(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """restart against a unit whose stop blocks past the bound must never leave
+    the service stopped: it queues a --no-block start (systemd runs it after the
+    drain) instead of a blocking start() that would itself TimeoutExpired."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("activating"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
+    )
+    calls: list[tuple[str, ...]] = []
+    stub = _draining_systemctl_user(calls)
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+
+    api.restart(tmp_git_repo)  # must not raise; must issue a start
+
+    assert any(a[:2] == ("--no-block", "start") for a in calls), (
+        "restart must queue a start even while the unit is still draining"
+    )
+
+
+def test_systemd_restart_uses_blocking_start_when_stop_confirmed(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the stop confirms inactive, restart uses the plain blocking start()
+    (confirming the respawn), not the --no-block fallback."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    # Fully stopped throughout, so both the stop confirm and restart's post-stop
+    # is-active check see an inactive unit.
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: calls.append(a))
+    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+
+    api.restart(tmp_git_repo)
+
+    assert ("start", f"agent-runner@{tmp_git_repo.name}.service") in calls  # blocking start()
+    assert not any(a[:2] == ("--no-block", "start") for a in calls)
 
 
 def test_poll_once_forwards_supervisor_stale_threshold(

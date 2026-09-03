@@ -48,6 +48,7 @@ from agent_runner.lifecycle import (
     _SYSTEMD_INACTIVE_STATES,
     PIDFile,
     _systemctl_is_active,
+    _systemctl_user,
     detect_service_mode,
     pid_alive,
     send_signal_to_pid,
@@ -156,10 +157,6 @@ def _check_user_systemd_available() -> None:
         ) from exc
     if "Failed to connect to bus" in (probe.stderr or ""):
         raise RuntimeError("user systemd unavailable (D-Bus session not running). " + _LINGER_HINT)
-
-
-def _systemctl_user(*args: str) -> None:
-    subprocess.run(["systemctl", "--user", *args], check=True, timeout=_SYSTEMCTL_TIMEOUT_S)
 
 
 def _systemd_active(unit_name: str, log_dir: Path) -> bool:
@@ -376,7 +373,13 @@ def stop(project: str | Path) -> ServiceStatus:
     log_dir = _log_dir_for_project(project)
     mode = detect_service_mode(pname, log_dir=log_dir)
     if mode == ServiceMode.SYSTEMD_USER:
-        _systemctl_user("stop", serve_unit_filename(pname))
+        # Drain-aware (see stop_unit_draining): a blocking `systemctl stop` would
+        # TimeoutExpired while serve drains its round, so queue it and confirm
+        # within the same bounded window the PID_FILE path uses. A still-draining
+        # unit reports active=True via status.
+        lifecycle.stop_unit_draining(
+            serve_unit_filename(pname), clock=SYSTEM_CLOCK, confirm_s=_PID_SIGNAL_GRACE_S
+        )
         return status(project)
     pid = PIDFile(log_dir / "serve.pid").read()
     if pid is not None:
@@ -430,8 +433,17 @@ def restart(project: str | Path, *, force: bool = False) -> ServiceStatus:
     if force:
         kill(project)
     else:
-        stop(project)
-    return start(project)
+        stop(project)  # drain-aware: returns without raising; may still be draining
+    # A blocking `systemctl start` queued behind an in-flight drain would itself
+    # TimeoutExpired, leaving the service stopped — the half-execution restart must
+    # never produce. stop()/kill() already polled a bounded confirm window, so one
+    # is-active check decides: fully stopped -> confirming blocking start(); still
+    # draining -> queue the start so systemd brings it back after the drain.
+    unit = serve_unit_filename(pname)
+    if _systemctl_is_active(unit) in _SYSTEMD_INACTIVE_STATES:
+        return start(project)
+    _systemctl_user("--no-block", "start", unit)
+    return status(project)
 
 
 def status(project: str | Path) -> ServiceStatus:
@@ -680,11 +692,6 @@ def _monitor_loop_iter(
     while True:
         try:
             alerts = _poll_once(work_dir, event_tail=event_tail)
-            # Computed inside the SAME guard as the poll: work_dir is fixed for
-            # this generator's life, so a ValueError here (an invalid project
-            # name) must not crash monitor supervision any more than a poll
-            # crash does — both get the identical warn-and-retry treatment.
-            project_name = _project_name(work_dir)
         except Exception as e:  # noqa: BLE001 — a poll crash must not kill supervision
             warnings.warn(f"monitor poll failed: {type(e).__name__}: {e}", stacklevel=2)
             SYSTEM_CLOCK.sleep(interval_s)
@@ -698,9 +705,14 @@ def _monitor_loop_iter(
             if len(seen) > _MONITOR_SEEN_CAP:
                 seen.popitem(last=False)  # bounded: evict oldest episode
             yield alert
+            # Pass the work_dir Path (not the bare project name): api.stop resolves
+            # a name's log_dir cwd-dependently, so a monitor launched from a cwd !=
+            # work_dir with a non-preset log_dir would target the wrong dir, see no
+            # pidfile, and no-op while serve keeps running. The Path resolves to the
+            # real cfg.runtime.log_dir.
             monitor.on_alert(
                 alert,
-                project=project_name,
+                project=work_dir,
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )

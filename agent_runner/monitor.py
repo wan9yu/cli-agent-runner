@@ -907,7 +907,7 @@ class MonitorRemoteUnsupportedError(Exception):
         self.host = host
 
 
-def _call_local_stop(project: str) -> ServiceStatus:
+def _call_local_stop(project: str | Path) -> ServiceStatus:
     # Late import: api imports monitor for peek, so we defer the reverse direction.
     from agent_runner import api
 
@@ -917,7 +917,7 @@ def _call_local_stop(project: str) -> ServiceStatus:
 def on_alert(
     alert: Alert,
     *,
-    project: str,
+    project: str | Path,
     log_dir: Path,
     allowed_stop_names: list[str] | None = None,
 ) -> None:
@@ -958,8 +958,10 @@ def on_alert(
     except Exception as e:
         # Any stop failure (unit missing, permission denied, stale pidfile) is
         # recorded and swallowed: crashing the monitor here would take out the
-        # supervision that noticed the problem. The next poll retries naturally
-        # while the condition persists.
+        # supervision that noticed the problem. The monitor loop dedups a
+        # persisting episode (api._monitor_loop_iter's `seen` set), so on_alert
+        # re-fires only after this alert clears from a poll and recurs — not on
+        # the very next poll.
         if log_dir.is_dir():
             emit_event(
                 log_dir,
@@ -971,8 +973,9 @@ def on_alert(
     if result.active:
         # api.stop returned without raising but the service is STILL active —
         # the silent no-op this fix closes (e.g. a mode mismatch that signaled
-        # nothing, or a graceful stop that hasn't taken effect yet). Recorded
-        # the same as a raise; the next poll retries while the alert persists.
+        # nothing, or a graceful stop that hasn't taken effect yet). Recorded the
+        # same as a raise; re-fires only after the alert clears from a poll and
+        # recurs (the loop's `seen` dedup), not on the very next poll.
         if log_dir.is_dir():
             emit_event(
                 log_dir,

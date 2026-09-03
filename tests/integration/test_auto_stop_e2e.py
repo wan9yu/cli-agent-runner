@@ -87,11 +87,13 @@ def test_alert_drives_real_serve_to_stop(
     # Keep detect_service_mode away from any real ~/.config/systemd/user unit
     # on the dev/CI box this test happens to run on.
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "nou")
-    # Real monitor units run with WorkingDirectory=<project> (service_unit.py),
-    # and on_alert's `project` is a bare name resolved against cwd
-    # (api._resolve_target) -- match that so this test drives the real
-    # resolution path instead of api.stop's Path.home() fallback branch.
-    monkeypatch.chdir(tmp_git_repo)
+    # The monitor loop hands on_alert the work_dir Path (api._monitor_loop_iter),
+    # so api.stop resolves the project's real (non-preset) log_dir regardless of
+    # cwd. Run from a FOREIGN cwd to prove that: a bare-name resolution here would
+    # miss the pidfile and no-op while serve kept running.
+    foreign = tmp_git_repo / "elsewhere"
+    foreign.mkdir()
+    monkeypatch.chdir(foreign)
 
     toml = _write_toml(tmp_git_repo, fake_agent_script)
     log_dir = tmp_git_repo / "logs"
@@ -117,7 +119,7 @@ def test_alert_drives_real_serve_to_stop(
         )
         on_alert(
             alert,
-            project=tmp_git_repo.name,
+            project=tmp_git_repo,
             log_dir=log_dir,
             allowed_stop_names=["oauth_fail"],
         )
