@@ -940,15 +940,17 @@ def on_alert(
     effective_allowed = (
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
     )
-    if log_dir.is_dir():
-        emit_event(
-            log_dir,
-            MONITOR_ALERT_EMITTED,
-            detector=alert.detector,
-            severity=alert.severity,
-            message=alert.message,
-            auto_action=alert.auto_action,
-        )
+
+    def _emit_if_dir(kind: str, **fields: Any) -> None:
+        if log_dir.is_dir():
+            emit_event(log_dir, kind, detector=alert.detector, **fields)
+
+    _emit_if_dir(
+        MONITOR_ALERT_EMITTED,
+        severity=alert.severity,
+        message=alert.message,
+        auto_action=alert.auto_action,
+    )
     if alert.auto_action != "stop_service":
         return
     if alert.detector not in effective_allowed:
@@ -962,13 +964,7 @@ def on_alert(
         # persisting episode (api._monitor_loop_iter's `seen` set), so on_alert
         # re-fires only after this alert clears from a poll and recurs — not on
         # the very next poll.
-        if log_dir.is_dir():
-            emit_event(
-                log_dir,
-                MONITOR_AUTO_STOP_FAILED,
-                detector=alert.detector,
-                error=f"{type(e).__name__}: {e}",
-            )
+        _emit_if_dir(MONITOR_AUTO_STOP_FAILED, error=f"{type(e).__name__}: {e}")
         return
     if result.active:
         # api.stop returned without raising but the service is STILL active —
@@ -976,17 +972,9 @@ def on_alert(
         # nothing, or a graceful stop that hasn't taken effect yet). Recorded the
         # same as a raise; re-fires only after the alert clears from a poll and
         # recurs (the loop's `seen` dedup), not on the very next poll.
-        if log_dir.is_dir():
-            emit_event(
-                log_dir,
-                MONITOR_AUTO_STOP_FAILED,
-                detector=alert.detector,
-                error=f"stop did not take effect (mode={result.mode.value}, still active)",
-            )
-        return
-    if log_dir.is_dir():
-        emit_event(
-            log_dir,
-            MONITOR_AUTO_STOP_TRIGGERED,
-            detector=alert.detector,
+        _emit_if_dir(
+            MONITOR_AUTO_STOP_FAILED,
+            error=f"stop did not take effect (mode={result.mode.value}, still active)",
         )
+        return
+    _emit_if_dir(MONITOR_AUTO_STOP_TRIGGERED)
