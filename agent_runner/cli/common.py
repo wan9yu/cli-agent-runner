@@ -22,7 +22,7 @@ PEEK_SCHEMA_VERSION = "1.10"
 
 
 def cfg_from_args(args) -> Config:
-    return load_config(args.config)
+    return load_config(_resolve.config_path(args))
 
 
 def cfg_from_args_or_config_error(args) -> Config:

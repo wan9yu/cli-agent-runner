@@ -65,15 +65,33 @@ def config_path(args) -> Path:
     CLI bootstrap step (which runs before a ``Config`` exists to read
     ``runtime.work_dir`` back from) agrees on the same file, instead of each
     reconstructing its own getattr/default dance.
+
+    Uses ``.absolute()``, NOT ``.resolve()``: a relative ``[runtime] work_dir``
+    in the loaded toml anchors to THIS path's parent, so resolving a symlinked
+    ``--config`` here would silently re-anchor work_dir to the symlink's
+    TARGET directory instead of the directory the caller actually named.
+    ``.absolute()`` makes the path absolute (still comparable/joinable) without
+    ever dereferencing a symlink.
     """
     cfg = getattr(args, "config", None)
-    return Path(cfg).resolve() if cfg is not None else Path("agent-runner.toml").resolve()
+    return Path(cfg).absolute() if cfg is not None else Path("agent-runner.toml").absolute()
 
 
 def unit_filename(project: str) -> str:
     """Thin wrap of the existing ``service_unit.serve_unit_filename`` -- the
     single name every unit-filename call site should go through."""
     return serve_unit_filename(project)
+
+
+def default_log_dir(name: str) -> Path:
+    """Return the conventional ``~/.agent-runner/<name>/logs`` fallback for a
+    bare project name with no locally-readable toml to read log_dir from.
+
+    Single source for that fallback: shared by ``log_dir``'s own missing-toml
+    branch below and ``api._resolve_target``'s bare-string branch (a project
+    name that isn't the caller's own cwd, so there is no toml to load).
+    """
+    return Path.home() / ".agent-runner" / name / "logs"
 
 
 def log_dir(work_dir: Path) -> Path:
@@ -86,7 +104,7 @@ def log_dir(work_dir: Path) -> Path:
     cfg_path = work_dir / "agent-runner.toml"
     if cfg_path.exists():
         return load_config(cfg_path).runtime.log_dir
-    return Path.home() / ".agent-runner" / project_name(work_dir, strict=True) / "logs"
+    return default_log_dir(project_name(work_dir, strict=True))
 
 
 def _unit_owner(serve_path: Path) -> Path | None:

@@ -25,6 +25,28 @@ def test_migrate_writes_and_backs_up(tmp_path, capsys):
     assert (tmp_path / "agent-runner.toml.bak").read_text() == original
 
 
+def test_migrate_symlinked_config_backs_up_beside_symlink_not_target(tmp_path):
+    """cfg_path routes through _resolve.config_path (.absolute(), never
+    .resolve()) -- a symlinked --config gets its .bak sibling next to the
+    symlink, not silently relocated to the symlink's target directory."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    original = '[runtime]\nrate_limit_action = "stop"\n'
+    real_cfg = real_dir / "agent-runner.toml"
+    real_cfg.write_text(original)
+
+    link_dir = tmp_path / "link"
+    link_dir.mkdir()
+    link_cfg = link_dir / "agent-runner.toml"
+    link_cfg.symlink_to(real_cfg)
+
+    rc = migrate_cmd.cmd(_args(link_cfg))
+
+    assert rc == 0
+    assert (link_dir / "agent-runner.toml.bak").exists()
+    assert not (real_dir / "agent-runner.toml.bak").exists()
+
+
 def test_dry_run_writes_nothing(tmp_path, capsys):
     original = '[runtime]\nrate_limit_action = "stop"\n'
     cfg = _write(tmp_path, original)

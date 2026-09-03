@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 
-from agent_runner import migrations
+from agent_runner import _resolve, migrations
 from agent_runner.cli.common import fail  # `fail(msg, *, code=1)` prints to stderr, returns code
 
 
@@ -20,7 +19,7 @@ def add_parser(sub, parent) -> None:
 
 
 def cmd(args) -> int:
-    cfg_path = Path(getattr(args, "config", None) or "agent-runner.toml")
+    cfg_path = _resolve.config_path(args)
     try:
         text = cfg_path.read_text(encoding="utf-8")
     except OSError as e:
