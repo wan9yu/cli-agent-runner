@@ -1958,6 +1958,45 @@ def test_psi_thresholds_accept_in_range(
     assert getattr(load_config(toml).monitor.host_health, field) == expected
 
 
+def test_mid_round_hysteresis_defaults() -> None:
+    """Defaults: 3 consecutive critical samples required, off switch defaults on
+    (existing deployments keep terminating, just with hysteresis now applied)."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig()
+    assert cfg.mem_critical_consecutive_samples == 3
+    assert cfg.in_round_mem_terminate is True
+
+
+def test_mem_critical_consecutive_samples_parses(tmp_path: Path) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + "mem_critical_consecutive_samples = 5\n")
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.mem_critical_consecutive_samples == 5
+
+
+@pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
+def test_mem_critical_consecutive_samples_rejects_invalid(tmp_path: Path, bad: str) -> None:
+    """Must be a positive int -- 0 or negative would terminate on the very
+    first (or never) sample, defeating the hysteresis this field exists for."""
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"mem_critical_consecutive_samples = {bad}\n")
+    with pytest.raises(ValueError, match="monitor.host_health.mem_critical_consecutive_samples"):
+        load_config(toml)
+
+
+@pytest.mark.parametrize(("literal", "expected"), [("true", True), ("false", False)])
+def test_in_round_mem_terminate_parses(tmp_path: Path, literal: str, expected: bool) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"in_round_mem_terminate = {literal}\n")
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.in_round_mem_terminate is expected
+
+
+@pytest.mark.parametrize("bad", ["1", '"true"'])
+def test_in_round_mem_terminate_rejects_non_bool(tmp_path: Path, bad: str) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"in_round_mem_terminate = {bad}\n")
+    with pytest.raises(ValueError, match="monitor.host_health.in_round_mem_terminate"):
+        load_config(toml)
+
+
 _INJECT_CONTEXT_BASE = """\
 [agent]
 command = ["true"]

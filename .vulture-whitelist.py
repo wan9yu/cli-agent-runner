@@ -152,6 +152,8 @@ swap_sout_noise_floor_mb
 mem_free_low_mb
 psi_full_avg10_critical
 psi_some_avg10_warning
+mem_critical_consecutive_samples
+in_round_mem_terminate
 
 # agent_runner.config.models.PhaseOverride
 round_timeout_s

@@ -166,6 +166,17 @@ class MonitorHostHealthConfig:
     # hiccup, not a coma; 60 matches systemd-oomd's DefaultMemoryPressureLimit.
     psi_full_avg10_critical: float = 60.0
     psi_some_avg10_warning: float = 5.0  # WARNING when PSI-some avg10 >= this (%)
+    # Mid-round hard floor hysteresis: consecutive CRITICAL ticks (~10s apart)
+    # required before _spawn_round terminates the round. 1 (0.2.15's behavior)
+    # let a single transient spike kill a round; 3 requires ~30s of sustained
+    # critical pressure, matching the north star (prevent unresponsiveness,
+    # not swapping).
+    mem_critical_consecutive_samples: int = 3
+    # Off switch for the mid-round hard floor's termination action. The loop
+    # still samples and counts the streak either way (an operator who
+    # disables termination may still want the signal for a future release or
+    # external tooling) -- only the _terminate_round call is gated.
+    in_round_mem_terminate: bool = True
 
 
 @dataclass(frozen=True)

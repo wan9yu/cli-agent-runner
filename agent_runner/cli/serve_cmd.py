@@ -642,20 +642,28 @@ def _spawn_round(
 
     ``host_health_cfg`` (None by default — existing callers get byte-identical
     behavior) arms the mid-round hard floor: every ~``_MEM_CHECK_INTERVAL_S``
-    seconds this resamples host_health and, on CRITICAL pressure,
-    ``_terminate_round``s the round and emits ``round_mem_terminated`` — the
-    actual coma-preventer for a single round that balloons mid-flight (the
-    pre-round gate in ``_select_and_gate`` only samples at round boundaries).
+    seconds this resamples host_health. On CRITICAL pressure it increments a
+    ``critical_streak`` counter (reset to 0 on any non-critical verdict) and,
+    once the streak reaches ``host_health_cfg.mem_critical_consecutive_samples``
+    (3 by default), ``_terminate_round``s the round and emits
+    ``round_mem_terminated`` — the actual coma-preventer for a single round
+    that balloons mid-flight (the pre-round gate in ``_select_and_gate`` only
+    samples at round boundaries). Requiring SUSTAINED critical pressure (not
+    a single sample) matches the north star: this floor prevents
+    unresponsiveness, not swapping, so a transient spike must not kill a
+    round. ``host_health_cfg.in_round_mem_terminate`` is the off switch: when
+    False the streak still counts (an operator may still want the signal
+    surfaced) but ``_terminate_round`` is never called.
 
-    The floor's critical swap decision is CUMULATIVE swap-out SINCE ROUND-START:
-    the first mid-round sample is pinned as the baseline for every later tick
-    (``prev`` passed to ``host_health.memory_pressure``), so the delta grows
-    across the whole round rather than resetting each ~10s interval. A slow
-    SD/USB-backed swap device pages only a few MB per interval — below the
-    configured swap-out floor (32 MiB by default) — but crosses it over a long
-    round; a per-interval delta would stay inert on exactly that host. PSI-full
-    stays an independent immediate critical path (it reads the current sample
-    alone, no baseline needed)."""
+    Each tick's swap-out delta is measured against the PREVIOUS TICK's
+    sample (``prev_tick_sample``, reassigned after every check) — a
+    per-interval rate, not cumulative since round-start. Pinning the
+    round-start sample as ``prev`` for the whole round (0.2.15's choice)
+    made the delta monotone: once it crossed the noise floor it could never
+    fall back below it, so the hysteresis streak above could never reset for
+    the swap leg and every long round eventually died on it regardless of
+    whether the host recovered. PSI-full stays an independent immediate
+    critical path (it reads the current sample alone, no baseline needed)."""
     log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
@@ -670,15 +678,15 @@ def _spawn_round(
             next_mem_check = (
                 clock.monotonic() + _MEM_CHECK_INTERVAL_S if host_health_cfg is not None else None
             )
-            # Baseline pinned at the first mid-round sample (round-start), held
-            # fixed so the swap-out delta the floor tests is CUMULATIVE SINCE
-            # ROUND-START, not per-interval: a slow SD/USB swap device trickles
-            # only a few MB per ~10s tick (below the configured swap-out floor,
-            # 32 MiB by default) yet crosses it over a long round, so a
-            # per-interval comparison stayed inert on exactly the field host
-            # this floor exists for. PSI-full stays an independent immediate
-            # path (it reads the current sample alone).
-            round_start_sample: dict | None = None
+            # prev_tick_sample trails one tick behind cur_sample (reassigned
+            # after every check below), so the swap-out delta
+            # host_health.memory_pressure computes is a PER-INTERVAL rate —
+            # see the docstring above for why this replaced the 0.2.15
+            # round-start baseline. critical_streak is the hysteresis
+            # counter: only sustained (not single-sample) critical pressure
+            # terminates the round.
+            prev_tick_sample: dict | None = None
+            critical_streak = 0
             while True:
                 try:
                     return proc.wait(timeout=1)
@@ -688,21 +696,29 @@ def _spawn_round(
                     break
                 if next_mem_check is not None and clock.monotonic() >= next_mem_check:
                     cur_sample = sample_fn()
-                    if round_start_sample is None:
-                        round_start_sample = cur_sample
+                    if prev_tick_sample is None:
+                        prev_tick_sample = cur_sample
                     pressure = host_health.memory_pressure(
-                        cur_sample, round_start_sample, host_health_cfg
+                        cur_sample, prev_tick_sample, host_health_cfg
                     )
+                    prev_tick_sample = cur_sample
                     if pressure is not None and pressure.severity == "critical":
-                        returncode = _terminate_round(proc)
-                        emit_round_mem_terminated(
-                            log_dir,
-                            pid=proc.pid,
-                            severity=pressure.severity,
-                            signal=pressure.signal,
-                            message=pressure.message,
-                        )
-                        return returncode
+                        critical_streak += 1
+                        if (
+                            host_health_cfg.in_round_mem_terminate
+                            and critical_streak >= host_health_cfg.mem_critical_consecutive_samples
+                        ):
+                            returncode = _terminate_round(proc)
+                            emit_round_mem_terminated(
+                                log_dir,
+                                pid=proc.pid,
+                                severity=pressure.severity,
+                                signal=pressure.signal,
+                                message=pressure.message,
+                            )
+                            return returncode
+                    else:
+                        critical_streak = 0
                     next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
             _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup

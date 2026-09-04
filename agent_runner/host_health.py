@@ -22,11 +22,14 @@ defined signal ladder with graceful degrade:
    far below any defensible flat per-sample byte-rate, so a rate-only critical
    bar was inert on exactly the host this ladder exists for. What ``prev``
    spans is the caller's choice: the pre-round gate diffs successive round
-   boundaries, while ``serve``'s mid-round floor pins the round-start sample as
-   ``prev`` for the whole round, making its delta CUMULATIVE swap-out SINCE
-   ROUND-START — so even a slow trickle crosses the floor over a long round. A
-   host without PSI (``psi=0``, or non-Linux) has no OTHER way to reach
-   critical.
+   boundaries, and ``serve``'s mid-round floor passes each tick's PREVIOUS
+   sample as ``prev`` (reassigned every ~10s tick, not pinned to round-start),
+   so its delta is a PER-INTERVAL rate that can fall back below the noise
+   floor on the very next tick rather than accumulating for the whole round.
+   Sustained pressure is that caller's job (a consecutive-critical-samples
+   counter), not this ladder's — a single above-floor sample is one data
+   point, not a verdict on host health over time. A host without PSI
+   (``psi=0``, or non-Linux) has no OTHER way to reach critical.
 3. else **combined-low** — ``mem_free_mb`` AND ``mem_available_mb`` both low
    together. Never a MemFree-only gate: a cache-heavy healthy host's MemFree
    is always low, which would false-positive on every such host. (Tier 2's

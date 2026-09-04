@@ -479,6 +479,14 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
             hh_d.get("psi_some_avg10_warning", 5.0),
             field="monitor.host_health.psi_some_avg10_warning",
         ),
+        mem_critical_consecutive_samples=_require_positive_int(
+            hh_d.get("mem_critical_consecutive_samples", 3),
+            field="monitor.host_health.mem_critical_consecutive_samples",
+        ),
+        in_round_mem_terminate=_require_bool(
+            hh_d.get("in_round_mem_terminate", True),
+            field="monitor.host_health.in_round_mem_terminate",
+        ),
     )
     monitor = MonitorConfig(
         auth_fail_patterns=_validate_regex_list(
