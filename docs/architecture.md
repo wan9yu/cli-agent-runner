@@ -212,8 +212,10 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `dirty_detected`
 - `fresh_eyes_round_triggered`
 - `hook_failed`
+- `host_cgroup_memory_limit`
 - `max_rounds_reached`
 - `mem_loop`
+- `mem_pressure_deferred_to_cgroup`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`

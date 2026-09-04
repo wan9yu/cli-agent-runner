@@ -19,8 +19,10 @@ __all__ = [
     "emit_anomaly_repetitive_tool",
     "emit_config_migrated",
     "emit_fresh_eyes_round_triggered",
+    "emit_host_cgroup_memory_limit",
     "emit_max_rounds_reached",
     "emit_mem_loop",
+    "emit_mem_pressure_deferred_to_cgroup",
     "emit_rate_limit_stop",
     "emit_round_deferred",
     "emit_round_grace_extended",
@@ -211,6 +213,40 @@ def emit_round_mem_terminated(
     from agent_runner.events import ROUND_MEM_TERMINATED, emit
 
     emit(log_dir, ROUND_MEM_TERMINATED, pid=pid, severity=severity, signal=signal, message=message)
+
+
+def emit_host_cgroup_memory_limit(
+    log_dir: Path, *, memory_max: int | None, memory_swap_max: int | None, cgroup_path: str | None
+) -> None:
+    """Emit once at serve startup: this process's cgroup v2 memory budget
+    (``metrics.cgroup_memory_limits``). ``None`` fields mean unlimited (or
+    cgroup v2 unavailable). Serve uses this once to decide whether the
+    mid-round hard floor can defer to kernel cgroup-OOM -- see
+    ``emit_mem_pressure_deferred_to_cgroup`` below."""
+    from agent_runner.events import HOST_CGROUP_MEMORY_LIMIT, emit
+
+    emit(
+        log_dir,
+        HOST_CGROUP_MEMORY_LIMIT,
+        memory_max=memory_max,
+        memory_swap_max=memory_swap_max,
+        cgroup_path=cgroup_path,
+    )
+
+
+def emit_mem_pressure_deferred_to_cgroup(
+    log_dir: Path, *, pid: int, signal: str, message: str
+) -> None:
+    """Emit when _spawn_round's mid-round hard floor hits sustained critical
+    pressure but this cgroup's (mem+swap) budget is bounded end to end
+    (both memory.max and memory.swap.max finite) -- kernel cgroup-OOM will
+    contain the agent and keep the host responsive on its own, so the
+    cruder host-wide round-kill steps back instead of firing
+    round_mem_terminated. This OVERRIDES in_round_mem_terminate=True: a
+    bounded cgroup makes the host floor strictly worse, not just redundant."""
+    from agent_runner.events import MEM_PRESSURE_DEFERRED_TO_CGROUP, emit
+
+    emit(log_dir, MEM_PRESSURE_DEFERRED_TO_CGROUP, pid=pid, signal=signal, message=message)
 
 
 def emit_round_substrate_before(

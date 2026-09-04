@@ -41,8 +41,10 @@ from agent_runner.api import (
     emit_config_broken,
     emit_crash_loop,
     emit_fresh_eyes_round_triggered,
+    emit_host_cgroup_memory_limit,
     emit_max_rounds_reached,
     emit_mem_loop,
+    emit_mem_pressure_deferred_to_cgroup,
     emit_rate_limit_stop,
     emit_round_deferred,
     emit_round_logs_prune_deferred,
@@ -628,6 +630,7 @@ def _spawn_round(
     *,
     timeout_s: int,
     host_health_cfg=None,
+    defer_to_cgroup: bool = False,
     clock: Clock = SYSTEM_CLOCK,
     sample_fn=metrics.sample,
 ) -> int:
@@ -654,6 +657,15 @@ def _spawn_round(
     round. ``host_health_cfg.in_round_mem_terminate`` is the off switch: when
     False the streak still counts (an operator may still want the signal
     surfaced) but ``_terminate_round`` is never called.
+
+    ``defer_to_cgroup`` (0.2.16 Task 3, computed once at serve startup from
+    ``metrics.cgroup_memory_limits`` -- True only when this cgroup's
+    memory.max AND memory.swap.max are BOTH finite) OVERRIDES
+    ``in_round_mem_terminate=True`` at the same threshold crossing: kernel
+    cgroup-OOM will contain the agent and keep the host responsive on its
+    own, so the cruder host-wide kill emits ``mem_pressure_deferred_to_cgroup``
+    (once per sustained-critical episode) instead of terminating. The streak
+    still counts either way -- only the terminate-vs-defer choice changes.
 
     Each tick's swap-out delta is measured against the PREVIOUS TICK's
     sample (``prev_tick_sample``, reassigned after every check) — a
@@ -687,6 +699,7 @@ def _spawn_round(
             # terminates the round.
             prev_tick_sample: dict | None = None
             critical_streak = 0
+            cgroup_defer_notified = False
             while True:
                 try:
                     return proc.wait(timeout=1)
@@ -708,17 +721,28 @@ def _spawn_round(
                             host_health_cfg.in_round_mem_terminate
                             and critical_streak >= host_health_cfg.mem_critical_consecutive_samples
                         ):
-                            returncode = _terminate_round(proc)
-                            emit_round_mem_terminated(
-                                log_dir,
-                                pid=proc.pid,
-                                severity=pressure.severity,
-                                signal=pressure.signal,
-                                message=pressure.message,
-                            )
-                            return returncode
+                            if defer_to_cgroup:
+                                if not cgroup_defer_notified:
+                                    emit_mem_pressure_deferred_to_cgroup(
+                                        log_dir,
+                                        pid=proc.pid,
+                                        signal=pressure.signal,
+                                        message=pressure.message,
+                                    )
+                                    cgroup_defer_notified = True
+                            else:
+                                returncode = _terminate_round(proc)
+                                emit_round_mem_terminated(
+                                    log_dir,
+                                    pid=proc.pid,
+                                    severity=pressure.severity,
+                                    signal=pressure.signal,
+                                    message=pressure.message,
+                                )
+                                return returncode
                     else:
                         critical_streak = 0
+                        cgroup_defer_notified = False
                     next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
             _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
@@ -743,6 +767,27 @@ def _add_max_rounds_arg(parser) -> None:
         metavar="N",
         help="Stop after N round completions (overrides [runtime] max_rounds in config)",
     )
+
+
+def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
+    """Probe this process's cgroup v2 memory budget once at serve startup,
+    emit host_cgroup_memory_limit for observability, and return whether the
+    mid-round hard floor should defer to kernel cgroup-OOM: True only when
+    BOTH memory.max and memory.swap.max are finite (the field host's
+    MemoryMax=320M + MemorySwapMax=160M shape) -- that budget is bounded end
+    to end, so cgroup-OOM WILL fire and contain the agent while the host
+    stays responsive, making our cruder host-wide floor redundant at best.
+    Only-memory.max-finite (systemd's MemoryMax-without-MemorySwapMax
+    default) leaves swap unbounded -- the agent just swaps and cgroup-OOM
+    never fires, so the floor must stay armed."""
+    limits = metrics.cgroup_memory_limits()
+    emit_host_cgroup_memory_limit(
+        log_dir,
+        memory_max=limits["memory_max"],
+        memory_swap_max=limits["memory_swap_max"],
+        cgroup_path=limits["cgroup_path"],
+    )
+    return limits["memory_max"] is not None and limits["memory_swap_max"] is not None
 
 
 def add_parser(sub, parent) -> None:
@@ -799,6 +844,7 @@ def cmd(args) -> int:
         return fail_code
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     work_dir = cfg.runtime.work_dir
+    defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir)
     rounds_completed = 0
     consecutive_crashes = 0  # b12: consecutive UNKNOWN short crashes (crash-loop breaker)
     consecutive_mem_terminations = 0  # 0.2.15: consecutive mem-terminated rounds (mem-loop cap)
@@ -870,6 +916,7 @@ def cmd(args) -> int:
                 round_env,
                 timeout_s=outer_round_ceiling_s(cfg, phase_arg),
                 host_health_cfg=cfg.monitor.host_health,
+                defer_to_cgroup=defer_to_cgroup,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)

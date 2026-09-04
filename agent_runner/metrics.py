@@ -126,6 +126,101 @@ def _count_agent_processes(agent_binary: str) -> int:
     return 0
 
 
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
+_PROC_SELF_CGROUP = Path("/proc/self/cgroup")
+
+
+def _self_cgroup_path(proc_self_cgroup: Path) -> str | None:
+    """Parse the cgroup v2 unified-hierarchy line (``0::<path>``) out of
+    ``/proc/self/cgroup``. Returns ``None`` when the file is unreadable or
+    carries no ``0::`` line (a pure cgroup-v1 host has none)."""
+    try:
+        text = proc_self_cgroup.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("0::"):
+            return line[len("0::") :]
+    return None
+
+
+def _cgroup_ancestors(cgroup_path: str) -> list[str]:
+    """This cgroup and every ancestor up to (and including) the root
+    ``"/"``, nearest first -- a bounding systemd slice's ``memory.max``
+    constrains every scope nested beneath it, so the tightest ancestor (not
+    necessarily the leaf) must be considered."""
+    parts = [p for p in cgroup_path.split("/") if p]
+    ancestors = ["/" + "/".join(parts[:i]) for i in range(len(parts), 0, -1)]
+    ancestors.append("/")
+    return ancestors
+
+
+def _read_finite_cgroup_limit(path: Path) -> int | None:
+    """Read a cgroup ``memory.*`` limit file. ``"max"``, a missing file, or
+    unparseable content all mean unlimited (``None``) -- that ancestor then
+    contributes no finite candidate to the min-across-ancestors below."""
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if text == "max" or not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def cgroup_memory_limits(
+    *,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> dict[str, int | str | None]:
+    """Probe this process's cgroup v2 memory budget: the MIN FINITE
+    ``memory.max`` and ``memory.swap.max`` across this cgroup and every
+    ancestor up to ``root``, computed independently for each field. A
+    bounding systemd slice's limit constrains every scope nested beneath
+    it, so the tightest ancestor -- not necessarily the leaf -- is the real
+    budget. ``None`` for either field means unlimited: every ancestor read
+    ``"max"`` or the file was missing.
+
+    Requires cgroup v2 (``root/cgroup.controllers`` present); a pure v1
+    host, or any host missing that file, has no reliable fixed-path budget
+    file to read, so this returns all-``None`` rather than guessing.
+
+    ``root`` and ``proc_self_cgroup`` default to the real paths and are
+    injectable so tests can point at a fake ``/sys/fs/cgroup`` tree;
+    ``self_cgroup`` lets a caller supply the resolved cgroup path directly,
+    skipping the ``/proc/self/cgroup`` read.
+
+    One-shot pure file I/O (a handful of small reads), no clock -- serve
+    probes once at startup and caches the result for the process's life.
+    """
+    if not (root / "cgroup.controllers").exists():
+        return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
+    if cgroup_path is None:
+        return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+
+    memory_max_candidates: list[int] = []
+    memory_swap_max_candidates: list[int] = []
+    for ancestor in _cgroup_ancestors(cgroup_path):
+        fs_dir = root / ancestor.lstrip("/")
+        mm = _read_finite_cgroup_limit(fs_dir / "memory.max")
+        if mm is not None:
+            memory_max_candidates.append(mm)
+        sm = _read_finite_cgroup_limit(fs_dir / "memory.swap.max")
+        if sm is not None:
+            memory_swap_max_candidates.append(sm)
+
+    return {
+        "memory_max": min(memory_max_candidates) if memory_max_candidates else None,
+        "memory_swap_max": min(memory_swap_max_candidates) if memory_swap_max_candidates else None,
+        "cgroup_path": cgroup_path,
+    }
+
+
 def log_metrics(
     log_dir: Path,
     *,

@@ -343,6 +343,65 @@ def test_off_switch_never_terminates(tmp_path):
     assert "round_mem_terminated" not in kinds
 
 
+def test_both_finite_defers_never_terminates(tmp_path):
+    """0.2.16 Task 3: when the cgroup's (mem+swap) budget is bounded end to
+    end (both memory.max and memory.swap.max finite -- exactly the field
+    host's MemoryMax=320M + MemorySwapMax=160M), kernel cgroup-OOM WILL fire
+    and contain the agent while the host stays responsive, so the cruder
+    host-wide floor steps back: sustained critical pressure (even with the
+    default in_round_mem_terminate=True) emits mem_pressure_deferred_to_cgroup
+    instead of terminating -- defer_to_cgroup OVERRIDES the off switch's
+    normal True meaning."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(5)"]
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: _CRITICAL_SAMPLE,
+        defer_to_cgroup=True,
+    )
+    assert rc == 0  # round completed on its own -- the floor deferred, never terminated
+
+    events = read_events_for_current_month(log_dir)
+    kinds = [e.get("event") for e in events]
+    assert kinds.count("mem_pressure_deferred_to_cgroup") >= 1
+    assert "round_mem_terminated" not in kinds
+    assert "round_supervisor_wedged" not in kinds
+
+
+def test_swap_unbounded_still_terminates(tmp_path):
+    """Only memory.max finite (systemd's MemoryMax-without-MemorySwapMax
+    default -- swap unbounded) means cgroup-OOM never fires on its own (the
+    agent just swaps), so defer_to_cgroup is False and the floor stays
+    armed: sustained critical pressure still terminates exactly as T2 did."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: _CRITICAL_SAMPLE,
+        defer_to_cgroup=False,
+    )
+    assert rc != 0  # terminated, not a clean exit
+
+    events = read_events_for_current_month(log_dir)
+    kinds = [e.get("event") for e in events]
+    assert kinds.count("round_mem_terminated") == 1
+    assert "mem_pressure_deferred_to_cgroup" not in kinds
+
+
 def test_mid_round_floor_disabled_by_default(tmp_path):
     """host_health_cfg defaults to None: existing callers (no mid-round floor
     wired) get byte-identical behavior -- the sampler is never even invoked."""

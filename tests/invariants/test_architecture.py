@@ -46,6 +46,8 @@ ALLOWED_SERVE_FROM = [
             "emit_round_substrate_after",
             "emit_round_supervisor_wedged",
             "emit_fresh_eyes_round_triggered",
+            "emit_host_cgroup_memory_limit",
+            "emit_mem_pressure_deferred_to_cgroup",
             "emit_schedule_paused",
             "emit_schedule_phase_skipped",
             "emit_schedule_resumed",
