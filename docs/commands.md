@@ -283,7 +283,7 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [phases.<name>.prompt] key(s) rejected in 0.2.13; delete them (allowed: ['files'])
 - [agent] prompt_arg_template has no {prompt} placeholder; the prompt is never delivered to the agent — add {prompt} to one of the argv tokens
 - a [phases.<name>.agent] prompt_arg_template has no {prompt} placeholder; add one, or set that phase's prompt.files = [] if it truly sends no prompt
-- unknown [monitor.host_health] key(s) rejected in 0.2.14; delete them (allowed: ['disk_critical_pct', 'disk_warning_pct', 'mem_avail_min_mb', 'mem_free_low_mb', 'swap_sout_noise_floor_mb'])
+- unknown [monitor.host_health] key(s) rejected in 0.2.14; delete them (allowed: ['disk_critical_pct', 'disk_warning_pct', 'mem_avail_min_mb', 'mem_free_low_mb', 'psi_full_avg10_critical', 'psi_some_avg10_warning', 'swap_sout_noise_floor_mb'])
 <!-- /gen:migrate-transforms -->
 
 ## 中文摘要

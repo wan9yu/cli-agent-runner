@@ -1922,6 +1922,42 @@ def test_given_no_host_health_section_when_loaded_then_defaults_accepted(tmp_pat
     assert cfg.monitor.host_health.disk_critical_pct == 95.0
 
 
+def test_psi_thresholds_default_and_parse(tmp_path: Path) -> None:
+    """Default critical raised 1.0 -> 60.0 (0.2.15's 1% hiccup killed every
+    round on a 462MB Pi; 60 matches systemd-oomd's DefaultMemoryPressureLimit,
+    coma-onset rather than a swap hiccup). Both fields are TOML-tunable."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    assert MonitorHostHealthConfig().psi_full_avg10_critical == 60.0
+    assert MonitorHostHealthConfig().psi_some_avg10_warning == 5.0
+
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + "psi_full_avg10_critical = 75\n")
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.psi_full_avg10_critical == 75.0
+    assert cfg.monitor.host_health.psi_some_avg10_warning == 5.0  # still default
+
+
+@pytest.mark.parametrize("field", ["psi_full_avg10_critical", "psi_some_avg10_warning"])
+@pytest.mark.parametrize("bad", ["0", "101", '"x"'])
+def test_psi_thresholds_reject_out_of_range(tmp_path: Path, field: str, bad: str) -> None:
+    """0 is rejected (not just accepted-as-boundary like the disk pct fields):
+    a PSI threshold of 0 fires on any measurable reading (psi_full/some >= 0
+    is always true) -- the same hiccup-not-coma footgun this release exists
+    to fix, at the opposite extreme. See _require_positive_pct."""
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {bad}\n")
+    with pytest.raises(ValueError, match=f"monitor.host_health.{field}"):
+        load_config(toml)
+
+
+@pytest.mark.parametrize("field", ["psi_full_avg10_critical", "psi_some_avg10_warning"])
+@pytest.mark.parametrize(("literal", "expected"), [("100", 100.0), ("0.5", 0.5), ("60", 60.0)])
+def test_psi_thresholds_accept_in_range(
+    tmp_path: Path, field: str, literal: str, expected: float
+) -> None:
+    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
+    assert getattr(load_config(toml).monitor.host_health, field) == expected
+
+
 _INJECT_CONTEXT_BASE = """\
 [agent]
 command = ["true"]

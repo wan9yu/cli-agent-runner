@@ -192,3 +192,16 @@ def test_memory_pressure_uses_cfg_swap_floor() -> None:
         swap_sout_noise_floor_mb=32, mem_free_low_mb=16, mem_avail_min_mb=200
     )
     assert host_health.memory_pressure(cur, prev, cfg2) is None  # 9 MiB < 32 MiB floor: no warning
+
+
+def test_psi_full_critical_uses_cfg() -> None:
+    """psi_full_avg10_critical must be read from cfg, not the deleted module
+    constant (0.2.15's hardcoded 1.0 killed every round on a 1% hiccup)."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig(psi_full_avg10_critical=60.0)
+    healthy = {"psi_some_avg10": 2.0, "psi_full_avg10": 40.0}  # 40 < 60 -- not critical
+    assert host_health.memory_pressure(healthy, {}, cfg) is None
+    comaing = {"psi_some_avg10": 90.0, "psi_full_avg10": 70.0}  # 70 >= 60 -- critical
+    p = host_health.memory_pressure(comaing, {}, cfg)
+    assert p is not None and p.severity == "critical" and p.signal == "psi"

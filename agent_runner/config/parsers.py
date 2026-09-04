@@ -51,6 +51,7 @@ from agent_runner.config.validators import (
     _require_non_negative_int,
     _require_pct,
     _require_positive_int,
+    _require_positive_pct,
     _require_str_list,
     _require_table,
     _validate_regex_list,
@@ -469,6 +470,14 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
         mem_free_low_mb=_require_positive_int(
             hh_d.get("mem_free_low_mb", 16),
             field="monitor.host_health.mem_free_low_mb",
+        ),
+        psi_full_avg10_critical=_require_positive_pct(
+            hh_d.get("psi_full_avg10_critical", 60.0),
+            field="monitor.host_health.psi_full_avg10_critical",
+        ),
+        psi_some_avg10_warning=_require_positive_pct(
+            hh_d.get("psi_some_avg10_warning", 5.0),
+            field="monitor.host_health.psi_some_avg10_warning",
         ),
     )
     monitor = MonitorConfig(

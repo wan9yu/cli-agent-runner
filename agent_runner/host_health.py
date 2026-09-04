@@ -44,8 +44,10 @@ from typing import Any
 
 # Tier 1 -- PSI avg10 (%-of-time-stalled over the last 10s). `some` = at least
 # one task stalled on reclaim; `full` = every task stalled (severe).
-_PSI_SOME_AVG10_WARNING = 5.0
-_PSI_FULL_AVG10_CRITICAL = 1.0
+# Config-tunable (``MonitorHostHealthConfig.psi_full_avg10_critical`` /
+# ``.psi_some_avg10_warning``) -- see that dataclass for the defaults and the
+# rationale for the 60% critical bar (systemd-oomd's proven
+# DefaultMemoryPressureLimit; a sustained near-total stall, not a 1% hiccup).
 
 # Tier 2 -- swap-out delta (bytes) between two samples. Below
 # cfg.swap_sout_noise_floor_mb is noise: tens of MB is ordinary startup/idle
@@ -107,14 +109,14 @@ def memory_pressure(
     psi_some = sample.get("psi_some_avg10")
     if psi_some is not None:
         psi_full = sample.get("psi_full_avg10") or 0.0
-        if psi_full >= _PSI_FULL_AVG10_CRITICAL:
+        if psi_full >= cfg.psi_full_avg10_critical:
             return Pressure(
                 "critical",
                 "psi",
                 f"PSI memory full avg10={psi_full} (every task stalled on reclaim)",
                 {"psi_some_avg10": psi_some, "psi_full_avg10": psi_full},
             )
-        if psi_some >= _PSI_SOME_AVG10_WARNING:
+        if psi_some >= cfg.psi_some_avg10_warning:
             return Pressure(
                 "warning",
                 "psi",

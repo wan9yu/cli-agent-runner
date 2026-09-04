@@ -31,7 +31,7 @@ from tests._test_helpers import read_events_for_current_month
 
 _CRITICAL_SAMPLE = {
     "psi_some_avg10": 10.0,
-    "psi_full_avg10": 2.0,
+    "psi_full_avg10": 70.0,  # >= the 60.0 default critical (systemd-oomd's proven bar)
     "mem_free_mb": 50,
     "mem_available_mb": 50,
     "swap_sout": 0,

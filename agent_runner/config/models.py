@@ -162,6 +162,10 @@ class MonitorHostHealthConfig:
     disk_critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
     swap_sout_noise_floor_mb: int = 32  # tier-2 swap-out noise floor (MiB); compare uses *1024*1024
     mem_free_low_mb: int = 16  # tier-3 MemFree floor (MB)
+    # mid-round CRITICAL when PSI-full avg10 >= this (%). 1.0 in 0.2.15 was a
+    # hiccup, not a coma; 60 matches systemd-oomd's DefaultMemoryPressureLimit.
+    psi_full_avg10_critical: float = 60.0
+    psi_some_avg10_warning: float = 5.0  # WARNING when PSI-some avg10 >= this (%)
 
 
 @dataclass(frozen=True)

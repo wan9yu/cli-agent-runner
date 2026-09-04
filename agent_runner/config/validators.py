@@ -154,6 +154,18 @@ def _require_pct(value: Any, *, field: str) -> float:
     return v
 
 
+def _require_positive_pct(value: Any, *, field: str) -> float:
+    """Sibling of ``_require_pct`` for a percent threshold where 0 has a
+    dangerous meaning rather than a legitimate opt-out: a PSI critical/warning
+    threshold of 0 fires on any measurable reading (psi_full/some >= 0 is
+    always true) -- the same "1% is a hiccup, not a coma" footgun this release
+    exists to raise, just at the opposite extreme. Range is (0, 100]."""
+    v = _require_pct(value, field=field)
+    if v <= 0.0:
+        raise ConfigError(f"{field}: must be > 0, got {v}")
+    return v
+
+
 def _validate_regex_list(value: Any, *, field: str) -> list[str]:
     """Validate a list of regex pattern strings (each must compile). Returns the
     raw strings unchanged; callers compile when they need ``re.Pattern`` objects."""
