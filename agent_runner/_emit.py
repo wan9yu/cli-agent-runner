@@ -40,6 +40,7 @@ __all__ = [
     "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
     "emit_stale_index_lock_cleared",
+    "emit_stalled_no_progress",
     "emit_stop_file_detected",
     "emit_transient_error_backoff_capped",
     "emit_transient_error_detected",
@@ -134,6 +135,34 @@ def emit_mem_loop_persistent(
     _emit_giveup(
         log_dir,
         MEM_LOOP_PERSISTENT,
+        consecutive=consecutive,
+        exit_code=exit_code,
+        log_path=log_path,
+    )
+
+
+def emit_stalled_no_progress(
+    log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path
+) -> None:
+    """Emit stalled_no_progress (serve gave up after consecutive clean-but-
+    no-progress rounds -- 0.2.16 Task 6). A round that exits 0 fast with no
+    ``agent_usage_recorded`` never reached the model (pi, and CLIs like it,
+    exit 0 on a provider failure) -- ``_round_ok = exit_code == 0``
+    (api_types.py) reads that as clean, so without this breaker it is a fast,
+    invisible, unclassified-failure spin, no different in kind from an
+    unknown short crash except for the exit code it hides behind.
+
+    Deliberately reuses ``CRASH_LOOP_EXIT`` (75), not a new exit code: this is
+    the SAME give-up verdict as crash_loop ("an unknown failure kept
+    recurring, stop for real") reached via a different signal (no usage
+    instead of a non-zero exit) -- not a new failure class, so it needs no new
+    entry in the systemd unit's ``RestartPreventExitStatus``. Same redacted-
+    log-tail reason capture as crash_loop/mem_loop."""
+    from agent_runner.events import STALLED_NO_PROGRESS
+
+    _emit_giveup(
+        log_dir,
+        STALLED_NO_PROGRESS,
         consecutive=consecutive,
         exit_code=exit_code,
         log_path=log_path,

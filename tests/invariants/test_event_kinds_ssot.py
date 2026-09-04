@@ -96,6 +96,10 @@ _ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
     # event kind here, unlike "continue" which has no constant) — same pattern
     # as post_round_decision's config_broken/crash_loop above.
     ("agent_runner/_serve_policy.py", "_mem_loop_decision"): "restart-action enum",
+    # Exit-0 no-progress give-up cap's own action enum: Literal["stalled_no_progress",
+    # "continue"] (0.2.16 Task 6). Shares a spelling with events.STALLED_NO_PROGRESS
+    # by design, same pattern as _mem_loop_decision above.
+    ("agent_runner/_serve_policy.py", "_no_progress_decision"): "restart-action enum",
     # Compares the post_round_decision restart-action enum, not event kinds.
     # (0.2.16 Task 5a: this comparison moved from serve_cmd.cmd into its own
     # helper in _serve_round.py so cmd() stays under its LOC budget.)

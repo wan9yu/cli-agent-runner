@@ -68,6 +68,25 @@ def test_mem_loop_exit_value_and_restartable(tmp_path) -> None:
     assert str(MEM_LOOP_EXIT) not in restart_line.split("=", 1)[1].split()
 
 
+def test_no_progress_decision_increments_to_threshold() -> None:
+    from agent_runner._serve_policy import CRASH_LOOP_THRESHOLD, _no_progress_decision
+
+    c = 0
+    action = "continue"
+    for _ in range(CRASH_LOOP_THRESHOLD):
+        action, c = _no_progress_decision(no_progress=True, consecutive=c)
+    assert action == "stalled_no_progress" and c == CRASH_LOOP_THRESHOLD
+
+
+def test_no_progress_decision_progress_round_resets() -> None:
+    from agent_runner._serve_policy import _no_progress_decision
+
+    action, c = _no_progress_decision(no_progress=True, consecutive=2)
+    assert action == "continue" and c == 3
+    action, c = _no_progress_decision(no_progress=False, consecutive=3)
+    assert action == "continue" and c == 0
+
+
 def test_mem_loop_persistent_exit_value_and_free() -> None:
     """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT is a distinct sysexits-band
     code from every other serve give-up/restart exit code in use."""

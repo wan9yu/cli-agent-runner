@@ -65,7 +65,9 @@ ALLOWED_SERVE_FROM = [
         "agent_runner._serve_policy",
         {
             "PERMANENT_CONFIG_EXIT",
+            "_NO_PROGRESS_SHORT_S",
             "_mem_loop_decision",
+            "_no_progress_decision",
             "post_round_decision",
         },
     ),
@@ -88,6 +90,7 @@ ALLOWED_SERVE_FROM = [
             "_apply_back_off",
             "_check_throttle_state",
             "_interruptible_sleep",
+            "round_had_no_progress",
             "round_was_mem_terminated",
         },
     ),

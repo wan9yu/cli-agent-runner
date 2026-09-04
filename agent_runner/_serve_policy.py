@@ -77,6 +77,24 @@ _MEM_LOOP_PERSIST_WINDOW_S = 7200
 _MEM_LOOP_PERSIST_THRESHOLD = 3
 
 
+# Exit-0 no-progress breaker (0.2.16 Task 6). Some CLIs (pi -- see
+# builtin_plugins/pi.py's "pi exits 0 on provider failure") exit 0 on a
+# provider failure that never reaches the model: `_round_ok = exit_code == 0`
+# (api_types.py) reads that as a clean round, so without this breaker an
+# invalid credential (or an exhausted-retries outage) spins as a fast,
+# invisible "success" loop with no breaker, no back-off, and no alert -- on a
+# constrained host, that tight loop is itself a memory-pressure generator.
+# "No progress" = exit 0, a SHORT round (< _NO_PROGRESS_SHORT_S), and no
+# agent_usage_recorded for it (see _throttle.round_had_no_progress for the
+# events-derived scoping). Deliberately reuses CRASH_LOOP_THRESHOLD /
+# CRASH_LOOP_EXIT rather than minting new ones: this is the SAME give-up
+# verdict as the crash-loop breaker ("an unknown failure kept recurring, stop
+# for real"), reached via a different signal (no usage instead of a non-zero
+# exit) -- not a new failure class needing its own systemd
+# RestartPreventExitStatus entry.
+_NO_PROGRESS_SHORT_S = 30
+
+
 class EnvironmentalError(Exception):
     """Marks a round-child failure as ENVIRONMENTAL (recoverable) rather than a
     permanent config break — classify_round_exit maps it to ENV_BATTERY_EXIT
@@ -155,6 +173,28 @@ def _mem_loop_decision(
     consecutive += 1
     if consecutive >= MEM_LOOP_THRESHOLD:
         return ("mem_loop", consecutive)
+    return ("continue", consecutive)
+
+
+def _no_progress_decision(
+    *, no_progress: bool, consecutive: int
+) -> tuple[Literal["stalled_no_progress", "continue"], int]:
+    """Exit-0 no-progress give-up cap (0.2.16 Task 6) -- a NEW, SEPARATE,
+    private counter from ``post_round_decision``'s crash-loop breaker (that one
+    keys on ``returncode != 0``; here returncode IS 0, so a round that never
+    reached the model would otherwise sail through with no breaker at all).
+    Same shape as :func:`_mem_loop_decision`: returns ``("stalled_no_progress",
+    consecutive)`` once ``consecutive`` reaches ``CRASH_LOOP_THRESHOLD`` --
+    reusing that threshold (and, at the call site, ``CRASH_LOOP_EXIT``) rather
+    than minting new ones, since this is the identical give-up verdict reached
+    via a different signal. A round WITH progress (usage recorded, non-zero
+    exit, or slow) resets the counter to 0, same reset shape as
+    crash-loop/mem-loop."""
+    if not no_progress:
+        return ("continue", 0)
+    consecutive += 1
+    if consecutive >= CRASH_LOOP_THRESHOLD:
+        return ("stalled_no_progress", consecutive)
     return ("continue", consecutive)
 
 

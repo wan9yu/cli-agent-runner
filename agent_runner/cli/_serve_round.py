@@ -39,6 +39,7 @@ from agent_runner.api import (
     emit_round_mem_terminated,
     emit_round_resumed,
     emit_round_supervisor_wedged,
+    emit_stalled_no_progress,
     emit_transient_error_recovered,
 )
 from agent_runner.clock import SYSTEM_CLOCK, Clock
@@ -344,21 +345,26 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
 def round_outcome_exit_code(
     action,
     mem_action,
+    noprogress_action,
     *,
     log_dir,
     round_log_path,
     consecutive_crashes,
     consecutive_mem_terminations,
+    consecutive_no_progress,
     r_returncode,
     clock: Clock = SYSTEM_CLOCK,
 ) -> int | None:
-    """Given this round's ``post_round_decision`` ``action`` and
-    ``_mem_loop_decision`` ``mem_action``, emit the matching give-up event and
-    return the exit code ``cmd()`` should break the loop on — or ``None`` to
-    keep looping. Order is significant: config_broken > mem_loop(_persistent)
-    > crash_loop (a mem-terminated round always has ``throttle_active=True``,
-    so ``post_round_decision`` never returns ``crash_loop`` for it anyway —
-    this ordering just makes the precedence explicit).
+    """Given this round's ``post_round_decision`` ``action``,
+    ``_mem_loop_decision`` ``mem_action``, and ``_no_progress_decision``
+    ``noprogress_action``, emit the matching give-up event and return the exit
+    code ``cmd()`` should break the loop on — or ``None`` to keep looping.
+    Order is significant: config_broken > mem_loop(_persistent) > crash_loop >
+    stalled_no_progress (a mem-terminated round always has
+    ``throttle_active=True``, so ``post_round_decision`` never returns
+    ``crash_loop`` for it anyway — this ordering just makes the precedence
+    explicit; crash_loop and stalled_no_progress are mutually exclusive by
+    construction — one keys on ``returncode != 0``, the other on ``== 0``).
 
     A ``mem_loop`` verdict escalates further (0.2.16 Task 5 — cross-restart
     convergence): ``MEM_LOOP_EXIT`` (71) alone resets on every serve process
@@ -369,7 +375,14 @@ def round_outcome_exit_code(
     mem_loop_events_in_window`) turns this run's mem_loop into the
     ``_MEM_LOOP_PERSIST_THRESHOLD``-th in-window occurrence, at which point
     serve STOPS for real (``MEM_LOOP_PERSISTENT_EXIT``, a deliberate give-up
-    like config_broken/crash_loop) instead of the usual restartable 71."""
+    like config_broken/crash_loop) instead of the usual restartable 71.
+
+    A ``stalled_no_progress`` verdict (0.2.16 Task 6 — the exit-0 no-progress
+    breaker: some CLIs, e.g. pi, exit 0 on a provider failure that never
+    reaches the model) deliberately returns ``CRASH_LOOP_EXIT`` — the SAME
+    give-up code as crash_loop, not a new one — since it is the identical
+    verdict ("an unknown failure kept recurring, stop for real") reached via a
+    different signal."""
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's
@@ -401,6 +414,14 @@ def round_outcome_exit_code(
         emit_crash_loop(
             log_dir,
             consecutive=consecutive_crashes,
+            exit_code=r_returncode,
+            log_path=round_log_path,
+        )
+        return CRASH_LOOP_EXIT
+    if noprogress_action == "stalled_no_progress":
+        emit_stalled_no_progress(
+            log_dir,
+            consecutive=consecutive_no_progress,
             exit_code=r_returncode,
             log_path=round_log_path,
         )

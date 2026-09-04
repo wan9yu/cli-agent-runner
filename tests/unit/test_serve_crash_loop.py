@@ -64,6 +64,190 @@ def _fake_spawn_mem_terminated():
     return spawn
 
 
+def _fake_spawn_clean_no_usage(rc: int = 0):
+    """serve_cmd._spawn_round stand-in for the 0.2.16 Task 6 exit-0-no-progress
+    scenario: exits clean and fast but never emits agent_usage_recorded --
+    mirrors pi's "exits 0 on provider failure" case (builtin_plugins/pi.py):
+    an auth failure or exhausted retries never reaches the model, so no usage
+    event is ever emitted for the round."""
+
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
+        round_log_path.write_text("round output\n")
+        return rc
+
+    return spawn
+
+
+def _fake_spawn_clean_with_usage():
+    """serve_cmd._spawn_round stand-in: exits clean, fast, AND records real
+    usage every round -- the round reached the model, so it is genuine
+    progress even though it also happens to be short."""
+    from agent_runner.api import emit_agent_usage_recorded
+
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
+        round_log_path.write_text("round output\n")
+        emit_agent_usage_recorded(
+            round_log_path.parent,
+            agent="test",
+            model="test-model",
+            round_num=1,
+            input_tokens=10,
+            output_tokens=5,
+            cached_tokens=0,
+            cost_usd=0.01,
+            duration_ms=100,
+        )
+        return 0
+
+    return spawn
+
+
+def test_given_exit0_no_progress_streak_when_serve_then_stalled_no_progress_and_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """0.2.16 Task 6: pi (and CLIs like it) exit 0 on a provider failure that
+    never reaches the model -- _round_ok=exit_code==0 reads that as clean, so
+    without this breaker the loop spins invisibly, itself a memory-pressure
+    generator on a constrained host. CRASH_LOOP_THRESHOLD consecutive
+    clean-but-no-progress rounds must trip the SAME give-up shape as the
+    crash-loop breaker: reused CRASH_LOOP_EXIT, since this is the identical
+    verdict reached via a different signal, not a new failure class."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_clean_no_usage())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
+
+    assert rc == CRASH_LOOP_EXIT
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "crash_loop" not in kinds
+    stalled = [
+        e for e in read_events_for_current_month(log_dir) if e.get("event") == "stalled_no_progress"
+    ]
+    assert len(stalled) == 1
+    assert stalled[0]["consecutive"] == CRASH_LOOP_THRESHOLD
+    assert stalled[0]["exit_code"] == 0
+
+
+def test_given_exit0_rounds_with_usage_when_serve_then_no_stall_trip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A round that reached the model (agent_usage_recorded) is real progress
+    even though it also exits 0 and fast -- it must reset the no-progress
+    streak rather than merely fail to trip it."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_clean_with_usage())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=CRASH_LOOP_THRESHOLD + 3))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "stalled_no_progress" not in kinds
+    assert "crash_loop" not in kinds
+    assert "max_rounds_reached" in kinds
+    assert rc == 0
+
+
+def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Mirrors test_given_success_between_crashes_when_serve_then_counter_resets
+    for the no-progress streak: a round WITH usage between no-progress rounds
+    resets the counter, so the trip fires at CRASH_LOOP_THRESHOLD POST-reset,
+    not the total no-progress count across the whole run."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    no_usage = _fake_spawn_clean_no_usage()
+    with_usage = _fake_spawn_clean_with_usage()
+    # 3 no-progress rounds, one WITH usage (resets), then no-progress forever ->
+    # fires at CRASH_LOOP_THRESHOLD post-reset.
+    calls = [no_usage, no_usage, no_usage, with_usage] + [no_usage] * CRASH_LOOP_THRESHOLD
+
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
+        fn = calls.pop(0) if len(calls) > 1 else calls[0]
+        return fn(round_argv, round_log_path, round_env, timeout_s=timeout_s)
+
+    monkeypatch.setattr(serve_cmd, "_spawn_round", spawn)
+
+    serve_cmd.cmd(FakeArgs(cfg_path, once=False))
+
+    stalled = [
+        e for e in read_events_for_current_month(log_dir) if e.get("event") == "stalled_no_progress"
+    ]
+    assert len(stalled) == 1
+    assert stalled[0]["consecutive"] == CRASH_LOOP_THRESHOLD
+
+
+def test_round_had_no_progress_true_when_clean_fast_and_no_usage(tmp_path: Path) -> None:
+    from agent_runner._throttle import round_had_no_progress
+    from agent_runner.api import emit_round_substrate_before
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_round_substrate_before(log_dir, round_num=1, git_head="abc", paths_hash="x")
+
+    assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is True
+
+
+def test_round_had_no_progress_false_when_usage_recorded_after_round_start(
+    tmp_path: Path,
+) -> None:
+    from agent_runner._throttle import round_had_no_progress
+    from agent_runner.api import emit_agent_usage_recorded, emit_round_substrate_before
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_round_substrate_before(log_dir, round_num=1, git_head="abc", paths_hash="x")
+    emit_agent_usage_recorded(
+        log_dir,
+        agent="test",
+        model="m",
+        round_num=1,
+        input_tokens=1,
+        output_tokens=1,
+        cached_tokens=0,
+        cost_usd=None,
+        duration_ms=1,
+    )
+
+    assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is False
+
+
+def test_round_had_no_progress_false_when_round_is_slow(tmp_path: Path) -> None:
+    """A slow round is not a TIGHT loop even with no usage -- a wedged/hung
+    round already has its own signal (round_supervisor_wedged)."""
+    from agent_runner._throttle import round_had_no_progress
+    from agent_runner.api import emit_round_substrate_before
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_round_substrate_before(log_dir, round_num=1, git_head="abc", paths_hash="x")
+
+    assert round_had_no_progress(log_dir, returncode=0, duration_s=30.0, threshold_s=30) is False
+
+
+def test_round_had_no_progress_false_when_nonzero_exit(tmp_path: Path) -> None:
+    """A non-zero exit already has its own signal (the crash-loop breaker) --
+    round_had_no_progress must stay false so the two never double-count."""
+    from agent_runner._throttle import round_had_no_progress
+    from agent_runner.api import emit_round_substrate_before
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_round_substrate_before(log_dir, round_num=1, git_head="abc", paths_hash="x")
+
+    assert round_had_no_progress(log_dir, returncode=1, duration_s=3.0, threshold_s=30) is False
+
+
 def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
