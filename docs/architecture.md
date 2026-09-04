@@ -38,7 +38,7 @@ common to all three. Operator learns one mental model, three lenses.
 
 ## Defenses-as-data
 
-`agent_runner.defenses.catalog(cfg)` returns 13 structured `Defense` entries.
+`agent_runner.defenses.catalog(cfg)` returns 14 structured `Defense` entries.
 Each entry carries:
 
 - `name` — stable identifier
@@ -66,6 +66,7 @@ surfacing everywhere.
 | `critical_envs_injection` | Env injection via [agent.env] block — preset-supplied per CLI (e.g. DISABLE_AUTOUPDATER for claude prevents mid-loop self-updates) | `tests/unit/test_agent_runtime.py` |
 | `startup_smoke_check` | R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; now halts serve (config_broken) instead of respawning a broken config | `tests/unit/test_serve_config_broken.py` |
 | `crash_loop_breaker` | Run 6 — crashing agent respawned ~100 empty rounds at a fixed 2x delay | `tests/unit/test_serve_crash_loop.py` |
+| `mem_loop_breaker` | 0.2.15 — a host stuck under sustained memory pressure could mem-terminate every round forever with no give-up; break-then-restart cap added (exit 71 stays outside RestartPreventExitStatus, so systemd restarts serve, which may find the pressure has cleared) | `tests/unit/test_serve_crash_loop.py` |
 | `bulk_round_log_prune_guard` | 0.2.4 — rounds/ pruning shipped against backlogs it never built; one deployment's first post-upgrade round would have deleted 12,193 of 12,293 transcripts silently | `tests/unit/test_round_log_helpers.py` |
 | `flock_concurrency` | Architectural — prevent concurrent supervisors corrupting state | `tests/unit/test_runner.py` |
 | `atomic_state_writes` | Data integrity — crashes never leave half-written state files | `tests/invariants/test_atomic_write_enforced.py` |
@@ -258,4 +259,4 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 
 三层架构：Round（一轮 agent）/ Loop（serve 薄壳）/ Witness（monitor）。
 三视角对称：peek（快照）/ watch（快照循环）/ monitor（异常检测），共用下钻参数。
-防御以结构化目录形式存在（13 条），每条防御自描述「防的是哪条历史教训、被哪个 invariant test 守、当前状态」。
+防御以结构化目录形式存在（14 条），每条防御自描述「防的是哪条历史教训、被哪个 invariant test 守、当前状态」。

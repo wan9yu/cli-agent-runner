@@ -782,10 +782,16 @@ usually no action is needed unless it keeps recurring.
 |---|---|---|
 | `config_broken` | Any `ConfigError`-classified round exit (`78`) — not only a startup-battery failure. Most often the battery failing permanently (missing/short prompt, non-git `work_dir`, agent CLI not on PATH); also a stale-serve-cache phase error (`--phase` no longer matches a config `serve` edited since it started). | Battery failure: read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. Stale-cache phase error (no `smoke_check_failed` that round): `agent-runner restart`. |
 | `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
-| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the other two, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring, investigate host memory pressure (see `host_health`/`mem_pressure` above) or lower the round memory ceiling. |
+| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the other two, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring: investigate host memory pressure (see `host_health`/`mem_pressure` above); re-tune the `[monitor.host_health]` floors (`swap_sout_noise_floor_mb`, `mem_free_low_mb`) if the ladder is mis-calibrated for this host's memory size or swap speed; or, if one specific round is the culprit, track its own RSS with a wrapper script (see "Still not covered: per-round peak RSS" above) — agent-runner has no per-round memory ceiling to lower. |
 
 Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
 as transient errors and ride the back-off instead — they never trip `crash_loop`.
+
+**If `mem_loop` recurs fast enough** to trip the unit's own
+`StartLimitBurst=5`/`StartLimitIntervalSec=300` (5 service restarts inside
+300s), systemd marks the unit `failed` and stops restarting it regardless of
+exit `71` sitting outside `RestartPreventExitStatus`. Recover with
+`systemctl --user reset-failed <unit> && systemctl --user start <unit>`.
 
 **Diagnose:**
 

@@ -19,7 +19,7 @@ _THIS = Path(__file__).relative_to(_REPO).as_posix()
 # "inception" is an ordinary English word but is a deliberate internal codename here — forbid it.
 _FORBIDDEN = re.compile(r"argus|inception|\bplan[-_ ]b\b", re.IGNORECASE)
 _SKIP = {_THIS, ".vulture-whitelist.py"}  # self-exclude: this file's own regex text matches
-_SCAN_SUFFIXES = (".py", ".md", ".toml", ".cfg", ".txt", ".zh.md")
+_SCAN_SUFFIXES = (".py", ".md", ".toml", ".cfg", ".txt", ".yml", ".sh", ".jsonl")
 
 
 def _tracked_files() -> list[str]:

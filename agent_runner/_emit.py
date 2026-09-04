@@ -65,20 +65,35 @@ def emit_config_broken(log_dir: Path, *, reason: str) -> None:
     emit(log_dir, CONFIG_BROKEN, reason=reason)
 
 
+def _emit_giveup(
+    log_dir: Path, kind: str, *, consecutive: int, exit_code: int, log_path: Path
+) -> None:
+    """Shared body for the give-up events (serve stopped/broke after consecutive
+    failures of one kind): capture a redacted tail of the round log as ``reason``
+    so the recurring failure can be inspected (or later classified into a
+    transient bucket), and emit ``kind`` with the standard give-up payload.
+    """
+    from agent_runner._redact import redact_secrets
+    from agent_runner.events import emit
+
+    try:
+        reason = redact_secrets(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
+    except OSError:
+        reason = ""
+    emit(log_dir, kind, consecutive=consecutive, exit_code=exit_code, reason=reason)
+
+
 def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path) -> None:
     """Emit crash_loop (serve stopped after consecutive unknown short crashes).
 
     Captures the failure reason — a redacted tail of the round log — so a
     recurring unknown crash can later be classified into a transient bucket.
     """
-    from agent_runner._redact import redact_secrets
-    from agent_runner.events import CRASH_LOOP, emit
+    from agent_runner.events import CRASH_LOOP
 
-    try:
-        reason = redact_secrets(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
-    except OSError:
-        reason = ""
-    emit(log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
+    _emit_giveup(
+        log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, log_path=log_path
+    )
 
 
 def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path) -> None:
@@ -90,14 +105,9 @@ def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: 
     Captures the failure reason — a redacted tail of the round log — same as
     crash_loop, so an operator can see what the round was doing when the host
     ran out of memory."""
-    from agent_runner._redact import redact_secrets
-    from agent_runner.events import MEM_LOOP, emit
+    from agent_runner.events import MEM_LOOP
 
-    try:
-        reason = redact_secrets(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
-    except OSError:
-        reason = ""
-    emit(log_dir, MEM_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
+    _emit_giveup(log_dir, MEM_LOOP, consecutive=consecutive, exit_code=exit_code, log_path=log_path)
 
 
 def emit_config_migrated(

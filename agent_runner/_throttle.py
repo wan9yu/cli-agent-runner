@@ -277,21 +277,20 @@ def _active_throttles(
 def round_was_mem_terminated(log_dir: Path) -> bool:
     """True iff the round that JUST ran was killed by ``_spawn_round``'s
     mid-round memory-pressure hard floor (``round_mem_terminated``) rather
-    than a genuine crash — so ``serve_cmd._ran_agent_throttled`` can excuse it
-    from the crash-loop breaker exactly like an active throttle (flat
-    back-off, ``consecutive`` reset to 0), the same treatment
-    ``ENV_BATTERY_EXIT`` already gets. A mem-terminated round can be killed
-    within the first ~10s (the mid-round check's own cadence) — far under the
-    crash-loop breaker's 60s "short crash" window — so, unlike a wall-clock-
-    ceiling wedge (whose long duration alone dodges the breaker), this needs
-    an explicit signal.
+    than a genuine crash — so ``serve_cmd.cmd`` can excuse it from the
+    crash-loop breaker exactly like an active throttle (flat back-off,
+    ``consecutive`` reset to 0), the same treatment ``ENV_BATTERY_EXIT``
+    already gets. A mem-terminated round can be killed within the first ~10s
+    (the mid-round check's own cadence) — far under the crash-loop breaker's
+    60s "short crash" window — so, unlike a wall-clock-ceiling wedge (whose
+    long duration alone dodges the breaker), this needs an explicit signal.
 
     Scoped to "this round" (not some earlier one) by comparing the newest
     ``round_mem_terminated`` event's timestamp against the newest
     ``round_substrate_before``'s: ``round_substrate_before(N)`` always
     precedes round N's own attempt, and no later round's
     ``round_substrate_before(N+1)`` has been emitted yet at the point
-    ``_ran_agent_throttled`` runs (right after ``_spawn_round`` returns) —
+    ``cmd()`` runs this check (right after ``_spawn_round`` returns) —
     ``round_substrate_after``, also emitted before this check runs, cannot
     serve as that boundary, since it always comes AFTER any
     ``round_mem_terminated`` within the very round it is scoping. ``>=``, not

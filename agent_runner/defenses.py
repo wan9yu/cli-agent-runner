@@ -104,6 +104,18 @@ def catalog(cfg: Config) -> list[Defense]:
             current_state="active",
         ),
         Defense(
+            name="mem_loop_breaker",
+            value="stop after 5 consecutive mid-round memory-terminated rounds (exit 71)",
+            codifies=(
+                "0.2.15 — a host stuck under sustained memory pressure could mem-terminate "
+                "every round forever with no give-up; break-then-restart cap added (exit 71 "
+                "stays outside RestartPreventExitStatus, so systemd restarts serve, which may "
+                "find the pressure has cleared)"
+            ),
+            guarded_by=Path("tests/unit/test_serve_crash_loop.py"),
+            current_state="active",
+        ),
+        Defense(
             name="bulk_round_log_prune_guard",
             value="a prune deleting more files than it keeps deletes nothing",
             codifies=(

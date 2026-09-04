@@ -62,7 +62,7 @@ _PSI_FULL_AVG10_CRITICAL = 1.0
 # or an actual measured, above-floor swap-out delta (tier 2's critical
 # escalation, below). Also doubles as the critical-escalation MemFree floor:
 # "critically low" is the same absolute bar either way. Config-tunable
-# (``MonitorHostHealthConfig.mem_free_low_mb``, default 16 MB).
+# (``MonitorHostHealthConfig.mem_free_low_mb``, default 16 MiB).
 
 
 @dataclass(frozen=True)
