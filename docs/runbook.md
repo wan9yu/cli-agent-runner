@@ -142,6 +142,7 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 ExecStart=... serve --config /etc/agent-runner.toml
 Restart=on-failure
 RestartPreventExitStatus=78 75   # config_broken (78) / crash_loop (75) stay stopped
+                                  # mem_loop (71) is NOT listed here — it restarts
 RestartSec=3
 
 # Bounded job
@@ -765,18 +766,23 @@ remains the answer for per-agent accounting today.
 
 ## Troubleshooting
 
-### Serve stopped on its own (`crash_loop` / `config_broken`)
+### Serve stopped on its own (`crash_loop` / `config_broken` / `mem_loop`)
 
 **Symptom:** `serve` exited with a give-up code (`config_broken` → 78,
-`crash_loop` → 75) but did little or no work. Two always-on defenses stop the loop
-rather than respawn a doomed round forever — and because those codes are in the
-unit's `RestartPreventExitStatus`, systemd `Restart=on-failure` does **not** bring
-it back (the unit shows *failed*); intervention is needed.
+`crash_loop` → 75, `mem_loop` → 71) but did little or no work. Three always-on
+defenses stop the round loop rather than respawn a doomed or ballooning round
+forever. `config_broken` and `crash_loop` are in the unit's
+`RestartPreventExitStatus`, so systemd `Restart=on-failure` does **not** bring
+the service back (the unit shows *failed*) — intervention is needed. `mem_loop`
+is deliberately NOT in that list: systemd **does** restart it (break-then-restart
+— a fresh serve process may find the host memory pressure has cleared), so
+usually no action is needed unless it keeps recurring.
 
 | Event | Trigger | Fix |
 |---|---|---|
 | `config_broken` | Any `ConfigError`-classified round exit (`78`) — not only a startup-battery failure. Most often the battery failing permanently (missing/short prompt, non-git `work_dir`, agent CLI not on PATH); also a stale-serve-cache phase error (`--phase` no longer matches a config `serve` edited since it started). | Battery failure: read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. Stale-cache phase error (no `smoke_check_failed` that round): `agent-runner restart`. |
 | `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
+| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the other two, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring, investigate host memory pressure (see `host_health`/`mem_pressure` above) or lower the round memory ceiling. |
 
 Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
 as transient errors and ride the back-off instead — they never trip `crash_loop`.
@@ -785,7 +791,7 @@ as transient errors and ride the back-off instead — they never trip `crash_loo
 
 ```bash
 agent-runner peek --round latest --log | tail -40
-grep -E '"event": "(crash_loop|config_broken)"' <log_dir>/events-*.jsonl
+grep -E '"event": "(crash_loop|config_broken|mem_loop)"' <log_dir>/events-*.jsonl
 ```
 
 ### OAuth / auth failures (agent rejects requests)

@@ -28,6 +28,7 @@ from agent_runner._serve_policy import (  # noqa: F401 — public re-export
     CRASH_LOOP_SHORT_EXIT_S,
     CRASH_LOOP_THRESHOLD,
     ENV_BATTERY_EXIT,
+    MEM_LOOP_EXIT,
     PERMANENT_CONFIG_EXIT,
     post_round_decision,
 )
@@ -786,6 +787,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_crash_loop,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
+    emit_mem_loop,
     emit_rate_limit_stop,
     emit_round_deferred,
     emit_round_grace_extended,

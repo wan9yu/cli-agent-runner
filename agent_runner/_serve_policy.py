@@ -43,6 +43,17 @@ CRASH_LOOP_THRESHOLD = 5
 CRASH_LOOP_SHORT_EXIT_S = 60  # mirrors monitor.SHORT_EXIT_THRESHOLD_S
 CRASH_LOOP_MAX_DELAY_S = 1800  # cap the escalating restart delay (30 min)
 
+# Exit code for the mem-loop give-up cap (0.2.15 coma-preventer, Task 4): serve
+# gives up after MEM_LOOP_THRESHOLD consecutive mid-round memory-terminated
+# rounds rather than retrying forever. Distinct from CRASH_LOOP_EXIT (75) on
+# purpose: this is a "break-then-restart", NOT a deliberate stop — the host
+# memory condition may have cleared by the time systemd respawns a fresh serve
+# process, so unlike config_broken/crash_loop this code is deliberately absent
+# from the unit's RestartPreventExitStatus. 71 = EX_OSERR (sysexits).
+MEM_LOOP_EXIT = 71
+# Consecutive mem-terminated rounds before serve gives up (break-then-restart).
+MEM_LOOP_THRESHOLD = 5
+
 
 class EnvironmentalError(Exception):
     """Marks a round-child failure as ENVIRONMENTAL (recoverable) rather than a
@@ -104,6 +115,25 @@ def post_round_decision(
         return ("continue", delay, consecutive)
     delay = restart_delay_s if returncode == 0 else restart_delay_s * 2
     return ("continue", delay, 0)
+
+
+def _mem_loop_decision(
+    *, mem_terminated: bool, consecutive: int
+) -> tuple[Literal["mem_loop", "continue"], int]:
+    """Mem-loop give-up cap (0.2.15 Task 4) — a NEW, SEPARATE, private counter
+    from ``post_round_decision``'s crash-loop breaker, not a widening of its
+    3-tuple contract. A mem-terminated round already sets ``throttle_active``
+    for ``post_round_decision`` (never counted as a crash), so without this
+    cap a sustained memory-pressure host would retry forever instead of
+    eventually giving up. Returns ``("mem_loop", consecutive)`` once
+    ``consecutive`` reaches ``MEM_LOOP_THRESHOLD``; a non-mem-terminated round
+    resets the counter to 0, same reset shape as the crash-loop breaker."""
+    if not mem_terminated:
+        return ("continue", 0)
+    consecutive += 1
+    if consecutive >= MEM_LOOP_THRESHOLD:
+        return ("mem_loop", consecutive)
+    return ("continue", consecutive)
 
 
 def classify_round_exit(exc: BaseException) -> int:

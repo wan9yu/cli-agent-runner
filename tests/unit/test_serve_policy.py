@@ -27,3 +27,42 @@ def test_api_facade_re_exports_the_same_policy_objects() -> None:
     assert api.PERMANENT_CONFIG_EXIT is sp.PERMANENT_CONFIG_EXIT
     assert api.CRASH_LOOP_EXIT is sp.CRASH_LOOP_EXIT
     assert api.ENV_BATTERY_EXIT is sp.ENV_BATTERY_EXIT
+
+
+def test_mem_loop_decision_increments_to_threshold() -> None:
+    from agent_runner._serve_policy import MEM_LOOP_THRESHOLD, _mem_loop_decision
+
+    c = 0
+    action = "continue"
+    for _ in range(MEM_LOOP_THRESHOLD):
+        action, c = _mem_loop_decision(mem_terminated=True, consecutive=c)
+    assert action == "mem_loop" and c == MEM_LOOP_THRESHOLD
+
+
+def test_mem_loop_decision_non_mem_round_resets() -> None:
+    from agent_runner._serve_policy import _mem_loop_decision
+
+    action, c = _mem_loop_decision(mem_terminated=True, consecutive=2)
+    assert action == "continue" and c == 3
+    action, c = _mem_loop_decision(mem_terminated=False, consecutive=3)
+    assert action == "continue" and c == 0
+
+
+def test_mem_loop_exit_value_and_restartable(tmp_path) -> None:
+    from agent_runner._serve_policy import CRASH_LOOP_EXIT, MEM_LOOP_EXIT, PERMANENT_CONFIG_EXIT
+    from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig, VcsConfig
+    from agent_runner.service_unit import render_serve_unit
+
+    assert MEM_LOOP_EXIT == 71
+    cfg = Config(
+        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+    )
+    unit = render_serve_unit(
+        cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
+    )
+    assert f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT}" in unit
+    restart_line = [ln for ln in unit.splitlines() if ln.startswith("RestartPreventExitStatus=")][0]
+    assert str(MEM_LOOP_EXIT) not in restart_line.split("=", 1)[1].split()

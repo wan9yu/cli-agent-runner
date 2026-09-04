@@ -212,6 +212,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `fresh_eyes_round_triggered`
 - `hook_failed`
 - `max_rounds_reached`
+- `mem_loop`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`

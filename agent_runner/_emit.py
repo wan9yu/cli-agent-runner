@@ -20,6 +20,7 @@ __all__ = [
     "emit_config_migrated",
     "emit_fresh_eyes_round_triggered",
     "emit_max_rounds_reached",
+    "emit_mem_loop",
     "emit_rate_limit_stop",
     "emit_round_deferred",
     "emit_round_grace_extended",
@@ -78,6 +79,25 @@ def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path
     except OSError:
         reason = ""
     emit(log_dir, CRASH_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
+
+
+def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path) -> None:
+    """Emit mem_loop (serve gave up after consecutive mid-round memory-pressure
+    terminations — the 0.2.15 coma-preventer's give-up cap). Distinct from
+    crash_loop: this is a break-then-restart, not a deliberate stop, so it is
+    deliberately absent from the unit's RestartPreventExitStatus.
+
+    Captures the failure reason — a redacted tail of the round log — same as
+    crash_loop, so an operator can see what the round was doing when the host
+    ran out of memory."""
+    from agent_runner._redact import redact_secrets
+    from agent_runner.events import MEM_LOOP, emit
+
+    try:
+        reason = redact_secrets(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
+    except OSError:
+        reason = ""
+    emit(log_dir, MEM_LOOP, consecutive=consecutive, exit_code=exit_code, reason=reason)
 
 
 def emit_config_migrated(

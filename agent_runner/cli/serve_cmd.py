@@ -22,7 +22,9 @@ from typing import Literal
 from agent_runner import host_health, metrics, phase_select, schedule
 from agent_runner._serve_policy import (
     CRASH_LOOP_EXIT,
+    MEM_LOOP_EXIT,
     PERMANENT_CONFIG_EXIT,
+    _mem_loop_decision,
     post_round_decision,
 )
 from agent_runner._substrate import compute_git_head, compute_paths_hash
@@ -40,6 +42,7 @@ from agent_runner.api import (
     emit_crash_loop,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
+    emit_mem_loop,
     emit_rate_limit_stop,
     emit_round_deferred,
     emit_round_logs_prune_deferred,
@@ -432,22 +435,18 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
 
 
 def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
-    """Was the round that JUST ran throttled, or killed by the mid-round
-    memory-pressure hard floor? — so the crash-loop breaker excuses either a
-    fast throttle-induced exit or a mem-terminated round (round_mem_terminated
-    — a coma-preventer kill, not a crash) rather than counting it as a crash.
-    Checked first: a mem-terminated round can happen within ~10s, far under
-    the crash-loop breaker's 60s short-crash window, so — unlike a wall-clock
-    wedge kill, whose long duration alone dodges the breaker — it needs this
-    explicit exemption.
+    """Was the round that JUST ran throttled? — so the crash-loop breaker
+    excuses a fast throttle-induced exit rather than counting it as a crash.
+    A mem-terminated round (round_mem_terminated — a coma-preventer kill, not
+    a crash) is excused the same way, but that check is computed ONCE in
+    cmd() (``round_was_mem_terminated``) and OR'd into ``throttle_active``
+    there, not repeated here.
 
     When serve chose the phase (``phase_arg`` set) we check that exact agent. When the
     round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
     serve does NOT know which agent ran, so fall back to "any agent throttled" — the
     pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
     being misread as a crash (a false ``crash_loop`` permanent stop)."""
-    if round_was_mem_terminated(log_dir):
-        return True
     active = _active_throttles(log_dir)
     if phase_arg is None:
         return bool(active)
@@ -785,6 +784,7 @@ def cmd(args) -> int:
     work_dir = cfg.runtime.work_dir
     rounds_completed = 0
     consecutive_crashes = 0  # b12: consecutive UNKNOWN short crashes (crash-loop breaker)
+    consecutive_mem_terminations = 0  # 0.2.15: consecutive mem-terminated rounds (mem-loop cap)
     # Give-up stops (config_broken/crash_loop) return a distinct non-zero code the
     # systemd unit lists in RestartPreventExitStatus so they stay stopped; every
     # other stop (sentinel/stop_file/max_rounds/SIGTERM/once) is a clean exit 0.
@@ -861,14 +861,22 @@ def cmd(args) -> int:
             # Restart policy (config_broken / crash_loop / continue) lives in the
             # tested api.post_round_decision helper so this loop stays thin. Those
             # strings are that enum, not events.py kinds — do not normalize them.
+            # mem_terminated computed ONCE here and OR'd into throttle_active so
+            # crash_loop never double-counts a mem-terminated round; _mem_loop_decision
+            # (a separate, private cap) tracks it on its own counter below.
+            mem_terminated = round_was_mem_terminated(log_dir)
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r_returncode,
                 duration_s=round_duration_s,
-                # Crash-loop breaker excuses a fast exit only when the agent that just
-                # ran is throttled (agent-agnostic when the round self-rotated the phase).
-                throttle_active=_ran_agent_throttled(cfg, phase_arg, log_dir),
+                # Crash-loop breaker excuses a fast exit when the agent that just ran is
+                # throttled (agent-agnostic when the round self-rotated the phase) or
+                # mem-terminated.
+                throttle_active=mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir),
                 consecutive=consecutive_crashes,
                 restart_delay_s=cfg.runtime.restart_delay_s,
+            )
+            mem_action, consecutive_mem_terminations = _mem_loop_decision(
+                mem_terminated=mem_terminated, consecutive=consecutive_mem_terminations
             )
             if action == "config_broken":
                 # classify_round_exit maps ANY ConfigError to this exit code (Group
@@ -880,6 +888,19 @@ def cmd(args) -> int:
                     log_dir, reason=f"permanent config failure (round exited {r_returncode})"
                 )
                 exit_code = PERMANENT_CONFIG_EXIT
+                break
+            if mem_action == "mem_loop":
+                # Checked before crash_loop: a mem-terminated round always has
+                # throttle_active=True above, so post_round_decision never returns
+                # crash_loop for it anyway — this ordering just makes the precedence
+                # explicit (config_broken > mem_loop > crash_loop).
+                emit_mem_loop(
+                    log_dir,
+                    consecutive=consecutive_mem_terminations,
+                    exit_code=r_returncode,
+                    log_path=round_log_path,
+                )
+                exit_code = MEM_LOOP_EXIT
                 break
             if action == "crash_loop":
                 emit_crash_loop(

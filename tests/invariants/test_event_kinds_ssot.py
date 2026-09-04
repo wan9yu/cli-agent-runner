@@ -91,6 +91,11 @@ _ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
     # Restart-action enum: Literal["config_broken", "crash_loop", "continue"].
     # "continue" has no constant, and a constant cannot sit inside Literal[...].
     ("agent_runner/_serve_policy.py", "post_round_decision"): "restart-action enum",
+    # Mem-loop give-up cap's own action enum: Literal["mem_loop", "continue"].
+    # Shares a spelling with events.MEM_LOOP by design (mem_loop IS the give-up
+    # event kind here, unlike "continue" which has no constant) — same pattern
+    # as post_round_decision's config_broken/crash_loop above.
+    ("agent_runner/_serve_policy.py", "_mem_loop_decision"): "restart-action enum",
     # Compares the post_round_decision restart-action enum, not event kinds.
     ("agent_runner/cli/serve_cmd.py", "cmd"): "restart-action enum",
 }

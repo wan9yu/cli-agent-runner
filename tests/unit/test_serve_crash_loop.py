@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner._serve_policy import MEM_LOOP_EXIT, MEM_LOOP_THRESHOLD
 from agent_runner.api import (
     CRASH_LOOP_EXIT,
     CRASH_LOOP_THRESHOLD,
@@ -128,17 +129,44 @@ def test_given_success_between_crashes_when_serve_then_counter_resets(
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
 
 
-def test_given_repeated_mem_terminations_when_serve_then_no_crash_loop(
+def test_mem_terminations_under_threshold_no_crash_loop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A round killed by the mid-round memory-pressure hard floor is a
     coma-prevented retry, not a crash: the floor can fire within ~10s (its own
     sample cadence), far under the crash-loop breaker's 60s short-crash
     window, so unlike a wall-clock-ceiling wedge (whose long duration alone
-    dodges the breaker) this needs an explicit exemption. 8 consecutive
-    mem-terminations -- more than CRASH_LOOP_THRESHOLD (5) -- must NOT trip
-    crash_loop; the host is expected to recover and keeps being retried at
-    the doubled back-off, exactly like an active throttle."""
+    dodges the breaker) this needs an explicit exemption. Below
+    MEM_LOOP_THRESHOLD consecutive mem-terminations, serve neither trips
+    crash_loop nor gives up via mem_loop -- it keeps retrying at the doubled
+    back-off, exactly like an active throttle."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_mem_terminated())
+    rounds = MEM_LOOP_THRESHOLD - 1
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=rounds))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "crash_loop" not in kinds
+    assert "mem_loop" not in kinds
+    assert kinds.count("round_mem_terminated") == rounds
+    assert "max_rounds_reached" in kinds
+    assert rc == 0
+
+
+def test_mem_terminations_at_threshold_gives_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MEM_LOOP_THRESHOLD consecutive mem-terminated rounds means the host is
+    NOT recovering -- serve gives up via mem_loop (exit 71) rather than
+    looping forever, distinct from crash_loop: it is RESTARTABLE (systemd
+    brings it back fresh), unlike config_broken/crash_loop's deliberate stop,
+    because the underlying host-memory condition can clear between serve
+    process restarts even when it hasn't cleared between rounds."""
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -146,13 +174,13 @@ def test_given_repeated_mem_terminations_when_serve_then_no_crash_loop(
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
     monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_mem_terminated())
 
-    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=8))
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=MEM_LOOP_THRESHOLD + 3))
 
     kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "mem_loop" in kinds
     assert "crash_loop" not in kinds
-    assert kinds.count("round_mem_terminated") == 8
-    assert "max_rounds_reached" in kinds
-    assert rc == 0
+    assert kinds.count("round_mem_terminated") == MEM_LOOP_THRESHOLD
+    assert rc == MEM_LOOP_EXIT
 
 
 # --- pure-function tests for the extracted restart policy ---

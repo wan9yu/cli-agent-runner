@@ -35,6 +35,7 @@ ALLOWED_SERVE_FROM = [
             "emit_config_broken",
             "emit_crash_loop",
             "emit_max_rounds_reached",
+            "emit_mem_loop",
             "emit_rate_limit_stop",
             "emit_round_deferred",
             "emit_round_logs_prune_deferred",
@@ -54,7 +55,13 @@ ALLOWED_SERVE_FROM = [
     ),
     (
         "agent_runner._serve_policy",
-        {"CRASH_LOOP_EXIT", "PERMANENT_CONFIG_EXIT", "post_round_decision"},
+        {
+            "CRASH_LOOP_EXIT",
+            "MEM_LOOP_EXIT",
+            "PERMANENT_CONFIG_EXIT",
+            "_mem_loop_decision",
+            "post_round_decision",
+        },
     ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args_or_config_error"}),
