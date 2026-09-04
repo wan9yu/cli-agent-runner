@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.16] - 2026-09-05
+
+### Added
+- `[monitor.host_health]` gains PSI knobs — `psi_full_avg10_critical` (default 60.0) and `psi_some_avg10_warning` (default 5.0) — plus `mem_critical_consecutive_samples` (default 3) and an `in_round_mem_terminate` off switch for the mid-round memory floor.
+- `serve` probes this process's cgroup v2 memory budget at startup (`host_cgroup_memory_limit`); when `memory.max` and `memory.swap.max` are both finite, the mid-round floor defers to kernel cgroup-OOM (`mem_pressure_deferred_to_cgroup`) instead of terminating the round itself.
+- `mem_loop` now escalates across restarts: recurring 3 times inside a rolling 2h window stops the service for real (`mem_loop_persistent`, exit `70`) instead of respawning into the same loop forever.
+- New exit-0 no-progress breaker: 5 consecutive fast, clean rounds with no recorded usage (a CLI that exits 0 without ever reaching the model) now stop `serve` (`stalled_no_progress`, exit `75`) instead of spinning invisibly.
+
+### Fixed
+- PSI-full critical was a single ≥1% momentary sample — a hiccup, not a coma — on every PSI-capable host. It now requires a sustained ≥60% avg10 held for `mem_critical_consecutive_samples` (default 3, ~30s) consecutive checks.
+- The mid-round swap-out check is now per-tick instead of cumulative since round-start, so a host that recovers mid-round is no longer permanently flagged for the rest of the round.
+- The pre-round admission gate now defers only on `critical` pressure, not on any pressure (a mere `warning`, e.g. ordinary swap churn, no longer delays the next round).
+
+### Notes
+- New events: `host_cgroup_memory_limit`, `mem_pressure_deferred_to_cgroup`, `mem_loop_persistent`, `stalled_no_progress`, `round_mem_critical_sample`; `round_mem_terminated` gained `consecutive`/`context` fields. Not breaking: no `agent-runner migrate` needed, `peek --json` schema is unchanged.
+- Re-render the systemd unit (`agent-runner install`) after upgrading: the new unit adds exit `70` to `RestartPreventExitStatus` so `mem_loop_persistent` stops the service instead of restarting into the same loop.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.15] - 2026-09-04
 
 ### Added

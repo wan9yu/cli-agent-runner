@@ -141,8 +141,8 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 [Service]
 ExecStart=... serve --config /etc/agent-runner.toml
 Restart=on-failure
-RestartPreventExitStatus=78 75   # config_broken (78) / crash_loop (75) stay stopped
-                                  # mem_loop (71) is NOT listed here — it restarts
+RestartPreventExitStatus=78 75 70   # config_broken (78) / crash_loop (75) / mem_loop_persistent (70) stay stopped
+                                     # mem_loop (71) is NOT listed here — it restarts
 RestartSec=3
 
 # Bounded job
@@ -742,19 +742,23 @@ host-safety needs are already in-core. Detector rows require a running
 | Never two supervisors on one project | `flock_concurrency` defense — exclusive `flock` on `{log_dir}/agent-runner.lock` | A second `serve` fails fast naming the holder's PID, lock age, and cmdline. No cron-overlap guard of your own needed |
 | Runaway round | `[runtime] round_timeout_s` (default 1800) <!-- authored: default round_timeout_s; SSOT agent_runner/config/models.py --> | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_timeout_s` |
 | Cap the agent process itself | `[agent.env]` | Passed verbatim into the round subprocess env and takes precedence over the inherited `os.environ`, so e.g. `NODE_OPTIONS = "--max-old-space-size=384"` reaches a Node-based CLI |
-| Host memory pressure | `mem_pressure` detector + serve-loop admission gate | `host_health`'s signal ladder (PSI → swap-out rate → combined MemFree+MemAvailable low → unavailable) reports `warning` or `critical` — a bare `mem_available_mb` gate is unreliable on cache-poor small-memory hosts. `mem_pressure_gate_inert` fires once if a cache-poor-valid signal shows real pressure while the configured `[monitor.host_health] mem_avail_min_mb` (default 200) gate stays green; `mem_signal_unavailable` fires once when no tier is readable. The detector itself is notify-only (`auto_action="none"`), but `serve` separately **defers the next round** while `host_health` reports any pressure (`round_deferred`/`round_resumed`) and, mid-round, **terminates a ballooning round** on `critical` pressure (`round_mem_terminated`). Whole-host figures, not the agent's own share <!-- authored: default mem_avail_min_mb; SSOT agent_runner/config/models.py --> |
+| Host memory pressure | `mem_pressure` detector + serve-loop admission gate | `host_health`'s signal ladder (PSI → swap-out rate → combined MemFree+MemAvailable low → unavailable) reports `warning` or `critical` — a bare `mem_available_mb` gate is unreliable on cache-poor small-memory hosts. PSI's critical bar is `[monitor.host_health] psi_full_avg10_critical` (default 60.0, i.e. sustained ~60% avg10, not a single 1% blip); `psi_some_avg10_warning` (default 5.0) gates the warning tier. `mem_pressure_gate_inert` fires once if a cache-poor-valid signal shows real pressure while the configured `mem_avail_min_mb` (default 200) gate stays green; `mem_signal_unavailable` fires once when no tier is readable. The detector itself is notify-only (`auto_action="none"`), but `serve` separately **defers the next round** while `host_health` reports **`critical`** pressure only (`round_deferred`/`round_resumed` — a mere `warning` no longer delays a round) and, mid-round, **terminates a ballooning round** once pressure reads `critical` for `mem_critical_consecutive_samples` (default 3) consecutive ~10s ticks in a row (`round_mem_terminated`, `round_mem_critical_sample` per tick). `in_round_mem_terminate = false` keeps sampling and counting that streak without ever terminating a round. If this process's cgroup has both `memory.max` and `memory.swap.max` set (`host_cgroup_memory_limit` at startup), the mid-round floor defers to kernel cgroup-OOM instead (`mem_pressure_deferred_to_cgroup`) — the kernel will already contain the agent within that budget. Whole-host figures, not the agent's own share <!-- authored: default mem_avail_min_mb / psi_full_avg10_critical / psi_some_avg10_warning / mem_critical_consecutive_samples; SSOT agent_runner/config/models.py --> |
 | Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health]` <!-- authored: disk_critical ships in the default auto_stop_on set; SSOT agent_runner/config/models.py --> |
 | Auth burn (401 loop) | `oauth_fail` detector, auto-stops by default | Fires at ≥20% of a **fixed 10-event window** of `agent_exit` records. Under 10 exits it cannot fire at all, so a host that starts with bad credentials burns its first ~10 rounds before the stop lands. Two evidence paths: a round carrying `agent_auth_error_detected` (a plugin read the failure out of the CLI's own structured output — this is how pi's 401 becomes visible despite pi exiting 0), or the log-tail text heuristic, which still requires a **nonzero** agent exit as its false-positive shield |
 | Token / cost accounting | `agent_usage_recorded` events in `events-*.jsonl` | Raw per-round records; rollups and budget alerts are the consumer's job. Emitted by the `claude_error_detector` / `gemini_error_detector` / `codewhale_error_detector` / `pi_error_detector` plugins. kimi's plugin classifies transient errors but emits no usage, because the Kimi Code CLI exposes no token counters in its stream-json output, so kimi rounds produce no usage events |
 
-**Covered since 0.2.14: pre-round and mid-round memory gating.** Before
-starting a round, `serve` samples `host_health` and defers while it reports
-pressure; while a round is in flight, `serve` resamples every ~10s and
-terminates the round on `critical` pressure. See the "Host memory pressure"
-row above. A `PreRoundHook`'s return value is still ignored by contract (it
-cannot itself veto a round — raising from one only emits `hook_failed` and
-the round proceeds anyway); the memory gate above is serve's own admission
-check, not a hook.
+**Covered since 0.2.14, narrowed in 0.2.16: pre-round and mid-round memory
+gating.** Before starting a round, `serve` samples `host_health` and defers
+while it reports **`critical`** pressure — 0.2.14/0.2.15 deferred on ANY
+pressure (including a mere `warning`); 0.2.16 narrowed that to `critical`
+only. While a round is in flight, `serve` resamples every ~10s and
+terminates the round once pressure reads `critical` for several consecutive
+ticks in a row (not a single sample — see the "Host memory pressure" row
+above), unless a bounded cgroup lets it defer to the kernel's own OOM
+instead. See the "Host memory pressure" row above. A `PreRoundHook`'s return
+value is still ignored by contract (it cannot itself veto a round — raising
+from one only emits `hook_failed` and the round proceeds anyway); the memory
+gate above is serve's own admission check, not a hook.
 
 **Still not covered: per-round peak RSS.** agent-runner records RSS nowhere;
 `metrics-*.jsonl` samples WHOLE-HOST memory at round start/end, and the
@@ -766,23 +770,28 @@ remains the answer for per-agent accounting today.
 
 ## Troubleshooting
 
-### Serve stopped on its own (`crash_loop` / `config_broken` / `mem_loop`)
+### Serve stopped on its own (`crash_loop` / `config_broken` / `mem_loop` / `mem_loop_persistent` / `stalled_no_progress`)
 
 **Symptom:** `serve` exited with a give-up code (`config_broken` → 78,
-`crash_loop` → 75, `mem_loop` → 71) but did little or no work. Three always-on
-defenses stop the round loop rather than respawn a doomed or ballooning round
-forever. `config_broken` and `crash_loop` are in the unit's
-`RestartPreventExitStatus`, so systemd `Restart=on-failure` does **not** bring
-the service back (the unit shows *failed*) — intervention is needed. `mem_loop`
-is deliberately NOT in that list: systemd **does** restart it (break-then-restart
-— a fresh serve process may find the host memory pressure has cleared), so
-usually no action is needed unless it keeps recurring.
+`crash_loop` → 75, `stalled_no_progress` → 75, `mem_loop_persistent` → 70,
+`mem_loop` → 71) but did little or no work. Give-up defenses stop the round
+loop rather than respawn a doomed or ballooning round forever.
+`config_broken`, `crash_loop`/`stalled_no_progress` (same exit code, `75`),
+and `mem_loop_persistent` are in the unit's `RestartPreventExitStatus`, so
+systemd `Restart=on-failure` does **not** bring the service back (the unit
+shows *failed*) — intervention is needed. `mem_loop` alone is deliberately
+NOT in that list: systemd **does** restart it (break-then-restart — a fresh
+serve process may find the host memory pressure has cleared), so usually no
+action is needed unless it keeps recurring — if it does, it escalates on its
+own to `mem_loop_persistent` (see below).
 
 | Event | Trigger | Fix |
 |---|---|---|
 | `config_broken` | Any `ConfigError`-classified round exit (`78`) — not only a startup-battery failure. Most often the battery failing permanently (missing/short prompt, non-git `work_dir`, agent CLI not on PATH); also a stale-serve-cache phase error (`--phase` no longer matches a config `serve` edited since it started). | Battery failure: read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. Stale-cache phase error (no `smoke_check_failed` that round): `agent-runner restart`. |
 | `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
-| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the other two, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring: investigate host memory pressure (see `host_health`/`mem_pressure` above); re-tune the `[monitor.host_health]` floors (`swap_sout_noise_floor_mb`, `mem_free_low_mb`) if the ladder is mis-calibrated for this host's memory size or swap speed; or, if one specific round is the culprit, track its own RSS with a wrapper script (see "Still not covered: per-round peak RSS" above) — agent-runner has no per-round memory ceiling to lower. |
+| `stalled_no_progress` | 5 consecutive fast (< 30s), *clean* (exit `0`) rounds with no `agent_usage_recorded` — some CLIs (e.g. pi) exit `0` on a provider failure that never reached the model, so the crash-loop breaker above (which keys on a non-zero exit) never sees it. Reuses `crash_loop`'s exit code `75` — same give-up verdict, different signal. | Check credentials / provider status first (an auth failure or an exhausted-retries outage is the common cause); inspect the round log for the actual CLI-level error, fix it, `agent-runner start`. |
+| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the others, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring: investigate host memory pressure (see `host_health`/`mem_pressure` above); re-tune the `[monitor.host_health]` PSI/hysteresis knobs (`psi_full_avg10_critical`, `psi_some_avg10_warning`, `mem_critical_consecutive_samples`) or the older floors (`swap_sout_noise_floor_mb`, `mem_free_low_mb`) if the ladder is mis-calibrated for this host's memory size or swap speed; set `in_round_mem_terminate = false` to stop the floor from ever terminating a round while still watching the signal; or, if the host's cgroup bounds both `memory.max` and `memory.swap.max`, the floor already steps back on its own (`mem_pressure_deferred_to_cgroup`) and lets kernel cgroup-OOM contain the agent instead. If one specific round is the culprit, track its own RSS with a wrapper script (see "Still not covered: per-round peak RSS" above) — agent-runner has no per-round memory ceiling to lower. |
+| `mem_loop_persistent` | `mem_loop` itself recurred 3 times inside a rolling 2-hour window — the host isn't recovering across restarts either, so `serve` gives up for real (exit `70`) instead of respawning into the identical loop forever. Needs a human. | Same remedies as `mem_loop` above, but treat it as confirmed rather than transient: the host's memory/swap sizing likely needs to change, or the workload needs to move off this host. `agent-runner start` once the underlying pressure is addressed. |
 
 Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
 as transient errors and ride the back-off instead — they never trip `crash_loop`.
@@ -797,7 +806,7 @@ exit `71` sitting outside `RestartPreventExitStatus`. Recover with
 
 ```bash
 agent-runner peek --round latest --log | tail -40
-grep -E '"event": "(crash_loop|config_broken|mem_loop)"' <log_dir>/events-*.jsonl
+grep -E '"event": "(crash_loop|config_broken|mem_loop|mem_loop_persistent|stalled_no_progress)"' <log_dir>/events-*.jsonl
 ```
 
 ### OAuth / auth failures (agent rejects requests)

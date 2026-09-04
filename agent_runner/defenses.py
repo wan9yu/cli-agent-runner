@@ -105,12 +105,33 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="mem_loop_breaker",
-            value="stop after 5 consecutive mid-round memory-terminated rounds (exit 71)",
+            value=(
+                "stop after 5 consecutive mid-round memory-terminated rounds (exit 71, "
+                "restarts); escalates to a persistent stop (exit 70) if mem_loop itself "
+                "recurs 3x within a rolling 2h window across restarts"
+            ),
             codifies=(
                 "0.2.15 — a host stuck under sustained memory pressure could mem-terminate "
                 "every round forever with no give-up; break-then-restart cap added (exit 71 "
                 "stays outside RestartPreventExitStatus, so systemd restarts serve, which may "
-                "find the pressure has cleared)"
+                "find the pressure has cleared). 0.2.16 — field-confirmed that restart count "
+                "climbs without ever converging on a host that never recovers; cross-restart "
+                "escalation to a deliberate stop (exit 70, mem_loop_persistent) added"
+            ),
+            guarded_by=Path("tests/unit/test_serve_crash_loop.py"),
+            current_state="active",
+        ),
+        Defense(
+            name="stalled_no_progress_breaker",
+            value=(
+                "stop after 5 consecutive fast (<30s) exit-0 rounds with no recorded "
+                "usage (exit 75, same code as crash_loop_breaker)"
+            ),
+            codifies=(
+                "0.2.16 — some CLIs exit 0 on a provider failure that never reached the "
+                "model, invisible to crash_loop_breaker (which keys on a non-zero exit); "
+                "on a constrained host that fast, invisible spin is itself a "
+                "memory-pressure generator"
             ),
             guarded_by=Path("tests/unit/test_serve_crash_loop.py"),
             current_state="active",
