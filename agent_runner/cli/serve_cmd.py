@@ -587,6 +587,14 @@ def _apply_round_num_env(round_env: dict, round_num: int) -> None:
     round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
 
 
+def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
+    """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
+    git_head = compute_git_head(work_dir)
+    paths_hash = compute_paths_hash(work_dir, cfg.runtime.substrate_fingerprint_paths)
+    emit = emit_round_substrate_before if when == "before" else emit_round_substrate_after
+    emit(log_dir, round_num=round_num, git_head=git_head, paths_hash=paths_hash)
+
+
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler
 # reaps its agent pgroup (agent_runtime.REAP_GRACE_S) then exits, so allow that plus
 # margin. Kept local to honor serve_cmd's import allowlist; test_spawn_round_wedged
@@ -823,16 +831,7 @@ def cmd(args) -> int:
                 continue
             if stop["requested"]:
                 break  # SIGTERM landed during selection/back-off — don't spawn a round
-            git_head_before = compute_git_head(work_dir)
-            paths_hash_before = compute_paths_hash(
-                work_dir, cfg.runtime.substrate_fingerprint_paths
-            )
-            emit_round_substrate_before(
-                log_dir,
-                round_num=round_num,
-                git_head=git_head_before,
-                paths_hash=paths_hash_before,
-            )
+            _capture_substrate(work_dir, cfg, log_dir, round_num, when="before")
             _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
             _apply_round_num_env(round_env, round_num)
             round_log_path = log_dir / f"round-{round_num}.log"
@@ -856,14 +855,7 @@ def cmd(args) -> int:
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
-            git_head_after = compute_git_head(work_dir)
-            paths_hash_after = compute_paths_hash(work_dir, cfg.runtime.substrate_fingerprint_paths)
-            emit_round_substrate_after(
-                log_dir,
-                round_num=round_num,
-                git_head=git_head_after,
-                paths_hash=paths_hash_after,
-            )
+            _capture_substrate(work_dir, cfg, log_dir, round_num, when="after")
             rounds_completed += 1
             # Restart policy (config_broken / crash_loop / continue) lives in the
             # tested api.post_round_decision helper so this loop stays thin. Those

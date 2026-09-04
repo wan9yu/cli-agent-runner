@@ -189,3 +189,42 @@ def test_given_bulk_backlog_when_serve_starts_then_prune_deferred_and_emitted(
     assert deferrals[0]["existing"] == 10
     assert deferrals[0]["keep"] == 2
     assert deferrals[0]["would_delete"] == 8
+
+
+def _minimal_cfg(work_dir: Path, log_dir: Path):
+    """Smallest Config that satisfies _capture_substrate's cfg.runtime access."""
+    from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig
+
+    return Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=work_dir, log_dir=log_dir, substrate_fingerprint_paths=[]),
+        prompt=PromptConfig(file=work_dir / "prompt.md"),
+    )
+
+
+def test_given_capture_substrate_when_before_and_after_then_both_events_emitted(
+    tmp_path: Path,
+) -> None:
+    """_capture_substrate emits round_substrate_before/after with matching fields."""
+    from agent_runner.cli import serve_cmd
+    from tests._test_helpers import read_events_for_current_month
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    work_dir = tmp_path / "wd"
+    work_dir.mkdir()
+    cfg = _minimal_cfg(work_dir, log_dir)
+
+    serve_cmd._capture_substrate(work_dir, cfg, log_dir, round_num=7, when="before")
+    serve_cmd._capture_substrate(work_dir, cfg, log_dir, round_num=7, when="after")
+
+    events = read_events_for_current_month(log_dir)
+    before = [e for e in events if e["event"] == "round_substrate_before"]
+    after = [e for e in events if e["event"] == "round_substrate_after"]
+    assert len(before) == 1
+    assert len(after) == 1
+    assert before[0]["round_num"] == 7
+    assert after[0]["round_num"] == 7
+    # No git repo, no fingerprint paths configured: both fields null on both events.
+    assert before[0]["git_head"] == after[0]["git_head"] is None
+    assert before[0]["paths_hash"] == after[0]["paths_hash"] is None
