@@ -2,7 +2,7 @@
 either patch the relevant repo path constants to tmp_path OR the call site must
 be a no-op fixture/mock.
 
-Argus 2026-04: a pytest fixture forgot to patch ``status_store.REPO_DIR`` →
+2026-04 regression: a pytest fixture forgot to patch a repo-path constant →
 real production git repo got 15 phantom ORPHAN stashes over a week. Same
 class of bug here: any test invoking ``runner.run_one_round`` must point its
 config at a tmp_path-based work_dir.

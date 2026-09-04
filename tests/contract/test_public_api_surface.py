@@ -1,6 +1,6 @@
 """Public API surface contract — what downstream plugin authors may import.
 
-Rationale: plugin authors (e.g. Argus Gateway, future third-party packages)
+Rationale: plugin authors (e.g. a downstream integrator, future third-party packages)
 register hooks/detectors/event-kinds against agent_runner.* public symbols.
 This test snapshots the importable names so future refactors can't silently
 remove them — a removal becomes a deliberate, reviewable change to this file.

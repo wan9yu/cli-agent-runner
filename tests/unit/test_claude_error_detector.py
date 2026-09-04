@@ -513,7 +513,7 @@ def test_given_custom_agent_name_with_claude_binary_when_after_round_then_event_
     )
     ctx = make_hook_context(
         tmp_path,
-        agent_name="argus_dev",
+        agent_name="acme_dev",
         agent_binary="claude",
         agent_log_path=round_log,
     )

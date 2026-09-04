@@ -78,13 +78,13 @@ def test_given_recursive_glob_registered_when_dirty_files_then_deep_paths_filter
     from agent_runner.vcs_state import detect_dirty_files, register_plugin_owned_paths
 
     register_plugin_owned_paths(["logs/plugins/**/*"])
-    (tmp_git_repo / "logs" / "plugins" / "argus").mkdir(parents=True)
-    (tmp_git_repo / "logs" / "plugins" / "argus" / "state.json").write_text("{}\n")
+    (tmp_git_repo / "logs" / "plugins" / "acme").mkdir(parents=True)
+    (tmp_git_repo / "logs" / "plugins" / "acme" / "state.json").write_text("{}\n")
     (tmp_git_repo / "logs" / "other.log").write_text("x\n")
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
-    assert "logs/plugins/argus/state.json" not in dirty
+    assert "logs/plugins/acme/state.json" not in dirty
     assert "logs/other.log" in dirty
 
 

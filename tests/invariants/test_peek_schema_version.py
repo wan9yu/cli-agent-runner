@@ -1,7 +1,7 @@
 """Invariant: `agent-runner peek --json` always emits a top-level
 `schema_version` (>= "1.0") and `plugins` namespace.
 
-Plugin observers (Argus Gateway, monitoring tooling) parse this. Forgetting
+Plugin observers (a downstream integrator, monitoring tooling) parse this. Forgetting
 to emit the wrapper silently breaks them — this test fails loud instead.
 """
 

@@ -1,6 +1,6 @@
 """Module boundary invariants — defends against:
 
-- Ouroboros class (argus 5-rule #3): supervisor must not consume its own outputs
+- Ouroboros class: supervisor must not consume its own outputs
 - Module sprawl: each subprocess/git/prompt concern lives in exactly one module
 - §7 IMMUTABLE: runner is pure rotation, no event-driven branches
 """
@@ -100,7 +100,7 @@ def test_given_codebase_when_scanned_then_only_sanctioned_modules_call_git_cli()
 
 
 def test_given_runner_module_when_scanned_then_does_not_read_events_jsonl() -> None:
-    """Ouroboros defense (argus rule #3): runner writes events.jsonl but must never
+    """Ouroboros defense: runner writes events.jsonl but must never
     read it back. Strict since 0.2.11 — after the back-off moved to ``_throttle``,
     runner imports ``_throttle`` in NEITHER form, never globs ``events-*.jsonl``, and
     never opens an events file. The events-derived throttle state that drives back-off

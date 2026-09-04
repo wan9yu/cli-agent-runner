@@ -338,7 +338,7 @@ def test_given_custom_agent_name_with_gemini_binary_when_after_round_then_event_
     )
     ctx = make_hook_context(
         tmp_path,
-        agent_name="argus_qa",
+        agent_name="acme_qa",
         agent_binary="gemini",
         agent_log_path=round_log,
     )

@@ -148,8 +148,8 @@ def test_given_recursive_glob_when_match_then_double_star_works() -> None:
     )
 
     register_plugin_owned_paths(["logs/plugins/**/*"])
-    assert _matches_owned_path("logs/plugins/argus/state.json")
-    assert _matches_owned_path("logs/plugins/argus/deep/very/deep.txt")
+    assert _matches_owned_path("logs/plugins/acme/state.json")
+    assert _matches_owned_path("logs/plugins/acme/deep/very/deep.txt")
     assert not _matches_owned_path("logs/other/state.json")
 
 

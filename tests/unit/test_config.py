@@ -718,11 +718,11 @@ def test_given_plugins_disable_list_when_load_config_then_parsed(
     cfg_path = _write_toml(
         tmp_path,
         _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path)
-        + '\n[plugins]\ndisable = ["argus_prompt_assembly", "argus_chain_state"]\n',
+        + '\n[plugins]\ndisable = ["acme_prompt_assembly", "acme_chain_state"]\n',
     )
-    with pytest.warns(UserWarning, match="argus_prompt_assembly"):
+    with pytest.warns(UserWarning, match="acme_prompt_assembly"):
         cfg = load_config(cfg_path)
-    assert cfg.plugins.disable == ["argus_prompt_assembly", "argus_chain_state"]
+    assert cfg.plugins.disable == ["acme_prompt_assembly", "acme_chain_state"]
     assert cfg.plugins.raw == {}
 
 
@@ -738,7 +738,7 @@ def test_given_bare_string_plugins_disable_when_load_config_then_config_error(
     cfg_path = _write_toml(
         tmp_path,
         _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path)
-        + '\n[plugins]\ndisable = "argus_prompt_assembly"\n',
+        + '\n[plugins]\ndisable = "acme_prompt_assembly"\n',
     )
     with pytest.raises(ConfigError, match="plugins.disable"):
         load_config(cfg_path)
@@ -753,11 +753,11 @@ def test_given_plugins_unknown_keys_when_load_config_then_preserved_in_raw(
     (tmp_path / "prompt.md").write_text("p")
     cfg_path = _write_toml(
         tmp_path,
-        _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path) + '\n[plugins]\nargus_foo = "bar"\n',
+        _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path) + '\n[plugins]\nacme_foo = "bar"\n',
     )
     cfg = load_config(cfg_path)
     assert cfg.plugins.disable == []
-    assert cfg.plugins.raw == {"argus_foo": "bar"}
+    assert cfg.plugins.raw == {"acme_foo": "bar"}
 
 
 def test_given_no_disable_hooks_when_load_config_then_defaults_false(
