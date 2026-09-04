@@ -226,6 +226,7 @@ EXPECTED_API_SURFACE = {
     "emit_round_grace_extended",
     "emit_round_grace_kill",
     "emit_round_logs_prune_deferred",
+    "emit_round_mem_critical_sample",
     "emit_round_mem_terminated",
     "emit_round_progress",
     "emit_round_resumed",

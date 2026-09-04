@@ -795,6 +795,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_round_grace_extended,
     emit_round_grace_kill,
     emit_round_logs_prune_deferred,
+    emit_round_mem_critical_sample,
     emit_round_mem_terminated,
     emit_round_progress,
     emit_round_resumed,

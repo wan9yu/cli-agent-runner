@@ -28,6 +28,7 @@ __all__ = [
     "emit_round_grace_extended",
     "emit_round_grace_kill",
     "emit_round_logs_prune_deferred",
+    "emit_round_mem_critical_sample",
     "emit_round_mem_terminated",
     "emit_round_progress",
     "emit_round_resumed",
@@ -204,15 +205,62 @@ def emit_round_resumed(log_dir: Path, *, deferred_for_s: int) -> None:
 
 
 def emit_round_mem_terminated(
-    log_dir: Path, *, pid: int, severity: str, signal: str, message: str
+    log_dir: Path,
+    *,
+    pid: int,
+    severity: str,
+    signal: str,
+    message: str,
+    consecutive: int,
+    context: dict,
 ) -> None:
     """Emit when _spawn_round's mid-round hard floor terminated a ballooning
     round on critical host_health pressure -- the actual coma-preventer (a
     pre-round-only gate can't stop a single round mid-flight). Distinct from
-    round_supervisor_wedged (a wall-clock ceiling breach, unrelated cause)."""
+    round_supervisor_wedged (a wall-clock ceiling breach, unrelated cause).
+
+    0.2.16: ``consecutive`` (the critical_streak that crossed the threshold)
+    and ``context`` (Pressure.context -- the actual psi/mem numbers, e.g.
+    psi_full_avg10) make the kill legible from the event stream alone, so an
+    operator can retune host_health thresholds without SSH."""
     from agent_runner.events import ROUND_MEM_TERMINATED, emit
 
-    emit(log_dir, ROUND_MEM_TERMINATED, pid=pid, severity=severity, signal=signal, message=message)
+    emit(
+        log_dir,
+        ROUND_MEM_TERMINATED,
+        pid=pid,
+        severity=severity,
+        signal=signal,
+        message=message,
+        consecutive=consecutive,
+        context=context,
+    )
+
+
+def emit_round_mem_critical_sample(
+    log_dir: Path, *, round_num: int, consecutive: int, context: dict
+) -> None:
+    """Emit on EACH critical host_health sample inside _spawn_round's mid-round
+    hard floor -- deliberately NOT deduped (unlike round_mem_terminated): the
+    point is calibration visibility into near-misses, so an operator watching
+    the event stream sees the critical_streak build (1, 2, ...) even on ticks
+    that never reach the terminate threshold (a healthy tick resets it before
+    3-in-a-row). ``context`` carries the same Pressure.context numbers as
+    round_mem_terminated. Fires only during critical pressure -- never during
+    warning/healthy -- so it adds no normal-operation noise, including while
+    ``defer_to_cgroup`` steps back from terminating (the streak/context is
+    still useful calibration there; this event stays scoped to the
+    sample-level signal, distinct from mem_pressure_deferred_to_cgroup's
+    once-per-episode terminate-vs-defer notice)."""
+    from agent_runner.events import ROUND_MEM_CRITICAL_SAMPLE, emit
+
+    emit(
+        log_dir,
+        ROUND_MEM_CRITICAL_SAMPLE,
+        round_num=round_num,
+        consecutive=consecutive,
+        context=context,
+    )
 
 
 def emit_host_cgroup_memory_limit(

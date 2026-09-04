@@ -126,6 +126,19 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
     assert terminated[0]["severity"] == "critical"
     assert terminated[0]["signal"] == "psi"
 
+    # 0.2.16 Task 4: the streak + Pressure.context ride along so an operator
+    # can retune host_health thresholds from the event stream alone.
+    assert terminated[0]["consecutive"] == 3
+    assert terminated[0]["context"]["psi_full_avg10"] == 70.0
+
+    # The calibration signal: EVERY critical tick emits round_mem_critical_sample
+    # (not deduped), so the streak building 1 -> 2 -> 3 is visible even before
+    # the terminate threshold is crossed.
+    samples = [e for e in events if e.get("event") == "round_mem_critical_sample"]
+    assert [s["consecutive"] for s in samples] == [1, 2, 3]
+    assert samples[0]["round_num"] == 1
+    assert samples[-1]["context"]["psi_full_avg10"] == 70.0
+
     # Distinct from the wall-clock-ceiling path: this is a memory-pressure kill,
     # not a wedged-round kill, so round_supervisor_wedged must NOT also fire.
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
@@ -220,7 +233,9 @@ def test_single_critical_sample_does_not_terminate(tmp_path):
     """Hysteresis: one critical tick then healthy forever after must NOT
     terminate -- the default mem_critical_consecutive_samples=3 means a
     transient spike (the exact false-positive this floor must not produce)
-    never reaches the streak."""
+    never reaches the streak. But the near-miss is still visible: the single
+    critical tick emits round_mem_critical_sample with consecutive=1 -- the
+    0.2.16 calibration signal an operator would otherwise never see."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "import time; time.sleep(3)"]  # exits on its own
@@ -245,6 +260,8 @@ def test_single_critical_sample_does_not_terminate(tmp_path):
     events = read_events_for_current_month(log_dir)
     kinds = [e.get("event") for e in events]
     assert "round_mem_terminated" not in kinds
+    samples = [e for e in events if e.get("event") == "round_mem_critical_sample"]
+    assert [s["consecutive"] for s in samples] == [1]  # the near-miss, still visible
 
 
 def test_three_consecutive_critical_samples_terminate(tmp_path):
@@ -351,7 +368,9 @@ def test_both_finite_defers_never_terminates(tmp_path):
     host-wide floor steps back: sustained critical pressure (even with the
     default in_round_mem_terminate=True) emits mem_pressure_deferred_to_cgroup
     instead of terminating -- defer_to_cgroup OVERRIDES the off switch's
-    normal True meaning."""
+    normal True meaning. 0.2.16 Task 4: round_mem_critical_sample still fires
+    per critical tick in this mode -- the streak/context stays useful
+    calibration signal independent of the terminate-vs-defer choice."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "import time; time.sleep(5)"]
@@ -371,6 +390,7 @@ def test_both_finite_defers_never_terminates(tmp_path):
     events = read_events_for_current_month(log_dir)
     kinds = [e.get("event") for e in events]
     assert kinds.count("mem_pressure_deferred_to_cgroup") >= 1
+    assert kinds.count("round_mem_critical_sample") >= 1
     assert "round_mem_terminated" not in kinds
     assert "round_supervisor_wedged" not in kinds
 

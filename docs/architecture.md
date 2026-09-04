@@ -232,6 +232,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `round_grace_extended`
 - `round_grace_kill`
 - `round_logs_prune_deferred`
+- `round_mem_critical_sample`
 - `round_mem_terminated`
 - `round_progress`
 - `round_resumed`

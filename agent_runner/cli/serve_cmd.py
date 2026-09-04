@@ -48,6 +48,7 @@ from agent_runner.api import (
     emit_rate_limit_stop,
     emit_round_deferred,
     emit_round_logs_prune_deferred,
+    emit_round_mem_critical_sample,
     emit_round_mem_terminated,
     emit_round_resumed,
     emit_round_substrate_after,
@@ -69,6 +70,7 @@ from agent_runner.round_log import (
     atomic_relink,
     next_round_num,
     prune_old_round_logs,
+    round_num_from_log_path,
 )
 
 
@@ -308,6 +310,10 @@ def _memory_pressure_now(cfg, log_dir, sample_fn) -> host_health.Pressure | None
     return pressure
 
 
+def _pressure_is_critical(pressure: host_health.Pressure | None) -> bool:
+    return pressure is not None and pressure.severity == "critical"
+
+
 def _maybe_pause_for_memory_pressure(
     cfg,
     log_dir,
@@ -317,11 +323,11 @@ def _maybe_pause_for_memory_pressure(
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
 ) -> bool:
-    """Pre-round admission gate (Group 3 action half): defer the next round while
-    host_health reports real memory pressure. This is only HALF the
-    coma-preventer — metrics sample at round boundaries, so a single round that
-    balloons mid-flight still needs :func:`_spawn_round`'s mid-round hard floor;
-    that is what actually stops a ballooning round before unresponsiveness.
+    """Pre-round admission gate (Group 3 action half): defer the next round
+    while host_health reports CRITICAL pressure (0.2.16: narrowed from ANY --
+    a mere warning, e.g. swap churn, is the north star's fine). Only HALF the
+    coma-preventer — a single round that balloons mid-flight still needs
+    :func:`_spawn_round`'s mid-round hard floor to stop it before unresponsiveness.
 
     Polls exactly like :func:`_maybe_pause_for_schedule` via the shared
     :func:`_pause_poll`. Emits a paired ``round_deferred``/``round_resumed``
@@ -329,7 +335,7 @@ def _maybe_pause_for_memory_pressure(
     trip ``detect_supervisor_stale`` (see its suppression set in
     ``_monitor_detectors.py``)."""
     pressure = _memory_pressure_now(cfg, log_dir, sample_fn)
-    if pressure is None:
+    if not _pressure_is_critical(pressure):
         return False
     started = clock.monotonic()
     emit_round_deferred(
@@ -338,7 +344,7 @@ def _maybe_pause_for_memory_pressure(
     if _pause_poll(
         stop,
         cfg.runtime.stop_file,
-        lambda: _memory_pressure_now(cfg, log_dir, sample_fn) is None,
+        lambda: not _pressure_is_critical(_memory_pressure_now(cfg, log_dir, sample_fn)),
         clock.sleep,
         chunk_s,
     ):
@@ -658,25 +664,25 @@ def _spawn_round(
     False the streak still counts (an operator may still want the signal
     surfaced) but ``_terminate_round`` is never called.
 
-    ``defer_to_cgroup`` (0.2.16 Task 3, computed once at serve startup from
-    ``metrics.cgroup_memory_limits`` -- True only when this cgroup's
-    memory.max AND memory.swap.max are BOTH finite) OVERRIDES
-    ``in_round_mem_terminate=True`` at the same threshold crossing: kernel
-    cgroup-OOM will contain the agent and keep the host responsive on its
-    own, so the cruder host-wide kill emits ``mem_pressure_deferred_to_cgroup``
-    (once per sustained-critical episode) instead of terminating. The streak
-    still counts either way -- only the terminate-vs-defer choice changes.
+    ``defer_to_cgroup`` (0.2.16 Task 3 -- from ``metrics.cgroup_memory_limits``;
+    True only when memory.max AND memory.swap.max are BOTH finite) OVERRIDES
+    ``in_round_mem_terminate=True`` at the same crossing: cgroup-OOM will
+    contain the agent on its own, so the host-wide kill emits
+    ``mem_pressure_deferred_to_cgroup`` once per episode instead. The streak
+    still counts either way -- only terminate-vs-defer changes.
 
     Each tick's swap-out delta is measured against the PREVIOUS TICK's
-    sample (``prev_tick_sample``, reassigned after every check) — a
-    per-interval rate, not cumulative since round-start. Pinning the
-    round-start sample as ``prev`` for the whole round (0.2.15's choice)
-    made the delta monotone: once it crossed the noise floor it could never
-    fall back below it, so the hysteresis streak above could never reset for
-    the swap leg and every long round eventually died on it regardless of
-    whether the host recovered. PSI-full stays an independent immediate
-    critical path (it reads the current sample alone, no baseline needed)."""
-    log_dir = round_log_path.parent
+    sample (``prev_tick_sample``), not the round-start sample -- a
+    per-interval rate. Pinning round-start as ``prev`` (0.2.15's choice)
+    made the delta monotone (never fell back once crossed), so the streak
+    could never reset for the swap leg and a long round died on it
+    regardless of host recovery. PSI-full is an independent immediate
+    critical path (current sample alone, no baseline needed).
+
+    0.2.16: every critical tick also emits ``round_mem_critical_sample`` (not
+    deduped -- near-miss calibration); ``round_mem_terminated`` now carries
+    the streak + ``Pressure.context`` too."""
+    log_dir, round_num = round_log_path.parent, round_num_from_log_path(round_log_path)
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
             round_argv,
@@ -717,6 +723,12 @@ def _spawn_round(
                     prev_tick_sample = cur_sample
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
+                        emit_round_mem_critical_sample(
+                            log_dir,
+                            round_num=round_num,
+                            consecutive=critical_streak,
+                            context=pressure.context,
+                        )
                         if (
                             host_health_cfg.in_round_mem_terminate
                             and critical_streak >= host_health_cfg.mem_critical_consecutive_samples
@@ -738,6 +750,8 @@ def _spawn_round(
                                     severity=pressure.severity,
                                     signal=pressure.signal,
                                     message=pressure.message,
+                                    consecutive=critical_streak,
+                                    context=pressure.context,
                                 )
                                 return returncode
                     else:

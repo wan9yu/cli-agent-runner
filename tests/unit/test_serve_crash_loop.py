@@ -48,6 +48,8 @@ def _fake_spawn_mem_terminated():
             severity="critical",
             signal="swap_out_rate",
             message="swap sout +2147483648B since last sample (sustained heavy paging)",
+            consecutive=3,
+            context={"swap_sout_delta": 2147483648},
         )
         return -15
 

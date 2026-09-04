@@ -39,6 +39,7 @@ ALLOWED_SERVE_FROM = [
             "emit_rate_limit_stop",
             "emit_round_deferred",
             "emit_round_logs_prune_deferred",
+            "emit_round_mem_critical_sample",
             "emit_round_mem_terminated",
             "emit_round_resumed",
             "emit_stop_file_detected",
@@ -70,7 +71,13 @@ ALLOWED_SERVE_FROM = [
     ("agent_runner.lifecycle", {"PIDFile"}),
     (
         "agent_runner.round_log",
-        {"ROUND_CURRENT_LINK", "atomic_relink", "next_round_num", "prune_old_round_logs"},
+        {
+            "ROUND_CURRENT_LINK",
+            "atomic_relink",
+            "next_round_num",
+            "prune_old_round_logs",
+            "round_num_from_log_path",
+        },
     ),
     (
         "agent_runner._throttle",

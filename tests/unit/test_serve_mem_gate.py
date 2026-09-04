@@ -38,6 +38,15 @@ _HEALTHY_SAMPLE = {
     "mem_available_mb": 5000,
     "swap_sout": 0,
 }
+# PSI-some crosses the 5.0 warning bar but PSI-full stays well below the 60.0
+# critical bar -- a genuine WARNING verdict (swap churn), not critical.
+_WARNING_SAMPLE = {
+    "psi_some_avg10": 10.0,
+    "psi_full_avg10": 20.0,
+    "mem_free_mb": 5000,
+    "mem_available_mb": 5000,
+    "swap_sout": 0,
+}
 
 # The field-host shape: PSI unreadable (no /proc/pressure/memory, or psi=0),
 # MemAvailable inflated at 82MB (comfortably above the configured floor --
@@ -84,6 +93,21 @@ def test_no_pause_when_sample_reports_healthy(tmp_path):
     stop = {"requested": False}
     paused = serve_cmd._maybe_pause_for_memory_pressure(
         cfg, tmp_path, stop, sample_fn=lambda: _HEALTHY_SAMPLE
+    )
+    assert paused is False
+    assert _events(tmp_path) == []
+
+
+def test_pre_round_gate_does_not_defer_on_warning_severity(tmp_path):
+    """0.2.16: the pre-round gate is about not STARTING a round on an
+    already-critical host -- a mere warning (e.g. swap churn) is the north
+    star's 'fine' and must not cost a >=30s defer at every round boundary.
+    Only severity=='critical' blocks; severity=='warning' must fall through
+    exactly like a healthy sample."""
+    cfg = _real_cfg(tmp_path)
+    stop = {"requested": False}
+    paused = serve_cmd._maybe_pause_for_memory_pressure(
+        cfg, tmp_path, stop, sample_fn=lambda: _WARNING_SAMPLE
     )
     assert paused is False
     assert _events(tmp_path) == []
