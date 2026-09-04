@@ -22,7 +22,7 @@ import pytest
 
 from agent_runner import metrics
 
-_LEAF = "/system.slice/eye.service"
+_LEAF = "/system.slice/example.service"
 
 
 class _FakeCgroup:
@@ -136,20 +136,22 @@ def test_probe_self_cgroup_parsed_from_proc_file(tmp_path: Path) -> None:
     root = tmp_path / "cgroup"
     root.mkdir()
     (root / "cgroup.controllers").write_text("memory\n")
-    leaf = root / "system.slice" / "eye.service"
+    leaf = root / "system.slice" / "example.service"
     leaf.mkdir(parents=True)
     (leaf / "memory.max").write_text("335544320")
     (leaf / "memory.swap.max").write_text("167772160")
 
     proc_self_cgroup = tmp_path / "proc_self_cgroup"
-    proc_self_cgroup.write_text("12:pids:/system.slice/eye.service\n0::/system.slice/eye.service\n")
+    proc_self_cgroup.write_text(
+        "12:pids:/system.slice/example.service\n0::/system.slice/example.service\n"
+    )
 
     lim = metrics.cgroup_memory_limits(root=root, proc_self_cgroup=proc_self_cgroup)
 
     assert lim == {
         "memory_max": 335544320,
         "memory_swap_max": 167772160,
-        "cgroup_path": "/system.slice/eye.service",
+        "cgroup_path": "/system.slice/example.service",
     }
 
 
@@ -163,3 +165,69 @@ def test_probe_proc_self_cgroup_missing_is_unlimited(tmp_path: Path) -> None:
     lim = metrics.cgroup_memory_limits(root=root, proc_self_cgroup=tmp_path / "does-not-exist")
 
     assert lim == {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+
+
+def test_mem_total_bytes_matches_psutil() -> None:
+    import psutil
+
+    assert metrics.mem_total_bytes() == psutil.virtual_memory().total
+
+
+# --- 0.2.16 fix-wave IMPORTANT #1: the cgroup auto-defer plausibility guard ---
+#
+# A finite `memory.max` alone is not enough to defer the host-wide mid-round
+# floor to kernel cgroup-OOM: a stale/copy-pasted unit (e.g. `MemoryMax=1G`
+# on a 462MB host) reports a finite-but-IMPLAUSIBLE limit that can never
+# actually bind before the host itself runs out of memory -- deferring in
+# that shape would leave nothing armed to prevent coma. Both limits finite
+# AND memory_max < host MemTotal is now required.
+
+
+def _patch_probe(monkeypatch, *, memory_max: int | None, memory_swap_max: int, mem_total: int):
+    monkeypatch.setattr(
+        metrics,
+        "cgroup_memory_limits",
+        lambda: {"memory_max": memory_max, "memory_swap_max": memory_swap_max, "cgroup_path": "/x"},
+    )
+    monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
+
+
+def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both memory.max and memory.swap.max finite (the normally-deferred
+    shape) but memory_max >= host MemTotal (e.g. a copy-pasted MemoryMax=1G
+    on a 462MB host) -- cgroup-OOM can never fire before host-wide coma, so
+    the floor must NOT defer."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=1024 * 1024 * 1024,  # 1G "limit"
+        memory_swap_max=512 * 1024 * 1024,
+        mem_total=462 * 1024 * 1024,  # 462MB host
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    assert _probe_and_emit_cgroup_defer(log_dir) is False
+
+
+def test_probe_and_emit_cgroup_defer_plausible_limit_defers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both finite AND tighter than host MemTotal (the field host's
+    MemoryMax=320M + MemorySwapMax=160M shape on far more RAM) -- cgroup-OOM
+    can plausibly fire before host exhaustion, so the floor defers."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=335544320,  # 320M
+        memory_swap_max=167772160,  # 160M
+        mem_total=2 * 1024 * 1024 * 1024,  # 2G host
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    assert _probe_and_emit_cgroup_defer(log_dir) is True

@@ -318,7 +318,12 @@ def round_was_mem_terminated(log_dir: Path) -> bool:
 
 
 def round_had_no_progress(
-    log_dir: Path, *, returncode: int, duration_s: float, threshold_s: float
+    log_dir: Path,
+    *,
+    returncode: int,
+    duration_s: float,
+    threshold_s: float,
+    throttle_active: bool = False,
 ) -> bool:
     """True iff the round that JUST ran exited 0, finished fast, but never
     reached the model -- pi (and CLIs like it: see builtin_plugins/pi.py's
@@ -327,6 +332,25 @@ def round_had_no_progress(
     reads as clean, so this needs its own events-derived signal (feeding
     ``_serve_policy._no_progress_decision``'s "clean-but-no-progress" streak)
     exactly parallel to :func:`round_was_mem_terminated`'s mem-terminated one.
+
+    TWO gates guard the verdict against over-firing on healthy deployments
+    (0.2.16 fix-wave CRITICAL #1):
+
+    1. ``throttle_active`` (the SAME value ``cmd()`` already computed for
+       ``post_round_decision`` -- caller threads it through, never
+       recomputed here): a provider outage that exhausts retries and exits 0
+       (429/503) is ``transient_error_detected`` and excused from the
+       crash-loop breaker; without this gate it would be double-counted here
+       as "no progress" and stop the loop instead of riding the back-off.
+    2. Usage-capability: armed ONLY when at least one ``agent_usage_recorded``
+       event exists anywhere in the scanned tail. Some CLIs (kimi -- see
+       builtin_plugins/kimi.py; aider; any custom ``[agent] command`` with no
+       usage-emitting plugin) never emit usage BY DESIGN -- for those, "no
+       usage this round" is indistinguishable from "normal for this CLI", so
+       arming would stop a perfectly healthy deployment after 5 fast clean
+       rounds. If the CLI's plugin stack ever emits usage (pi does on a good
+       round), a round with none is genuine no-progress and still trips --
+       this makes the breaker CLI-adaptive with no config descriptor.
 
     Short-circuits on ``returncode != 0`` or ``duration_s >= threshold_s``
     without touching the events tail: a non-zero exit already has its own
@@ -344,20 +368,25 @@ def round_had_no_progress(
     ``round_substrate_before``), with the comparison inverted: no progress
     means the newest usage event is EITHER absent OR older than this round's
     own start."""
-    if returncode != 0 or duration_s >= threshold_s:
+    if throttle_active or returncode != 0 or duration_s >= threshold_s:
         return False
     newest_before_ts: str | None = None
     newest_usage_ts: str | None = None
+    usage_capable = False
     for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
         for ev in _iter_events(path):
+            kind = ev.get("event")
+            if kind == AGENT_USAGE_RECORDED:
+                usage_capable = True
             ts = ev.get("ts")
             if not ts:
                 continue
-            kind = ev.get("event")
             if kind == ROUND_SUBSTRATE_BEFORE:
                 newest_before_ts = ts
             elif kind == AGENT_USAGE_RECORDED:
                 newest_usage_ts = ts
+    if not usage_capable:
+        return False  # this CLI/plugin stack has never emitted usage -- can't arm
     if newest_before_ts is None:
         return False
     if newest_usage_ts is None:

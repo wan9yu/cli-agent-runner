@@ -331,7 +331,16 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     stays responsive, making our cruder host-wide floor redundant at best.
     Only-memory.max-finite (systemd's MemoryMax-without-MemorySwapMax
     default) leaves swap unbounded -- the agent just swaps and cgroup-OOM
-    never fires, so the floor must stay armed."""
+    never fires, so the floor must stay armed.
+
+    A THIRD plausibility guard on top of "both finite" (0.2.16 fix-wave
+    IMPORTANT #1): ``memory_max`` must also be strictly less than the HOST's
+    own total RAM. A misconfigured/copy-pasted unit (e.g. ``MemoryMax=1G`` on
+    a 462MB host) reports a finite-but-implausible limit that can never
+    actually bind -- the process will exhaust host memory long before the
+    cgroup's own ceiling, so cgroup-OOM never fires and deferring here would
+    leave NOTHING armed to prevent coma. Only a limit tighter than the host
+    itself can plausibly trigger before host-wide exhaustion."""
     limits = metrics.cgroup_memory_limits()
     emit_host_cgroup_memory_limit(
         log_dir,
@@ -339,7 +348,11 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         memory_swap_max=limits["memory_swap_max"],
         cgroup_path=limits["cgroup_path"],
     )
-    return limits["memory_max"] is not None and limits["memory_swap_max"] is not None
+    return (
+        limits["memory_max"] is not None
+        and limits["memory_swap_max"] is not None
+        and limits["memory_max"] < metrics.mem_total_bytes()
+    )
 
 
 def round_outcome_exit_code(

@@ -51,15 +51,11 @@ from agent_runner.api import (
     outer_round_ceiling_s,
 )
 from agent_runner.cli._serve_round import (
-    _MEM_CHECK_INTERVAL_S,  # noqa: F401 — patchable test surface (serve_cmd.X)
     _ROUND_TERM_GRACE_S,  # noqa: F401 — test_spawn_round_wedged patches serve_cmd.X
     _maybe_emit_recovered,
     _maybe_pause_for_memory_pressure,
-    _memory_pressure_now,  # noqa: F401 — patchable test surface (serve_cmd.X)
-    _pressure_is_critical,  # noqa: F401 — patchable test surface (serve_cmd.X)
     _probe_and_emit_cgroup_defer,
     _spawn_round,
-    _terminate_round,  # noqa: F401 — patchable test surface (serve_cmd.X)
     round_outcome_exit_code,
 )
 from agent_runner.cli.common import cfg_from_args_or_config_error
@@ -576,9 +572,12 @@ def cmd(args) -> int:
     work_dir = cfg.runtime.work_dir
     defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir)
     rounds_completed = 0
-    consecutive_crashes = 0  # b12: consecutive UNKNOWN short crashes (crash-loop breaker)
-    consecutive_mem_terminations = 0  # 0.2.15: consecutive mem-terminated rounds (mem-loop cap)
-    consecutive_no_progress = 0  # 0.2.16 Task 6: consecutive exit-0 no-progress rounds
+    # Three independent consecutive-failure counters, one per breaker: b12
+    # crash-loop (unknown short crashes), 0.2.15 mem-loop (mem-terminated
+    # rounds), 0.2.16 Task 6 no-progress (exit-0, no usage). LOC-neutral
+    # chained init -- freed for CRITICAL #1's throttle_active threading below
+    # (cmd() sits at its 140-line budget; see round_throttle_active).
+    consecutive_crashes = consecutive_mem_terminations = consecutive_no_progress = 0
     # Give-up stops (config_broken/crash_loop) return a distinct non-zero code the
     # systemd unit lists in RestartPreventExitStatus so they stay stopped; every
     # other stop (sentinel/stop_file/max_rounds/SIGTERM/once) is a clean exit 0.
@@ -660,13 +659,16 @@ def cmd(args) -> int:
             # crash_loop never double-counts a mem-terminated round; _mem_loop_decision
             # (a separate, private cap) tracks it on its own counter below.
             mem_terminated = round_was_mem_terminated(log_dir)
+            # Crash-loop breaker excuses a fast exit when the agent that just ran is
+            # throttled (agent-agnostic when the round self-rotated the phase) or
+            # mem-terminated. Named (not inlined) so round_had_no_progress below can
+            # reuse this SAME verdict (0.2.16 fix-wave CRITICAL #1) rather than
+            # rescanning events a second time.
+            round_throttle_active = mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir)
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r_returncode,
                 duration_s=round_duration_s,
-                # Crash-loop breaker excuses a fast exit when the agent that just ran is
-                # throttled (agent-agnostic when the round self-rotated the phase) or
-                # mem-terminated.
-                throttle_active=mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir),
+                throttle_active=round_throttle_active,
                 consecutive=consecutive_crashes,
                 restart_delay_s=cfg.runtime.restart_delay_s,
             )
@@ -681,6 +683,7 @@ def cmd(args) -> int:
                 returncode=r_returncode,
                 duration_s=round_duration_s,
                 threshold_s=_NO_PROGRESS_SHORT_S,
+                throttle_active=round_throttle_active,
             )
             noprogress_action, consecutive_no_progress = _no_progress_decision(
                 no_progress=no_progress, consecutive=consecutive_no_progress

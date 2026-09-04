@@ -126,6 +126,19 @@ def _count_agent_processes(agent_binary: str) -> int:
     return 0
 
 
+def mem_total_bytes() -> int:
+    """Host total RAM in bytes (``psutil.virtual_memory().total``) -- the
+    plausibility ceiling for the cgroup auto-defer decision
+    (``cli/_serve_round.py``'s ``_probe_and_emit_cgroup_defer``): a finite
+    ``memory.max`` at or above this can never trigger cgroup-OOM before the
+    HOST itself runs out of memory (e.g. a stale/copy-pasted
+    ``MemoryMax=1G`` on a 462MB host), so deferring the host-wide floor in
+    that shape would leave nothing armed to prevent coma. One-shot psutil
+    read, no caching -- callers that need it once at startup (same as
+    :func:`cgroup_memory_limits`) call it once."""
+    return psutil.virtual_memory().total
+
+
 _CGROUP_ROOT = Path("/sys/fs/cgroup")
 _PROC_SELF_CGROUP = Path("/proc/self/cgroup")
 

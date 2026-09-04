@@ -27,6 +27,19 @@ from agent_runner.api import (
 from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
+def _write_events(log_dir: Path, *events: dict) -> None:
+    """Append raw event dicts straight to this month's events file, in order --
+    a real-clock ``emit_*`` call stamps ``ts`` from ``SYSTEM_CLOCK.now_utc()``,
+    which can land two calls on the same millisecond in a fast test; tests that
+    assert on event ORDERING pin explicit timestamps this way instead."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    month = datetime.now(UTC).strftime("%Y-%m")
+    path = log_dir / f"events-{month}.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        for ev in events:
+            f.write(json.dumps(ev) + "\n")
+
+
 def _fake_spawn(round_returncodes: list[int]):
     """serve_cmd._spawn_round stand-in: returns the supplied returncodes in
     sequence (repeating the last), and writes the round log file so downstream
@@ -102,14 +115,18 @@ def _fake_spawn_clean_with_usage():
     return spawn
 
 
-def test_given_exit0_no_progress_streak_when_serve_then_stalled_no_progress_and_stop(
+def test_given_usage_then_no_progress_streak_when_serve_then_stalled_no_progress_and_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """0.2.16 Task 6: pi (and CLIs like it) exit 0 on a provider failure that
-    never reaches the model -- _round_ok=exit_code==0 reads that as clean, so
-    without this breaker the loop spins invisibly, itself a memory-pressure
-    generator on a constrained host. CRASH_LOOP_THRESHOLD consecutive
-    clean-but-no-progress rounds must trip the SAME give-up shape as the
+    """0.2.16 Task 6, confirmed under CRITICAL #1's two-gate design: pi (and
+    CLIs like it) exit 0 on a provider failure that never reaches the model --
+    _round_ok=exit_code==0 reads that as clean, so without this breaker the
+    loop spins invisibly, itself a memory-pressure generator on a constrained
+    host. Unlike a kimi-shaped CLI (never emits usage -- see
+    test_given_never_any_usage_when_serve_then_no_progress_breaker_never_arms),
+    pi DOES emit usage on a healthy round, so one such round up front arms the
+    breaker (gate 2); the subsequent CRASH_LOOP_THRESHOLD consecutive
+    clean-but-no-progress rounds still trip the SAME give-up shape as the
     crash-loop breaker: reused CRASH_LOOP_EXIT, since this is the identical
     verdict reached via a different signal, not a new failure class."""
     from agent_runner.cli import serve_cmd
@@ -117,7 +134,17 @@ def test_given_exit0_no_progress_streak_when_serve_then_stalled_no_progress_and_
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_clean_no_usage())
+    with_usage = _fake_spawn_clean_with_usage()
+    no_usage = _fake_spawn_clean_no_usage()
+    # One healthy (usage-recording) round arms the breaker, then a tight
+    # no-progress loop -- the pi outage shape, not the kimi-silent one.
+    calls = [with_usage] + [no_usage] * (CRASH_LOOP_THRESHOLD + 1)
+
+    def spawn(round_argv, round_log_path, round_env, *, timeout_s, **_kwargs):
+        fn = calls.pop(0) if len(calls) > 1 else calls[0]
+        return fn(round_argv, round_log_path, round_env, timeout_s=timeout_s)
+
+    monkeypatch.setattr(serve_cmd, "_spawn_round", spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
@@ -130,6 +157,34 @@ def test_given_exit0_no_progress_streak_when_serve_then_stalled_no_progress_and_
     assert len(stalled) == 1
     assert stalled[0]["consecutive"] == CRASH_LOOP_THRESHOLD
     assert stalled[0]["exit_code"] == 0
+
+
+def test_given_never_any_usage_when_serve_then_no_progress_breaker_never_arms(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CRITICAL #1 gate 2 (usage-capability), full serve-loop confirmation: a
+    kimi-shaped CLI (builtin_plugins/kimi.py's stream-json format carries no
+    usage/result record at all -- same for the aider preset, or any custom
+    [agent] command with no usage-emitting plugin) exits 0 fast every round by
+    design, with agent_usage_recorded NEVER emitted. Before this fix-wave, 5
+    such rounds wrongly tripped stalled_no_progress and stopped a perfectly
+    healthy deployment (exit 75, permanent); now the breaker stays disarmed
+    (no baseline to compare against) and the run rides through to
+    max_rounds_reached."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_clean_no_usage())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=CRASH_LOOP_THRESHOLD + 3))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "stalled_no_progress" not in kinds
+    assert "crash_loop" not in kinds
+    assert "max_rounds_reached" in kinds
+    assert rc == 0
 
 
 def test_given_exit0_rounds_with_usage_when_serve_then_no_stall_trip(
@@ -160,7 +215,15 @@ def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
     """Mirrors test_given_success_between_crashes_when_serve_then_counter_resets
     for the no-progress streak: a round WITH usage between no-progress rounds
     resets the counter, so the trip fires at CRASH_LOOP_THRESHOLD POST-reset,
-    not the total no-progress count across the whole run."""
+    not the total no-progress count across the whole run. The leading 3
+    no_usage rounds (before any usage has ever been recorded) are also not
+    counted under CRITICAL #1 gate 2 -- coincidentally the same net effect as
+    the reset this test targets -- so the trip point is unchanged.
+
+    MINOR #4: bounded ``max_rounds`` as a defensive backstop -- without it, a
+    future scoping regression in the counter-reset logic (this fix-wave's
+    gate 2 included) would hang the whole suite instead of failing a single
+    assertion below."""
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -178,7 +241,7 @@ def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
 
     monkeypatch.setattr(serve_cmd, "_spawn_round", spawn)
 
-    serve_cmd.cmd(FakeArgs(cfg_path, once=False))
+    serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=len(calls) + 5))
 
     stalled = [
         e for e in read_events_for_current_month(log_dir) if e.get("event") == "stalled_no_progress"
@@ -188,6 +251,33 @@ def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
 
 
 def test_round_had_no_progress_true_when_clean_fast_and_no_usage(tmp_path: Path) -> None:
+    """The breaker is armed (CRITICAL #1 gate 2) once at least one
+    agent_usage_recorded event exists ANYWHERE in the tail -- here from an
+    earlier round -- so a later round with no usage of its own is genuine
+    no-progress, not "this CLI never emits usage". Events written directly
+    (not via the real-clock ``emit_*`` helpers) with explicit, well-separated
+    timestamps so the ordering this asserts on can never race a fast test run
+    onto the same millisecond."""
+    from agent_runner._throttle import round_had_no_progress
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _write_events(
+        log_dir,
+        {"ts": "2026-01-01T00:00:00.000Z", "event": "agent_usage_recorded", "round_num": 1},
+        {"ts": "2026-01-01T00:00:01.000Z", "event": "round_substrate_before", "round_num": 2},
+    )
+
+    assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is True
+
+
+def test_round_had_no_progress_false_when_never_any_usage_recorded(tmp_path: Path) -> None:
+    """CRITICAL #1 gate 2 (usage-capability): a CLI/plugin stack that has
+    NEVER emitted agent_usage_recorded (kimi -- builtin_plugins/kimi.py's
+    stream-json format carries no usage record at all; same for aider, or
+    any custom [agent] command with no usage-emitting plugin) can't be told
+    apart from "genuinely stalled" by absence alone -- the breaker must stay
+    disarmed rather than misfire on a healthy, merely usage-silent CLI."""
     from agent_runner._throttle import round_had_no_progress
     from agent_runner.api import emit_round_substrate_before
 
@@ -195,7 +285,40 @@ def test_round_had_no_progress_true_when_clean_fast_and_no_usage(tmp_path: Path)
     log_dir.mkdir()
     emit_round_substrate_before(log_dir, round_num=1, git_head="abc", paths_hash="x")
 
-    assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is True
+    assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is False
+
+
+def test_round_had_no_progress_false_when_throttle_active(tmp_path: Path) -> None:
+    """CRITICAL #1 gate 1: a round excused as throttled (e.g. a 429/503
+    exhausted-retries outage -- transient_error_detected, already excused
+    from the crash-loop breaker) must not ALSO be counted as no-progress --
+    it should ride the back-off, not stop the loop. Usage-capability
+    established (an earlier round's usage) so this is isolated to gate 1,
+    not masked by gate 2."""
+    from agent_runner._throttle import round_had_no_progress
+    from agent_runner.api import emit_agent_usage_recorded, emit_round_substrate_before
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_agent_usage_recorded(
+        log_dir,
+        agent="test",
+        model="m",
+        round_num=1,
+        input_tokens=1,
+        output_tokens=1,
+        cached_tokens=0,
+        cost_usd=None,
+        duration_ms=1,
+    )
+    emit_round_substrate_before(log_dir, round_num=2, git_head="abc", paths_hash="x")
+
+    assert (
+        round_had_no_progress(
+            log_dir, returncode=0, duration_s=3.0, threshold_s=30, throttle_active=True
+        )
+        is False
+    )
 
 
 def test_round_had_no_progress_false_when_usage_recorded_after_round_start(

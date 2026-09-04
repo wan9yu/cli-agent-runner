@@ -31,15 +31,11 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.cli._serve_round",
         {
-            "_MEM_CHECK_INTERVAL_S",
             "_ROUND_TERM_GRACE_S",
             "_maybe_emit_recovered",
             "_maybe_pause_for_memory_pressure",
-            "_memory_pressure_now",
-            "_pressure_is_critical",
             "_probe_and_emit_cgroup_defer",
             "_spawn_round",
-            "_terminate_round",
             "round_outcome_exit_code",
         },
     ),
@@ -96,6 +92,59 @@ ALLOWED_SERVE_FROM = [
     ),
 ]
 
+# _serve_round.py (0.2.16 Task 5a: serve logic extracted out of serve_cmd.py
+# for LOC headroom — see its own module docstring) mirrors serve_cmd.py's
+# import-allowlist treatment: it is the OTHER half of the serve loop's
+# business logic, so it gets the same "no unsanctioned imports" scan rather
+# than sitting unwatched just because it isn't serve_cmd.py itself.
+ALLOWED_SERVE_ROUND_IMPORTS = {
+    "os",
+    "signal",
+    "subprocess",
+    "pathlib",
+}
+ALLOWED_SERVE_ROUND_FROM = [
+    ("agent_runner", {"host_health", "metrics"}),
+    (
+        "agent_runner._serve_policy",
+        {
+            "_MEM_LOOP_PERSIST_THRESHOLD",
+            "_MEM_LOOP_PERSIST_WINDOW_S",
+            "CRASH_LOOP_EXIT",
+            "MEM_LOOP_EXIT",
+            "MEM_LOOP_PERSISTENT_EXIT",
+            "PERMANENT_CONFIG_EXIT",
+        },
+    ),
+    ("agent_runner._throttle", {"mem_loop_events_in_window", "pending_recovered"}),
+    (
+        "agent_runner.api",
+        {
+            "emit_config_broken",
+            "emit_crash_loop",
+            "emit_host_cgroup_memory_limit",
+            "emit_mem_loop",
+            "emit_mem_loop_persistent",
+            "emit_mem_pressure_deferred_to_cgroup",
+            "emit_round_deferred",
+            "emit_round_mem_critical_sample",
+            "emit_round_mem_terminated",
+            "emit_round_resumed",
+            "emit_round_supervisor_wedged",
+            "emit_stalled_no_progress",
+            "emit_transient_error_recovered",
+        },
+    ),
+    ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
+    ("agent_runner.round_log", {"round_num_from_log_path"}),
+    # Local (function-body) imports back into serve_cmd.py, to read a
+    # patchable constant (_pause_poll's caller docstring) / reach the module
+    # object itself (_terminate_round's grace-period read) — a top-level
+    # import here would cycle since serve_cmd.py imports this module.
+    ("agent_runner.cli.serve_cmd", {"_pause_poll"}),
+    ("agent_runner.cli", {"serve_cmd"}),
+]
+
 
 def _imports_in(file: Path) -> tuple[set[str], list[tuple[str, set[str]]]]:
     tree = ast.parse(file.read_text())
@@ -111,20 +160,42 @@ def _imports_in(file: Path) -> tuple[set[str], list[tuple[str, set[str]]]]:
     return plain, from_imports
 
 
-def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
-    plain, froms = _imports_in(PKG / "cli/serve_cmd.py")
-    bad_plain = (
-        plain
-        - ALLOWED_SERVE_IMPORTS
-        - {"agent_runner.cli", "agent_runner.cli.common", "agent_runner.lifecycle"}
-    )
-    assert not bad_plain, f"serve_cmd has unsanctioned imports: {bad_plain}"
+def _assert_imports_within_allowlist(
+    file: Path,
+    *,
+    label: str,
+    allowed_plain: set[str],
+    allowed_from: list[tuple[str, set[str]]],
+    plain_exceptions: set[str] = frozenset(),
+) -> None:
+    plain, froms = _imports_in(file)
+    bad_plain = plain - allowed_plain - plain_exceptions
+    assert not bad_plain, f"{label} has unsanctioned imports: {bad_plain}"
     for mod, names in froms:
         if mod.startswith("agent_runner"):
-            allowed = next((n for m, n in ALLOWED_SERVE_FROM if m == mod), None)
-            assert allowed is not None, f"serve_cmd imports {mod} (not in allowlist)"
+            allowed = next((n for m, n in allowed_from if m == mod), None)
+            assert allowed is not None, f"{label} imports {mod} (not in allowlist)"
             extra = names - allowed
-            assert not extra, f"serve_cmd imports {extra} from {mod} (not allowed)"
+            assert not extra, f"{label} imports {extra} from {mod} (not allowed)"
+
+
+def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
+    _assert_imports_within_allowlist(
+        PKG / "cli/serve_cmd.py",
+        label="serve_cmd",
+        allowed_plain=ALLOWED_SERVE_IMPORTS,
+        allowed_from=ALLOWED_SERVE_FROM,
+        plain_exceptions={"agent_runner.cli", "agent_runner.cli.common", "agent_runner.lifecycle"},
+    )
+
+
+def test_given_serve_round_when_imports_scanned_then_within_allowlist() -> None:
+    _assert_imports_within_allowlist(
+        PKG / "cli/_serve_round.py",
+        label="_serve_round",
+        allowed_plain=ALLOWED_SERVE_ROUND_IMPORTS,
+        allowed_from=ALLOWED_SERVE_ROUND_FROM,
+    )
 
 
 def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() -> None:

@@ -802,6 +802,29 @@ as transient errors and ride the back-off instead — they never trip `crash_loo
 exit `71` sitting outside `RestartPreventExitStatus`. Recover with
 `systemctl --user reset-failed <unit> && systemctl --user start <unit>`.
 
+**`mem_loop_persistent` needs 3 `mem_loop` episodes inside a rolling 2-hour
+window to fire** (see `docs/migrations/0.2.md`'s 0.2.16 notes). A large
+`restart_delay_s` stretches each episode's own back-off long enough that the
+3rd can fall outside the window — the escalation is then delayed or
+practically unreachable, and `serve` just keeps restarting at `71` forever
+instead of ever giving up for real. If a host never seems to reach
+`mem_loop_persistent` despite recurring `mem_loop`, check `restart_delay_s`
+first.
+
+**A PSI-off host** (kernel booted with `psi=0`, or built without
+`CONFIG_PSI` — no `/proc/pressure/memory`) has no PSI signal at all and
+relies entirely on the swap-out-rate / combined-low tiers. Since 0.2.16 made
+the swap-out check per-tick rather than cumulative-since-round-start, a
+slow, sustained trickle of swap-out (e.g. an SD-card-backed host swapping
+gradually) may no longer cross `swap_sout_noise_floor_mb` in any single
+~10s tick even though the round is clearly under sustained pressure — this
+is north-star-accepted (the floor targets unresponsiveness, not swapping
+per se), but it means a PSI-off host can go a long time without tripping
+`mem_loop` at all. If that matters for your host, either enable PSI
+(`psi=1` boot param, or a kernel with `CONFIG_PSI=y`) so the primary signal
+is available again, or lower `swap_sout_noise_floor_mb` to make the
+per-tick check sensitive enough for this host's swap-device speed.
+
 **Diagnose:**
 
 ```bash
