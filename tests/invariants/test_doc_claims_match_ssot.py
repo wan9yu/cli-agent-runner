@@ -43,6 +43,7 @@ def _monitor_interval_default() -> int:
 
 def test_doc_counts_match_ssot(tmp_path) -> None:
     from agent_runner.cli.init_cmd import _preset_names
+    from agent_runner.config.models import MonitorHostHealthConfig
 
     cfg = load_config(make_toml(tmp_path))
     detectors = len(KNOWN_ALERT_KINDS)
@@ -67,6 +68,16 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/commands.md", r"remote_failure_tolerance_s` \(default (\d+)s\)", remote_tol),
         ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),
         ("docs/plugins.md", r"last (\d+) JSON lines", _TAIL_LINES),
+        (
+            "docs/migrations/0.2.md",
+            r"below (\d+) MiB",
+            MonitorHostHealthConfig().mem_free_low_mb,
+        ),
+        (
+            "docs/migrations/0.2.md",
+            r"exceeds `(\d+) MiB`",
+            MonitorHostHealthConfig().swap_sout_noise_floor_mb,
+        ),
     ]
 
     failures: list[str] = []
