@@ -54,6 +54,28 @@ MEM_LOOP_EXIT = 71
 # Consecutive mem-terminated rounds before serve gives up (break-then-restart).
 MEM_LOOP_THRESHOLD = 5
 
+# Exit code for mem_loop's cross-restart escalation (0.2.16 Task 5 — field
+# confirmed: NRestarts climbs, never converges). MEM_LOOP_EXIT (71) alone
+# resets on every process restart, so a host stuck in sustained pressure
+# respawns into the identical break-then-restart loop forever. Once mem_loop
+# itself keeps recurring across restarts (see _MEM_LOOP_PERSIST_THRESHOLD),
+# this is a DELIBERATE stop instead — "gave up for real, needs a human" — so,
+# unlike 71, it IS listed in the unit's RestartPreventExitStatus. 70 =
+# EX_SOFTWARE (sysexits); verified free (grep -rnE "= 70\b|code=70\b").
+MEM_LOOP_PERSISTENT_EXIT = 70
+
+# Escalation window/threshold for the cross-restart convergence above: prior
+# mem_loop events are counted only within the last _MEM_LOOP_PERSIST_WINDOW_S
+# seconds (2h) of "now" — old episodes age out on their own, so a host that
+# stays healthy for a sustained window earns a fresh restartable 71 again
+# instead of ratcheting toward the persistent stop forever (no state file:
+# purely events-tail derived, restart-safe by construction). Once this run's
+# mem_loop would be the _MEM_LOOP_PERSIST_THRESHOLD-th (3rd) occurrence inside
+# the window (~2 prior + this one, ⇒ ~15 mem-terminated kills total), serve
+# escalates to MEM_LOOP_PERSISTENT_EXIT instead of the usual 71.
+_MEM_LOOP_PERSIST_WINDOW_S = 7200
+_MEM_LOOP_PERSIST_THRESHOLD = 3
+
 
 class EnvironmentalError(Exception):
     """Marks a round-child failure as ENVIRONMENTAL (recoverable) rather than a

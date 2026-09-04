@@ -3,12 +3,20 @@ short crashes; a clean round resets the run."""
 
 from __future__ import annotations
 
+import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from agent_runner._serve_policy import MEM_LOOP_EXIT, MEM_LOOP_THRESHOLD
+from agent_runner._serve_policy import (
+    _MEM_LOOP_PERSIST_THRESHOLD,
+    _MEM_LOOP_PERSIST_WINDOW_S,
+    MEM_LOOP_EXIT,
+    MEM_LOOP_PERSISTENT_EXIT,
+    MEM_LOOP_THRESHOLD,
+)
 from agent_runner.api import (
     CRASH_LOOP_EXIT,
     CRASH_LOOP_THRESHOLD,
@@ -183,6 +191,103 @@ def test_mem_terminations_at_threshold_gives_up(
     assert "crash_loop" not in kinds
     assert kinds.count("round_mem_terminated") == MEM_LOOP_THRESHOLD
     assert rc == MEM_LOOP_EXIT
+
+
+def _seed_mem_loop_events(log_dir: Path, count: int, *, ago_s: float) -> None:
+    """Write ``count`` prior ``mem_loop`` events directly into this month's
+    events file, each stamped ``ago_s`` seconds before real now -- exercises
+    ``mem_loop_events_in_window``'s real-``SYSTEM_CLOCK`` read through the
+    full ``serve_cmd.cmd()`` loop without needing a FakeClock end to end."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(UTC)
+    stamp_dt = datetime.fromtimestamp(now.timestamp() - ago_s, UTC)
+    stamp = stamp_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    path = log_dir / f"events-{now.strftime('%Y-%m')}.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        for _ in range(count):
+            line = {
+                "ts": stamp,
+                "event": "mem_loop",
+                "consecutive": 5,
+                "exit_code": -15,
+                "reason": "",
+            }
+            f.write(json.dumps(line) + "\n")
+
+
+def test_mem_loop_escalates_to_persistent_after_window_threshold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """0.2.16 Task 5: mem_loop alone (71) resets on every serve restart, so a
+    host stuck under sustained pressure respawns into the identical
+    break-then-restart loop forever. 2 prior mem_loop episodes seeded well
+    within the escalation window + this run's own 5 mem-terminated rounds
+    (its own would-be 3rd mem_loop, == _MEM_LOOP_PERSIST_THRESHOLD) means
+    serve STOPS for real instead: mem_loop_persistent, exit 70."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    _seed_mem_loop_events(log_dir, _MEM_LOOP_PERSIST_THRESHOLD - 1, ago_s=60)
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_mem_terminated())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=MEM_LOOP_THRESHOLD + 3))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "mem_loop_persistent" in kinds
+    assert kinds.count("mem_loop") == _MEM_LOOP_PERSIST_THRESHOLD - 1  # only the seeded ones
+    assert rc == MEM_LOOP_PERSISTENT_EXIT
+
+
+def test_mem_loop_still_71_when_prior_events_aged_out(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Same 2 prior mem_loop episodes, but stamped OUTSIDE
+    _MEM_LOOP_PERSIST_WINDOW_S -- they've aged out, so this run's mem_loop is
+    (correctly) treated as the 1st in-window occurrence and stays the usual
+    restartable 71, not the persistent stop."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml(tmp_path)
+    log_dir = tmp_path / "logs"
+    _seed_mem_loop_events(
+        log_dir, _MEM_LOOP_PERSIST_THRESHOLD - 1, ago_s=_MEM_LOOP_PERSIST_WINDOW_S + 300
+    )
+    monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(serve_cmd, "_spawn_round", _fake_spawn_mem_terminated())
+
+    rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=MEM_LOOP_THRESHOLD + 3))
+
+    kinds = [e.get("event") for e in read_events_for_current_month(log_dir)]
+    assert "mem_loop_persistent" not in kinds
+    assert kinds.count("mem_loop") == _MEM_LOOP_PERSIST_THRESHOLD  # 2 stale seeded + this run's
+    assert rc == MEM_LOOP_EXIT
+
+
+def test_mem_loop_events_in_window_counts_recent_excludes_old(tmp_path: Path) -> None:
+    """Direct unit test of the events-tail helper feeding the escalation
+    above: a FakeClock pins "now" so a prior event just inside the window
+    counts and one just outside does not, with no dependency on real time."""
+    from agent_runner._throttle import mem_loop_events_in_window
+    from tests._clock import FakeClock
+
+    log_dir = tmp_path / "logs"
+    clock = FakeClock(epoch=2_000_000_000.0)
+    _seed_mem_loop_events_at(log_dir, epoch=clock.epoch() - 60)
+    _seed_mem_loop_events_at(log_dir, epoch=clock.epoch() - _MEM_LOOP_PERSIST_WINDOW_S - 60)
+
+    assert mem_loop_events_in_window(log_dir, clock, _MEM_LOOP_PERSIST_WINDOW_S) == 1
+
+
+def _seed_mem_loop_events_at(log_dir: Path, *, epoch: float) -> None:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp_dt = datetime.fromtimestamp(epoch, UTC)
+    stamp = stamp_dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    path = log_dir / f"events-{stamp_dt.strftime('%Y-%m')}.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        line = {"ts": stamp, "event": "mem_loop", "consecutive": 5, "exit_code": -15, "reason": ""}
+        f.write(json.dumps(line) + "\n")
 
 
 # --- pure-function tests for the extracted restart policy ---

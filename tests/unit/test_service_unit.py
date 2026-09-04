@@ -61,18 +61,43 @@ def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path
     cfg = _cfg(tmp_path)
     script_path = tmp_path / ".venv" / "bin" / "agent-runner"
     body = render_serve_unit(cfg, script_path=script_path, config_path=_toml(tmp_path))
-    from agent_runner.api import CRASH_LOOP_EXIT, PERMANENT_CONFIG_EXIT
+    from agent_runner.api import CRASH_LOOP_EXIT, MEM_LOOP_PERSISTENT_EXIT, PERMANENT_CONFIG_EXIT
 
     for needle in (
         "[Unit]",
         "[Service]",
         "[Install]",
         "Restart=on-failure",
-        f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT}",
+        f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT} "
+        f"{MEM_LOOP_PERSISTENT_EXIT}",
         "KillSignal=SIGTERM",
     ):
         assert needle in body, f"missing {needle!r} in unit body"
     assert "Restart=always" not in body  # a deliberate stop must not auto-restart
+
+
+def test_given_serve_unit_when_rendered_then_mem_loop_persistent_stops_but_mem_loop_restarts(
+    tmp_path: Path,
+) -> None:
+    """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT (a deliberate cross-restart
+    give-up) is in RestartPreventExitStatus so systemd STOPS; MEM_LOOP_EXIT
+    (71, break-then-restart) stays absent so systemd keeps restarting it."""
+    from agent_runner._serve_policy import (
+        CRASH_LOOP_EXIT,
+        MEM_LOOP_EXIT,
+        MEM_LOOP_PERSISTENT_EXIT,
+        PERMANENT_CONFIG_EXIT,
+    )
+
+    cfg = _cfg(tmp_path)
+    unit = render_serve_unit(
+        cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
+    )
+    prevented = unit.split("RestartPreventExitStatus=")[1].split("\n")[0].split()
+    assert str(MEM_LOOP_PERSISTENT_EXIT) in prevented
+    assert str(PERMANENT_CONFIG_EXIT) in prevented
+    assert str(CRASH_LOOP_EXIT) in prevented
+    assert str(MEM_LOOP_EXIT) not in prevented
 
 
 def test_given_serve_unit_when_rendered_then_timeout_includes_grace(tmp_path: Path) -> None:

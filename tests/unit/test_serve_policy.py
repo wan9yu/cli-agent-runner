@@ -66,3 +66,26 @@ def test_mem_loop_exit_value_and_restartable(tmp_path) -> None:
     assert f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT}" in unit
     restart_line = [ln for ln in unit.splitlines() if ln.startswith("RestartPreventExitStatus=")][0]
     assert str(MEM_LOOP_EXIT) not in restart_line.split("=", 1)[1].split()
+
+
+def test_mem_loop_persistent_exit_value_and_free() -> None:
+    """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT is a distinct sysexits-band
+    code from every other serve give-up/restart exit code in use."""
+    from agent_runner._serve_policy import (
+        CRASH_LOOP_EXIT,
+        ENV_BATTERY_EXIT,
+        MEM_LOOP_EXIT,
+        MEM_LOOP_PERSISTENT_EXIT,
+        PERMANENT_CONFIG_EXIT,
+    )
+
+    assert MEM_LOOP_PERSISTENT_EXIT == 70
+    assert MEM_LOOP_PERSISTENT_EXIT not in (
+        0,
+        1,
+        130,
+        PERMANENT_CONFIG_EXIT,
+        CRASH_LOOP_EXIT,
+        ENV_BATTERY_EXIT,
+        MEM_LOOP_EXIT,
+    )

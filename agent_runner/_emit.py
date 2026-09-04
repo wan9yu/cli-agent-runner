@@ -22,6 +22,7 @@ __all__ = [
     "emit_host_cgroup_memory_limit",
     "emit_max_rounds_reached",
     "emit_mem_loop",
+    "emit_mem_loop_persistent",
     "emit_mem_pressure_deferred_to_cgroup",
     "emit_rate_limit_stop",
     "emit_round_deferred",
@@ -111,6 +112,32 @@ def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: 
     from agent_runner.events import MEM_LOOP
 
     _emit_giveup(log_dir, MEM_LOOP, consecutive=consecutive, exit_code=exit_code, log_path=log_path)
+
+
+def emit_mem_loop_persistent(
+    log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path
+) -> None:
+    """Emit mem_loop_persistent (serve STOPS for real — 0.2.16 Task 5 cross-restart
+    convergence: mem_loop itself kept recurring across restarts within the
+    escalation window, so systemd is told to stop rather than respawn into the
+    identical loop forever). Distinct from mem_loop: this IS a deliberate stop,
+    like crash_loop/config_broken, so it belongs in the unit's
+    RestartPreventExitStatus.
+
+    ``consecutive`` counts mem_loop EPISODES within the persistence window
+    (up to ``_serve_policy._MEM_LOOP_PERSIST_THRESHOLD``) — NOT mid-round
+    terminations within one episode, which is mem_loop's own ``consecutive``
+    (up to ``MEM_LOOP_THRESHOLD``). Same redacted-log-tail reason capture as
+    crash_loop/mem_loop."""
+    from agent_runner.events import MEM_LOOP_PERSISTENT
+
+    _emit_giveup(
+        log_dir,
+        MEM_LOOP_PERSISTENT,
+        consecutive=consecutive,
+        exit_code=exit_code,
+        log_path=log_path,
+    )
 
 
 def emit_config_migrated(

@@ -101,11 +101,15 @@ def render_serve_unit(
         # still recovers. Clean stops (max_rounds/stop_file/sentinel/SIGTERM → 0)
         # never restart.
         f"Restart=on-failure\n"
-        # 78 = api.PERMANENT_CONFIG_EXIT, 75 = api.CRASH_LOOP_EXIT (literal here to
-        # avoid an api→service_unit→api import cycle; pinned by test_service_unit).
+        # 78 = api.PERMANENT_CONFIG_EXIT, 75 = api.CRASH_LOOP_EXIT, 70 =
+        # api.MEM_LOOP_PERSISTENT_EXIT (literal here to avoid an
+        # api→service_unit→api import cycle; pinned by test_service_unit).
         # NOTE: mem_loop (71) is deliberately absent here — it must restart
         # (break-then-restart, not a deliberate stop; see api.MEM_LOOP_EXIT).
-        f"RestartPreventExitStatus=78 75\n"
+        # mem_loop_persistent (70) IS listed: once mem_loop itself keeps
+        # recurring across restarts within the escalation window, that's a
+        # deliberate stop too (0.2.16 Task 5 cross-restart convergence).
+        f"RestartPreventExitStatus=78 75 70\n"
         f"RestartSec=3\n"
         f"KillMode=mixed\n"
         f"KillSignal=SIGTERM\n"

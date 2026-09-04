@@ -18,13 +18,21 @@ import subprocess  # noqa: TID251
 from pathlib import Path
 
 from agent_runner import host_health, metrics
-from agent_runner._serve_policy import CRASH_LOOP_EXIT, MEM_LOOP_EXIT, PERMANENT_CONFIG_EXIT
-from agent_runner._throttle import pending_recovered
+from agent_runner._serve_policy import (
+    _MEM_LOOP_PERSIST_THRESHOLD,
+    _MEM_LOOP_PERSIST_WINDOW_S,
+    CRASH_LOOP_EXIT,
+    MEM_LOOP_EXIT,
+    MEM_LOOP_PERSISTENT_EXIT,
+    PERMANENT_CONFIG_EXIT,
+)
+from agent_runner._throttle import mem_loop_events_in_window, pending_recovered
 from agent_runner.api import (
     emit_config_broken,
     emit_crash_loop,
     emit_host_cgroup_memory_limit,
     emit_mem_loop,
+    emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
     emit_round_deferred,
     emit_round_mem_critical_sample,
@@ -342,14 +350,26 @@ def round_outcome_exit_code(
     consecutive_crashes,
     consecutive_mem_terminations,
     r_returncode,
+    clock: Clock = SYSTEM_CLOCK,
 ) -> int | None:
     """Given this round's ``post_round_decision`` ``action`` and
     ``_mem_loop_decision`` ``mem_action``, emit the matching give-up event and
     return the exit code ``cmd()`` should break the loop on — or ``None`` to
-    keep looping. Order is significant: config_broken > mem_loop > crash_loop
-    (a mem-terminated round always has ``throttle_active=True``, so
-    ``post_round_decision`` never returns ``crash_loop`` for it anyway — this
-    ordering just makes the precedence explicit)."""
+    keep looping. Order is significant: config_broken > mem_loop(_persistent)
+    > crash_loop (a mem-terminated round always has ``throttle_active=True``,
+    so ``post_round_decision`` never returns ``crash_loop`` for it anyway —
+    this ordering just makes the precedence explicit).
+
+    A ``mem_loop`` verdict escalates further (0.2.16 Task 5 — cross-restart
+    convergence): ``MEM_LOOP_EXIT`` (71) alone resets on every serve process
+    restart, so a host stuck in sustained pressure respawns into the
+    identical break-then-restart loop forever. Counting prior ``mem_loop``
+    episodes in the events tail within ``_MEM_LOOP_PERSIST_WINDOW_S`` (events-
+    derived, no state file — see :func:`agent_runner._throttle.
+    mem_loop_events_in_window`) turns this run's mem_loop into the
+    ``_MEM_LOOP_PERSIST_THRESHOLD``-th in-window occurrence, at which point
+    serve STOPS for real (``MEM_LOOP_PERSISTENT_EXIT``, a deliberate give-up
+    like config_broken/crash_loop) instead of the usual restartable 71."""
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's
@@ -361,6 +381,15 @@ def round_outcome_exit_code(
         )
         return PERMANENT_CONFIG_EXIT
     if mem_action == "mem_loop":
+        occurrence = mem_loop_events_in_window(log_dir, clock, _MEM_LOOP_PERSIST_WINDOW_S) + 1
+        if occurrence >= _MEM_LOOP_PERSIST_THRESHOLD:
+            emit_mem_loop_persistent(
+                log_dir,
+                consecutive=occurrence,
+                exit_code=r_returncode,
+                log_path=round_log_path,
+            )
+            return MEM_LOOP_PERSISTENT_EXIT
         emit_mem_loop(
             log_dir,
             consecutive=consecutive_mem_terminations,

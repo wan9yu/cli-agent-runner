@@ -22,6 +22,7 @@ from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.events import (
     AGENT_USAGE_RECORDED,
+    MEM_LOOP,
     ROUND_MEM_TERMINATED,
     ROUND_SUBSTRATE_BEFORE,
     TRANSIENT_ERROR_DETECTED,
@@ -37,6 +38,7 @@ __all__ = [
     "_interruptible_sleep",
     "compute_adjusted_reset_at",
     "effective_throttle_view",
+    "mem_loop_events_in_window",
     "pending_recovered",
     "round_was_mem_terminated",
 ]
@@ -312,6 +314,31 @@ def round_was_mem_terminated(log_dir: Path) -> bool:
     if newest_before_ts is None or newest_terminated_ts is None:
         return False
     return parse_iso_ms(newest_terminated_ts) >= parse_iso_ms(newest_before_ts)
+
+
+def mem_loop_events_in_window(log_dir: Path, clock: Clock, window_s: int) -> int:
+    """Count ``mem_loop`` events in the events tail stamped within the last
+    ``window_s`` seconds of ``clock.epoch()`` — events-derived, no state file,
+    same tail-reconstruction shape as :func:`round_was_mem_terminated` above.
+
+    Feeds ``_serve_round.round_outcome_exit_code``'s cross-restart escalation
+    (0.2.16 Task 5): ``MEM_LOOP_EXIT`` (71) alone resets on every serve
+    process restart, so a host stuck in sustained pressure respawns into the
+    identical loop forever (field-confirmed: NRestarts climbs, never
+    converges). Counting PRIOR occurrences in a bounded window — rather than
+    an all-time total, or a restart-local counter — gives "ages out on its
+    own after a sustained-healthy stretch" for free: an old mem_loop episode
+    outside the window simply stops counting, no explicit reset needed."""
+    cutoff = clock.epoch() - window_s
+    count = 0
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
+        for ev in _iter_events(path):
+            if ev.get("event") != MEM_LOOP:
+                continue
+            ts = ev.get("ts")
+            if ts and parse_iso_ms(ts).timestamp() >= cutoff:
+                count += 1
+    return count
 
 
 def effective_throttle_view(
