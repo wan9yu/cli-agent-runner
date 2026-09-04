@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.15] - 2026-09-04
+
+### Added
+- `[monitor.host_health]` gains two config floors — `swap_sout_noise_floor_mb` (default 32) and `mem_free_low_mb` (default 16) — making the 0.2.14 mem-pressure ladder's thresholds operator-tunable; defaults are byte-identical to the prior hardcoded behavior.
+- `serve` now gives up after `MEM_LOOP_THRESHOLD` (5) consecutive mem-terminated rounds instead of retrying forever: emits a new `mem_loop` event and exits `71` — deliberately excluded from the systemd unit's `RestartPreventExitStatus` so the service restarts fresh (break-then-restart).
+
+### Fixed
+- The mem-pressure warning no longer claims "active paging" it can't confirm; it now says only that swap-out crossed the configured noise floor.
+
+### Notes
+- New event kind: `mem_loop`. Not breaking: no `agent-runner migrate` needed this release — nothing that used to load is rejected. `peek --json` schema is unchanged.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.14] - 2026-09-03
 
 ### Breaking

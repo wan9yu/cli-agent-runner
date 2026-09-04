@@ -673,10 +673,11 @@ def _spawn_round(
             # Baseline pinned at the first mid-round sample (round-start), held
             # fixed so the swap-out delta the floor tests is CUMULATIVE SINCE
             # ROUND-START, not per-interval: a slow SD/USB swap device trickles
-            # only a few MB per ~10s tick (below the 32 MiB floor) yet crosses
-            # it over a long round, so a per-interval comparison stayed inert on
-            # exactly the field host this floor exists for. PSI-full stays an
-            # independent immediate path (it reads the current sample alone).
+            # only a few MB per ~10s tick (below the configured swap-out floor,
+            # 32 MiB by default) yet crosses it over a long round, so a
+            # per-interval comparison stayed inert on exactly the field host
+            # this floor exists for. PSI-full stays an independent immediate
+            # path (it reads the current sample alone).
             round_start_sample: dict | None = None
             while True:
                 try:
