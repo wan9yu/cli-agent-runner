@@ -148,6 +148,8 @@ supervisor_stale_threshold_s
 mem_avail_min_mb
 disk_warning_pct
 disk_critical_pct
+swap_sout_noise_floor_mb
+mem_free_low_mb
 
 # agent_runner.config.models.PhaseOverride
 round_timeout_s

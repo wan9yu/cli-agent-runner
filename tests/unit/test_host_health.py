@@ -158,3 +158,37 @@ def test_inert_gate_not_flagged_when_gate_would_actually_fire() -> None:
     the gate is reachable, not inert."""
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
     assert host_health.configured_gate_inert(cur, {"swap_sout": None}, _cfg(40)) is False
+
+
+def test_memory_pressure_uses_cfg_swap_floor() -> None:
+    """swap_sout_noise_floor_mb must be read from cfg, not the deleted module
+    constant -- a 9 MiB delta clears an 8 MiB floor but not a 32 MiB one.
+    PSI is unreadable (None) here so the ladder falls through to tier 2 --
+    a readable-and-quiet PSI (e.g. 0.0) would short-circuit at tier 1 and
+    never reach the swap-out floor this test exercises."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig(
+        swap_sout_noise_floor_mb=8, mem_free_low_mb=16, mem_avail_min_mb=200
+    )
+    prev = {
+        "swap_sout": 0,
+        "mem_free_mb": 500,
+        "mem_available_mb": 500,
+        "psi_some_avg10": None,
+        "psi_full_avg10": None,
+    }
+    cur = {
+        "swap_sout": 9 * 1024 * 1024,
+        "mem_free_mb": 500,
+        "mem_available_mb": 500,
+        "psi_some_avg10": None,
+        "psi_full_avg10": None,
+    }
+    p = host_health.memory_pressure(cur, prev, cfg)  # 9 MiB delta > 8 MiB floor
+    assert p is not None and p.signal == "swap_out_rate"
+
+    cfg2 = MonitorHostHealthConfig(
+        swap_sout_noise_floor_mb=32, mem_free_low_mb=16, mem_avail_min_mb=200
+    )
+    assert host_health.memory_pressure(cur, prev, cfg2) is None  # 9 MiB < 32 MiB floor: no warning

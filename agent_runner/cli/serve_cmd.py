@@ -653,9 +653,10 @@ def _spawn_round(
     (``prev`` passed to ``host_health.memory_pressure``), so the delta grows
     across the whole round rather than resetting each ~10s interval. A slow
     SD/USB-backed swap device pages only a few MB per interval — below the
-    32 MiB floor — but crosses it over a long round; a per-interval delta would
-    stay inert on exactly that host. PSI-full stays an independent immediate
-    critical path (it reads the current sample alone, no baseline needed)."""
+    configured swap-out floor (32 MiB by default) — but crosses it over a long
+    round; a per-interval delta would stay inert on exactly that host. PSI-full
+    stays an independent immediate critical path (it reads the current sample
+    alone, no baseline needed)."""
     log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(

@@ -462,6 +462,14 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
             hh_d.get("disk_critical_pct", 95.0),
             field="monitor.host_health.disk_critical_pct",
         ),
+        swap_sout_noise_floor_mb=_require_positive_int(
+            hh_d.get("swap_sout_noise_floor_mb", 32),
+            field="monitor.host_health.swap_sout_noise_floor_mb",
+        ),
+        mem_free_low_mb=_require_positive_int(
+            hh_d.get("mem_free_low_mb", 16),
+            field="monitor.host_health.mem_free_low_mb",
+        ),
     )
     monitor = MonitorConfig(
         auth_fail_patterns=_validate_regex_list(

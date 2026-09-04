@@ -160,6 +160,8 @@ class MonitorHostHealthConfig:
     mem_avail_min_mb: int = 200  # mem_pressure fires when mem_available_mb < this
     disk_warning_pct: float = 90.0  # disk_warning fires when disk_used_pct >= this
     disk_critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
+    swap_sout_noise_floor_mb: int = 32  # tier-2 swap-out noise floor (MiB); compare uses *1024*1024
+    mem_free_low_mb: int = 16  # tier-3 MemFree floor (MB)
 
 
 @dataclass(frozen=True)

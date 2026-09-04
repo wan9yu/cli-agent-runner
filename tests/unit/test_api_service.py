@@ -581,3 +581,33 @@ def test_poll_once_forwards_supervisor_stale_threshold(
     assert captured, "run_all_detectors was never called"
     call_kwargs = captured[0]
     assert "supervisor_stale_threshold_s" in call_kwargs
+
+
+def test_poll_once_threads_host_health_floors(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: _poll_once must forward cfg.monitor.host_health's two new
+    floors (swap_sout_noise_floor_mb, mem_free_low_mb) to run_all_detectors --
+    pre-fix a TOML override of these fields silently no-op'd on the API/monitor
+    poll path even though the fields parsed fine (mirrors the
+    supervisor_stale_threshold_s wiring test above)."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    toml_path = tmp_git_repo / "agent-runner.toml"
+    with toml_path.open("a", encoding="utf-8") as f:
+        f.write("\n[monitor.host_health]\nswap_sout_noise_floor_mb = 8\nmem_free_low_mb = 4\n")
+
+    captured: list[dict] = []
+
+    def capturing_rad(**kwargs):
+        captured.append(kwargs)
+        return []
+
+    monkeypatch.setattr("agent_runner.monitor.run_all_detectors", capturing_rad)
+
+    api._poll_once(tmp_git_repo)
+
+    assert captured, "run_all_detectors was never called"
+    call_kwargs = captured[0]
+    assert call_kwargs["swap_sout_noise_floor_mb"] == 8
+    assert call_kwargs["mem_free_low_mb"] == 4

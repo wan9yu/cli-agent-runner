@@ -79,7 +79,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `remote_failure_tolerance_s` | `int` | 90 |
 | `anomaly_repetitive_window` | `int` | 0 |
 | `anomaly_repetitive_threshold` | `int` | 0 |
-| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(mem_avail_min_mb=200, disk_warning_pct=90.0, disk_critical_pct=95.0) |
+| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(mem_avail_min_mb=200, disk_warning_pct=90.0, disk_critical_pct=95.0, swap_sout_noise_floor_mb=32, mem_free_low_mb=16) |
 | `round_progress_interval_s` | `int` | 0 |
 | `supervisor_stale_threshold_s` | `int \| None` | None |
 
@@ -90,6 +90,8 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `mem_avail_min_mb` | `int` | 200 |
 | `disk_warning_pct` | `float` | 90.0 |
 | `disk_critical_pct` | `float` | 95.0 |
+| `swap_sout_noise_floor_mb` | `int` | 32 |
+| `mem_free_low_mb` | `int` | 16 |
 
 ### `[phases]`
 
@@ -436,6 +438,8 @@ round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress hea
 # authoritative in the config-schema table above — set a field here only to
 # override. (mem_avail_min_mb: mem_pressure when mem_available_mb below it;
 # disk_warning_pct / disk_critical_pct: fire when disk_used_pct at/above.)
+# swap_sout_noise_floor_mb = 32   # lower on a tiny host (e.g. 8 on a 512MB Pi)
+# mem_free_low_mb = 16            # raise if a larger host comas above 16 MiB free
 ```
 
 Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables

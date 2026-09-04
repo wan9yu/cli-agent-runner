@@ -1642,6 +1642,61 @@ def test_given_monitor_host_health_toml_section_when_loaded_then_overrides_appli
     assert cfg.monitor.host_health.disk_critical_pct == 95.0  # still default
 
 
+def test_host_health_floor_defaults() -> None:
+    """Defaults must stay byte-identical to the previous hardcoded constants
+    (32 MiB swap-out noise floor, 16 MB MemFree floor) -- existing deployments
+    are unaffected unless the operator explicitly sets these fields."""
+    from agent_runner.config import MonitorHostHealthConfig
+
+    hh = MonitorHostHealthConfig()
+    assert hh.swap_sout_noise_floor_mb == 32
+    assert hh.mem_free_low_mb == 16
+
+
+def test_host_health_floors_parse(tmp_path: Path) -> None:
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("x" * 800, encoding="utf-8")
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        '[agent]\ncommand = ["claude"]\nname = "claude"\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n\n'
+        f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
+        f'[prompt]\nfile = "{prompt_file}"\n\n'
+        "[monitor.host_health]\nswap_sout_noise_floor_mb = 8\nmem_free_low_mb = 4\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(toml)
+    assert cfg.monitor.host_health.swap_sout_noise_floor_mb == 8
+    assert cfg.monitor.host_health.mem_free_low_mb == 4
+
+
+@pytest.mark.parametrize("field", ["swap_sout_noise_floor_mb", "mem_free_low_mb"])
+def test_host_health_floors_reject_zero_and_nonint(tmp_path: Path, field: str) -> None:
+    """0 would silently disable/invert the floor (delta > 0 is always true) --
+    must be rejected via _require_positive_int, not accepted as a no-op."""
+    from agent_runner.config import ConfigError
+
+    toml_zero = _write_toml(
+        tmp_path,
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        f"[monitor.host_health]\n{field} = 0\n",
+    )
+    with pytest.raises(ConfigError, match=f"monitor.host_health.{field}"):
+        load_config(toml_zero)
+
+    toml_str = _write_toml(
+        tmp_path,
+        '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        f'[monitor.host_health]\n{field} = "x"\n',
+    )
+    with pytest.raises(ConfigError, match=f"monitor.host_health.{field}"):
+        load_config(toml_str)
+
+
 def test_given_custom_mem_threshold_in_config_when_detect_mem_pressure_then_uses_config(
     tmp_path: Path,
 ) -> None:
@@ -1691,6 +1746,35 @@ def test_given_host_health_overrides_when_run_all_detectors_then_thresholds_appl
     kinds_default = {a.detector for a in alerts_default}
     assert "mem_pressure" not in kinds_default  # 300 > default 200
     assert "disk_warning" in kinds_default  # 92 still > default 90
+
+
+def test_run_all_detectors_threads_custom_floors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: run_all_detectors must plumb swap_sout_noise_floor_mb and
+    mem_free_low_mb into the MonitorHostHealthConfig it builds and passes to
+    detect_mem_pressure -- pre-fix these floors were config-tunable in TOML but
+    silently ignored on this path (mirrors the mem_avail_min_mb/disk_* wiring
+    regression test above)."""
+    from agent_runner import host_health, monitor
+
+    seen: dict[str, int] = {}
+    real = host_health.memory_pressure
+
+    def spy(sample, prev, cfg):
+        seen["swap_floor"] = cfg.swap_sout_noise_floor_mb
+        seen["mem_free"] = cfg.mem_free_low_mb
+        return real(sample, prev, cfg)
+
+    monkeypatch.setattr(host_health, "memory_pressure", spy)
+
+    metrics = [{"mem_free_mb": 500, "mem_available_mb": 500, "swap_sout": 0}]
+    monitor.run_all_detectors(
+        events=[],
+        metrics=metrics,
+        log_tails={},
+        swap_sout_noise_floor_mb=8,
+        mem_free_low_mb=4,
+    )
+    assert seen == {"swap_floor": 8, "mem_free": 4}
 
 
 def test_given_high_disk_critical_when_disk_used_below_then_warning_still_fires(

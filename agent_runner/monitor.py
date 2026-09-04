@@ -91,6 +91,8 @@ def run_all_detectors(
     mem_avail_min_mb: int = 200,
     disk_warning_pct: float = 90.0,
     disk_critical_pct: float = 95.0,
+    swap_sout_noise_floor_mb: int = 32,
+    mem_free_low_mb: int = 16,
     log_dir: Path | None = None,
 ) -> list[Alert]:
     """Run all 13 detectors; returns alerts (empty = healthy).
@@ -112,6 +114,8 @@ def run_all_detectors(
         mem_avail_min_mb=mem_avail_min_mb,
         disk_warning_pct=disk_warning_pct,
         disk_critical_pct=disk_critical_pct,
+        swap_sout_noise_floor_mb=swap_sout_noise_floor_mb,
+        mem_free_low_mb=mem_free_low_mb,
     )
     detectors: list[tuple[str, Callable[[], Alert | None]]] = [
         ("timeout_rate", lambda: detect_timeout_rate(events)),

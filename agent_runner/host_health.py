@@ -11,8 +11,9 @@ defined signal ladder with graceful degrade:
 1. **PSI** (``psi_some_avg10``/``psi_full_avg10``) if readable — the kernel's
    own "reclaim is slowing progress" measure, immune to cache inflation.
 2. else **swap-out rate** — the delta of ``swap_sout`` (cumulative bytes) over
-   the ``prev_sample`` the caller passes; more than a noise floor (tens of MB)
-   means active paging, not benign startup/idle churn. Escalates to
+   the ``prev_sample`` the caller passes; more than the configured noise floor
+   (tens of MB by default) is flagged as pressure — above the noise floor, not
+   benign startup/idle churn. Escalates to
    **critical** when ``mem_free_mb`` is ALSO critically low (the same absolute
    floor tier 3 uses below) WHILE swap-out is positive — the unambiguous
    "actively dying" state. This is gated on MemFree, not on the swap-out
@@ -46,21 +47,22 @@ from typing import Any
 _PSI_SOME_AVG10_WARNING = 5.0
 _PSI_FULL_AVG10_CRITICAL = 1.0
 
-# Tier 2 -- swap-out delta (bytes) between two samples. Below this is noise:
-# tens of MB is ordinary startup/idle churn between successive samples (round
-# boundaries, or the mid-round loop's own ~10s ticks) and is NOT, on its own,
-# a real paging signal -- a single page (4096B, the old floor) is far too
-# sensitive and made the pre-round gate defer/resume on a few idle KB of
-# swap movement every round.
-_SWAP_SOUT_DELTA_NOISE_FLOOR_BYTES = 32 * 1024 * 1024  # 32 MiB
+# Tier 2 -- swap-out delta (bytes) between two samples. Below
+# cfg.swap_sout_noise_floor_mb is noise: tens of MB is ordinary startup/idle
+# churn between successive samples (round boundaries, or the mid-round loop's
+# own ~10s ticks) and is NOT, on its own, a real paging signal -- a single
+# page (4096B, the old floor) is far too sensitive and made the pre-round gate
+# defer/resume on a few idle KB of swap movement every round. Config-tunable
+# (``MonitorHostHealthConfig.swap_sout_noise_floor_mb``, default 32 MiB) so a
+# tiny host can lower it and a large host can raise it.
 
 # Tier 3 -- combined-low. MemFree alone is always low on a cache-heavy host
 # (the kernel prefers to keep it near-zero and use spare RAM for cache), so
 # it must never gate alone -- only together with a low MemAvailable (tier 3)
 # or an actual measured, above-floor swap-out delta (tier 2's critical
 # escalation, below). Also doubles as the critical-escalation MemFree floor:
-# "critically low" is the same absolute bar either way.
-_MEM_FREE_LOW_MB = 16
+# "critically low" is the same absolute bar either way. Config-tunable
+# (``MonitorHostHealthConfig.mem_free_low_mb``, default 16 MB).
 
 
 @dataclass(frozen=True)
@@ -122,20 +124,20 @@ def memory_pressure(
         return None  # PSI is readable and says healthy -- trust it, no fall-through.
 
     delta = _swap_sout_delta(sample, prev_sample)
-    if delta is not None and delta > _SWAP_SOUT_DELTA_NOISE_FLOOR_BYTES:
+    if delta is not None and delta > cfg.swap_sout_noise_floor_mb * 1024 * 1024:
         mem_free = sample.get("mem_free_mb")
-        if mem_free is not None and mem_free < _MEM_FREE_LOW_MB:
+        if mem_free is not None and mem_free < cfg.mem_free_low_mb:
             return Pressure(
                 "critical",
                 "swap_out_rate",
                 f"swap sout +{delta}B since last sample while mem_free_mb {mem_free} "
-                f"< {_MEM_FREE_LOW_MB} (actively dying, independent of swap-device speed)",
+                f"< {cfg.mem_free_low_mb} (actively dying, independent of swap-device speed)",
                 {"swap_sout_delta": delta, "mem_free_mb": mem_free},
             )
         return Pressure(
             "warning",
             "swap_out_rate",
-            f"swap sout +{delta}B since last sample (active paging)",
+            f"swap sout +{delta}B since last sample (above the noise floor)",
             {"swap_sout_delta": delta},
         )
     # Swap tier gave no evidence either way (no data, or below the noise
@@ -146,11 +148,11 @@ def memory_pressure(
     mem_free = sample.get("mem_free_mb")
     mem_avail = sample.get("mem_available_mb")
     if mem_free is not None and mem_avail is not None:
-        if mem_free < _MEM_FREE_LOW_MB and mem_avail < cfg.mem_avail_min_mb:
+        if mem_free < cfg.mem_free_low_mb and mem_avail < cfg.mem_avail_min_mb:
             return Pressure(
                 "warning",
                 "combined_low",
-                f"mem_free_mb {mem_free} < {_MEM_FREE_LOW_MB} and "
+                f"mem_free_mb {mem_free} < {cfg.mem_free_low_mb} and "
                 f"mem_available_mb {mem_avail} < {cfg.mem_avail_min_mb}",
                 {"mem_free_mb": mem_free, "mem_available_mb": mem_avail},
             )
