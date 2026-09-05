@@ -339,7 +339,15 @@ def _round_holder_pid(log_dir: Path) -> int | None:
     flight, the sidecar is missing/corrupt, or the recorded pid is no longer
     alive. This is the ONLY way ``kill()`` can reach an in-flight round: the
     round is ``start_new_session=True`` (its own session, its own pgid), so it
-    sits outside whatever process group serve itself belongs to."""
+    sits outside whatever process group serve itself belongs to.
+
+    Also read by ``monitor.on_alert`` (via a thin wrapper) to tell a genuinely
+    still-draining ``stop()`` (a round in flight — the documented graceful-stop
+    contract, ``cli/_serve_round.py``'s ``_spawn_round`` docstring) from an
+    actual silent no-op. Safe to reuse there: ``serve.lock``'s exclusive flock
+    means at most one serve owns this log_dir at a time, and ``PIDFile.read()``
+    already rejects a recycled pid via its create-time token — so a live
+    holder here can only belong to the same serve ``stop()`` just signaled."""
     from agent_runner.context_store import read_json
 
     data = read_json(log_dir / "agent-runner.lock.holder")

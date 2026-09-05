@@ -49,7 +49,7 @@ from agent_runner._monitor_detectors import (
     detect_timeout_rate,
 )
 from agent_runner._monitor_registry import _PLUGIN_DETECTORS, AUTO_STOP_ALERTS
-from agent_runner.api_types import Alert, ProjectState, ServiceStatus
+from agent_runner.api_types import Alert, ProjectState, ServiceMode, ServiceStatus
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import MonitorHostHealthConfig, PhaseOverride
 from agent_runner.events import (
@@ -222,6 +222,22 @@ def _call_local_stop(project: str | Path) -> ServiceStatus:
     return api.stop(project)
 
 
+def _stop_still_draining(log_dir: Path) -> bool:
+    """True iff a round is CURRENTLY being supervised for ``log_dir`` — proof
+    the pid ``api.stop`` just SIGTERM'd is honoring the documented graceful-stop
+    contract (finish the in-flight round before exiting — see
+    ``cli/_serve_round.py``'s ``_spawn_round`` docstring) rather than silently
+    ignoring the signal. Safe to trust for that: ``serve.lock``'s exclusive
+    flock means at most one serve owns this log_dir at a time, and
+    ``PIDFile.read`` already rejects a recycled pid via its create-time token
+    — so a live round holder here cannot belong to some OTHER process than the
+    one ``stop()`` just signaled, and this can't mask a genuine stale-pidfile/
+    mode-mismatch no-op."""
+    from agent_runner import api
+
+    return api._round_holder_pid(log_dir) is not None
+
+
 def on_alert(
     alert: Alert,
     *,
@@ -244,6 +260,19 @@ def on_alert(
     no-op that returns normally with ``active`` still True; without this
     ordering that no-op would be misreported as a successful stop and the
     ``except`` below (for a raise) would never even see it.
+
+    ``api.stop``'s PID_FILE confirm window (``_PID_SIGNAL_GRACE_S``) is
+    intentionally short so the monitor loop never blocks for anywhere close to
+    a round's full timeout — a round in flight when SIGTERM lands is, by
+    design, NOT interrupted (``cli/_serve_round.py``'s ``_spawn_round``
+    docstring: serve drains its current round before exiting). So
+    ``active=True`` after that window means one of two very different things:
+    a genuine no-op (nothing above will ever change this), or a confirmed-
+    delivered SIGTERM still draining a round that has not yet finished (it
+    WILL resolve — the monitor loop's own dedup re-fires this alert on its next
+    poll). ``_stop_still_draining`` tells these apart so only the former is
+    recorded as ``MONITOR_AUTO_STOP_FAILED``; recording the latter would be a
+    false alarm for a stop that is working exactly as designed.
     """
     effective_allowed = (
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
@@ -276,10 +305,15 @@ def on_alert(
         return
     if result.active:
         # api.stop returned without raising but the service is STILL active —
-        # the silent no-op this fix closes (e.g. a mode mismatch that signaled
-        # nothing, or a graceful stop that hasn't taken effect yet). Recorded the
-        # same as a raise; re-fires only after the alert clears from a poll and
-        # recurs (the loop's `seen` dedup), not on the very next poll.
+        # either the silent no-op this fix closes (e.g. a mode mismatch that
+        # signaled nothing) or a graceful PID_FILE stop still draining its
+        # in-flight round (see on_alert's docstring). Only the former is a
+        # real failure: recording the latter would be a false alarm for a stop
+        # that is working exactly as designed, so it is left unrecorded here —
+        # the monitor loop's `seen` dedup re-fires this alert on its next poll,
+        # by which point the drain has usually resolved one way or the other.
+        if result.mode == ServiceMode.PID_FILE and _stop_still_draining(log_dir):
+            return
         _emit_if_dir(
             MONITOR_AUTO_STOP_FAILED,
             error=f"stop did not take effect (mode={result.mode.value}, still active)",
