@@ -420,33 +420,3 @@ def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_
     kinds = [e["event"] for e in _events(tmp_log_dir)]
     assert "monitor_auto_stop_failed" not in kinds
     assert "monitor_auto_stop_triggered" not in kinds
-
-
-def test_given_pid_file_stop_with_dead_serve_pid_when_on_alert_then_emits_failed(
-    tmp_log_dir: Path,
-) -> None:
-    """Contrast case for the draining check above: PID_FILE mode, active=True,
-    but NO live serve pid for this log_dir at all (nothing was ever written) --
-    a genuine silent no-op (the original bug this module's FAILED branch
-    exists to catch: e.g. a stale/mismatched pidfile), not a legitimate drain.
-    Must still emit failed, never triggered."""
-    from unittest.mock import patch
-
-    from agent_runner.api_types import ServiceMode, ServiceStatus
-
-    a = Alert(
-        severity="critical",
-        detector="oauth_fail",
-        message="m",
-        context={},
-        ts="t",
-        auto_action="stop_service",
-    )
-    stuck = ServiceStatus(mode=ServiceMode.PID_FILE, active=True)
-    with patch("agent_runner.monitor._call_local_stop", return_value=stuck):
-        verdict = on_alert(a, project="myproj", log_dir=tmp_log_dir)
-
-    assert verdict == "failed"
-    kinds = [e["event"] for e in _events(tmp_log_dir)]
-    assert "monitor_auto_stop_failed" in kinds
-    assert "monitor_auto_stop_triggered" not in kinds

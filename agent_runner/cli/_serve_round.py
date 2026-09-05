@@ -415,7 +415,6 @@ def post_round_verdicts(
     r_returncode: int,
     round_duration_s: float,
     round_throttle_active: bool,
-    mem_terminated: bool,
     outcome,
     consecutive_crashes: int,
     consecutive_mem_terminations: int,
@@ -427,9 +426,10 @@ def post_round_verdicts(
     breakers itself, absorbing the sequence that used to live inline in
     ``serve_cmd.cmd()``'s post-round block): ``post_round_decision``'s
     crash-loop, ``_mem_loop_decision``, and ``_no_progress_decision``, off
-    this round's already-scanned ``mem_terminated``/``round_throttle_active``/
-    ``outcome`` (see ``serve_cmd._round_scan`` — INVARIANT 3, one events-tail
-    scan per round), then resolves them to a single verdict.
+    this round's already-scanned ``round_throttle_active``/``outcome`` (see
+    ``serve_cmd._round_scan`` — INVARIANT 3, one events-tail scan per round;
+    ``outcome.mem_terminated`` feeds ``_mem_loop_decision`` directly), then
+    resolves them to a single verdict.
 
     Returns ``(exit_code_or_None, delay_s, streaks)``: ``exit_code_or_None``
     is ``None`` to keep looping, or the exit code ``cmd()`` should break the
@@ -471,7 +471,7 @@ def post_round_verdicts(
         restart_delay_s=cfg.runtime.restart_delay_s,
     )
     mem_action, consecutive_mem_terminations = _mem_loop_decision(
-        mem_terminated=mem_terminated, consecutive=consecutive_mem_terminations
+        mem_terminated=outcome.mem_terminated, consecutive=consecutive_mem_terminations
     )
     # Exit-0 no-progress breaker (0.2.16 Task 6): pi-class CLIs exit 0 on a
     # provider failure that never reached the model, invisible to the crash

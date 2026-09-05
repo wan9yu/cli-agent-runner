@@ -352,8 +352,8 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
 
 
 def _round_scan(cfg, phase_arg, log_dir):
-    """The round-that-just-ran's mem-terminated + throttle-active verdicts, off
-    ONE events-tail scan (0.2.17 Task 1) — extracted out of ``cmd()`` to hold its
+    """The round-that-just-ran's throttle-active verdict + ``outcome``, off ONE
+    events-tail scan (0.2.17 Task 1) — extracted out of ``cmd()`` to hold its
     140-line budget (see the LOC invariant test), not because this is reused
     elsewhere.
 
@@ -362,9 +362,11 @@ def _round_scan(cfg, phase_arg, log_dir):
     before any give-up emit — that block is otherwise pure calls, so one scan here
     sees the identical file state the pre-0.2.17 three separate scans each saw.
     The returned ``outcome`` is reused by ``cmd()`` for ``round_had_no_progress``
-    too, and ``active`` (built off ``outcome.latest_transient_per_agent``) is
-    reused for the crash-loop breaker's throttle check — mem-terminated and
-    throttle-active OR together into the single ``round_throttle_active`` both
+    too (and carries ``outcome.mem_terminated`` for ``post_round_verdicts``'s
+    ``_mem_loop_decision`` — no need to thread it separately), and ``active``
+    (built off ``outcome.latest_transient_per_agent``) is reused for the
+    crash-loop breaker's throttle check — mem-terminated and throttle-active OR
+    together into the single ``round_throttle_active`` both
     ``post_round_decision`` and ``round_had_no_progress`` gate on.
 
     Pre-refactor, ``mem_terminated or _ran_agent_throttled(...)`` short-circuited
@@ -383,7 +385,7 @@ def _round_scan(cfg, phase_arg, log_dir):
     else:
         active = _active_throttles(log_dir, _latest=outcome.latest_transient_per_agent)
         throttled = _ran_agent_throttled(cfg, phase_arg, log_dir, active=active)
-    return mem_terminated, throttled, outcome
+    return throttled, outcome
 
 
 def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int | None] | str:
@@ -674,13 +676,13 @@ def cmd(args) -> int:
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="after")
             rounds_completed += 1
-            # mem_terminated + round_throttle_active + outcome all come off the
-            # SAME single events-tail scan (0.2.17 Task 1 — see _round_scan +
-            # INVARIANT 3). The full give-up orchestration (crash-loop / mem-loop
-            # / no-progress breakers, precedence, and matching emit) lives in
-            # post_round_verdicts so this loop stays thin; None exit means "keep
-            # looping".
-            mem_terminated, round_throttle_active, outcome = _round_scan(cfg, phase_arg, log_dir)
+            # round_throttle_active + outcome (which carries mem_terminated) come
+            # off the SAME single events-tail scan (0.2.17 Task 1 — see
+            # _round_scan + INVARIANT 3). The full give-up orchestration
+            # (crash-loop / mem-loop / no-progress breakers, precedence, and
+            # matching emit) lives in post_round_verdicts so this loop stays
+            # thin; None exit means "keep looping".
+            round_throttle_active, outcome = _round_scan(cfg, phase_arg, log_dir)
             outcome_exit, delay, streaks = post_round_verdicts(
                 cfg,
                 log_dir=log_dir,
@@ -688,7 +690,6 @@ def cmd(args) -> int:
                 r_returncode=r_returncode,
                 round_duration_s=round_duration_s,
                 round_throttle_active=round_throttle_active,
-                mem_terminated=mem_terminated,
                 outcome=outcome,
                 consecutive_crashes=consecutive_crashes,
                 consecutive_mem_terminations=consecutive_mem_terminations,

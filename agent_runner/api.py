@@ -725,6 +725,15 @@ def _monitor_loop_iter(
                 # persisting is exactly the case that must re-fire on_alert next
                 # poll, unlike every other verdict (recorded outcome, or never
                 # eligible), which keeps the normal dedup.
+                #
+                # Trade-off: `seen` also gates the `yield alert` above (the
+                # dedup consumers of the monitor stream see), so re-arming it
+                # to retry on_alert ALSO re-yields this same alert to the
+                # stream consumer next poll. Accepted: a persisting alert
+                # re-appearing each poll while its stop drains just reads as a
+                # "still draining" signal to that consumer. A fuller design
+                # would split consumer-yield dedup from on_alert-retry state,
+                # but that split isn't warranted for this narrow case.
                 del seen[key]
         # Re-arm: an episode absent from this poll has cleared, so forget it — a
         # later recurrence is a NEW episode and must fire again (not stay suppressed

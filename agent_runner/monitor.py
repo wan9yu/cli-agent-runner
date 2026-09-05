@@ -230,35 +230,6 @@ def _call_local_stop(project: str | Path) -> ServiceStatus:
     return api.stop(project)
 
 
-def _stop_still_draining(log_dir: Path) -> bool:
-    """True iff the PID_FILE ``serve.pid`` for ``log_dir`` names a still-live
-    process — i.e. ``api.stop``'s SIGTERM landed on a real, running serve.
-
-    Deliberately keyed on SERVE liveness, not "is a round in flight": a round
-    is only ONE of several states serve can legitimately be in when SIGTERM
-    lands and still take a moment to exit — it may also be bootstrapping the
-    NEXT round (spawned but hasn't yet written its lock-holder sidecar) or
-    sleeping/back-off between rounds (``_interruptible_sleep`` in
-    ``serve_cmd.cmd``). All three are the same thing from the outside: a live
-    serve that will exit once it next checks ``stop["requested"]`` /
-    ``stop_file``. Gating on the round-holder sidecar alone (an earlier version
-    of this function) missed the other two — on a small/constrained host
-    (interpreter start + config load + git snapshot swapping) the bootstrap
-    window alone can exceed the 5s confirm grace.
-
-    ``PIDFile.read()`` already rejects a recycled pid via its create-time
-    token, so this cannot be fooled by an unrelated process that happens to
-    reuse the recorded pid. It CAN be fooled by a serve that is genuinely
-    alive but will NEVER honor SIGTERM (truly wedged, e.g. stuck ignoring
-    signals) — that pathological case re-fires "draining" forever rather than
-    ever recording a failure; it is the province of the supervisor-stale /
-    round-wedged detectors, not auto-stop accounting."""
-    from agent_runner.lifecycle import PIDFile, pid_alive
-
-    pid = PIDFile(log_dir / "serve.pid").read()
-    return pid is not None and pid_alive(pid)
-
-
 def on_alert(
     alert: Alert,
     *,
@@ -293,22 +264,26 @@ def on_alert(
     docstring: serve drains its current round before exiting), and even
     outside a round serve may still be bootstrapping the next one or sleeping
     in its restart back-off. So ``active=True`` after that window means one of
-    two very different things: a genuine no-op — the serve pid itself is dead
-    or absent, e.g. a stale/mismatched pidfile (nothing below will ever change
-    this — it never gets a "draining" verdict, so the dedup ``seen`` entry is
-    left standing and this exact alert stays suppressed until it clears a poll
-    and recurs) — or a serve still draining (mid-round, starting, or waking)
-    that has not yet had its next chance to notice the SIGTERM and exit.
-    ``_stop_still_draining`` tells these apart by serve-pid liveness alone:
-    only the former is recorded as ``MONITOR_AUTO_STOP_FAILED``; the latter
-    returns ``"draining"`` and records NOTHING here (recording a failure would
-    be a false alarm for a stop that is working exactly as designed) — the
-    caller re-arms `seen` for it so the SAME alert is handed to ``on_alert``
-    again on the very next poll, by which point the drain has usually resolved
-    one way or the other, and THAT call records the truthful
-    ``triggered``/``failed`` outcome. (The one accepted edge: a serve that
-    NEVER honors SIGTERM re-fires "draining" forever rather than ever
-    recording failed — see ``_stop_still_draining``'s docstring.)
+    two very different things depending on mode. In PID_FILE mode, ``result``
+    came from ``api.stop`` → ``status()``, whose PID_FILE branch computes
+    ``active`` from that same ``serve.pid`` as ``pid is not None and
+    pid_alive(pid)`` — so ``active=True`` here already means the serve pid
+    itself is alive, i.e. still draining (mid-round, still bootstrapping the
+    next round, or asleep in its restart back-off) and has not yet had its
+    next chance to notice the SIGTERM and exit. That case returns
+    ``"draining"`` and records NOTHING here (recording a failure would be a
+    false alarm for a stop that is working exactly as designed) — the caller
+    re-arms `seen` for it so the SAME alert is handed to ``on_alert`` again on
+    the very next poll, by which point the drain has usually resolved one way
+    or the other, and THAT call records the truthful ``triggered``/``failed``
+    outcome. A genuine failure is everything else still active after the
+    window: any non-PID_FILE mode still reporting active (e.g. a stale unit
+    reference) — nothing below will ever change this, it never gets a
+    "draining" verdict, so the dedup ``seen`` entry is left standing and this
+    exact alert stays suppressed until it clears a poll and recurs — or a
+    raised ``api.stop`` call (handled above). (The one accepted edge: a serve
+    that NEVER honors SIGTERM re-fires "draining" forever rather than ever
+    recording failed.)
     """
     effective_allowed = (
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
@@ -344,8 +319,11 @@ def on_alert(
         # either the silent no-op this fix closes (e.g. a mode mismatch that
         # signaled nothing, or a dead/stale pidfile) or a still-live PID_FILE
         # serve genuinely draining (mid-round, starting, or waking — see
-        # on_alert's docstring). Only the former is a real failure.
-        if result.mode == ServiceMode.PID_FILE and _stop_still_draining(log_dir):
+        # on_alert's docstring). In PID_FILE mode, active=True already IS
+        # serve-pid liveness (status()'s PID_FILE branch computes it from the
+        # same serve.pid), so it can only be the latter — no re-derivation
+        # needed. Only a still-active non-PID_FILE mode is a real failure.
+        if result.mode == ServiceMode.PID_FILE:
             return "draining"
         _emit_if_dir(
             MONITOR_AUTO_STOP_FAILED,

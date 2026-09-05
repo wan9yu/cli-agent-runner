@@ -256,9 +256,9 @@ def test_round_scan_mem_terminated_skips_second_events_tail_scan(
 
     monkeypatch.setattr(_throttle, "_tail_events", _counting_tail_events)
 
-    mem_terminated, throttled, outcome = serve_cmd._round_scan(cfg, None, log_dir)
+    throttled, outcome = serve_cmd._round_scan(cfg, None, log_dir)
 
-    assert mem_terminated is True
+    assert outcome.mem_terminated is True
     assert throttled is True
     assert isinstance(outcome, RoundOutcome)
     assert calls == 1
