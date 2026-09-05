@@ -215,7 +215,17 @@ def test_round_scan_mem_terminated_skips_second_events_tail_scan(
     `or`, so a mem-terminated round never triggered the throttle scan at all.
     `serve_cmd._round_scan` must preserve that -- exactly ONE `_tail_events` scan
     (via `round_outcome`) on the mem-terminated path, not a second one from an
-    unconditionally-computed `_active_throttles` call."""
+    unconditionally-computed `_active_throttles` call.
+
+    The fixture MUST include a `transient_error_detected` event (an agent still
+    in active backoff, future `reset_at_epoch`) -- without one,
+    `_active_throttles`'s `latest` dict is empty and it returns before ever
+    reaching `_backoff_exponent` (the actual 2nd-scan trigger), so a fixture with
+    no transient event at all would pass this assertion whether or not the
+    mem-terminated short-circuit guard exists (a vacuous regression test caught
+    in review round 2). With this event present, the pre-fix buggy
+    `_round_scan` (unconditional `_active_throttles` call) produces
+    ``calls == 2``; the fixed short-circuit produces ``calls == 1``."""
     from agent_runner.cli import serve_cmd
     from agent_runner.config import load_config
     from tests._test_helpers import make_toml
@@ -225,6 +235,14 @@ def test_round_scan_mem_terminated_skips_second_events_tail_scan(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
         {"ts": "2026-01-01T00:00:01.000Z", "event": "round_mem_terminated", "round_num": 1},
+        {
+            "ts": "2026-01-01T00:00:02.000Z",
+            "event": "transient_error_detected",
+            "agent": "claude",
+            "classification": "api_transient_5xx",
+            "reset_at_epoch": 99999999999,  # far future -- still in active backoff
+            "round_num": 1,
+        },
     )
     cfg = load_config(make_toml(tmp_path))
 
