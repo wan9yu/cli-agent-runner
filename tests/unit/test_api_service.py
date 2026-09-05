@@ -437,14 +437,14 @@ def test_kill_escalates_round_holder_to_sigkill_when_term_ignored(
 
 def test_round_kill_grace_matches_serve_cmd_grace() -> None:
     """api._terminate_round_pid's grace (driven from a separate CLI process,
-    api.kill) must stay in lockstep with serve_cmd._terminate_round's own
+    api.kill) must stay in lockstep with _serve_round._terminate_round's own
     grace (driven from serve's in-process Popen handle) -- both exist so the
     round's SIGTERM handler has time to reap its agent pgroup before either
     caller escalates to SIGKILL. A drift here would make one of the two paths
     escalate before the round even gets a chance to drain."""
-    from agent_runner.cli import serve_cmd
+    from agent_runner.cli import _serve_round
 
-    assert api._ROUND_TERM_GRACE_S == serve_cmd._ROUND_TERM_GRACE_S
+    assert api._ROUND_TERM_GRACE_S == _serve_round._ROUND_TERM_GRACE_S
 
 
 def _draining_is_active(state: str):

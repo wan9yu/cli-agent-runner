@@ -93,6 +93,20 @@ def _pressure_is_critical(pressure: host_health.Pressure | None) -> bool:
     return pressure is not None and pressure.severity == "critical"
 
 
+def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
+    """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
+    ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
+    stop / stop_file break returns False — the pause was interrupted, not resumed).
+    Shared by both pause entry points; only the runnable predicate + sleep differ."""
+    while not stop["requested"]:
+        if stop_file is not None and stop_file.exists():
+            return False
+        if runnable_fn():
+            return True
+        sleep_fn(chunk_s)
+    return False
+
+
 def _maybe_pause_for_memory_pressure(
     cfg,
     log_dir,
@@ -109,14 +123,12 @@ def _maybe_pause_for_memory_pressure(
     :func:`_spawn_round`'s mid-round hard floor to stop it before unresponsiveness.
 
     Polls exactly like ``serve_cmd._maybe_pause_for_schedule`` via the shared
-    ``serve_cmd._pause_poll`` (imported locally below — ``serve_cmd`` imports
-    this module, so a top-level import here would cycle). Emits a paired
+    :func:`_pause_poll` (this module owns it; ``serve_cmd`` re-imports it back
+    for its own schedule-pause use). Emits a paired
     ``round_deferred``/``round_resumed`` (like ``schedule_paused``/
     ``schedule_resumed``) so a long defer does not trip
     ``detect_supervisor_stale`` (see its suppression set in
     ``_monitor_detectors.py``)."""
-    from agent_runner.cli.serve_cmd import _pause_poll
-
     pressure = _memory_pressure_now(cfg, log_dir, sample_fn)
     if not _pressure_is_critical(pressure):
         return False
@@ -161,17 +173,13 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
     flock/sidecar released), grace, then killpg as last resort. Returns the returncode.
 
-    Reads the grace period off ``serve_cmd`` (a local import — ``serve_cmd`` imports
-    this module at its own top level, so a top-level import here would cycle) rather
-    than this module's own ``_ROUND_TERM_GRACE_S`` global, so
-    ``monkeypatch.setattr(serve_cmd, "_ROUND_TERM_GRACE_S", ...)``
-    (test_spawn_round_wedged.py) still lands, exactly as when this function lived in
-    serve_cmd.py."""
-    from agent_runner.cli import serve_cmd
-
+    Reads the grace period off this module's own ``_ROUND_TERM_GRACE_S`` global (no
+    more reach-back through ``serve_cmd`` -- that module never used this constant
+    itself, only re-exported it), so ``monkeypatch.setattr(_serve_round,
+    "_ROUND_TERM_GRACE_S", ...)`` (test_spawn_round_wedged.py) lands directly."""
     proc.terminate()
     try:
-        return proc.wait(timeout=serve_cmd._ROUND_TERM_GRACE_S)
+        return proc.wait(timeout=_ROUND_TERM_GRACE_S)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)

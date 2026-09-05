@@ -45,9 +45,9 @@ from agent_runner.api import (
     outer_round_ceiling_s,
 )
 from agent_runner.cli._serve_round import (
-    _ROUND_TERM_GRACE_S,  # noqa: F401 — test_spawn_round_wedged patches serve_cmd.X
     _maybe_emit_recovered,
     _maybe_pause_for_memory_pressure,
+    _pause_poll,
     _probe_and_emit_cgroup_defer,
     _spawn_round,
     post_round_verdicts,
@@ -117,20 +117,6 @@ def _prepare_loop(cfg, args, log_dir: Path) -> tuple[int | None, int | None]:
         )
         return (PERMANENT_CONFIG_EXIT, None)
     return (None, effective_max_rounds)
-
-
-def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
-    """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
-    ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
-    stop / stop_file break returns False — the pause was interrupted, not resumed).
-    Shared by both pause entry points; only the runnable predicate + sleep differ."""
-    while not stop["requested"]:
-        if stop_file is not None and stop_file.exists():
-            return False
-        if runnable_fn():
-            return True
-        sleep_fn(chunk_s)
-    return False
 
 
 def _maybe_pause_for_schedule(

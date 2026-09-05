@@ -31,9 +31,9 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.cli._serve_round",
         {
-            "_ROUND_TERM_GRACE_S",
             "_maybe_emit_recovered",
             "_maybe_pause_for_memory_pressure",
+            "_pause_poll",
             "_probe_and_emit_cgroup_defer",
             "_spawn_round",
             "post_round_verdicts",
@@ -135,12 +135,6 @@ ALLOWED_SERVE_ROUND_FROM = [
     ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.round_log", {"round_num_from_log_path"}),
-    # Local (function-body) imports back into serve_cmd.py, to read a
-    # patchable constant (_pause_poll's caller docstring) / reach the module
-    # object itself (_terminate_round's grace-period read) — a top-level
-    # import here would cycle since serve_cmd.py imports this module.
-    ("agent_runner.cli.serve_cmd", {"_pause_poll"}),
-    ("agent_runner.cli", {"serve_cmd"}),
 ]
 
 

@@ -319,9 +319,9 @@ def start(project: str | Path) -> ServiceStatus:
 _PID_SIGNAL_GRACE_S = 5
 
 # Grace after TERMing the round-lock holder before escalating to SIGKILL: mirrors
-# serve_cmd._ROUND_TERM_GRACE_S (the round's own SIGTERM handler needs
+# cli._serve_round._ROUND_TERM_GRACE_S (the round's own SIGTERM handler needs
 # agent_runtime.REAP_GRACE_S + margin to reap its agent pgroup and exit).
-# Cross-checked against serve_cmd's value by
+# Cross-checked against that module's value by
 # test_round_kill_grace_matches_serve so the two never drift.
 _ROUND_TERM_GRACE_S = 15
 

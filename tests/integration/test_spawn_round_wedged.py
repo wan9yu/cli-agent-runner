@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent_runner.cli import serve_cmd
+from agent_runner.cli import _serve_round, serve_cmd
 from tests._test_helpers import read_events_for_current_month
 
 
@@ -38,7 +38,7 @@ def test_spawn_round_wedged_terminates_and_emits(tmp_path):
 
     from agent_runner.agent_runtime import REAP_GRACE_S
 
-    assert serve_cmd._ROUND_TERM_GRACE_S >= REAP_GRACE_S
+    assert _serve_round._ROUND_TERM_GRACE_S >= REAP_GRACE_S
 
 
 def test_spawn_round_wedged_escalates_to_killpg_when_term_ignored(tmp_path, monkeypatch):
@@ -48,7 +48,7 @@ def test_spawn_round_wedged_escalates_to_killpg_when_term_ignored(tmp_path, monk
     call through to the real implementation) to prove the ORDER is TERM-first, then
     killpg — not a bare killpg. `_ROUND_TERM_GRACE_S` is patched down to 1s so the
     grace wait doesn't slow the test; the escalation logic itself is untouched."""
-    monkeypatch.setattr(serve_cmd, "_ROUND_TERM_GRACE_S", 1)
+    monkeypatch.setattr(_serve_round, "_ROUND_TERM_GRACE_S", 1)
 
     call_order: list[str] = []
     original_terminate = subprocess.Popen.terminate

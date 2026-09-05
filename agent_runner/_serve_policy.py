@@ -275,7 +275,7 @@ def classify_round_exit(exc: BaseException) -> int:
 _REAP_GRACE_S = 5
 _GIT_COMMIT_TIMEOUT_S = 120
 _HOOK_ALLOWANCE_S = 60  # slack for post-round hooks between the inner wall and the ceiling
-_ROUND_TERM_GRACE_S = 15  # mirrors api._ROUND_TERM_GRACE_S / serve_cmd._ROUND_TERM_GRACE_S
+_ROUND_TERM_GRACE_S = 15  # mirrors api._ROUND_TERM_GRACE_S / cli._serve_round._ROUND_TERM_GRACE_S
 _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-request overhead
 
 

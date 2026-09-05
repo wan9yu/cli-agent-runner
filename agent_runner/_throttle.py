@@ -746,9 +746,9 @@ def _interruptible_sleep(
     :func:`_apply_back_off` so a SIGTERM or a stop_file lands within one chunk instead
     of after the full sleep (e.g. the 8h back-off cap).
 
-    ``should_stop`` matches :func:`_pause_poll`'s contract (serve_cmd.py): a zero-arg
-    predicate the caller closes over its own stop_file check with, so this module never
-    needs to know what "should stop" means beyond calling it.
+    ``should_stop`` matches :func:`_pause_poll`'s contract (cli/_serve_round.py): a
+    zero-arg predicate the caller closes over its own stop_file check with, so this
+    module never needs to know what "should stop" means beyond calling it.
 
     Counts down the *intended* nap per slice rather than measuring a wall/monotonic
     deadline: NTP-step immune (no clock read for the deadline) AND does not busy-spin
@@ -758,7 +758,7 @@ def _interruptible_sleep(
     ``deadline_epoch``, when given, additionally re-checks ``clock.epoch() >=
     deadline_epoch`` at each chunk boundary and returns False (completed, NOT
     interrupted) the moment it's reached — mirroring the skip path's self-correcting
-    ``clock.epoch() >= wake_epoch`` (serve_cmd.py:251). Only :func:`_apply_back_off`
+    ``clock.epoch() >= wake_epoch`` (serve_cmd.py:238). Only :func:`_apply_back_off`
     passes this: its ``total_s`` is computed against the caller's OWN clock reading at
     call time, which on an RTC-less host booting hours behind is stale, inflating
     ``total_s`` well past the real wall-clock target; re-checking the target itself
