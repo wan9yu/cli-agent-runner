@@ -25,6 +25,7 @@ def test_spawn_round_wedged_terminates_and_emits(tmp_path):
         log_dir / "round-1.log",
         {},
         timeout_s=1,
+        round_num=1,
     )
     assert rc != 0  # died by signal, not a clean 0
     wedged = [
@@ -74,7 +75,7 @@ def test_spawn_round_wedged_escalates_to_killpg_when_term_ignored(tmp_path, monk
         "-c",
         "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(30)\n",
     ]
-    rc = serve_cmd._spawn_round(argv, log_dir / "round-1.log", {}, timeout_s=1)
+    rc = serve_cmd._spawn_round(argv, log_dir / "round-1.log", {}, timeout_s=1, round_num=1)
 
     assert call_order == ["terminate", "killpg"]  # TERM tried first, killpg last resort
     assert rc < 0, "expected death by SIGKILL, not a clean exit"

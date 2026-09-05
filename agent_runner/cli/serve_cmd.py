@@ -666,6 +666,7 @@ def cmd(args) -> int:
                 round_log_path,
                 round_env,
                 timeout_s=outer_round_ceiling_s(cfg, phase_arg),
+                round_num=round_num,
                 host_health_cfg=cfg.monitor.host_health,
                 defer_to_cgroup=defer_to_cgroup,
             )

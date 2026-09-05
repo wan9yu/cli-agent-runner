@@ -206,13 +206,3 @@ def next_round_num(log_dir: Path) -> int:
                 pass
     max_file_num = max(file_nums, default=0)
     return max(status_num, max_file_num) + 1
-
-
-def round_num_from_log_path(round_log_path: Path) -> int:
-    """Recover round_num from a ``round-<N>.log`` path -- the naming
-    convention ``cmd()`` builds it with (``log_dir / f"round-{round_num}.log"``).
-    Lets a caller that only holds the path (``_spawn_round``'s mid-round hard
-    floor, stamping round_num on ``round_mem_critical_sample``) recover the
-    round number without a new call-site parameter -- serve_cmd.cmd is at its
-    LOC budget and cannot grow a line to thread round_num through explicitly."""
-    return int(round_log_path.stem.rsplit("-", 1)[1])

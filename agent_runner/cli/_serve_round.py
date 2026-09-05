@@ -52,7 +52,6 @@ from agent_runner.api import (
     emit_transient_error_recovered,
 )
 from agent_runner.clock import SYSTEM_CLOCK, Clock
-from agent_runner.round_log import round_num_from_log_path
 
 # Serve-loop-local memory-pressure state for the PRE-ROUND gate: the previous
 # sample, so the swap-rate delta tier is evaluable across successive
@@ -230,6 +229,7 @@ def _spawn_round(
     round_env: dict,
     *,
     timeout_s: int,
+    round_num: int,
     host_health_cfg=None,
     defer_to_cgroup: bool = False,
     clock: Clock = SYSTEM_CLOCK,
@@ -283,7 +283,7 @@ def _spawn_round(
     per ~10s tick for up to a whole ``round_timeout_s``. The streak still
     resets to 0 on any non-critical tick, so the cap is per streak-episode:
     sampling resumes from 1 the next time critical pressure recurs."""
-    log_dir, round_num = round_log_path.parent, round_num_from_log_path(round_log_path)
+    log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
             round_argv,

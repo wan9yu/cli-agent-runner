@@ -134,7 +134,6 @@ ALLOWED_SERVE_ROUND_FROM = [
         },
     ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
-    ("agent_runner.round_log", {"round_num_from_log_path"}),
 ]
 
 
