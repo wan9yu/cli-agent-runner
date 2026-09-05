@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.17] - 2026-09-05
+
+### Changed
+- Internal refactor ("round-outcome unification"): per-round classification now does one events-tail scan per round (was up to three), the give-up decision is unified behind a single `post_round_verdicts` (precedence and exit codes `78`/`70`/`71`/`75` unchanged), and the `_serve_round`↔`serve_cmd` import cycle is removed. Behavior-preserving.
+- `round_mem_critical_sample` is now capped at `2 × mem_critical_consecutive_samples` emits per critical episode (any non-critical tick resets it), so a host stuck under sustained pressure no longer writes that calibration event unbounded for a whole round.
+
+### Fixed
+- Auto-stop no longer records `monitor_auto_stop_failed` for a stop that actually succeeds: under load a round can outlast the stop-confirmation window while draining, which was mis-reported as a failure. The monitor now distinguishes a still-draining round from a genuine no-op.
+
+### Notes
+- Not breaking: no `agent-runner migrate`, no systemd unit change, no new event kinds, `peek --json` schema unchanged. The only behavior change is the bounded `round_mem_critical_sample` above.
+
 ## [0.2.16] - 2026-09-05
 
 ### Added
