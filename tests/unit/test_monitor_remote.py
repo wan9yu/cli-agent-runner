@@ -394,15 +394,9 @@ def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_
     caller (_monitor_loop_iter) hands this alert to on_alert again on the very
     next poll (see test_monitor_dedup_rearm.py), by which point the drain has
     usually resolved one way or the other."""
-    import os
     from unittest.mock import patch
 
     from agent_runner.api_types import ServiceMode, ServiceStatus
-    from agent_runner.lifecycle import PIDFile
-
-    # This test process itself: genuinely alive, no round holder sidecar
-    # written at all -- proves liveness alone is sufficient.
-    PIDFile(tmp_log_dir / "serve.pid").write(os.getpid())
 
     a = Alert(
         severity="critical",
