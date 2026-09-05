@@ -157,6 +157,25 @@ def post_round_decision(
     return ("continue", delay, 0)
 
 
+def _consecutive_streak_decision(
+    *, triggered: bool, consecutive: int, threshold: int, verdict: str
+) -> tuple[str, int]:
+    """The generic give-up-cap shape both :func:`_mem_loop_decision` and
+    :func:`_no_progress_decision` delegate to (0.2.17 Task 2 — de-duplicated
+    out of the two, which were byte-identical apart from their reset
+    condition, threshold constant, and verdict string). A NEW, SEPARATE,
+    private counter from ``post_round_decision``'s crash-loop breaker, not a
+    widening of its 3-tuple contract. Returns ``(verdict, consecutive)`` once
+    ``consecutive`` reaches ``threshold``; a non-``triggered`` round resets the
+    counter to 0."""
+    if not triggered:
+        return ("continue", 0)
+    consecutive += 1
+    if consecutive >= threshold:
+        return (verdict, consecutive)
+    return ("continue", consecutive)
+
+
 def _mem_loop_decision(
     *, mem_terminated: bool, consecutive: int
 ) -> tuple[Literal["mem_loop", "continue"], int]:
@@ -168,12 +187,12 @@ def _mem_loop_decision(
     eventually giving up. Returns ``("mem_loop", consecutive)`` once
     ``consecutive`` reaches ``MEM_LOOP_THRESHOLD``; a non-mem-terminated round
     resets the counter to 0, same reset shape as the crash-loop breaker."""
-    if not mem_terminated:
-        return ("continue", 0)
-    consecutive += 1
-    if consecutive >= MEM_LOOP_THRESHOLD:
-        return ("mem_loop", consecutive)
-    return ("continue", consecutive)
+    return _consecutive_streak_decision(
+        triggered=mem_terminated,
+        consecutive=consecutive,
+        threshold=MEM_LOOP_THRESHOLD,
+        verdict="mem_loop",
+    )
 
 
 def _no_progress_decision(
@@ -190,12 +209,12 @@ def _no_progress_decision(
     via a different signal. A round WITH progress (usage recorded, non-zero
     exit, or slow) resets the counter to 0, same reset shape as
     crash-loop/mem-loop."""
-    if not no_progress:
-        return ("continue", 0)
-    consecutive += 1
-    if consecutive >= CRASH_LOOP_THRESHOLD:
-        return ("stalled_no_progress", consecutive)
-    return ("continue", consecutive)
+    return _consecutive_streak_decision(
+        triggered=no_progress,
+        consecutive=consecutive,
+        threshold=CRASH_LOOP_THRESHOLD,
+        verdict="stalled_no_progress",
+    )
 
 
 def classify_round_exit(exc: BaseException) -> int:

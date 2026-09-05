@@ -487,7 +487,7 @@ def mem_loop_events_in_window(log_dir: Path, clock: Clock, window_s: int) -> int
     ``window_s`` seconds of ``clock.epoch()`` — events-derived, no state file,
     same tail-reconstruction shape as :func:`round_was_mem_terminated` above.
 
-    Feeds ``_serve_round.round_outcome_exit_code``'s cross-restart escalation
+    Feeds ``_serve_round.post_round_verdicts``'s cross-restart escalation
     (0.2.16 Task 5): ``MEM_LOOP_EXIT`` (71) alone resets on every serve
     process restart, so a host stuck in sustained pressure respawns into the
     identical loop forever (field-confirmed: NRestarts climbs, never

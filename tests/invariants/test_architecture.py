@@ -36,7 +36,7 @@ ALLOWED_SERVE_FROM = [
             "_maybe_pause_for_memory_pressure",
             "_probe_and_emit_cgroup_defer",
             "_spawn_round",
-            "round_outcome_exit_code",
+            "post_round_verdicts",
         },
     ),
     (
@@ -57,16 +57,7 @@ ALLOWED_SERVE_FROM = [
             "outer_round_ceiling_s",
         },
     ),
-    (
-        "agent_runner._serve_policy",
-        {
-            "PERMANENT_CONFIG_EXIT",
-            "_NO_PROGRESS_SHORT_S",
-            "_mem_loop_decision",
-            "_no_progress_decision",
-            "post_round_decision",
-        },
-    ),
+    ("agent_runner._serve_policy", {"PERMANENT_CONFIG_EXIT"}),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args_or_config_error"}),
     ("agent_runner.lifecycle", {"PIDFile"}),
@@ -86,7 +77,6 @@ ALLOWED_SERVE_FROM = [
             "_apply_back_off",
             "_check_throttle_state",
             "_interruptible_sleep",
-            "round_had_no_progress",
             "round_outcome",
             "round_was_mem_terminated",
         },
@@ -111,13 +101,20 @@ ALLOWED_SERVE_ROUND_FROM = [
         {
             "_MEM_LOOP_PERSIST_THRESHOLD",
             "_MEM_LOOP_PERSIST_WINDOW_S",
+            "_NO_PROGRESS_SHORT_S",
+            "_mem_loop_decision",
+            "_no_progress_decision",
+            "post_round_decision",
             "CRASH_LOOP_EXIT",
             "MEM_LOOP_EXIT",
             "MEM_LOOP_PERSISTENT_EXIT",
             "PERMANENT_CONFIG_EXIT",
         },
     ),
-    ("agent_runner._throttle", {"mem_loop_events_in_window", "pending_recovered"}),
+    (
+        "agent_runner._throttle",
+        {"mem_loop_events_in_window", "pending_recovered", "round_had_no_progress"},
+    ),
     (
         "agent_runner.api",
         {

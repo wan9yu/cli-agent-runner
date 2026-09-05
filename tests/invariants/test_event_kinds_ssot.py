@@ -102,8 +102,10 @@ _ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
     ("agent_runner/_serve_policy.py", "_no_progress_decision"): "restart-action enum",
     # Compares the post_round_decision restart-action enum, not event kinds.
     # (0.2.16 Task 5a: this comparison moved from serve_cmd.cmd into its own
-    # helper in _serve_round.py so cmd() stays under its LOC budget.)
-    ("agent_runner/cli/_serve_round.py", "round_outcome_exit_code"): "restart-action enum",
+    # helper in _serve_round.py so cmd() stays under its LOC budget; 0.2.17
+    # Task 2 renamed it round_outcome_exit_code -> post_round_verdicts and
+    # widened it to run the give-up breakers itself.)
+    ("agent_runner/cli/_serve_round.py", "post_round_verdicts"): "restart-action enum",
 }
 
 

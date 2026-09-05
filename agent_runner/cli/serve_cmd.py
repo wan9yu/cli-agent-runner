@@ -19,20 +19,13 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
-from agent_runner._serve_policy import (
-    _NO_PROGRESS_SHORT_S,
-    PERMANENT_CONFIG_EXIT,
-    _mem_loop_decision,
-    _no_progress_decision,
-    post_round_decision,
-)
+from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
     _active_throttles,
     _apply_back_off,
     _check_throttle_state,
     _interruptible_sleep,
-    round_had_no_progress,
     round_outcome,
     round_was_mem_terminated,
 )
@@ -57,7 +50,7 @@ from agent_runner.cli._serve_round import (
     _maybe_pause_for_memory_pressure,
     _probe_and_emit_cgroup_defer,
     _spawn_round,
-    round_outcome_exit_code,
+    post_round_verdicts,
 )
 from agent_runner.cli.common import cfg_from_args_or_config_error
 from agent_runner.clock import SYSTEM_CLOCK, Clock
@@ -694,53 +687,27 @@ def cmd(args) -> int:
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="after")
             rounds_completed += 1
-            # Restart policy (config_broken / crash_loop / continue) lives in the
-            # tested api.post_round_decision helper so this loop stays thin. Those
-            # strings are that enum, not events.py kinds — do not normalize them.
             # mem_terminated + round_throttle_active + outcome all come off the
             # SAME single events-tail scan (0.2.17 Task 1 — see _round_scan +
-            # INVARIANT 3); round_had_no_progress below reuses outcome rather
-            # than rescanning events a second time.
-            mem_terminated, round_throttle_active, outcome = _round_scan(cfg, phase_arg, log_dir)
-            action, delay, consecutive_crashes = post_round_decision(
-                returncode=r_returncode,
-                duration_s=round_duration_s,
-                throttle_active=round_throttle_active,
-                consecutive=consecutive_crashes,
-                restart_delay_s=cfg.runtime.restart_delay_s,
-            )
-            mem_action, consecutive_mem_terminations = _mem_loop_decision(
-                mem_terminated=mem_terminated, consecutive=consecutive_mem_terminations
-            )
-            # Exit-0 no-progress breaker (0.2.16 Task 6): pi-class CLIs exit 0 on a
-            # provider failure that never reached the model, invisible to the crash
-            # loop above (that one keys on a non-zero exit).
-            no_progress = round_had_no_progress(
-                log_dir,
-                returncode=r_returncode,
-                duration_s=round_duration_s,
-                threshold_s=_NO_PROGRESS_SHORT_S,
-                throttle_active=round_throttle_active,
-                outcome=outcome,
-            )
-            noprogress_action, consecutive_no_progress = _no_progress_decision(
-                no_progress=no_progress, consecutive=consecutive_no_progress
-            )
-            # config_broken / mem_loop / crash_loop / stalled_no_progress give-up
-            # decision (in that precedence order) + matching emit lives in
-            # round_outcome_exit_code so this loop stays thin; None means "keep
+            # INVARIANT 3). The full give-up orchestration (crash-loop / mem-loop
+            # / no-progress breakers, precedence, and matching emit) lives in
+            # post_round_verdicts so this loop stays thin; None exit means "keep
             # looping".
-            outcome_exit = round_outcome_exit_code(
-                action,
-                mem_action,
-                noprogress_action,
+            mem_terminated, round_throttle_active, outcome = _round_scan(cfg, phase_arg, log_dir)
+            outcome_exit, delay, streaks = post_round_verdicts(
+                cfg,
                 log_dir=log_dir,
                 round_log_path=round_log_path,
+                r_returncode=r_returncode,
+                round_duration_s=round_duration_s,
+                round_throttle_active=round_throttle_active,
+                mem_terminated=mem_terminated,
+                outcome=outcome,
                 consecutive_crashes=consecutive_crashes,
                 consecutive_mem_terminations=consecutive_mem_terminations,
                 consecutive_no_progress=consecutive_no_progress,
-                r_returncode=r_returncode,
             )
+            consecutive_crashes, consecutive_mem_terminations, consecutive_no_progress = streaks
             if outcome_exit is not None:
                 exit_code = outcome_exit
                 break

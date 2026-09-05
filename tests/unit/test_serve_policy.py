@@ -87,6 +87,31 @@ def test_no_progress_decision_progress_round_resets() -> None:
     assert action == "continue" and c == 0
 
 
+def test_consecutive_streak_decision_increments_then_trips_then_resets() -> None:
+    """The generic (0.2.17 Task 2) both _mem_loop_decision and
+    _no_progress_decision now delegate to: increments while triggered, trips
+    at threshold, and a non-triggered call resets to 0 regardless of the
+    streak so far -- the same shape both delegations document."""
+    from agent_runner._serve_policy import _consecutive_streak_decision
+
+    action, c = _consecutive_streak_decision(
+        triggered=True, consecutive=0, threshold=3, verdict="my_verdict"
+    )
+    assert (action, c) == ("continue", 1)
+    action, c = _consecutive_streak_decision(
+        triggered=True, consecutive=c, threshold=3, verdict="my_verdict"
+    )
+    assert (action, c) == ("continue", 2)
+    action, c = _consecutive_streak_decision(
+        triggered=True, consecutive=c, threshold=3, verdict="my_verdict"
+    )
+    assert (action, c) == ("my_verdict", 3)
+    action, c = _consecutive_streak_decision(
+        triggered=False, consecutive=c, threshold=3, verdict="my_verdict"
+    )
+    assert (action, c) == ("continue", 0)
+
+
 def test_mem_loop_persistent_exit_value_and_free() -> None:
     """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT is a distinct sysexits-band
     code from every other serve give-up/restart exit code in use."""

@@ -16,17 +16,26 @@ import os
 import signal
 import subprocess  # noqa: TID251
 from pathlib import Path
+from typing import Literal
 
 from agent_runner import host_health, metrics
 from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
     _MEM_LOOP_PERSIST_WINDOW_S,
+    _NO_PROGRESS_SHORT_S,
     CRASH_LOOP_EXIT,
     MEM_LOOP_EXIT,
     MEM_LOOP_PERSISTENT_EXIT,
     PERMANENT_CONFIG_EXIT,
+    _mem_loop_decision,
+    _no_progress_decision,
+    post_round_decision,
 )
-from agent_runner._throttle import mem_loop_events_in_window, pending_recovered
+from agent_runner._throttle import (
+    mem_loop_events_in_window,
+    pending_recovered,
+    round_had_no_progress,
+)
 from agent_runner.api import (
     emit_config_broken,
     emit_crash_loop,
@@ -177,6 +186,35 @@ def _terminate_round(proc: subprocess.Popen) -> int:
 _MEM_CHECK_INTERVAL_S = 10
 
 
+def _mid_round_action(
+    cfg, defer_to_cgroup: bool, critical_streak: int
+) -> Literal["terminate", "defer", "count_only"]:
+    """Pure, subprocess-free verdict (0.2.17 Task 2) for a critical mid-round
+    tick, once the caller has already incremented ``critical_streak`` and
+    emitted ``round_mem_critical_sample`` for it. ``cfg`` is the round's
+    ``host_health_cfg``.
+
+    - ``"count_only"`` — either the off switch (``cfg.in_round_mem_terminate``
+      False) or the streak hasn't yet reached
+      ``cfg.mem_critical_consecutive_samples``: keep sampling, no action.
+      **The off switch wins even when ``defer_to_cgroup`` is True** — it means
+      no action at all, not "defer instead of terminate", matching the
+      pre-extraction nesting where the defer branch sat INSIDE the
+      ``in_round_mem_terminate`` guard and so was never reachable when it was
+      False (no ``mem_pressure_deferred_to_cgroup`` emit either).
+    - ``"defer"`` — sustained critical pressure, but the cgroup's own
+      (mem+swap) budget is bounded end to end, so kernel cgroup-OOM will
+      contain the agent; the caller emits ``mem_pressure_deferred_to_cgroup``
+      (once per episode) instead of terminating.
+    - ``"terminate"`` — sustained critical pressure, no cgroup containment to
+      defer to: the caller ``_terminate_round``s and emits
+      ``round_mem_terminated``.
+    """
+    if not (cfg.in_round_mem_terminate and critical_streak >= cfg.mem_critical_consecutive_samples):
+        return "count_only"
+    return "defer" if defer_to_cgroup else "terminate"
+
+
 def _spawn_round(
     round_argv: list[str],
     round_log_path: Path,
@@ -277,31 +315,29 @@ def _spawn_round(
                             consecutive=critical_streak,
                             context=pressure.context,
                         )
-                        if (
-                            host_health_cfg.in_round_mem_terminate
-                            and critical_streak >= host_health_cfg.mem_critical_consecutive_samples
-                        ):
-                            if defer_to_cgroup:
-                                if not cgroup_defer_notified:
-                                    emit_mem_pressure_deferred_to_cgroup(
-                                        log_dir,
-                                        pid=proc.pid,
-                                        signal=pressure.signal,
-                                        message=pressure.message,
-                                    )
-                                    cgroup_defer_notified = True
-                            else:
-                                returncode = _terminate_round(proc)
-                                emit_round_mem_terminated(
-                                    log_dir,
-                                    pid=proc.pid,
-                                    severity=pressure.severity,
-                                    signal=pressure.signal,
-                                    message=pressure.message,
-                                    consecutive=critical_streak,
-                                    context=pressure.context,
-                                )
-                                return returncode
+                        action = _mid_round_action(
+                            host_health_cfg, defer_to_cgroup, critical_streak
+                        )
+                        if action == "terminate":
+                            returncode = _terminate_round(proc)
+                            emit_round_mem_terminated(
+                                log_dir,
+                                pid=proc.pid,
+                                severity=pressure.severity,
+                                signal=pressure.signal,
+                                message=pressure.message,
+                                consecutive=critical_streak,
+                                context=pressure.context,
+                            )
+                            return returncode
+                        if action == "defer" and not cgroup_defer_notified:
+                            emit_mem_pressure_deferred_to_cgroup(
+                                log_dir,
+                                pid=proc.pid,
+                                signal=pressure.signal,
+                                message=pressure.message,
+                            )
+                            cgroup_defer_notified = True
                     else:
                         critical_streak = 0
                         cgroup_defer_notified = False
@@ -355,23 +391,38 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     )
 
 
-def round_outcome_exit_code(
-    action,
-    mem_action,
-    noprogress_action,
+def post_round_verdicts(
+    cfg,
     *,
     log_dir,
     round_log_path,
-    consecutive_crashes,
-    consecutive_mem_terminations,
-    consecutive_no_progress,
-    r_returncode,
+    r_returncode: int,
+    round_duration_s: float,
+    round_throttle_active: bool,
+    mem_terminated: bool,
+    outcome,
+    consecutive_crashes: int,
+    consecutive_mem_terminations: int,
+    consecutive_no_progress: int,
     clock: Clock = SYSTEM_CLOCK,
-) -> int | None:
-    """Given this round's ``post_round_decision`` ``action``,
-    ``_mem_loop_decision`` ``mem_action``, and ``_no_progress_decision``
-    ``noprogress_action``, emit the matching give-up event and return the exit
-    code ``cmd()`` should break the loop on — or ``None`` to keep looping.
+) -> tuple[int | None, int, tuple[int, int, int]]:
+    """One round's full give-up orchestration (0.2.17 Task 2 — renamed from
+    ``round_outcome_exit_code`` and widened to run the three independent
+    breakers itself, absorbing the sequence that used to live inline in
+    ``serve_cmd.cmd()``'s post-round block): ``post_round_decision``'s
+    crash-loop, ``_mem_loop_decision``, and ``_no_progress_decision``, off
+    this round's already-scanned ``mem_terminated``/``round_throttle_active``/
+    ``outcome`` (see ``serve_cmd._round_scan`` — INVARIANT 3, one events-tail
+    scan per round), then resolves them to a single verdict.
+
+    Returns ``(exit_code_or_None, delay_s, streaks)``: ``exit_code_or_None``
+    is ``None`` to keep looping, or the exit code ``cmd()`` should break the
+    loop on; ``delay_s`` is ``post_round_decision``'s restart delay (the
+    caller breaks before ever sleeping on it when a give-up fires); ``streaks``
+    is the updated ``(consecutive_crashes, consecutive_mem_terminations,
+    consecutive_no_progress)`` triple the caller must carry into the next
+    iteration regardless of which verdict (if any) fired.
+
     Order is significant: config_broken > mem_loop(_persistent) > crash_loop >
     stalled_no_progress (a mem-terminated round always has
     ``throttle_active=True``, so ``post_round_decision`` never returns
@@ -396,6 +447,31 @@ def round_outcome_exit_code(
     give-up code as crash_loop, not a new one — since it is the identical
     verdict ("an unknown failure kept recurring, stop for real") reached via a
     different signal."""
+    action, delay, consecutive_crashes = post_round_decision(
+        returncode=r_returncode,
+        duration_s=round_duration_s,
+        throttle_active=round_throttle_active,
+        consecutive=consecutive_crashes,
+        restart_delay_s=cfg.runtime.restart_delay_s,
+    )
+    mem_action, consecutive_mem_terminations = _mem_loop_decision(
+        mem_terminated=mem_terminated, consecutive=consecutive_mem_terminations
+    )
+    # Exit-0 no-progress breaker (0.2.16 Task 6): pi-class CLIs exit 0 on a
+    # provider failure that never reached the model, invisible to the crash
+    # loop above (that one keys on a non-zero exit).
+    no_progress = round_had_no_progress(
+        log_dir,
+        returncode=r_returncode,
+        duration_s=round_duration_s,
+        threshold_s=_NO_PROGRESS_SHORT_S,
+        throttle_active=round_throttle_active,
+        outcome=outcome,
+    )
+    noprogress_action, consecutive_no_progress = _no_progress_decision(
+        no_progress=no_progress, consecutive=consecutive_no_progress
+    )
+    streaks = (consecutive_crashes, consecutive_mem_terminations, consecutive_no_progress)
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's
@@ -405,7 +481,7 @@ def round_outcome_exit_code(
         emit_config_broken(
             log_dir, reason=f"permanent config failure (round exited {r_returncode})"
         )
-        return PERMANENT_CONFIG_EXIT
+        return PERMANENT_CONFIG_EXIT, delay, streaks
     if mem_action == "mem_loop":
         occurrence = mem_loop_events_in_window(log_dir, clock, _MEM_LOOP_PERSIST_WINDOW_S) + 1
         if occurrence >= _MEM_LOOP_PERSIST_THRESHOLD:
@@ -415,14 +491,14 @@ def round_outcome_exit_code(
                 exit_code=r_returncode,
                 log_path=round_log_path,
             )
-            return MEM_LOOP_PERSISTENT_EXIT
+            return MEM_LOOP_PERSISTENT_EXIT, delay, streaks
         emit_mem_loop(
             log_dir,
             consecutive=consecutive_mem_terminations,
             exit_code=r_returncode,
             log_path=round_log_path,
         )
-        return MEM_LOOP_EXIT
+        return MEM_LOOP_EXIT, delay, streaks
     if action == "crash_loop":
         emit_crash_loop(
             log_dir,
@@ -430,7 +506,7 @@ def round_outcome_exit_code(
             exit_code=r_returncode,
             log_path=round_log_path,
         )
-        return CRASH_LOOP_EXIT
+        return CRASH_LOOP_EXIT, delay, streaks
     if noprogress_action == "stalled_no_progress":
         emit_stalled_no_progress(
             log_dir,
@@ -438,5 +514,5 @@ def round_outcome_exit_code(
             exit_code=r_returncode,
             log_path=round_log_path,
         )
-        return CRASH_LOOP_EXIT
-    return None
+        return CRASH_LOOP_EXIT, delay, streaks
+    return None, delay, streaks
