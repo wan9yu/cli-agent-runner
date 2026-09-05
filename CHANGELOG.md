@@ -12,10 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `round_mem_critical_sample` is now capped at `2 × mem_critical_consecutive_samples` emits per critical episode (any non-critical tick resets it), so a host stuck under sustained pressure no longer writes that calibration event unbounded for a whole round.
 
 ### Fixed
-- Auto-stop no longer records `monitor_auto_stop_failed` for a stop that actually succeeds: under load a round can outlast the stop-confirmation window while draining, which was mis-reported as a failure. The monitor now distinguishes a still-draining round from a genuine no-op.
+- Auto-stop no longer records `monitor_auto_stop_failed` for a stop that actually succeeds: under load a round can outlast the stop-confirmation window while draining, which was mis-reported as a failure. The monitor now recognizes a still-draining round and records the real outcome (triggered or failed) once it resolves on the next poll, instead of a false failure.
 
 ### Notes
-- Not breaking: no `agent-runner migrate`, no systemd unit change, no new event kinds, `peek --json` schema unchanged. The only behavior change is the bounded `round_mem_critical_sample` above.
+- Not breaking: no `agent-runner migrate`, no systemd unit change, no new event kinds, `peek --json` schema unchanged. The only non-fix behavior change is the bounded `round_mem_critical_sample` above.
 
 ## [0.2.16] - 2026-09-05
 

@@ -339,15 +339,7 @@ def _round_holder_pid(log_dir: Path) -> int | None:
     flight, the sidecar is missing/corrupt, or the recorded pid is no longer
     alive. This is the ONLY way ``kill()`` can reach an in-flight round: the
     round is ``start_new_session=True`` (its own session, its own pgid), so it
-    sits outside whatever process group serve itself belongs to.
-
-    Also read by ``monitor.on_alert`` (via a thin wrapper) to tell a genuinely
-    still-draining ``stop()`` (a round in flight — the documented graceful-stop
-    contract, ``cli/_serve_round.py``'s ``_spawn_round`` docstring) from an
-    actual silent no-op. Safe to reuse there: ``serve.lock``'s exclusive flock
-    means at most one serve owns this log_dir at a time, and ``PIDFile.read()``
-    already rejects a recycled pid via its create-time token — so a live
-    holder here can only belong to the same serve ``stop()`` just signaled."""
+    sits outside whatever process group serve itself belongs to."""
     from agent_runner.context_store import read_json
 
     data = read_json(log_dir / "agent-runner.lock.holder")
@@ -720,12 +712,20 @@ def _monitor_loop_iter(
             # work_dir with a non-preset log_dir would target the wrong dir, see no
             # pidfile, and no-op while serve keeps running. The Path resolves to the
             # real cfg.runtime.log_dir.
-            monitor.on_alert(
+            verdict = monitor.on_alert(
                 alert,
                 project=work_dir,
                 log_dir=cfg.runtime.log_dir,
                 allowed_stop_names=cfg.monitor.auto_stop_on,
             )
+            if verdict == "draining":
+                # Nothing was recorded for this alert this poll (see on_alert's
+                # docstring) — force-clear its `seen` entry so it is NOT treated
+                # as "still firing, stay suppressed" below: the alert condition
+                # persisting is exactly the case that must re-fire on_alert next
+                # poll, unlike every other verdict (recorded outcome, or never
+                # eligible), which keeps the normal dedup.
+                del seen[key]
         # Re-arm: an episode absent from this poll has cleared, so forget it — a
         # later recurrence is a NEW episode and must fire again (not stay suppressed
         # until bounded eviction). Only keys still firing this poll survive.

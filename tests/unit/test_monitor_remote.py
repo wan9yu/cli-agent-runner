@@ -379,20 +379,30 @@ def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_no
     assert "monitor_auto_stop_failed" not in kinds
 
 
-def test_given_pid_file_stop_still_draining_when_on_alert_then_no_event_recorded(
+def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_event_recorded(
     tmp_log_dir: Path,
 ) -> None:
-    """The flake this closes: api.stop's PID_FILE confirm window can legitimately
-    elapse with active=True while serve is honoring the documented graceful-stop
-    contract (finishing its in-flight round before exiting -- not interrupted by
-    SIGTERM). A round genuinely in flight for this log_dir (api._round_holder_pid)
-    is proof of that, not of a silent no-op, so on_alert must record neither
-    failed (a false alarm for a stop that is working) nor triggered (not
-    actually confirmed yet) -- the monitor loop's own dedup re-fires this alert
-    on its next poll once the drain resolves."""
+    """The flake this closes, broadened (M-2/M-3): api.stop's PID_FILE confirm
+    window can legitimately elapse with active=True while serve is still
+    alive and will exit once it next checks for the SIGTERM -- whether it is
+    mid-round (the documented graceful-stop contract), still bootstrapping
+    that round (hasn't written its lock-holder sidecar yet), or asleep in its
+    restart back-off between rounds. A LIVE serve pid alone (no round holder
+    needed) is proof of that, not of a silent no-op, so on_alert must record
+    neither failed (a false alarm for a stop that is working) nor triggered
+    (not actually confirmed yet) -- it returns "draining" instead, so its
+    caller (_monitor_loop_iter) hands this alert to on_alert again on the very
+    next poll (see test_monitor_dedup_rearm.py), by which point the drain has
+    usually resolved one way or the other."""
+    import os
     from unittest.mock import patch
 
     from agent_runner.api_types import ServiceMode, ServiceStatus
+    from agent_runner.lifecycle import PIDFile
+
+    # This test process itself: genuinely alive, no round holder sidecar
+    # written at all -- proves liveness alone is sufficient.
+    PIDFile(tmp_log_dir / "serve.pid").write(os.getpid())
 
     a = Alert(
         severity="critical",
@@ -403,24 +413,23 @@ def test_given_pid_file_stop_still_draining_when_on_alert_then_no_event_recorded
         auto_action="stop_service",
     )
     still_draining = ServiceStatus(mode=ServiceMode.PID_FILE, active=True)
-    with (
-        patch("agent_runner.monitor._call_local_stop", return_value=still_draining),
-        patch("agent_runner.api._round_holder_pid", return_value=4242),
-    ):
-        on_alert(a, project="myproj", log_dir=tmp_log_dir)
+    with patch("agent_runner.monitor._call_local_stop", return_value=still_draining):
+        verdict = on_alert(a, project="myproj", log_dir=tmp_log_dir)
 
+    assert verdict == "draining"
     kinds = [e["event"] for e in _events(tmp_log_dir)]
     assert "monitor_auto_stop_failed" not in kinds
     assert "monitor_auto_stop_triggered" not in kinds
 
 
-def test_given_pid_file_stop_no_round_in_flight_when_on_alert_then_emits_failed(
+def test_given_pid_file_stop_with_dead_serve_pid_when_on_alert_then_emits_failed(
     tmp_log_dir: Path,
 ) -> None:
     """Contrast case for the draining check above: PID_FILE mode, active=True,
-    but NO round in flight for this log_dir -- a genuine silent no-op (the
-    original bug this module's FAILED branch exists to catch), not a
-    legitimate drain. Must still emit failed, never triggered."""
+    but NO live serve pid for this log_dir at all (nothing was ever written) --
+    a genuine silent no-op (the original bug this module's FAILED branch
+    exists to catch: e.g. a stale/mismatched pidfile), not a legitimate drain.
+    Must still emit failed, never triggered."""
     from unittest.mock import patch
 
     from agent_runner.api_types import ServiceMode, ServiceStatus
@@ -434,12 +443,10 @@ def test_given_pid_file_stop_no_round_in_flight_when_on_alert_then_emits_failed(
         auto_action="stop_service",
     )
     stuck = ServiceStatus(mode=ServiceMode.PID_FILE, active=True)
-    with (
-        patch("agent_runner.monitor._call_local_stop", return_value=stuck),
-        patch("agent_runner.api._round_holder_pid", return_value=None),
-    ):
-        on_alert(a, project="myproj", log_dir=tmp_log_dir)
+    with patch("agent_runner.monitor._call_local_stop", return_value=stuck):
+        verdict = on_alert(a, project="myproj", log_dir=tmp_log_dir)
 
+    assert verdict == "failed"
     kinds = [e["event"] for e in _events(tmp_log_dir)]
     assert "monitor_auto_stop_failed" in kinds
     assert "monitor_auto_stop_triggered" not in kinds
