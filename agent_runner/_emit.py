@@ -297,17 +297,26 @@ def emit_round_mem_critical_sample(
     log_dir: Path, *, round_num: int, consecutive: int, context: dict
 ) -> None:
     """Emit on EACH critical host_health sample inside _spawn_round's mid-round
-    hard floor -- deliberately NOT deduped (unlike round_mem_terminated): the
-    point is calibration visibility into near-misses, so an operator watching
-    the event stream sees the critical_streak build (1, 2, ...) even on ticks
-    that never reach the terminate threshold (a healthy tick resets it before
-    3-in-a-row). ``context`` carries the same Pressure.context numbers as
+    hard floor -- deliberately NOT deduped to once-per-episode (unlike
+    round_mem_terminated): the point is calibration visibility into
+    near-misses, so an operator watching the event stream sees the
+    critical_streak build (1, 2, ...) even on ticks that never reach the
+    terminate threshold (a healthy tick resets it before 3-in-a-row).
+    ``context`` carries the same Pressure.context numbers as
     round_mem_terminated. Fires only during critical pressure -- never during
     warning/healthy -- so it adds no normal-operation noise, including while
     ``defer_to_cgroup`` steps back from terminating (the streak/context is
     still useful calibration there; this event stays scoped to the
     sample-level signal, distinct from mem_pressure_deferred_to_cgroup's
-    once-per-episode terminate-vs-defer notice)."""
+    once-per-episode terminate-vs-defer notice).
+
+    0.2.17: the caller caps this at ``2 * mem_critical_consecutive_samples``
+    consecutive ticks (1..6 at the default 3) -- a sustained-critical
+    don't-terminate run (cgroup-defer, or the off switch) would otherwise
+    write one event per ~10s tick for up to a whole ``round_timeout_s`` on a
+    permanently-deferred/off host. The cap is per streak-episode, not a
+    lifetime limit: any non-critical tick still resets the streak to 0, and
+    sampling resumes from 1 the next time critical pressure recurs."""
     from agent_runner.events import ROUND_MEM_CRITICAL_SAMPLE, emit
 
     emit(

@@ -184,6 +184,21 @@ def _read_finite_cgroup_limit(path: Path) -> int | None:
         return None
 
 
+def _min_ancestor_limit(root: Path, ancestors: list[str], filename: str) -> int | None:
+    """The MIN FINITE value of ``filename`` (a cgroup ``memory.*`` limit,
+    e.g. ``"memory.max"``) across ``ancestors`` (nearest first, as returned
+    by :func:`_cgroup_ancestors`) under ``root``. Each ancestor's file is
+    read via :func:`_read_finite_cgroup_limit`, where ``"max"`` or a missing
+    file contributes no candidate. ``None`` when no ancestor has a finite
+    value -- unlimited end to end."""
+    candidates = [
+        limit
+        for ancestor in ancestors
+        if (limit := _read_finite_cgroup_limit(root / ancestor.lstrip("/") / filename)) is not None
+    ]
+    return min(candidates) if candidates else None
+
+
 def cgroup_memory_limits(
     *,
     root: Path = _CGROUP_ROOT,
@@ -216,20 +231,10 @@ def cgroup_memory_limits(
     if cgroup_path is None:
         return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
 
-    memory_max_candidates: list[int] = []
-    memory_swap_max_candidates: list[int] = []
-    for ancestor in _cgroup_ancestors(cgroup_path):
-        fs_dir = root / ancestor.lstrip("/")
-        mm = _read_finite_cgroup_limit(fs_dir / "memory.max")
-        if mm is not None:
-            memory_max_candidates.append(mm)
-        sm = _read_finite_cgroup_limit(fs_dir / "memory.swap.max")
-        if sm is not None:
-            memory_swap_max_candidates.append(sm)
-
+    ancestors = _cgroup_ancestors(cgroup_path)
     return {
-        "memory_max": min(memory_max_candidates) if memory_max_candidates else None,
-        "memory_swap_max": min(memory_swap_max_candidates) if memory_swap_max_candidates else None,
+        "memory_max": _min_ancestor_limit(root, ancestors, "memory.max"),
+        "memory_swap_max": _min_ancestor_limit(root, ancestors, "memory.swap.max"),
         "cgroup_path": cgroup_path,
     }
 

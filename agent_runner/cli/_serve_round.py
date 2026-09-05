@@ -267,7 +267,13 @@ def _spawn_round(
 
     0.2.16: every critical tick also emits ``round_mem_critical_sample`` (not
     deduped -- near-miss calibration); ``round_mem_terminated`` now carries
-    the streak + ``Pressure.context`` too."""
+    the streak + ``Pressure.context`` too. 0.2.17: that emit is capped at
+    ``2 * host_health_cfg.mem_critical_consecutive_samples`` consecutive
+    ticks (1..6 at the default 3) -- a sustained-critical don't-terminate
+    run (cgroup-defer, or the off switch) would otherwise write one event
+    per ~10s tick for up to a whole ``round_timeout_s``. The streak still
+    resets to 0 on any non-critical tick, so the cap is per streak-episode:
+    sampling resumes from 1 the next time critical pressure recurs."""
     log_dir, round_num = round_log_path.parent, round_num_from_log_path(round_log_path)
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
@@ -309,12 +315,13 @@ def _spawn_round(
                     prev_tick_sample = cur_sample
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
-                        emit_round_mem_critical_sample(
-                            log_dir,
-                            round_num=round_num,
-                            consecutive=critical_streak,
-                            context=pressure.context,
-                        )
+                        if critical_streak <= 2 * host_health_cfg.mem_critical_consecutive_samples:
+                            emit_round_mem_critical_sample(
+                                log_dir,
+                                round_num=round_num,
+                                consecutive=critical_streak,
+                                context=pressure.context,
+                            )
                         action = _mid_round_action(
                             host_health_cfg, defer_to_cgroup, critical_streak
                         )

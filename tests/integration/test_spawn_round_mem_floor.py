@@ -360,6 +360,61 @@ def test_off_switch_never_terminates(tmp_path):
     assert "round_mem_terminated" not in kinds
 
 
+def test_off_switch_critical_sample_capped_then_resets(tmp_path):
+    """0.2.17: round_mem_critical_sample is capped at
+    2 * mem_critical_consecutive_samples (1..6 at the default 3) -- a
+    sustained-critical don't-terminate run (here: the off switch) must not
+    keep writing an event on EVERY tick for up to a whole round_timeout_s on
+    a permanently-deferred/off host. The streak itself (critical_streak, and
+    _mid_round_action's threshold check) is untouched by the cap -- only
+    whether the calibration event fires. A non-critical tick still resets
+    the streak to 0, so sampling resumes from 1 on the next critical run --
+    the cap is per streak-episode, not a one-shot lifetime limit."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    # Long enough for >= 8 critical ticks, 2 healthy ticks, then several more
+    # critical ticks -- comfortably past the cap (6) on both sides of the
+    # reset.
+    argv = [sys.executable, "-c", "import time; time.sleep(16)"]
+
+    calls = {"n": 0}
+
+    def _sample_fn():
+        calls["n"] += 1
+        n = calls["n"]
+        if n <= 8:
+            return _CRITICAL_SAMPLE
+        if n <= 10:
+            return _HEALTHY_SAMPLE
+        return _CRITICAL_SAMPLE
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
+        clock=_TickingClock(),
+        sample_fn=_sample_fn,
+    )
+    assert rc == 0  # off switch: never terminated despite sustained critical pressure
+
+    events = read_events_for_current_month(log_dir)
+    assert [e for e in events if e.get("event") == "round_mem_terminated"] == []
+    samples = [e for e in events if e.get("event") == "round_mem_critical_sample"]
+    consecutive = [s["consecutive"] for s in samples]
+
+    # First sustained-critical run: streak 1..6 fires, then the cap silences
+    # ticks 7 and 8 (both still critical -- the underlying streak keeps
+    # counting, but the calibration event stops).
+    assert consecutive[:6] == [1, 2, 3, 4, 5, 6]
+    assert 7 not in consecutive
+    assert 8 not in consecutive
+    # A non-critical tick (calls 9-10) resets the streak -- the very next
+    # critical tick resumes sampling from 1, not from where it left off.
+    assert consecutive[6] == 1
+
+
 def test_both_finite_defers_never_terminates(tmp_path):
     """0.2.16 Task 3: when the cgroup's (mem+swap) budget is bounded end to
     end (both memory.max and memory.swap.max finite -- exactly the field
