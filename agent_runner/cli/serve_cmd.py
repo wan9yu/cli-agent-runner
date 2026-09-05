@@ -33,6 +33,7 @@ from agent_runner._throttle import (
     _check_throttle_state,
     _interruptible_sleep,
     round_had_no_progress,
+    round_outcome,
     round_was_mem_terminated,
 )
 from agent_runner.api import (
@@ -346,7 +347,7 @@ def _throttle_skip_context(cfg, log_dir) -> tuple[frozenset[str], int | None]:
     return frozenset(throttled), wake
 
 
-def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
+def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
     """Was the round that JUST ran throttled? — so the crash-loop breaker
     excuses a fast throttle-induced exit rather than counting it as a crash.
     A mem-terminated round (round_mem_terminated — a coma-preventer kill, not
@@ -358,11 +359,39 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir) -> bool:
     round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
     serve does NOT know which agent ran, so fall back to "any agent throttled" — the
     pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
-    being misread as a crash (a false ``crash_loop`` permanent stop)."""
-    active = _active_throttles(log_dir)
+    being misread as a crash (a false ``crash_loop`` permanent stop).
+
+    ``active``, when given, is an already-computed :func:`_active_throttles` map
+    (cmd()'s post-round block passes one built off that round's :func:`round_outcome`
+    — see INVARIANT 3) — skips a fresh scan here. Omitted (every existing caller/test),
+    computed fresh: unchanged pre-0.2.17 behavior."""
+    if active is None:
+        active = _active_throttles(log_dir)
     if phase_arg is None:
         return bool(active)
     return cfg.profile_for(phase_arg).agent.binary in active
+
+
+def _round_scan(cfg, phase_arg, log_dir):
+    """The round-that-just-ran's mem-terminated + throttle-active verdicts, off
+    ONE events-tail scan (0.2.17 Task 1) — extracted out of ``cmd()`` to hold its
+    140-line budget (see the LOC invariant test), not because this is reused
+    elsewhere.
+
+    INVARIANT 3: ``round_outcome(log_dir)`` is computed exactly ONCE per round,
+    called from ``cmd()`` right after this round's "after" substrate capture and
+    before any give-up emit — that block is otherwise pure calls, so one scan here
+    sees the identical file state the pre-0.2.17 three separate scans each saw.
+    The returned ``outcome`` is reused by ``cmd()`` for ``round_had_no_progress``
+    too, and ``active`` (built off ``outcome.latest_transient_per_agent``) is
+    reused for the crash-loop breaker's throttle check — mem-terminated and
+    throttle-active OR together into the single ``round_throttle_active`` both
+    ``post_round_decision`` and ``round_had_no_progress`` gate on."""
+    outcome = round_outcome(log_dir)
+    mem_terminated = round_was_mem_terminated(log_dir, outcome=outcome)
+    active = _active_throttles(log_dir, _latest=outcome.latest_transient_per_agent)
+    throttled = mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir, active=active)
+    return mem_terminated, throttled, outcome
 
 
 def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int | None] | str:
@@ -655,16 +684,11 @@ def cmd(args) -> int:
             # Restart policy (config_broken / crash_loop / continue) lives in the
             # tested api.post_round_decision helper so this loop stays thin. Those
             # strings are that enum, not events.py kinds — do not normalize them.
-            # mem_terminated computed ONCE here and OR'd into throttle_active so
-            # crash_loop never double-counts a mem-terminated round; _mem_loop_decision
-            # (a separate, private cap) tracks it on its own counter below.
-            mem_terminated = round_was_mem_terminated(log_dir)
-            # Crash-loop breaker excuses a fast exit when the agent that just ran is
-            # throttled (agent-agnostic when the round self-rotated the phase) or
-            # mem-terminated. Named (not inlined) so round_had_no_progress below can
-            # reuse this SAME verdict (0.2.16 fix-wave CRITICAL #1) rather than
-            # rescanning events a second time.
-            round_throttle_active = mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir)
+            # mem_terminated + round_throttle_active + outcome all come off the
+            # SAME single events-tail scan (0.2.17 Task 1 — see _round_scan +
+            # INVARIANT 3); round_had_no_progress below reuses outcome rather
+            # than rescanning events a second time.
+            mem_terminated, round_throttle_active, outcome = _round_scan(cfg, phase_arg, log_dir)
             action, delay, consecutive_crashes = post_round_decision(
                 returncode=r_returncode,
                 duration_s=round_duration_s,
@@ -684,6 +708,7 @@ def cmd(args) -> int:
                 duration_s=round_duration_s,
                 threshold_s=_NO_PROGRESS_SHORT_S,
                 throttle_active=round_throttle_active,
+                outcome=outcome,
             )
             noprogress_action, consecutive_no_progress = _no_progress_decision(
                 no_progress=no_progress, consecutive=consecutive_no_progress

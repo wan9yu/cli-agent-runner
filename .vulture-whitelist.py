@@ -13,6 +13,13 @@ log_dir
 offsets
 buffer
 
+# agent_runner._throttle.RoundOutcome
+mem_terminated
+usage_capable
+newest_usage_ts
+newest_substrate_before_ts
+latest_transient_per_agent
+
 # agent_runner.agent_runtime.RunResult
 exit_code
 duration_s

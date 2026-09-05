@@ -13,7 +13,8 @@ from __future__ import annotations
 import math
 import random
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,9 @@ __all__ = [
     "mem_loop_events_in_window",
     "pending_recovered",
     "round_had_no_progress",
+    "round_outcome",
     "round_was_mem_terminated",
+    "RoundOutcome",  # trailing: class, not function -- kept with its round_outcome() sibling above
 ]
 
 # _scan_events_for_transient sentinel: file held no transient event at all
@@ -107,6 +110,21 @@ def _iter_events(path: Path):
     return iter_event_dicts(path)
 
 
+def _tail_events(log_dir: Path) -> Iterator[dict[str, Any]]:
+    """The ONE events-tail scan every per-round / per-agent / global-latest
+    reader below builds on: the newest TWO monthly ``events-*.jsonl`` files
+    (oldest-first), each read forward. 0.2.17 Task 1 consolidated 5 copies of
+    this exact ``sorted(log_dir.glob(...))[-2:]`` loop into this single
+    generator so a refactor of the tail-selection logic (e.g. widening the
+    window) touches one place, not five.
+
+    Forward, OLD-then-NEW order matters (INVARIANT 2 for callers that merge a
+    per-key "latest wins" map: iterating oldest file first means a later event
+    for the same key naturally overwrites an earlier one)."""
+    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
+        yield from _iter_events(path)
+
+
 def _scan_events_for_transient(path: Path):
     """The file's LAST transient event: the detected dict, ``None`` (latest was a
     recovered), or ``_NO_TRANSIENT`` (no transient event in the file).
@@ -152,13 +170,15 @@ def _latest_transient_per_agent(log_dir: Path) -> dict[str, Any]:
     agent A in the old file must not be masked by agent B's event in the newer one.
     Iterates old-then-new so the newest event per agent wins."""
     latest: dict[str, Any] = {}
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        for ev in _iter_events(path):
-            kind = ev.get("event")
-            if kind == TRANSIENT_ERROR_DETECTED:
-                latest[str(ev.get("agent", "unknown"))] = ev
-            elif kind == TRANSIENT_ERROR_RECOVERED:
-                latest[str(ev.get("agent", "unknown"))] = None
+    for ev in _tail_events(log_dir):
+        kind = ev.get("event")
+        # INVARIANT 2: keyed by str(agent), forward old->new merge (_tail_events
+        # yields the newest-two-files tail oldest-first) — newest event per agent
+        # wins, matching every other latest_transient_per_agent copy pre-0.2.17.
+        if kind == TRANSIENT_ERROR_DETECTED:
+            latest[str(ev.get("agent", "unknown"))] = ev
+        elif kind == TRANSIENT_ERROR_RECOVERED:
+            latest[str(ev.get("agent", "unknown"))] = None
     return latest
 
 
@@ -174,15 +194,14 @@ def _backoff_exponent(log_dir: Path, agent: str) -> int:
     deliberately NOT a reset point — the throttle-aware-skip path emits one every
     cycle, which would pin the exponent at <=1 and flatten the ladder."""
     count = 0
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        for ev in _iter_events(path):
-            if str(ev.get("agent", "")) != agent:
-                continue
-            kind = ev.get("event")
-            if kind == TRANSIENT_ERROR_DETECTED:
-                count += 1
-            elif kind == AGENT_USAGE_RECORDED and ev.get("success"):
-                count = 0
+    for ev in _tail_events(log_dir):
+        if str(ev.get("agent", "")) != agent:
+            continue
+        kind = ev.get("event")
+        if kind == TRANSIENT_ERROR_DETECTED:
+            count += 1
+        elif kind == AGENT_USAGE_RECORDED and ev.get("success"):
+            count = 0
     return max(0, count - 1)
 
 
@@ -240,7 +259,11 @@ def _events_derived_reset(
 
 
 def _active_throttles(
-    log_dir: Path, *, clock: Clock = SYSTEM_CLOCK, _exponent_cache: dict[str, int] | None = None
+    log_dir: Path,
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    _exponent_cache: dict[str, int] | None = None,
+    _latest: dict[str, Any] | None = None,
 ) -> dict[str, TransientErrorState]:
     """Currently-active throttles keyed by AGENT label (binary basename), one entry
     per agent whose latest transient event is an unrecovered ``detected`` with its
@@ -251,10 +274,16 @@ def _active_throttles(
     healthy agent's phase keeps running. Restart-safe (events-derived). The effective
     reset applies the events-derived exp-backoff ladder (:func:`_events_derived_reset`)
     so a permanently-failing agent escalates here too, not just on the wait/back_off
-    path — ONE ladder, shared by both regimes."""
+    path — ONE ladder, shared by both regimes.
+
+    ``_latest``, when given, is an already-computed :func:`_latest_transient_per_agent`
+    map (e.g. :attr:`RoundOutcome.latest_transient_per_agent`) — skips a fresh
+    events-tail scan here, the same memoization idea as ``_exponent_cache``. Omitted,
+    it is computed fresh (unchanged pre-0.2.17 behavior)."""
     now = clock.epoch()
     active: dict[str, TransientErrorState] = {}
-    for agent, detected in _latest_transient_per_agent(log_dir).items():
+    latest = _latest if _latest is not None else _latest_transient_per_agent(log_dir)
+    for agent, detected in latest.items():
         if detected is None:
             continue
         classification = str(detected.get("classification", "rate_limit_account"))
@@ -277,7 +306,79 @@ def _active_throttles(
     return active
 
 
-def round_was_mem_terminated(log_dir: Path) -> bool:
+@dataclass(frozen=True)
+class RoundOutcome:
+    """Every PER-ROUND-scoped verdict :func:`round_was_mem_terminated` and
+    :func:`round_had_no_progress` need, folded from ONE :func:`_tail_events`
+    scan (0.2.17 Task 1) instead of the pre-0.2.17 three separate ones (those
+    two functions' own scans, plus the throttle check's
+    :func:`_latest_transient_per_agent` scan serve_cmd ran back-to-back with
+    them every round).
+
+    Deliberately does NOT include :func:`mem_loop_events_in_window` (give-up-only,
+    needs its own clock cutoff — a different axis than "this round") or
+    :func:`_backoff_exponent` (agent-scoped, keyed by a caller-supplied agent, not
+    "the round that just ran") — both stay on :func:`_tail_events` directly."""
+
+    mem_terminated: bool
+    usage_capable: bool
+    newest_usage_ts: str | None
+    newest_substrate_before_ts: str | None
+    latest_transient_per_agent: dict[str, Any]
+
+
+def round_outcome(log_dir: Path) -> RoundOutcome:
+    """Single-pass fold over :func:`_tail_events` computing :class:`RoundOutcome`.
+    Callers: :func:`round_was_mem_terminated`, :func:`round_had_no_progress` (each
+    accepts a precomputed ``outcome=`` to skip re-scanning), and
+    ``serve_cmd.cmd()``'s post-round block, which computes this ONCE per round
+    (INVARIANT 3) and reuses it for the mem-terminated / throttle / no-progress
+    checks that used to scan separately."""
+    newest_before_ts: str | None = None
+    newest_terminated_ts: str | None = None
+    newest_usage_ts: str | None = None
+    usage_capable = False
+    transient: dict[str, Any] = {}
+    for ev in _tail_events(log_dir):
+        kind = ev.get("event")
+        # INVARIANT 2: latest_transient_per_agent keys by str(agent), no ts guard,
+        # forward old->new merge (_tail_events yields oldest-file-first) — identical
+        # to the pre-0.2.17 _latest_transient_per_agent copy this replaces.
+        if kind == TRANSIENT_ERROR_DETECTED:
+            transient[str(ev.get("agent", "unknown"))] = ev
+        elif kind == TRANSIENT_ERROR_RECOVERED:
+            transient[str(ev.get("agent", "unknown"))] = None
+        # INVARIANT 1: usage_capable set UNCONDITIONALLY here, on the raw kind check,
+        # BEFORE the `ts` guard below — matches the pre-refactor round_had_no_progress
+        # (usage_capable must arm even off a ts-less agent_usage_recorded event).
+        if kind == AGENT_USAGE_RECORDED:
+            usage_capable = True
+        ts = ev.get("ts")
+        if not ts:
+            continue
+        if kind == ROUND_SUBSTRATE_BEFORE:
+            newest_before_ts = ts
+        elif kind == ROUND_MEM_TERMINATED:
+            newest_terminated_ts = ts
+        elif kind == AGENT_USAGE_RECORDED:
+            newest_usage_ts = ts
+    # round_was_mem_terminated's own scoping logic (see its docstring): >=, not >,
+    # since a fast loop can legitimately stamp both events in the same millisecond.
+    mem_terminated = (
+        newest_before_ts is not None
+        and newest_terminated_ts is not None
+        and parse_iso_ms(newest_terminated_ts) >= parse_iso_ms(newest_before_ts)
+    )
+    return RoundOutcome(
+        mem_terminated=mem_terminated,
+        usage_capable=usage_capable,
+        newest_usage_ts=newest_usage_ts,
+        newest_substrate_before_ts=newest_before_ts,
+        latest_transient_per_agent=transient,
+    )
+
+
+def round_was_mem_terminated(log_dir: Path, *, outcome: RoundOutcome | None = None) -> bool:
     """True iff the round that JUST ran was killed by ``_spawn_round``'s
     mid-round memory-pressure hard floor (``round_mem_terminated``) rather
     than a genuine crash — so ``serve_cmd.cmd`` can excuse it from the
@@ -299,22 +400,15 @@ def round_was_mem_terminated(log_dir: Path) -> bool:
     ``round_mem_terminated`` within the very round it is scoping. ``>=``, not
     ``>``: a fast loop (or millisecond-resolution ties) can legitimately stamp
     both events in the same millisecond; erring toward "this round's" on a tie
-    only risks over-excusing, never mistaking a genuine crash for a rescue."""
-    newest_before_ts: str | None = None
-    newest_terminated_ts: str | None = None
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        for ev in _iter_events(path):
-            ts = ev.get("ts")
-            if not ts:
-                continue
-            kind = ev.get("event")
-            if kind == ROUND_SUBSTRATE_BEFORE:
-                newest_before_ts = ts
-            elif kind == ROUND_MEM_TERMINATED:
-                newest_terminated_ts = ts
-    if newest_before_ts is None or newest_terminated_ts is None:
-        return False
-    return parse_iso_ms(newest_terminated_ts) >= parse_iso_ms(newest_before_ts)
+    only risks over-excusing, never mistaking a genuine crash for a rescue.
+
+    ``outcome``, when given (the serve post-round block's one-scan path — see
+    :class:`RoundOutcome`), is used verbatim instead of triggering a fresh
+    :func:`round_outcome` scan; every existing caller/test omits it and gets the
+    pre-0.2.17 from-scratch-scan behavior unchanged."""
+    if outcome is None:
+        outcome = round_outcome(log_dir)
+    return outcome.mem_terminated
 
 
 def round_had_no_progress(
@@ -324,6 +418,7 @@ def round_had_no_progress(
     duration_s: float,
     threshold_s: float,
     throttle_active: bool = False,
+    outcome: RoundOutcome | None = None,
 ) -> bool:
     """True iff the round that JUST ran exited 0, finished fast, but never
     reached the model -- pi (and CLIs like it: see builtin_plugins/pi.py's
@@ -352,9 +447,11 @@ def round_had_no_progress(
        round), a round with none is genuine no-progress and still trips --
        this makes the breaker CLI-adaptive with no config descriptor.
 
-    Short-circuits on ``returncode != 0`` or ``duration_s >= threshold_s``
-    without touching the events tail: a non-zero exit already has its own
-    crash-loop signal, and a slow round (even with no usage) is not a TIGHT
+    INVARIANT 4: short-circuits on ``returncode != 0`` or ``duration_s >=
+    threshold_s`` (or ``throttle_active``) BEFORE touching ``outcome`` at all --
+    still ahead of any events-tail scan / ``newest_usage_ts`` comparison, exactly
+    as the pre-0.2.17 single-scan version did: a non-zero exit already has its
+    own crash-loop signal, and a slow round (even with no usage) is not a TIGHT
     loop -- a wedged/hung round already has its own signal
     (``round_supervisor_wedged``), so this floor is specifically the fast spin.
 
@@ -367,31 +464,22 @@ def round_had_no_progress(
     (newest-event-timestamp comparison against the newest
     ``round_substrate_before``), with the comparison inverted: no progress
     means the newest usage event is EITHER absent OR older than this round's
-    own start."""
+    own start.
+
+    ``outcome``, when given (the serve post-round block's one-scan path), is used
+    verbatim instead of triggering a fresh :func:`round_outcome` scan — see
+    :func:`round_was_mem_terminated`."""
     if throttle_active or returncode != 0 or duration_s >= threshold_s:
         return False
-    newest_before_ts: str | None = None
-    newest_usage_ts: str | None = None
-    usage_capable = False
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        for ev in _iter_events(path):
-            kind = ev.get("event")
-            if kind == AGENT_USAGE_RECORDED:
-                usage_capable = True
-            ts = ev.get("ts")
-            if not ts:
-                continue
-            if kind == ROUND_SUBSTRATE_BEFORE:
-                newest_before_ts = ts
-            elif kind == AGENT_USAGE_RECORDED:
-                newest_usage_ts = ts
-    if not usage_capable:
+    if outcome is None:
+        outcome = round_outcome(log_dir)
+    if not outcome.usage_capable:
         return False  # this CLI/plugin stack has never emitted usage -- can't arm
-    if newest_before_ts is None:
+    if outcome.newest_substrate_before_ts is None:
         return False
-    if newest_usage_ts is None:
+    if outcome.newest_usage_ts is None:
         return True
-    return parse_iso_ms(newest_usage_ts) < parse_iso_ms(newest_before_ts)
+    return parse_iso_ms(outcome.newest_usage_ts) < parse_iso_ms(outcome.newest_substrate_before_ts)
 
 
 def mem_loop_events_in_window(log_dir: Path, clock: Clock, window_s: int) -> int:
@@ -407,15 +495,16 @@ def mem_loop_events_in_window(log_dir: Path, clock: Clock, window_s: int) -> int
     an all-time total, or a restart-local counter — gives "ages out on its
     own after a sustained-healthy stretch" for free: an old mem_loop episode
     outside the window simply stops counting, no explicit reset needed."""
+    # Kept OUT of RoundOutcome/round_outcome (0.2.17 Task 1): give-up-only, and its
+    # window cutoff needs its OWN clock read, unlike anything folded into that struct.
     cutoff = clock.epoch() - window_s
     count = 0
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        for ev in _iter_events(path):
-            if ev.get("event") != MEM_LOOP:
-                continue
-            ts = ev.get("ts")
-            if ts and parse_iso_ms(ts).timestamp() >= cutoff:
-                count += 1
+    for ev in _tail_events(log_dir):
+        if ev.get("event") != MEM_LOOP:
+            continue
+        ts = ev.get("ts")
+        if ts and parse_iso_ms(ts).timestamp() >= cutoff:
+            count += 1
     return count
 
 

@@ -87,6 +87,7 @@ ALLOWED_SERVE_FROM = [
             "_check_throttle_state",
             "_interruptible_sleep",
             "round_had_no_progress",
+            "round_outcome",
             "round_was_mem_terminated",
         },
     ),
