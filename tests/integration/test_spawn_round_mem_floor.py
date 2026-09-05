@@ -131,9 +131,10 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
     assert terminated[0]["consecutive"] == 3
     assert terminated[0]["context"]["psi_full_avg10"] == 70.0
 
-    # The calibration signal: EVERY critical tick emits round_mem_critical_sample
-    # (not deduped), so the streak building 1 -> 2 -> 3 is visible even before
-    # the terminate threshold is crossed.
+    # The calibration signal: every critical tick emits round_mem_critical_sample
+    # up to the 2x mem_critical_consecutive_samples cap (0.2.17); this terminate
+    # path stops at streak 3, well under the cap, so the full 1 -> 2 -> 3 build-up
+    # is visible before the terminate threshold is crossed.
     samples = [e for e in events if e.get("event") == "round_mem_critical_sample"]
     assert [s["consecutive"] for s in samples] == [1, 2, 3]
     assert samples[0]["round_num"] == 1

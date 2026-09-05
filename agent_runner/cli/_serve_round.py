@@ -191,7 +191,8 @@ def _mid_round_action(
 ) -> Literal["terminate", "defer", "count_only"]:
     """Pure, subprocess-free verdict (0.2.17 Task 2) for a critical mid-round
     tick, once the caller has already incremented ``critical_streak`` and
-    emitted ``round_mem_critical_sample`` for it. ``cfg`` is the round's
+    (when the streak is within the emit cap) emitted
+    ``round_mem_critical_sample`` for it. ``cfg`` is the round's
     ``host_health_cfg``.
 
     - ``"count_only"`` — either the off switch (``cfg.in_round_mem_terminate``
