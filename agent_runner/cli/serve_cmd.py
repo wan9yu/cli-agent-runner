@@ -386,11 +386,24 @@ def _round_scan(cfg, phase_arg, log_dir):
     too, and ``active`` (built off ``outcome.latest_transient_per_agent``) is
     reused for the crash-loop breaker's throttle check — mem-terminated and
     throttle-active OR together into the single ``round_throttle_active`` both
-    ``post_round_decision`` and ``round_had_no_progress`` gate on."""
+    ``post_round_decision`` and ``round_had_no_progress`` gate on.
+
+    Pre-refactor, ``mem_terminated or _ran_agent_throttled(...)`` short-circuited
+    via Python's ``or``: a mem-terminated round never triggered the throttle scan
+    at all. Preserved here with an explicit branch (NOT
+    ``mem_terminated or _ran_agent_throttled(...)``, which would compute ``active``
+    -- and its own ``_active_throttles``/``_backoff_exponent`` events-tail scan(s)
+    -- unconditionally as an eager function argument before the ``or`` ever runs):
+    a mem-terminated round is already throttle-excused, so skip that second scan
+    entirely on this path -- restoring the ONE-scan-per-round goal INVARIANT 3
+    exists for."""
     outcome = round_outcome(log_dir)
     mem_terminated = round_was_mem_terminated(log_dir, outcome=outcome)
-    active = _active_throttles(log_dir, _latest=outcome.latest_transient_per_agent)
-    throttled = mem_terminated or _ran_agent_throttled(cfg, phase_arg, log_dir, active=active)
+    if mem_terminated:
+        throttled = True
+    else:
+        active = _active_throttles(log_dir, _latest=outcome.latest_transient_per_agent)
+        throttled = _ran_agent_throttled(cfg, phase_arg, log_dir, active=active)
     return mem_terminated, throttled, outcome
 
 

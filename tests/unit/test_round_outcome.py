@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from agent_runner import _throttle
 from agent_runner._throttle import (
     RoundOutcome,
@@ -180,11 +182,19 @@ def test_round_outcome_invariant_1_usage_capable_unconditional_on_missing_ts(
     )
 
 
-def test_round_had_no_progress_early_return_ahead_of_outcome_scan(tmp_path: Path) -> None:
-    """INVARIANT 4: the early-return gates (non-zero exit / slow / throttled)
-    short-circuit BEFORE any events-tail scan -- an empty, unseeded log_dir
-    (no events-*.jsonl at all) must not raise even though round_outcome would
-    have nothing to fold."""
+def test_round_had_no_progress_early_return_ahead_of_outcome_scan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """INVARIANT 4: the early-return gates (non-zero exit / slow / throttled) must
+    short-circuit BEFORE round_outcome is ever computed. An empty log_dir alone
+    does NOT prove this -- a hypothetical impl that resolved outcome BEFORE the
+    early return would also pass silently (glob finds nothing to fold either
+    way) -- so spy on round_outcome directly and assert it is never called."""
+
+    def _boom(log_dir: Path) -> RoundOutcome:
+        raise AssertionError("round_outcome must not be called on the early-return path")
+
+    monkeypatch.setattr(_throttle, "round_outcome", _boom)
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     assert round_had_no_progress(log_dir, returncode=1, duration_s=3.0, threshold_s=30) is False
@@ -195,6 +205,45 @@ def test_round_had_no_progress_early_return_ahead_of_outcome_scan(tmp_path: Path
         )
         is False
     )
+
+
+def test_round_scan_mem_terminated_skips_second_events_tail_scan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression test for the Task 1 fix-round-1 Important finding: pre-refactor,
+    `mem_terminated or _ran_agent_throttled(...)` short-circuited via Python's
+    `or`, so a mem-terminated round never triggered the throttle scan at all.
+    `serve_cmd._round_scan` must preserve that -- exactly ONE `_tail_events` scan
+    (via `round_outcome`) on the mem-terminated path, not a second one from an
+    unconditionally-computed `_active_throttles` call."""
+    from agent_runner.cli import serve_cmd
+    from agent_runner.config import load_config
+    from tests._test_helpers import make_toml
+
+    log_dir = tmp_path / "logs"
+    _write(
+        log_dir,
+        {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
+        {"ts": "2026-01-01T00:00:01.000Z", "event": "round_mem_terminated", "round_num": 1},
+    )
+    cfg = load_config(make_toml(tmp_path))
+
+    calls = 0
+    real_tail_events = _throttle._tail_events
+
+    def _counting_tail_events(scanned_log_dir: Path):
+        nonlocal calls
+        calls += 1
+        return real_tail_events(scanned_log_dir)
+
+    monkeypatch.setattr(_throttle, "_tail_events", _counting_tail_events)
+
+    mem_terminated, throttled, outcome = serve_cmd._round_scan(cfg, None, log_dir)
+
+    assert mem_terminated is True
+    assert throttled is True
+    assert isinstance(outcome, RoundOutcome)
+    assert calls == 1
 
 
 def test_active_throttles_reuses_precomputed_latest_transient_map(tmp_path: Path) -> None:
