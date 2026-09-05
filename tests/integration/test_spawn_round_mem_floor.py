@@ -425,6 +425,45 @@ def test_off_switch_critical_sample_capped_then_resets(tmp_path):
     assert consecutive[6] == 1
 
 
+def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
+    """The one cell _mid_round_action's own unit test proves structurally but
+    no integration test drove end to end: in_round_mem_terminate=False AND
+    defer_to_cgroup=True at once. The off switch wins over cgroup-defer (see
+    _mid_round_action's docstring: "count_only" is returned before
+    defer_to_cgroup is even consulted), so sustained critical pressure here
+    must produce NEITHER round_mem_terminated NOR
+    mem_pressure_deferred_to_cgroup -- unlike test_both_finite_defers_never_terminates
+    (defer_to_cgroup=True alone, default in_round_mem_terminate=True), which
+    DOES emit mem_pressure_deferred_to_cgroup. If count_only's off-switch
+    check were ever weakened to fall through to the defer/terminate branch
+    when defer_to_cgroup is True, this test would start seeing
+    mem_pressure_deferred_to_cgroup and fail."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(5)"]
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
+        clock=_TickingClock(),
+        sample_fn=lambda: _CRITICAL_SAMPLE,
+        defer_to_cgroup=True,
+    )
+    assert rc == 0  # never terminated -- the round completed on its own
+
+    events = read_events_for_current_month(log_dir)
+    kinds = [e.get("event") for e in events]
+    assert "round_mem_terminated" not in kinds
+    assert "mem_pressure_deferred_to_cgroup" not in kinds
+    # Sustained critical pressure genuinely reached the floor -- this is not
+    # a vacuous pass from a round too short to ever sample.
+    assert kinds.count("round_mem_critical_sample") >= 1
+
+
 def test_both_finite_defers_never_terminates(tmp_path):
     """0.2.16 Task 3: when the cgroup's (mem+swap) budget is bounded end to
     end (both memory.max and memory.swap.max finite -- exactly the field

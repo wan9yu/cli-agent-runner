@@ -274,9 +274,9 @@ def _spawn_round(
     regardless of host recovery. PSI-full is an independent immediate
     critical path (current sample alone, no baseline needed).
 
-    0.2.16: every critical tick also emits ``round_mem_critical_sample`` (not
-    deduped -- near-miss calibration); ``round_mem_terminated`` now carries
-    the streak + ``Pressure.context`` too. 0.2.17: that emit is capped at
+    0.2.16: every critical tick also emits ``round_mem_critical_sample`` for
+    near-miss calibration (0.2.17: capped -- see below); ``round_mem_terminated``
+    now carries the streak + ``Pressure.context`` too. The cap:
     ``2 * host_health_cfg.mem_critical_consecutive_samples`` consecutive
     ticks (1..6 at the default 3) -- a sustained-critical don't-terminate
     run (cgroup-defer, or the off switch) would otherwise write one event

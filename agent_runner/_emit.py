@@ -296,9 +296,10 @@ def emit_round_mem_terminated(
 def emit_round_mem_critical_sample(
     log_dir: Path, *, round_num: int, consecutive: int, context: dict
 ) -> None:
-    """Emit on EACH critical host_health sample inside _spawn_round's mid-round
-    hard floor -- deliberately NOT deduped to once-per-episode (unlike
-    round_mem_terminated): the point is calibration visibility into
+    """Emit on each critical host_health sample inside _spawn_round's mid-round
+    hard floor, up to the per-episode cap (0.2.17, below) -- unlike
+    round_mem_terminated (deduped to once-per-episode), this fires on every
+    critical tick within that cap: the point is calibration visibility into
     near-misses, so an operator watching the event stream sees the
     critical_streak build (1, 2, ...) even on ticks that never reach the
     terminate threshold (a healthy tick resets it before 3-in-a-row).
