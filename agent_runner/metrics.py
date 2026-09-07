@@ -184,19 +184,67 @@ def _read_finite_cgroup_limit(path: Path) -> int | None:
         return None
 
 
+def _min_ancestor_candidate(
+    root: Path, ancestors: list[str], filename: str
+) -> tuple[int, str] | None:
+    """The ``(MIN FINITE value, owning ancestor)`` pair for ``filename`` (a
+    cgroup ``memory.*`` limit file) across ``ancestors`` (nearest first, as
+    returned by :func:`_cgroup_ancestors`) under ``root``. Each ancestor's
+    file is read via :func:`_read_finite_cgroup_limit`, where ``"max"`` or a
+    missing file contributes no candidate. ``None`` when no ancestor has a
+    finite value -- unlimited end to end. Shared resolution behind
+    :func:`_min_ancestor_limit` (value only) and :func:`_bounding_ancestor_path`
+    (path only, always for ``"memory.max"``) -- both need the SAME winning
+    ancestor, not independently re-derived ones."""
+    best: tuple[int, str] | None = None
+    for ancestor in ancestors:
+        limit = _read_finite_cgroup_limit(root / ancestor.lstrip("/") / filename)
+        if limit is not None and (best is None or limit < best[0]):
+            best = (limit, ancestor)
+    return best
+
+
 def _min_ancestor_limit(root: Path, ancestors: list[str], filename: str) -> int | None:
     """The MIN FINITE value of ``filename`` (a cgroup ``memory.*`` limit,
     e.g. ``"memory.max"``) across ``ancestors`` (nearest first, as returned
-    by :func:`_cgroup_ancestors`) under ``root``. Each ancestor's file is
-    read via :func:`_read_finite_cgroup_limit`, where ``"max"`` or a missing
-    file contributes no candidate. ``None`` when no ancestor has a finite
-    value -- unlimited end to end."""
-    candidates = [
-        limit
-        for ancestor in ancestors
-        if (limit := _read_finite_cgroup_limit(root / ancestor.lstrip("/") / filename)) is not None
-    ]
-    return min(candidates) if candidates else None
+    by :func:`_cgroup_ancestors`) under ``root``. ``None`` when no ancestor
+    has a finite value -- unlimited end to end."""
+    candidate = _min_ancestor_candidate(root, ancestors, filename)
+    return candidate[0] if candidate is not None else None
+
+
+def _bounding_ancestor_path(root: Path, ancestors: list[str]) -> str | None:
+    """The ancestor with the MIN FINITE ``memory.max`` -- the real budget's
+    owner, and the SAME ancestor :func:`cgroup_memory_limits` reports as
+    ``memory_max``. This is the path the per-round usage read
+    (:func:`cgroup_memory_usage`) targets, so ``memory.current`` /
+    ``memory.events`` are read at the SAME level the limit binds (a
+    hierarchical cgroup counter at a looser descendant would undercount --
+    it only sees its own subtree, not siblings sharing the bounding
+    ancestor's budget). ``None`` when no ancestor has a finite ``memory.max``."""
+    candidate = _min_ancestor_candidate(root, ancestors, "memory.max")
+    return candidate[1] if candidate is not None else None
+
+
+def _read_events_counters(path: Path) -> dict[str, int]:
+    """Parse a cgroup v2 ``memory.events`` file (``key value`` lines per
+    line) into the ``high``/``max``/``oom``/``oom_kill`` counters. These are
+    ABSOLUTE, monotonically-increasing counters since cgroup creation --
+    callers wanting a per-round signal must diff two reads (see
+    :func:`cgroup_memory_usage`'s docstring)."""
+    out: dict[str, int] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in ("high", "max", "oom", "oom_kill"):
+            try:
+                out[parts[0]] = int(parts[1])
+            except ValueError:
+                continue
+    return out
 
 
 def cgroup_memory_limits(
@@ -236,6 +284,47 @@ def cgroup_memory_limits(
         "memory_max": _min_ancestor_limit(root, ancestors, "memory.max"),
         "memory_swap_max": _min_ancestor_limit(root, ancestors, "memory.swap.max"),
         "cgroup_path": cgroup_path,
+    }
+
+
+def cgroup_memory_usage(
+    *,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> dict[str, Any]:
+    """Per-round pressure read at the BOUNDING ancestor (the one whose
+    ``memory.max`` is the tightest finite value -- the same one
+    :func:`cgroup_memory_limits` picks for ``memory_max``, via
+    :func:`_bounding_ancestor_path`). Returns ``memory_current``,
+    ``memory_swap_current``, ``memory_events`` (dict), ``cgroup_path``; or
+    ``{}`` when cgroup v2 is unavailable or no ancestor has a finite
+    ``memory.max`` (nothing bounds this process, so there is no round-scoped
+    budget to read pressure against).
+
+    ``memory_events`` fields are ABSOLUTE counters since cgroup creation --
+    callers wanting a per-round signal (e.g. ``round_cgroup_memory``) must
+    diff two reads, never report these fields directly.
+
+    One-shot pure file I/O, no clock -- ``_spawn_round`` calls this once at
+    round start (baseline) and again on each existing ~10s mid-round tick
+    (peak tracking); ``post_round_verdicts`` calls it once more at the round
+    boundary for the delta."""
+    if not (root / "cgroup.controllers").exists():
+        return {}
+    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
+    if cgroup_path is None:
+        return {}
+    ancestors = _cgroup_ancestors(cgroup_path)
+    bounding = _bounding_ancestor_path(root, ancestors)
+    if bounding is None:
+        return {}
+    base = root / bounding.lstrip("/")
+    return {
+        "memory_current": _read_finite_cgroup_limit(base / "memory.current") or 0,
+        "memory_swap_current": _read_finite_cgroup_limit(base / "memory.swap.current") or 0,
+        "memory_events": _read_events_counters(base / "memory.events"),
+        "cgroup_path": bounding,
     }
 
 

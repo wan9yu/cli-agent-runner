@@ -43,6 +43,7 @@ from agent_runner.api import (
     emit_mem_loop,
     emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
+    emit_round_cgroup_memory,
     emit_round_deferred,
     emit_round_mem_critical_sample,
     emit_round_mem_terminated,
@@ -71,6 +72,15 @@ from agent_runner.clock import SYSTEM_CLOCK, Clock
 # uses its own unique tmp_path as log_dir) without any call site having to
 # remember to pass an explicit override.
 _PRE_ROUND_MEM_STATE_BY_LOG_DIR: dict[Path, dict] = {}
+
+# Per-round cgroup pressure: baseline (memory.events at spawn start) + running
+# peak (memory.current/memory.swap.current over the round's existing mid-round
+# ticks), stashed by _spawn_round and read once by post_round_verdicts's
+# _emit_round_cgroup_memory for the round_cgroup_memory delta. Same
+# per-log_dir stable-default pattern as _PRE_ROUND_MEM_STATE_BY_LOG_DIR above
+# (one entry per serve process in production) -- popped on read so a stale
+# entry can never leak into the next round.
+_ROUND_CGROUP_STATE_BY_LOG_DIR: dict[Path, dict] = {}
 
 
 def _memory_pressure_now(cfg, log_dir, sample_fn) -> host_health.Pressure | None:
@@ -319,9 +329,32 @@ def _spawn_round(
             prev_tick_sample: dict | None = None
             critical_streak = 0
             cgroup_defer_notified = False
+            # cgroup pressure spine (round_cgroup_memory): baseline read
+            # once at spawn start, empty ({}) when this host has no finite
+            # cgroup bound -- cg_base then stays falsy and _stash_cgroup
+            # below never stashes, so post_round_verdicts's
+            # _emit_round_cgroup_memory correctly no-ops for the round.
+            # cg_peak_* track the MAX over this loop's existing ~10s ticks
+            # (NOT metrics.cgroup_memory_limits/memory.peak, which is
+            # cumulative since cgroup creation, not per-round).
+            cg_base = metrics.cgroup_memory_usage()
+            cg_peak_current = cg_base.get("memory_current", 0)
+            cg_peak_swap = cg_base.get("memory_swap_current", 0)
+
+            def _stash_cgroup() -> None:
+                if cg_base:
+                    _ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+                        "baseline_events": cg_base.get("memory_events", {}),
+                        "peak_current": cg_peak_current,
+                        "peak_swap": cg_peak_swap,
+                        "cgroup_path": cg_base.get("cgroup_path"),
+                    }
+
             while True:
                 try:
-                    return proc.wait(timeout=1)
+                    returncode = proc.wait(timeout=1)
+                    _stash_cgroup()
+                    return returncode
                 except subprocess.TimeoutExpired:
                     pass
                 if clock.monotonic() >= deadline:
@@ -334,6 +367,10 @@ def _spawn_round(
                         cur_sample, prev_tick_sample, host_health_cfg
                     )
                     prev_tick_sample = cur_sample
+                    if cg_base:
+                        cg_now = metrics.cgroup_memory_usage()
+                        cg_peak_current = max(cg_peak_current, cg_now.get("memory_current", 0))
+                        cg_peak_swap = max(cg_peak_swap, cg_now.get("memory_swap_current", 0))
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
                         if critical_streak <= 2 * host_health_cfg.mem_critical_consecutive_samples:
@@ -357,6 +394,7 @@ def _spawn_round(
                                 consecutive=critical_streak,
                                 context=pressure.context,
                             )
+                            _stash_cgroup()
                             return returncode
                         if action == "defer" and not cgroup_defer_notified:
                             emit_mem_pressure_deferred_to_cgroup(
@@ -382,7 +420,50 @@ def _spawn_round(
         emit_round_supervisor_wedged(
             log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
         )
+        _stash_cgroup()
         return returncode
+
+
+def _round_num_from_log_path(round_log_path: Path) -> int:
+    """``round-<N>.log`` -> ``N`` (0 if unparseable)."""
+    stem = round_log_path.stem  # "round-42"
+    try:
+        return int(stem.rsplit("-", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
+    """Emit ``round_cgroup_memory`` from the per-round baseline/peak
+    :func:`_spawn_round` stashed, diffing ``memory.events`` at the bounding
+    ancestor. Returns the current usage dict (a future round-outcome
+    classifier can reuse it as the one classification-time cgroup read).
+    No-op (returns ``{}``, no emit) when this host has no finite cgroup
+    bound -- ``_spawn_round`` never stashes state in that case."""
+    state = _ROUND_CGROUP_STATE_BY_LOG_DIR.pop(log_dir, None)
+    if not state:
+        return {}
+    cur = metrics.cgroup_memory_usage()
+    base_ev = state["baseline_events"]
+    cur_ev = cur.get("memory_events", {})
+
+    def _delta(key: str) -> int:
+        return max(0, cur_ev.get(key, 0) - base_ev.get(key, 0))
+
+    round_num = _round_num_from_log_path(round_log_path)
+    emit_round_cgroup_memory(
+        log_dir,
+        round_num=round_num,
+        memory_current_peak=state["peak_current"],
+        memory_swap_current_peak=state["peak_swap"],
+        events_high_delta=_delta("high"),
+        events_max_delta=_delta("max"),
+        events_oom_delta=_delta("oom"),
+        events_oom_kill_delta=_delta("oom_kill"),
+        swap_headroom_bytes=0,  # filled by a future advisory read when available
+        cgroup_path=state["cgroup_path"],
+    )
+    return cur
 
 
 def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
@@ -500,6 +581,11 @@ def post_round_verdicts(
         no_progress=no_progress, consecutive=consecutive_no_progress
     )
     streaks = (consecutive_crashes, consecutive_mem_terminations, consecutive_no_progress)
+    # round_cgroup_memory (pressure legibility): emitted unconditionally, every
+    # round, before any give-up branch below fires — a mem-terminated or
+    # crash-looping round's pressure trace is exactly the one an operator most
+    # needs to see. No-ops silently on a host with no finite cgroup bound.
+    _emit_round_cgroup_memory(log_dir, round_log_path)
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's

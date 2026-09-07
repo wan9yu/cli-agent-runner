@@ -231,6 +231,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `orphan_stashed`
 - `package_upgraded`
 - `prompt_overwritten`
+- `round_cgroup_memory`
 - `round_deferred`
 - `round_end`
 - `round_grace_extended`

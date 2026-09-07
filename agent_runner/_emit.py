@@ -25,6 +25,7 @@ __all__ = [
     "emit_mem_loop_persistent",
     "emit_mem_pressure_deferred_to_cgroup",
     "emit_rate_limit_stop",
+    "emit_round_cgroup_memory",
     "emit_round_deferred",
     "emit_round_grace_extended",
     "emit_round_grace_kill",
@@ -344,6 +345,43 @@ def emit_host_cgroup_memory_limit(
         HOST_CGROUP_MEMORY_LIMIT,
         memory_max=memory_max,
         memory_swap_max=memory_swap_max,
+        cgroup_path=cgroup_path,
+    )
+
+
+def emit_round_cgroup_memory(
+    log_dir: Path,
+    *,
+    round_num: int,
+    memory_current_peak: int,
+    memory_swap_current_peak: int,
+    events_high_delta: int,
+    events_max_delta: int,
+    events_oom_delta: int,
+    events_oom_kill_delta: int,
+    swap_headroom_bytes: int,
+    cgroup_path: str | None,
+) -> None:
+    """Emit once per round: the round's peak cgroup ``memory.current`` (+swap) and
+    the ``memory.events`` DELTAS (high/max/oom/oom_kill) over the round, read at the
+    bounding ancestor. Deltas, never absolutes -- an operator sees pressure BUILDING
+    without SSH. Peak is the max over the existing ~10s mid-round tick (NOT
+    ``memory.peak``, which is cumulative since cgroup creation). No-op when this
+    host has no finite cgroup bound (``_serve_round._emit_round_cgroup_memory``
+    never calls this in that case)."""
+    from agent_runner.events import ROUND_CGROUP_MEMORY, emit
+
+    emit(
+        log_dir,
+        ROUND_CGROUP_MEMORY,
+        round_num=round_num,
+        memory_current_peak=memory_current_peak,
+        memory_swap_current_peak=memory_swap_current_peak,
+        events_high_delta=events_high_delta,
+        events_max_delta=events_max_delta,
+        events_oom_delta=events_oom_delta,
+        events_oom_kill_delta=events_oom_kill_delta,
+        swap_headroom_bytes=swap_headroom_bytes,
         cgroup_path=cgroup_path,
     )
 

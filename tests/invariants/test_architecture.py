@@ -124,6 +124,7 @@ ALLOWED_SERVE_ROUND_FROM = [
             "emit_mem_loop",
             "emit_mem_loop_persistent",
             "emit_mem_pressure_deferred_to_cgroup",
+            "emit_round_cgroup_memory",
             "emit_round_deferred",
             "emit_round_mem_critical_sample",
             "emit_round_mem_terminated",

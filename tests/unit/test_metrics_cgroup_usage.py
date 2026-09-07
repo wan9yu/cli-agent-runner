@@ -1,0 +1,37 @@
+"""cgroup_memory_usage: per-round pressure read at the bounding ancestor
+(the same ancestor cgroup_memory_limits picks for memory_max), returning
+memory.current/memory.swap.current + memory.events as ABSOLUTE counters
+(callers diff two reads for a per-round delta)."""
+
+from agent_runner import metrics
+
+
+def _tree(root):
+    (root / "cgroup.controllers").write_text("memory\n")
+    slice_dir = root / "user.slice"
+    slice_dir.mkdir()
+    (slice_dir / "memory.max").write_text("320000000\n")  # bounding ancestor
+    (slice_dir / "memory.current").write_text("300000000\n")
+    (slice_dir / "memory.swap.current").write_text("100000000\n")
+    (slice_dir / "memory.events").write_text("low 0\nhigh 12\nmax 3\noom 1\noom_kill 2\n")
+    leaf = slice_dir / "app.scope"
+    leaf.mkdir()
+    (leaf / "memory.max").write_text("max\n")  # unbounded leaf -> ancestor wins
+
+
+def test_cgroup_memory_usage_reads_bounding_ancestor(tmp_path):
+    _tree(tmp_path)
+    usage = metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/user.slice/app.scope")
+    assert usage["memory_current"] == 300000000
+    assert usage["memory_swap_current"] == 100000000
+    assert usage["memory_events"] == {"high": 12, "max": 3, "oom": 1, "oom_kill": 2}
+    assert usage["cgroup_path"].endswith("user.slice")
+
+
+def test_cgroup_memory_usage_empty_when_unbounded(tmp_path):
+    (tmp_path / "cgroup.controllers").write_text("memory\n")
+    assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
+
+
+def test_cgroup_memory_usage_empty_when_no_cgroup_v2(tmp_path):
+    assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
