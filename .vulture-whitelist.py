@@ -13,7 +13,7 @@ log_dir
 offsets
 buffer
 
-# agent_runner._throttle.RoundOutcome
+# agent_runner._round_outcome.RoundOutcome
 mem_terminated
 usage_capable
 newest_usage_ts
