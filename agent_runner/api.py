@@ -397,7 +397,16 @@ def kill(project: str | Path) -> ServiceStatus:
     log_dir = _log_dir_for_project(project)
     mode = detect_service_mode(pname, log_dir=log_dir)
     if mode == ServiceMode.SYSTEMD_USER:
-        _systemctl_user("kill", "--signal=SIGTERM", serve_unit_filename(pname))
+        unit = serve_unit_filename(pname)
+        _systemctl_user("kill", "--signal=SIGTERM", unit)
+        # Match the PID_FILE branch's escalation (and the docs' "grace then
+        # SIGKILL"): `systemctl kill` queues no stop job, so TimeoutStopSec
+        # never applies -- a unit still active after the grace window needs
+        # an explicit SIGKILL.
+        if _systemctl_is_active(unit) not in _SYSTEMD_INACTIVE_STATES:
+            SYSTEM_CLOCK.sleep(_PID_SIGNAL_GRACE_S)
+            if _systemctl_is_active(unit) not in _SYSTEMD_INACTIVE_STATES:
+                _systemctl_user("kill", "--signal=SIGKILL", unit)
         return status(project)
     pid = PIDFile(log_dir / "serve.pid").read()
     if pid is None:

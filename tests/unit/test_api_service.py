@@ -561,6 +561,57 @@ def test_systemd_restart_uses_blocking_start_when_stop_confirmed(
     assert not any(a[:2] == ("--no-block", "start") for a in calls)
 
 
+def test_kill_systemd_escalates_to_sigkill_when_still_active(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """kill's SYSTEMD_USER branch must mirror the PID_FILE branch: SIGTERM
+    first, then -- if the unit is still active after the grace window --
+    escalate to SIGKILL. `systemctl kill` queues no stop job, so
+    TimeoutStopSec never applies; without this the systemd path would never
+    reap a wedged unit, unlike PID_FILE kill()."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    # Never goes inactive -- both the pre-grace and post-grace check see it.
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("active"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("active")
+    )
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+
+    s = api.kill(tmp_git_repo)
+
+    unit = f"agent-runner@{tmp_git_repo.name}.service"
+    assert ("kill", "--signal=SIGTERM", unit) in calls
+    assert ("kill", "--signal=SIGKILL", unit) in calls  # escalation happened
+    assert s.mode == ServiceMode.SYSTEMD_USER
+
+
+def test_kill_systemd_does_not_escalate_when_sigterm_already_stopped_it(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mirror case: when the unit is already inactive after SIGTERM (no
+    wedge), kill must NOT send a redundant SIGKILL -- escalation is only for
+    a unit still active past the grace window."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    _fake_systemd_unit(tmp_git_repo, monkeypatch)
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+
+    s = api.kill(tmp_git_repo)
+
+    unit = f"agent-runner@{tmp_git_repo.name}.service"
+    assert ("kill", "--signal=SIGTERM", unit) in calls
+    assert ("kill", "--signal=SIGKILL", unit) not in calls  # already stopped -- no escalation
+    assert s.mode == ServiceMode.SYSTEMD_USER
+
+
 def test_poll_once_forwards_supervisor_stale_threshold(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
