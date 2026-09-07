@@ -22,7 +22,7 @@ from agent_runner.config import (
 from agent_runner.runner import run_one_round
 
 
-def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
+def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_timeout_s: int = 30) -> Config:
     """Build a Config rooted in ``tmp_git_repo`` with prompt + .gitignore committed.
 
     Why commit before run: ``git stash push -u`` (used by the dirty path) sweeps
@@ -33,6 +33,18 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
     (``dirty.txt``), which matches the production-realistic case where the user's
     repo already has its config + prompt tracked and only agent-generated work is
     ever orphan-stashed.
+
+    round_timeout_s defaults to a generous 30s that the "succeed"/"dirty"/"crash"
+    rounds (which exit in milliseconds) never legitimately approach. History: this
+    used to be a single shared 5s baked in here for every caller including the
+    "hang" test. Under `-n auto` parallel contention (fork/exec scheduling delay,
+    not agent_runtime logic) that 5s was occasionally eaten by "succeed"-style
+    rounds too, SIGTERM-ing them mid-flight and flaking their exit-code asserts --
+    confirmed by reproduction (`assert -15 == 137` on the "crash" round after a
+    tight back-to-back `-n auto` stress loop). Splitting the knob removes that
+    race for every caller that isn't testing timeout behavior; only the "hang"
+    test below opts into a small value so it can still actually exercise the
+    kill path.
     """
     log_dir = tmp_git_repo / "logs"
     prompt = tmp_git_repo / "p.md"
@@ -46,14 +58,9 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
     )
     return Config(
         agent=AgentConfig(command=[str(fake_agent_script)], prompt_arg_template=[]),
-        # Only the "hang" test pays this wall (the others exit immediately);
-        # _kill_pgroup kills bash+sleep together so REAP_GRACE_S is never paid.
-        # Measured under `-n auto` on an 8-core box: trimming this to 2 made the
-        # "succeed"/"dirty"/"crash" rounds themselves occasionally exceed 2s of
-        # real wall time under contention (subprocess fork/exec scheduling
-        # delay, not agent_runtime logic) and get SIGTERM'd -- a genuine flake,
-        # not a timing fluke in the test. 5s reliably has margin; left as-is.
-        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=5),
+        runtime=RuntimeConfig(
+            work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=round_timeout_s
+        ),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
         phases=PhasesConfig(),
@@ -99,12 +106,22 @@ def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "hang")
-    cfg = _cfg(tmp_git_repo, fake_agent_script)
+    # This is the one caller that WANTS a small round_timeout_s -- it's the
+    # only test in this file actually exercising the timeout-kill path.
+    cfg = _cfg(tmp_git_repo, fake_agent_script, round_timeout_s=5)
     start = time.time()
     result = run_one_round(cfg)
     elapsed = time.time() - start
     assert result.timed_out is True
-    assert elapsed < 15  # round_timeout_s=5 + REAP_GRACE_S=5 + buffer
+    # Baseline ~5s (round_timeout_s=5; REAP_GRACE_S is never paid -- SIGTERM
+    # kills bash+sleep immediately). Widened from 15 to 30 (2x, matching the
+    # analogous pi e2e bound in test_e2e_round_lifecycle.py) after a real
+    # one-off flake under `-n auto` parallel contention: fork/exec + scheduler
+    # jitter across many workers' subprocesses can eat several extra seconds
+    # without the kill itself having failed. Still miles below the fake
+    # agent's un-escalated `sleep 9999`, so a genuine hang (kill never fires)
+    # still fails loudly.
+    assert elapsed < 30
 
     events_files = list(cfg.runtime.log_dir.glob("events-*.jsonl"))
     events = [json.loads(line) for line in events_files[0].read_text().splitlines()]
@@ -127,10 +144,10 @@ def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_t
     fake_agent_script: Path,
     monkeypatch,
 ) -> None:
-    """[phases.dev] round_timeout_s = 3600 controls subprocess kill timing, not the global 5s."""
+    """[phases.dev] round_timeout_s = 3600 controls subprocess kill timing, not the default."""
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
-    # Rebuild cfg with per-phase override: global=5, dev override=3600
+    # Rebuild cfg with per-phase override: global=30 (the _cfg() default), dev override=3600
     import dataclasses
 
     cfg = dataclasses.replace(
@@ -159,7 +176,7 @@ def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_t
     assert result.exit_code == 0
     assert not result.timed_out
     assert captured_timeout, "agent_runtime.run was never called"
-    # Resolved timeout should be the per-phase override (3600), not the global (5)
+    # Resolved timeout should be the per-phase override (3600), not the global (30)
     assert captured_timeout[0] == 3600, (
         f"Expected resolved timeout 3600 (phase override), got {captured_timeout[0]}"
     )
