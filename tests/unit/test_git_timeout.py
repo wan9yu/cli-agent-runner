@@ -27,7 +27,9 @@ def test_run_with_timeout_raises_and_kills(tmp_path):
     started = time.monotonic()
     with pytest.raises(vcs_state.GitTimeout):
         vcs_state._run_with_timeout(["sleep", "30"], cwd=tmp_path, timeout=1)
-    assert time.monotonic() - started < 10  # escalated, did not wait out the sleep
+    # 2x headroom for contention; strictly below the 30s un-escalated sleep so
+    # this still proves the kill fired well before the sleep would exit on its own.
+    assert time.monotonic() - started < 20  # escalated, did not wait out the sleep
 
 
 def test_run_with_timeout_escalates_to_killpg_when_term_ignored(tmp_path, monkeypatch):
@@ -51,7 +53,9 @@ def test_run_with_timeout_escalates_to_killpg_when_term_ignored(tmp_path, monkey
     started = time.monotonic()
     with pytest.raises(vcs_state.GitTimeout):
         vcs_state._run_with_timeout([sys.executable, "-c", ignore_term], cwd=tmp_path, timeout=1)
-    assert time.monotonic() - started < 10  # escalated, did not wait out the sleep
+    # 2x headroom for contention; strictly below the 30s un-escalated sleep so
+    # this still proves the kill fired well before the sleep would exit on its own.
+    assert time.monotonic() - started < 20  # escalated, did not wait out the sleep
 
     assert len(calls) == 1
     pgid, sig = calls[0]

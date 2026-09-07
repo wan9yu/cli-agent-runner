@@ -42,6 +42,13 @@ def _make_grace_config(work_dir: Path, script_path: Path, grace_s: int) -> Confi
         runtime=RuntimeConfig(
             work_dir=work_dir,
             log_dir=log_dir,
+            # Grace observation needs ~1s _RESULT_SCAN_INTERVAL_S (unpatched --
+            # this is an integration test through the real runner) + 1s grace
+            # ~= 2s ideal. Measured under `-n auto` on a busy host, this
+            # occasionally starved for several seconds of real CPU time before
+            # ever getting scheduled to run its scan/grace check, so a trimmed
+            # round_timeout_s=4 raced (and lost to) the round's own wall clock
+            # before the grace path ever fired -- 10s is the reliable floor.
             round_timeout_s=10,
             max_grace_after_result_s=grace_s,
         ),
@@ -91,7 +98,7 @@ def _make_grace_config_with_patterns(
         runtime=RuntimeConfig(
             work_dir=work_dir,
             log_dir=log_dir,
-            round_timeout_s=10,
+            round_timeout_s=10,  # see _make_grace_config: reliable floor under real contention
             max_grace_after_result_s=grace_s,
             grace_kill_ignore_patterns=patterns,
         ),

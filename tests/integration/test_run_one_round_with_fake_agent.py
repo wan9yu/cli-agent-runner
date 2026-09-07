@@ -46,6 +46,13 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path) -> Config:
     )
     return Config(
         agent=AgentConfig(command=[str(fake_agent_script)], prompt_arg_template=[]),
+        # Only the "hang" test pays this wall (the others exit immediately);
+        # _kill_pgroup kills bash+sleep together so REAP_GRACE_S is never paid.
+        # Measured under `-n auto` on an 8-core box: trimming this to 2 made the
+        # "succeed"/"dirty"/"crash" rounds themselves occasionally exceed 2s of
+        # real wall time under contention (subprocess fork/exec scheduling
+        # delay, not agent_runtime logic) and get SIGTERM'd -- a genuine flake,
+        # not a timing fluke in the test. 5s reliably has margin; left as-is.
         runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=5),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),

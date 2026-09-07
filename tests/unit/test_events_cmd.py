@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 
 def _write_events(log_dir: Path, events: list[dict]) -> Path:
     """Write events to current-month events.jsonl, return path."""
@@ -354,8 +356,14 @@ def test_events_since_invalid_timestamp_exits_2(tmp_path, capsys):
     assert "--since" in err[0]
 
 
+@pytest.mark.serial
 def test_events_tail_emits_new_events_as_they_arrive(tmp_path, capsys, monkeypatch):
-    """--tail mode polls and emits new matching lines. Uses signal to stop after 3s."""
+    """--tail mode polls and emits new matching lines. Uses signal to stop after 3s.
+
+    Marked serial: installs a process-wide SIGALRM handler + signal.alarm(3).
+    A signal delivered at the wrong moment in a shared xdist worker process
+    (mid-setup/teardown of an unrelated test) is not worth the risk for one
+    test; runs alone via the `-m serial` pass instead."""
     import threading
 
     from agent_runner.cli import events_cmd

@@ -66,6 +66,7 @@ def test_callback_raise_reaps_agent_pgroup(tmp_path):
     assert not _alive(pid), "agent child was orphaned when the callback raised"
 
 
+@pytest.mark.serial
 def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
     """The real SIGTERM path (not a raised-callback stand-in): round_cmd
     installs a handler that converts every SIGTERM into a fresh
@@ -73,7 +74,14 @@ def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
     fires and drains the agent -- the same mechanism api.kill's sidecar-pid
     TERM-first sequence now drives. Before this task, only the full
     serve+round+agent e2e (test_serve_loop.py) exercised this; no smaller,
-    non-e2e test covered it."""
+    non-e2e test covered it.
+
+    Marked serial: this test sends SIGTERM to the TEST PROCESS ITSELF
+    (os.kill(os.getpid(), ...)) via an installed handler. Under pytest-xdist
+    every worker is its own process, so this is safe in isolation, but a
+    signal handler that stays installed for the process lifetime (or a
+    poorly-timed self-signal) risks corrupting whichever OTHER test that
+    worker happens to run next -- not worth the risk for one test."""
     childpid = tmp_path / "child.pid"
     script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
 

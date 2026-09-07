@@ -59,6 +59,7 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "pytest-timeout>=2.3",  # bounds a wedged real-subprocess test instead of an unbounded stall
+    "pytest-xdist>=3.8",  # -n auto --dist worksteal parallel gate (see [tool.pytest.ini_options] serial marker)
     "ruff>=0.16,<0.17",  # minor-pinned: unpinned linter broke CI when 0.16 shipped new format rules
     "vulture>=2.13",
 ]
@@ -109,6 +110,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 timeout = 60
+markers = [
+    "serial: not safe under pytest-xdist parallel workers (installs a process-wide signal handler/self-signal) — run via a separate `-m serial` pass, never dropped from the gate",
+]
 
 [tool.vulture]
 # .vulture-whitelist.py is GENERATED from every @dataclass field (its SSOT) by

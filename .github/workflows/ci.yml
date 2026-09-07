@@ -92,7 +92,14 @@ jobs:
         # `| tail` would swallow the exit code and let dead code through.
         run: vulture
       - name: tests with coverage
-        run: pytest -q --ignore=tests/e2e --ignore=tests/literate --cov --cov-report=xml --cov-report=term
+        # Two passes so `serial` tests (install process-wide signal handlers /
+        # self-signals -- unsafe to share an xdist worker process) still run
+        # every time: parallel set + serial set == the full suite, mirroring
+        # ./build.sh test. pytest-cov 7.x auto-combines worker coverage data.
+        run: |
+          pytest -q --ignore=tests/e2e --ignore=tests/literate \
+            -n auto --dist worksteal -m "not serial" --cov --cov-report=xml --cov-report=term
+          pytest -q --ignore=tests/e2e --ignore=tests/literate -m serial --cov --cov-append --cov-report=xml --cov-report=term
       - name: docs CI gate
         run: |
           python -m agent_runner._docgen

@@ -34,7 +34,9 @@ def test_marker_split_across_chunks_is_detected(tmp_path):
         max_grace_after_result_s=1,
     )
     assert result.killed_for_grace is True
-    assert result.duration_s < 12  # reaped via grace, not the 20s wall
+    # Widened for contention headroom, but strictly below the 20s round
+    # timeout_s so this still proves grace (not the wall) reaped it.
+    assert result.duration_s < 16  # reaped via grace, not the 20s wall
 
 
 def test_delta_scan_does_not_reread_prefix(tmp_path, monkeypatch):

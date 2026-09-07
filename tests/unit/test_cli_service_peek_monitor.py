@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,8 +9,8 @@ from agent_runner.cli import main
 from tests._test_helpers import make_toml
 
 
-def _init(repo: Path) -> None:
-    os.chdir(repo)
+def _init(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(repo)
     main(["init", "--no-commit"])
 
 
@@ -19,7 +18,7 @@ def test_given_status_subcommand_when_invoked_then_calls_api_status(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _init(tmp_git_repo)
+    _init(tmp_git_repo, monkeypatch)
     with patch("agent_runner.api.status") as st:
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
@@ -33,7 +32,7 @@ def test_given_stop_subcommand_when_invoked_then_calls_api_stop(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _init(tmp_git_repo)
+    _init(tmp_git_repo, monkeypatch)
     with patch("agent_runner.api.stop") as stop:
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
@@ -46,7 +45,7 @@ def test_given_kill_subcommand_when_invoked_then_calls_api_kill(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _init(tmp_git_repo)
+    _init(tmp_git_repo, monkeypatch)
     with patch("agent_runner.api.kill") as k:
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
@@ -65,7 +64,7 @@ def test_given_pid_file_service_when_restart_then_clean_error_not_traceback(
     line + non-zero rc — not let it propagate as a raw traceback. The service
     must also not be touched (no SIGTERM/SIGKILL sent)."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
-    _init(tmp_git_repo)
+    _init(tmp_git_repo, monkeypatch)
     from agent_runner.config import load_config
 
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
@@ -89,7 +88,7 @@ def test_given_peek_with_select_when_invoked_then_passes_select_arg(
     monkeypatch: pytest.MonkeyPatch,
     capsys,
 ) -> None:
-    _init(tmp_git_repo)
+    _init(tmp_git_repo, monkeypatch)
     with patch("agent_runner.api.peek", return_value=42) as p:
         rc = main(["peek", "--select", "system.disk_used_pct"])
         assert rc == 0

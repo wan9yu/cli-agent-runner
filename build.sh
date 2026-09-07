@@ -4,6 +4,11 @@
 
 set -euo pipefail
 PY=${PY:-.venv/bin/python}
+# Parallel worker count for the `test` gate. Default `auto` (one worker per
+# CPU) is safe on a dev laptop or CI runner; NEVER go above `-n 2` on a
+# memory-constrained host (e.g. a sub-512MB single-board machine) -- set
+# AR_TEST_JOBS=2 (or 1) there.
+AR_TEST_JOBS=${AR_TEST_JOBS:-auto}
 
 case "${1:-help}" in
   docs)
@@ -13,7 +18,12 @@ case "${1:-help}" in
     "$PY" -m pytest tests/literate/ -v
     ;;
   test)
-    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate --durations=15
+    # Two passes so `serial` tests (install process-wide signal handlers /
+    # self-signals -- unsafe to share an xdist worker process with anything
+    # else) still run every time: parallel set + serial set == the full suite.
+    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate \
+      -n "$AR_TEST_JOBS" --dist worksteal -m "not serial" --durations=15
+    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate -m serial
     ;;
   test-lf)
     .venv/bin/pytest -q --lf --ignore=tests/e2e --ignore=tests/literate
@@ -52,7 +62,10 @@ Usage: $0 <task>
 
   docs      Render <!-- gen:* --> blocks in docs/*.md.
   literate  Run quickstart.md as a test (bash blocks executed in sequence).
-  test      Unit + integration suite.
+  test      Unit + integration suite. Parallel via pytest-xdist (-n \$AR_TEST_JOBS,
+            default 'auto') plus a serial pass for tests unsafe to parallelize.
+            NEVER set AR_TEST_JOBS above 2 on a memory-constrained host (e.g.
+            a sub-512MB single-board machine) -- AR_TEST_JOBS=2 ./build.sh test.
   test-lf   Re-run only last-failed tests (red->green inner loop; not the gate).
   lint      ruff check + ruff format --check.
   vulture   Dead-code scan ([tool.vulture]); fails on any finding.

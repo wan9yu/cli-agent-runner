@@ -105,7 +105,10 @@ drifts.
 
 ## Tests
 
-- Unit + integration: `pytest -q --ignore=tests/e2e --ignore=tests/literate`
+- Unit + integration (parallel gate): `./build.sh test` — pytest-xdist
+  (`-n $AR_TEST_JOBS`, default `auto`) plus a serial pass for tests that
+  install process-wide signal handlers. Never set `AR_TEST_JOBS` above 2 on a
+  constrained host (e.g. a 462MB Pi).
 - Literate quickstart: `./build.sh literate`
 - Pi e2e (opt-in): `AGENT_RUNNER_E2E_PI=1 pytest tests/e2e/` (needs a `pi`
   ssh alias; not run in CI).

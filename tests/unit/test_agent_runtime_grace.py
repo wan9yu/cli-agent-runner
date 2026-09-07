@@ -6,10 +6,12 @@ import os
 import re
 import signal
 import subprocess
-import time
+import sys
 from pathlib import Path
 
+from agent_runner import agent_runtime
 from agent_runner.agent_runtime import run
+from tests._test_helpers import poll_until
 
 
 def _write_fake_script(tmp_path: Path, body: str) -> Path:
@@ -19,12 +21,43 @@ def _write_fake_script(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_grace_kill_fires_when_result_then_idle(tmp_path):
+def _wait_for_children(p, predicate, *, ignore_patterns=None, timeout_s=5.0):
+    """Poll ``_live_children(p)`` until ``predicate(live, ignored)`` is true.
+
+    Replaces a fixed ``time.sleep(0.5)`` that raced the backgrounded child's
+    fork under load: a busy full-suite run could see the sleep elapse before
+    the child had actually forked, making the assertion flake (or, worse,
+    silently see an empty child list). Bounded (never hangs); asserts loudly
+    on timeout instead of proceeding with a stale/empty result.
+    """
+    from agent_runner.agent_runtime import _live_children
+
+    box: dict[str, list] = {}
+
+    def _ready() -> bool:
+        box["live"], box["ignored"] = _live_children(p, ignore_patterns=ignore_patterns)
+        return predicate(box["live"], box["ignored"])
+
+    assert poll_until(_ready, timeout_s=timeout_s), "backgrounded child never appeared"
+    return box["live"], box["ignored"]
+
+
+def test_grace_kill_fires_when_result_then_idle(tmp_path, monkeypatch):
     """Agent writes type=result then becomes a childless sleeper (exec) -> no
-    live workers -> reaped within grace + tick latency."""
+    live workers -> reaped within grace + tick latency.
+
+    The exec'd sleep must outlast any realistic grace-detection delay (30s,
+    not a finite few seconds): under real `-n auto` contention on a busy
+    host, measured scan+grace latency occasionally stretched past 6s (CPU
+    scheduling jitter competing with 8-10 other workers, not agent_runtime
+    logic) -- a short finite sleep would let the child exit ON ITS OWN before
+    the grace kill fires, silently turning this into a no-op that never
+    proves escalation happened. timeout_s/the duration bound are widened to
+    match that same measured contention headroom."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
-        'echo \'{"type":"result","is_error":false}\'\nexec sleep 5\n',
+        'echo \'{"type":"result","is_error":false}\'\nexec sleep 30\n',
     )
     log_path = tmp_path / "round.log"
     result = run(
@@ -32,13 +65,13 @@ def test_grace_kill_fires_when_result_then_idle(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=10,
+        timeout_s=25,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
     )
     assert result.killed_for_grace is True
-    assert result.duration_s < 4
+    assert result.duration_s < 20
 
 
 def test_no_grace_kill_when_disabled(tmp_path):
@@ -62,8 +95,9 @@ def test_no_grace_kill_when_disabled(tmp_path):
     assert result.timed_out is True  # killed by wall timeout instead
 
 
-def test_no_grace_kill_when_result_not_emitted(tmp_path):
+def test_no_grace_kill_when_result_not_emitted(tmp_path, monkeypatch):
     """No result event -> grace countdown never starts."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(tmp_path, 'echo "no result here"\nexit 0\n')
     log_path = tmp_path / "round.log"
     result = run(
@@ -93,12 +127,9 @@ def test_live_children_empty_when_no_children():
 
 
 def test_live_children_lists_backgrounded_child():
-    from agent_runner.agent_runtime import _live_children
-
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
     try:
-        time.sleep(0.5)  # let the backgrounded child spawn
-        live, ignored = _live_children(p)
+        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
         assert any(c["name"] == "sleep" for c in live)
         assert ignored == []
     finally:
@@ -114,9 +145,18 @@ def test_live_children_empty_when_process_gone():
     assert _live_children(p) == ([], [])  # NoSuchProcess swallowed
 
 
-def test_grace_extended_when_result_but_child_running(tmp_path):
+def test_grace_extended_when_result_but_child_running(tmp_path, monkeypatch):
     """Agent emits result then backgrounds a long child -> live worker -> NOT
-    grace-killed; round_timeout_s (wall) reaps it instead; extended fired once."""
+    grace-killed; round_timeout_s (wall) reaps it instead; extended fired once.
+
+    timeout_s must give the extend-check at least one real chance to run
+    before the wall clock fires: measured under `-n auto` contention on a
+    busy host, the scan+grace check (even with the 0.1s patched interval)
+    was occasionally starved of CPU for several seconds by 8-10 competing
+    workers, so a too-tight timeout_s can race the round's own wall-clock
+    kill BEFORE any extend check ever executes -- turning `len(extended)==1`
+    into a coin flip rather than a reliable assertion."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
         'echo \'{"type":"result"}\'\nsleep 30 &\nwait\n',
@@ -128,7 +168,7 @@ def test_grace_extended_when_result_but_child_running(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=4,
+        timeout_s=20,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -141,17 +181,23 @@ def test_grace_extended_when_result_but_child_running(tmp_path):
     assert any(c["name"] == "sleep" for c in live)
 
 
-def test_grace_kill_after_child_exits_then_idle(tmp_path):
+def test_grace_kill_after_child_exits_then_idle(tmp_path, monkeypatch):
     """Live child first (extend), child exits, agent becomes childless (exec)
     -> next tick reaps via grace (well before wall timeout).
 
-    The child's 4s lifetime must clear (result-detection latency, up to
-    _RESULT_SCAN_INTERVAL_S ~= 1s since B5) + max_grace_after_result_s with
-    margin, so the "still busy -> extend" observation isn't a race against
-    the child's own exit."""
+    The child's lifetime must clear (result-detection latency, up to the
+    patched 0.1s _RESULT_SCAN_INTERVAL_S) + max_grace_after_result_s(1s) with
+    REAL margin, so the "still busy -> extend" observation isn't a race
+    against the child's own exit. 10s gives that margin under measured
+    `-n auto` contention on a busy host (the scan+grace check was
+    occasionally starved of CPU for several seconds by 8-10 competing
+    workers) -- a shorter child lifetime (e.g. 2s) let the child exit before
+    the (contention-delayed) extend check ever ran, dropping `extended` to
+    empty."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
-        'echo \'{"type":"result"}\'\nsleep 4 &\nwait\nexec sleep 30\n',
+        'echo \'{"type":"result"}\'\nsleep 10 &\nwait\nexec sleep 30\n',
     )
     log_path = tmp_path / "round.log"
     extended = []
@@ -160,29 +206,33 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=12,
+        timeout_s=25,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
         on_grace_extended=lambda live, ignored: extended.append((live, ignored)),
     )
     assert result.killed_for_grace is True  # reaped after child exited
-    assert result.duration_s < 9  # ~4s child + reap, well under timeout
+    assert result.duration_s < 20  # ~10s child + reap, well under the 25s wall timeout
     assert len(extended) == 1
 
 
 def test_live_children_splits_on_ignore_pattern():
     """A child whose cmdline matches an ignore pattern goes to 'ignored', others to 'live'."""
-    from agent_runner.agent_runtime import _live_children
-
     # Use exec -a to rename a child's argv[0] to a matchable name.
     p = subprocess.Popen(
         ["bash", "-c", "exec -a snapshot-bash-xyz sleep 30 & sleep 30 & wait"],
         start_new_session=True,
     )
     try:
-        time.sleep(0.5)
-        live, ignored = _live_children(p, ignore_patterns=[re.compile(r"snapshot-bash-")])
+        # Both children fork off in the same shell statement, but wait until
+        # BOTH are visible before asserting -- returning as soon as the first
+        # one appears could catch the ignored/live split mid-populate.
+        live, ignored = _wait_for_children(
+            p,
+            lambda live, ignored: len(live) + len(ignored) >= 2,
+            ignore_patterns=[re.compile(r"snapshot-bash-")],
+        )
         # One child should match the ignore pattern; the plain sleep goes to live.
         assert any(c["name"] in ("snapshot-bash-xyz", "sleep") for c in ignored)
         assert any(c["name"] == "sleep" for c in live)
@@ -193,12 +243,9 @@ def test_live_children_splits_on_ignore_pattern():
 
 def test_live_children_no_patterns_preserves_0138_behavior():
     """ignore_patterns=None -> tuple shape, but everything alive goes to 'live'."""
-    from agent_runner.agent_runtime import _live_children
-
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
     try:
-        time.sleep(0.5)
-        live, ignored = _live_children(p)  # default None
+        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
         assert ignored == []
         assert any(c["name"] == "sleep" for c in live)
     finally:
@@ -206,10 +253,16 @@ def test_live_children_no_patterns_preserves_0138_behavior():
         p.wait()
 
 
-def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path):
+def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path, monkeypatch):
     """The 0.1.38 'persistent-helper caveat' fix: with a matching pattern, a round
     whose only live descendant is the ignored helper is reaped at grace, not
-    deferred to round_timeout_s."""
+    deferred to round_timeout_s.
+
+    timeout_s/the duration bound are widened for measured `-n auto`
+    contention headroom (see test_grace_kill_fires_when_result_then_idle);
+    the exec'd sleep is already 30s (non-finite), so only the wall-clock
+    ceiling needed adjusting."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     # Fake agent: emit type=result, then exec into a 'helper' (no children remain).
     # The exec replaces the agent process itself (not a child); psutil.children()
     # gives descendants only — so after exec the agent has NO children -> reap.
@@ -224,7 +277,7 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=10,
+        timeout_s=25,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -232,22 +285,35 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path):
         grace_kill_ignore_patterns=[re.compile(r"snapshot-bash-")],
     )
     assert result.killed_for_grace is True
-    assert result.duration_s < 4
+    assert result.duration_s < 20
     assert extended == []  # no extension emitted; reaped directly
 
 
 def test_live_children_stores_no_argv_secret():
-    """A child with a secret in argv -> stored dict carries only name+pid; the
-    secret string never appears."""
-    from agent_runner.agent_runtime import _live_children
+    """A child invoked with a secret CLI argument (the realistic leak shape --
+    ``--api-key sk-...``, ``PGPASSWORD=...``) -> stored dict carries only
+    name+pid; the secret string never appears.
 
+    The secret must live in a real ARGUMENT (argv[1:]), not argv[0]: bash's
+    ``exec -a NAME cmd`` sets argv[0] verbatim, and ``_live_children`` derives
+    the stored "name" via ``Path(argv[0]).name`` -- which only strips a
+    leading directory component. A slash-free argv[0] passes through
+    unchanged, so putting the secret THERE would test a different (renamed
+    argv[0]) edge case, not the "arguments leak, we only store the basename"
+    property this test documents. A plain python child keeps the secret in
+    argv[3:], exactly where a real subprocess invocation would put it."""
     p = subprocess.Popen(
-        ["bash", "-c", "exec -a 'tool --api-key sk-ant-SECRET123 x' sleep 30"],
+        [
+            "bash",
+            "-c",
+            f'"{sys.executable}" -c "import time; time.sleep(30)" '
+            "--api-key sk-ant-SECRET123 x &\nwait\n",
+        ],
         start_new_session=True,
     )
     try:
-        time.sleep(0.5)
-        live, ignored = _live_children(p)
+        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
+        assert live, "the backgrounded child never appeared -- nothing was actually checked"
         blob = repr(live + ignored)
         assert "sk-ant-SECRET123" not in blob and "--api-key" not in blob
         assert all(set(c) <= {"name", "pid", "matched"} for c in live + ignored)
@@ -259,8 +325,6 @@ def test_live_children_stores_no_argv_secret():
 def test_live_children_matched_records_pattern_not_argv():
     """Ignore-pattern matches on full cmdline; the stored ignored entry records
     the matched pattern string + basename, never the full argv."""
-    from agent_runner.agent_runtime import _live_children
-
     # Background a subshell that exec-replaces itself with the secret in argv[0].
     # _live_children sees the child process; matching fires on its full cmdline.
     p = subprocess.Popen(
@@ -268,8 +332,12 @@ def test_live_children_matched_records_pattern_not_argv():
         start_new_session=True,
     )
     try:
-        time.sleep(0.5)
-        live, ignored = _live_children(p, ignore_patterns=[re.compile(r"sk-MATCHME")])
+        # Wait for the INNER bash to actually exec into sk-MATCHME (not just
+        # fork) -- polling on `ignored` non-empty, rather than a fixed sleep,
+        # so a slow exec under load never races a too-early check.
+        live, ignored = _wait_for_children(
+            p, lambda _live, ignored: bool(ignored), ignore_patterns=[re.compile(r"sk-MATCHME")]
+        )
         assert ignored and ignored[0]["matched"] == "sk-MATCHME"
         # Only name/pid/matched stored — not the raw cmdline
         assert all(set(c) == {"name", "pid", "matched"} for c in ignored)
@@ -299,11 +367,10 @@ def test_kill_pgroup_reentrant_sigterm_during_grace_still_sigkills(tmp_path):
     script = _write_fake_script(tmp_path, f'trap "" TERM\ntouch "{ready}"\nsleep 30\n')
     proc = subprocess.Popen([str(script)], start_new_session=True)
     try:
-        for _ in range(100):
-            if ready.exists():
-                break
-            time.sleep(0.05)
-        assert ready.exists(), "child never installed its SIGTERM trap"
+        # 15s (not the original 5s): measured under `-n auto` contention on a
+        # busy host, bash's own fork+exec occasionally starved for several
+        # real seconds before it got scheduled to run the trap+touch line.
+        assert poll_until(ready.exists, timeout_s=15), "child never installed its SIGTERM trap"
         clock = FakeClock()
         real_sleep = clock.sleep
         calls = {"n": 0}
