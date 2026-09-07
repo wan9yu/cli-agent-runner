@@ -3,6 +3,8 @@
 memory.current/memory.swap.current + memory.events as ABSOLUTE counters
 (callers diff two reads for a per-round delta)."""
 
+from pathlib import Path
+
 from agent_runner import metrics
 
 
@@ -34,4 +36,19 @@ def test_cgroup_memory_usage_empty_when_unbounded(tmp_path):
 
 
 def test_cgroup_memory_usage_empty_when_no_cgroup_v2(tmp_path):
+    assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
+
+
+def test_cgroup_memory_usage_fails_open_on_os_error(tmp_path, monkeypatch):
+    """A non-ENOENT stat error (EACCES/EIO on a flaky sysfs) must not
+    propagate: this runs inside _spawn_round's mid-round tick loop, whose
+    surrounding `except BaseException: _terminate_round(proc); raise` would
+    otherwise terminate the round AND crash serve over an observability read.
+    Path.exists() only swallows a narrow ENOENT/ENOTDIR/EBADF/ELOOP set and
+    re-raises everything else, so this is a real, reachable failure mode."""
+
+    def _raise(self):
+        raise OSError("simulated EIO")
+
+    monkeypatch.setattr(Path, "exists", _raise)
     assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}

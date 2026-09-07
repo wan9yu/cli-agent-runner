@@ -347,7 +347,7 @@ def _spawn_round(
                         "baseline_events": cg_base.get("memory_events", {}),
                         "peak_current": cg_peak_current,
                         "peak_swap": cg_peak_swap,
-                        "cgroup_path": cg_base.get("cgroup_path"),
+                        "bounding_cgroup_path": cg_base.get("cgroup_path"),
                     }
 
             while True:
@@ -439,11 +439,18 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
     ancestor. Returns the current usage dict (a future round-outcome
     classifier can reuse it as the one classification-time cgroup read).
     No-op (returns ``{}``, no emit) when this host has no finite cgroup
-    bound -- ``_spawn_round`` never stashes state in that case."""
+    bound -- ``_spawn_round`` never stashes state in that case -- or when
+    the bounding cgroup is no longer readable at round end (``cur`` empty:
+    it vanished or became unbounded mid-round). The latter must skip the
+    emit rather than write all-zero deltas against a now-stale
+    ``bounding_cgroup_path`` -- that would misreport "no pressure" when the
+    truth is "can no longer tell"."""
     state = _ROUND_CGROUP_STATE_BY_LOG_DIR.pop(log_dir, None)
     if not state:
         return {}
     cur = metrics.cgroup_memory_usage()
+    if not cur:
+        return {}
     base_ev = state["baseline_events"]
     cur_ev = cur.get("memory_events", {})
 
@@ -460,8 +467,7 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
         events_max_delta=_delta("max"),
         events_oom_delta=_delta("oom"),
         events_oom_kill_delta=_delta("oom_kill"),
-        swap_headroom_bytes=0,  # filled by a future advisory read when available
-        cgroup_path=state["cgroup_path"],
+        bounding_cgroup_path=state["bounding_cgroup_path"],
     )
     return cur
 

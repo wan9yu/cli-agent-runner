@@ -81,7 +81,7 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
         "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
         "peak_current": 300_000_000,
         "peak_swap": 100_000_000,
-        "cgroup_path": "/user.slice",
+        "bounding_cgroup_path": "/user.slice",
     }
     monkeypatch.setattr(
         _serve_round.metrics,
@@ -101,8 +101,10 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
     assert ev["events_oom_kill_delta"] == 0
     assert ev["memory_current_peak"] == 300_000_000  # the stashed PEAK, not the latest read
     assert ev["memory_swap_current_peak"] == 100_000_000
-    assert ev["cgroup_path"] == "/user.slice"
+    assert ev["bounding_cgroup_path"] == "/user.slice"
     assert ev["round_num"] == 7
+    assert "swap_headroom_bytes" not in ev  # dropped: no task owns real semantics for it yet
+    assert "cgroup_path" not in ev  # that name means the LEAF in host_cgroup_memory_limit
 
 
 def test_emit_round_cgroup_memory_noop_without_finite_bound(tmp_path):
@@ -113,6 +115,27 @@ def test_emit_round_cgroup_memory_noop_without_finite_bound(tmp_path):
     assert not list(log_dir.glob("events-*.jsonl"))
 
 
+def test_emit_round_cgroup_memory_skips_when_bounding_cgroup_vanished(tmp_path, monkeypatch):
+    """The bounding cgroup existed at round start (state was stashed) but is no
+    longer readable at round end (metrics reports {} -- vanished, or became
+    unbounded). Emitting all-zero deltas against a stale bounding_cgroup_path
+    would misreport "no pressure" when the truth is "can no longer tell" --
+    skip the emit entirely instead."""
+    log_dir = tmp_path
+    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+        "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
+        "peak_current": 300_000_000,
+        "peak_swap": 100_000_000,
+        "bounding_cgroup_path": "/user.slice",
+    }
+    monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: {})
+    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
+    assert result == {}
+    assert not list(log_dir.glob("events-*.jsonl"))
+    # Still consumed the stashed state -- no leak into a later round's call.
+    assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
+
+
 def test_emit_round_cgroup_memory_pops_state(tmp_path, monkeypatch):
     """State is consumed once -- a second call for the same log_dir (e.g. a stray
     double-call) must not re-emit from stale state."""
@@ -121,7 +144,7 @@ def test_emit_round_cgroup_memory_pops_state(tmp_path, monkeypatch):
         "baseline_events": {},
         "peak_current": 1,
         "peak_swap": 0,
-        "cgroup_path": "/x",
+        "bounding_cgroup_path": "/x",
     }
     monkeypatch.setattr(
         _serve_round.metrics,
@@ -139,18 +162,3 @@ def test_round_num_from_log_path():
 
     assert _serve_round._round_num_from_log_path(Path("/x/round-42.log")) == 42
     assert _serve_round._round_num_from_log_path(Path("/x/not-a-round.log")) == 0
-
-
-def test_spawn_round_stashes_peak_across_ticks():
-    """A direct check of the peak-tracking arithmetic _spawn_round performs,
-    independent of subprocess timing: the running max must never regress even
-    when a later tick reads a smaller memory.current than an earlier one."""
-    readings = [_usage(100, 0), _usage(500, 50), _usage(200, 10)]
-    cg_base = readings[0]
-    cg_peak_current = cg_base.get("memory_current", 0)
-    cg_peak_swap = cg_base.get("memory_swap_current", 0)
-    for cg_now in readings[1:]:
-        cg_peak_current = max(cg_peak_current, cg_now.get("memory_current", 0))
-        cg_peak_swap = max(cg_peak_swap, cg_now.get("memory_swap_current", 0))
-    assert cg_peak_current == 500  # peak, not the last reading (200)
-    assert cg_peak_swap == 50

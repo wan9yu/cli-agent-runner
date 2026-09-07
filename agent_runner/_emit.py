@@ -359,8 +359,7 @@ def emit_round_cgroup_memory(
     events_max_delta: int,
     events_oom_delta: int,
     events_oom_kill_delta: int,
-    swap_headroom_bytes: int,
-    cgroup_path: str | None,
+    bounding_cgroup_path: str | None,
 ) -> None:
     """Emit once per round: the round's peak cgroup ``memory.current`` (+swap) and
     the ``memory.events`` DELTAS (high/max/oom/oom_kill) over the round, read at the
@@ -368,7 +367,14 @@ def emit_round_cgroup_memory(
     without SSH. Peak is the max over the existing ~10s mid-round tick (NOT
     ``memory.peak``, which is cumulative since cgroup creation). No-op when this
     host has no finite cgroup bound (``_serve_round._emit_round_cgroup_memory``
-    never calls this in that case)."""
+    never calls this in that case).
+
+    ``bounding_cgroup_path`` is deliberately NOT named ``cgroup_path`` --
+    ``host_cgroup_memory_limit`` already uses that name for the LEAF (this
+    process's own) cgroup; here it names the BOUNDING ANCESTOR (the one whose
+    ``memory.max`` actually binds). Same key, two meanings across the two
+    events an operator correlates would be a trap -- events.md pins field
+    semantics permanently once shipped, so the distinct name is chosen now."""
     from agent_runner.events import ROUND_CGROUP_MEMORY, emit
 
     emit(
@@ -381,8 +387,7 @@ def emit_round_cgroup_memory(
         events_max_delta=events_max_delta,
         events_oom_delta=events_oom_delta,
         events_oom_kill_delta=events_oom_kill_delta,
-        swap_headroom_bytes=swap_headroom_bytes,
-        cgroup_path=cgroup_path,
+        bounding_cgroup_path=bounding_cgroup_path,
     )
 
 

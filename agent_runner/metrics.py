@@ -309,17 +309,31 @@ def cgroup_memory_usage(
     One-shot pure file I/O, no clock -- ``_spawn_round`` calls this once at
     round start (baseline) and again on each existing ~10s mid-round tick
     (peak tracking); ``post_round_verdicts`` calls it once more at the round
-    boundary for the delta."""
-    if not (root / "cgroup.controllers").exists():
+    boundary for the delta.
+
+    Fail-open on ``OSError``: this runs inside ``_spawn_round``'s mid-round
+    tick loop, which is itself inside a ``try / except BaseException:
+    _terminate_round(proc); raise`` -- a non-ENOENT stat error (EACCES/EIO on
+    a flaky sysfs) would otherwise terminate the round AND crash serve.
+    ``Path.exists()`` only swallows a narrow ENOENT/ENOTDIR/EBADF/ELOOP set
+    and re-raises everything else, so that call is the one this function
+    cannot leave unguarded even though every helper it calls below already
+    catches ``OSError`` on its own."""
+    try:
+        if not (root / "cgroup.controllers").exists():
+            return {}
+        cgroup_path = (
+            self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
+        )
+        if cgroup_path is None:
+            return {}
+        ancestors = _cgroup_ancestors(cgroup_path)
+        bounding = _bounding_ancestor_path(root, ancestors)
+        if bounding is None:
+            return {}
+        base = root / bounding.lstrip("/")
+    except OSError:
         return {}
-    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
-    if cgroup_path is None:
-        return {}
-    ancestors = _cgroup_ancestors(cgroup_path)
-    bounding = _bounding_ancestor_path(root, ancestors)
-    if bounding is None:
-        return {}
-    base = root / bounding.lstrip("/")
     return {
         "memory_current": _read_finite_cgroup_limit(base / "memory.current") or 0,
         "memory_swap_current": _read_finite_cgroup_limit(base / "memory.swap.current") or 0,
