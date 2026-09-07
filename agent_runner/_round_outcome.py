@@ -9,7 +9,7 @@ these four names from its own bottom without a top-level import cycle."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,24 +33,44 @@ class RoundOutcome:
     them every round).
 
     Deliberately does NOT include :func:`mem_loop_events_in_window` (give-up-only,
-    needs its own clock cutoff — a different axis than "this round") or
-    :func:`_backoff_exponent` (agent-scoped, keyed by a caller-supplied agent, not
-    "the round that just ran") — both stay on :func:`_tail_events` directly."""
+    needs its own clock cutoff — a different axis than "this round") — that one
+    stays on :func:`_tail_events` directly. :func:`_backoff_exponent` WAS such an
+    exclusion pre-0.2.18; its per-agent count-since-last-success is now folded into
+    this same scan as ``backoff_exponent_by_agent`` (0.2.18 agent axis, below) —
+    one scan instead of the two `_round_scan` used to run back-to-back."""
 
     mem_terminated: bool
     usage_capable: bool
     newest_usage_ts: str | None
     newest_substrate_before_ts: str | None
     latest_transient_per_agent: dict[str, Any]
+    # Per-agent verdict INPUTS (0.2.18 agent axis — the audit's mixed-[phases]
+    # fix). Streaks stay DEPLOYMENT-WIDE (post_round_verdicts' consecutive
+    # counters are untouched); only these per-round inputs are keyed by
+    # ev["agent"] (the binary basename — already required on
+    # agent_usage_recorded/transient events and on _active_throttles' map).
+    # `ran_agent` is None when the caller can't attribute the round to one
+    # agent (no [phases] / --ignore-schedule), matching _ran_agent_throttled's
+    # any-agent fallback — see round_had_no_progress.
+    ran_agent: str | None = None
+    usage_capable_by_agent: dict[str, bool] = field(default_factory=dict)
+    newest_usage_ts_by_agent: dict[str, str | None] = field(default_factory=dict)
+    backoff_exponent_by_agent: dict[str, int] = field(default_factory=dict)
 
 
-def round_outcome(log_dir: Path) -> RoundOutcome:
+def round_outcome(log_dir: Path, *, ran_agent: str | None = None) -> RoundOutcome:
     """Single-pass fold over :func:`_tail_events` computing :class:`RoundOutcome`.
     Callers: :func:`round_was_mem_terminated`, :func:`round_had_no_progress` (each
     accepts a precomputed ``outcome=`` to skip re-scanning), and
     ``serve_cmd.cmd()``'s post-round block, which computes this ONCE per round
     (INVARIANT 3) and reuses it for the mem-terminated / throttle / no-progress
-    checks that used to scan separately."""
+    checks that used to scan separately.
+
+    ``ran_agent`` (0.2.18 agent axis), when given, is carried onto the returned
+    ``RoundOutcome`` verbatim (see :func:`round_had_no_progress`) and does NOT
+    change what this scan computes — every field is folded for every agent seen
+    in the tail, ``ran_agent`` just tells the verdict reader which one to key
+    into. Default ``None``: every existing caller/test is unaffected."""
     from agent_runner._throttle import _tail_events  # lazy: breaks the re-export cycle
 
     newest_before_ts: str | None = None
@@ -58,20 +78,30 @@ def round_outcome(log_dir: Path) -> RoundOutcome:
     newest_usage_ts: str | None = None
     usage_capable = False
     transient: dict[str, Any] = {}
+    usage_capable_by_agent: dict[str, bool] = {}
+    newest_usage_ts_by_agent: dict[str, str | None] = {}
+    detected_count: dict[str, int] = {}  # transient_error_detected count since last success
     for ev in _tail_events(log_dir):
         kind = ev.get("event")
+        agent = str(ev.get("agent", "unknown"))
         # INVARIANT 2: latest_transient_per_agent keys by str(agent), no ts guard,
         # forward old->new merge (_tail_events yields oldest-file-first) — identical
         # to the pre-0.2.17 _latest_transient_per_agent copy this replaces.
         if kind == TRANSIENT_ERROR_DETECTED:
-            transient[str(ev.get("agent", "unknown"))] = ev
+            transient[agent] = ev
+            detected_count[agent] = detected_count.get(agent, 0) + 1
         elif kind == TRANSIENT_ERROR_RECOVERED:
-            transient[str(ev.get("agent", "unknown"))] = None
+            transient[agent] = None
         # INVARIANT 1: usage_capable set UNCONDITIONALLY here, on the raw kind check,
         # BEFORE the `ts` guard below — matches the pre-refactor round_had_no_progress
         # (usage_capable must arm even off a ts-less agent_usage_recorded event).
         if kind == AGENT_USAGE_RECORDED:
             usage_capable = True
+            usage_capable_by_agent[agent] = True
+            if ev.get("success"):
+                detected_count[agent] = (
+                    0  # a good round resets the exponent (matches _backoff_exponent)
+                )
         ts = ev.get("ts")
         if not ts:
             continue
@@ -81,6 +111,7 @@ def round_outcome(log_dir: Path) -> RoundOutcome:
             newest_terminated_ts = ts
         elif kind == AGENT_USAGE_RECORDED:
             newest_usage_ts = ts
+            newest_usage_ts_by_agent[agent] = ts
     # round_was_mem_terminated's own scoping logic (see its docstring): >=, not >,
     # since a fast loop can legitimately stamp both events in the same millisecond.
     mem_terminated = (
@@ -88,12 +119,17 @@ def round_outcome(log_dir: Path) -> RoundOutcome:
         and newest_terminated_ts is not None
         and parse_iso_ms(newest_terminated_ts) >= parse_iso_ms(newest_before_ts)
     )
+    backoff_exponent_by_agent = {a: max(0, c - 1) for a, c in detected_count.items()}
     return RoundOutcome(
         mem_terminated=mem_terminated,
         usage_capable=usage_capable,
         newest_usage_ts=newest_usage_ts,
         newest_substrate_before_ts=newest_before_ts,
         latest_transient_per_agent=transient,
+        ran_agent=ran_agent,
+        usage_capable_by_agent=usage_capable_by_agent,
+        newest_usage_ts_by_agent=newest_usage_ts_by_agent,
+        backoff_exponent_by_agent=backoff_exponent_by_agent,
     )
 
 
@@ -156,15 +192,25 @@ def round_had_no_progress(
        (429/503) is ``transient_error_detected`` and excused from the
        crash-loop breaker; without this gate it would be double-counted here
        as "no progress" and stop the loop instead of riding the back-off.
-    2. Usage-capability: armed ONLY when at least one ``agent_usage_recorded``
-       event exists anywhere in the scanned tail. Some CLIs (kimi -- see
-       builtin_plugins/kimi.py; aider; any custom ``[agent] command`` with no
-       usage-emitting plugin) never emit usage BY DESIGN -- for those, "no
-       usage this round" is indistinguishable from "normal for this CLI", so
-       arming would stop a perfectly healthy deployment after 5 fast clean
-       rounds. If the CLI's plugin stack ever emits usage (pi does on a good
-       round), a round with none is genuine no-progress and still trips --
-       this makes the breaker CLI-adaptive with no config descriptor.
+    2. Usage-capability: armed ONLY when the agent that just ran this round
+       (``outcome.ran_agent``) has EVER emitted ``agent_usage_recorded``
+       anywhere in the scanned tail (0.2.18 agent axis -- per-agent, not
+       deployment-wide; see the module-level contract note above
+       ``round_outcome``). Some CLIs (kimi -- see builtin_plugins/kimi.py;
+       aider; any custom ``[agent] command`` with no usage-emitting plugin)
+       never emit usage BY DESIGN -- for those, "no usage this round" is
+       indistinguishable from "normal for this CLI", so arming would stop a
+       perfectly healthy deployment after 5 fast clean rounds. In a mixed
+       ``[phases]`` deployment (e.g. pi + kimi) a DEPLOYMENT-WIDE gate would
+       misjudge a usage-less kimi round against pi's usage and falsely arm --
+       the audit's fix. If the agent's own plugin stack ever emits usage (pi
+       does on a good round), a round with none from THAT agent is genuine
+       no-progress and still trips -- this makes the breaker CLI-adaptive with
+       no config descriptor. ``outcome.ran_agent is None`` (no ``[phases]`` /
+       ``--ignore-schedule`` -- serve doesn't know which agent ran) falls back
+       to the deployment-wide ``usage_capable``/``newest_usage_ts``, mirroring
+       ``_ran_agent_throttled``'s any-agent fallback -- today's pre-0.2.18
+       behavior unchanged for that shape.
 
     INVARIANT 4: short-circuits on ``returncode != 0`` or ``duration_s >=
     threshold_s`` (or ``throttle_active``) BEFORE touching ``outcome`` at all --
@@ -192,10 +238,17 @@ def round_had_no_progress(
         return False
     if outcome is None:
         outcome = round_outcome(log_dir)
-    if not outcome.usage_capable:
-        return False  # this CLI/plugin stack has never emitted usage -- can't arm
+    agent = outcome.ran_agent
+    if agent is None:
+        capable = outcome.usage_capable
+        newest_usage = outcome.newest_usage_ts
+    else:
+        capable = outcome.usage_capable_by_agent.get(agent, False)
+        newest_usage = outcome.newest_usage_ts_by_agent.get(agent)
+    if not capable:
+        return False  # this agent's CLI/plugin stack has never emitted usage -- can't arm
     if outcome.newest_substrate_before_ts is None:
         return False
-    if outcome.newest_usage_ts is None:
+    if newest_usage is None:
         return True
-    return parse_iso_ms(outcome.newest_usage_ts) < parse_iso_ms(outcome.newest_substrate_before_ts)
+    return parse_iso_ms(newest_usage) < parse_iso_ms(outcome.newest_substrate_before_ts)

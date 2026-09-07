@@ -377,13 +377,29 @@ def _round_scan(cfg, phase_arg, log_dir):
     -- unconditionally as an eager function argument before the ``or`` ever runs):
     a mem-terminated round is already throttle-excused, so skip that second scan
     entirely on this path -- restoring the ONE-scan-per-round goal INVARIANT 3
-    exists for."""
-    outcome = round_outcome(log_dir)
+    exists for.
+
+    ``ran_agent`` (0.2.18 agent axis) mirrors ``_ran_agent_throttled``'s own
+    ``phase_arg is None`` fallback: when serve chose the phase we know the exact
+    agent that ran, so ``outcome.usage_capable_by_agent``/``newest_usage_ts_by_agent``
+    (fed to ``round_had_no_progress`` via ``outcome`` -- see INVARIANT 3) key on
+    THAT agent, not the deployment-wide fold; a self-rotated round (no
+    ``[phases]`` / ``--ignore-schedule``) leaves it ``None`` and the verdict falls
+    back to today's deployment-wide behavior. ``outcome.backoff_exponent_by_agent``
+    (folded into the SAME scan -- see ``RoundOutcome``) is threaded into
+    ``_active_throttles`` as its exponent cache so that map's own
+    ``_events_derived_reset`` calls don't re-scan for the exponent."""
+    ran_agent = cfg.profile_for(phase_arg).agent.binary if phase_arg is not None else None
+    outcome = round_outcome(log_dir, ran_agent=ran_agent)
     mem_terminated = round_was_mem_terminated(log_dir, outcome=outcome)
     if mem_terminated:
         throttled = True
     else:
-        active = _active_throttles(log_dir, _latest=outcome.latest_transient_per_agent)
+        active = _active_throttles(
+            log_dir,
+            _latest=outcome.latest_transient_per_agent,
+            _exponent_cache=dict(outcome.backoff_exponent_by_agent),
+        )
         throttled = _ran_agent_throttled(cfg, phase_arg, log_dir, active=active)
     return throttled, outcome
 

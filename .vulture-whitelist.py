@@ -19,6 +19,10 @@ usage_capable
 newest_usage_ts
 newest_substrate_before_ts
 latest_transient_per_agent
+ran_agent
+usage_capable_by_agent
+newest_usage_ts_by_agent
+backoff_exponent_by_agent
 
 # agent_runner.agent_runtime.RunResult
 exit_code
