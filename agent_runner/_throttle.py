@@ -110,11 +110,13 @@ _EPOCH_SANITY_WINDOW_S = 366 * 24 * 3600  # ~1 year
 
 def _coerce_epoch_int(value: Any, default: int, *, now_epoch: float) -> int:
     """:func:`_coerce_int` for an epoch-like field (``reset_at_epoch``), additionally
-    clamping the coerced result to ``[0, now+~1y]``. A poisoned far-future/negative
-    epoch from a plugin-written event line would otherwise OverflowError-crash a
-    ``datetime.fromtimestamp`` on the status page / rate-limit detector, or pin a
-    throttle 'active' forever. Out-of-range → ``default`` + a ``UserWarning`` (the
-    same degrade contract as _coerce_int's non-numeric path)."""
+    rejecting a coerced result outside ``[0, now+~1y]`` back to ``default`` (not a
+    clamp to the boundary — the same reject-and-default contract as _coerce_int's
+    non-numeric path, just with a range check instead of a type check). A poisoned
+    far-future/negative epoch from a plugin-written event line would otherwise
+    OverflowError-crash a ``datetime.fromtimestamp`` on the status page / rate-limit
+    detector, or pin a throttle 'active' forever. Out-of-range → ``default`` + a
+    ``UserWarning``."""
     coerced = _coerce_int(value, default)
     if coerced < 0 or coerced > now_epoch + _EPOCH_SANITY_WINDOW_S:
         warnings.warn(

@@ -407,11 +407,11 @@ def detect_rate_limit_active(
         if kind == TRANSIENT_ERROR_RECOVERED:
             return None
         if kind == TRANSIENT_ERROR_DETECTED:
-            from agent_runner._throttle import _coerce_int, _events_derived_reset
+            from agent_runner._throttle import _coerce_epoch_int, _events_derived_reset
 
             agent = str(ev.get("agent", "unknown"))
             classification = ev.get("classification", "unknown")
-            reset = _coerce_int(ev.get("reset_at_epoch"), 0)
+            reset = _coerce_epoch_int(ev.get("reset_at_epoch"), 0, now_epoch=now)
             if log_dir is not None:
                 reset = _events_derived_reset(log_dir, agent, str(classification), reset)
             if reset > now:

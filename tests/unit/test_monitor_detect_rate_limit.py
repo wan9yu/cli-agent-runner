@@ -103,3 +103,27 @@ def test_given_poisoned_far_future_epoch_when_detect_then_no_crash():
         },
     ]
     assert detect_rate_limit_active(events, now=1_700_000_000) is None
+
+
+def test_given_mid_range_poisoned_epoch_when_detect_then_no_false_alert():
+    """A reset_at_epoch ~100 years out is still well within datetime's representable
+    range (does NOT OverflowError -- that's the extreme case covered above), so this
+    exercises the separate mid-range gap: without the epoch-sanity check, the detector
+    would fire a confidently-wrong 'throttled until <garbage future date>' alert on a
+    poisoned event that _active_throttles / _check_throttle_state / http_progress all
+    already reject as not-throttled via _coerce_epoch_int. Must agree with those views:
+    no alert."""
+    from agent_runner.monitor import detect_rate_limit_active
+
+    now = 1_700_000_000
+    far_future_in_range = now + 100 * 366 * 24 * 3600  # ~100 years out, in-datetime-range
+    events = [
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:00:00Z",
+            "agent": "claude",
+            "reset_at_epoch": far_future_in_range,
+            "classification": "rate_limit_account",
+        },
+    ]
+    assert detect_rate_limit_active(events, now=now) is None
