@@ -289,11 +289,15 @@ def on_alert(
         allowed_stop_names if allowed_stop_names is not None else list(AUTO_STOP_ALERTS)
     )
 
-    def _emit_if_dir(kind: str, **fields: Any) -> None:
-        if log_dir.is_dir():
+    def emit(kind: str, **fields: Any) -> None:
+        if not log_dir.is_dir():
+            return
+        try:
             emit_event(log_dir, kind, detector=alert.detector, **fields)
+        except Exception:  # noqa: BLE001 — a breadcrumb write (ENOSPC etc.) must never
+            pass  # crash the supervision that noticed the problem
 
-    _emit_if_dir(
+    emit(
         MONITOR_ALERT_EMITTED,
         severity=alert.severity,
         message=alert.message,
@@ -303,16 +307,28 @@ def on_alert(
         return "none"
     if alert.detector not in effective_allowed:
         return "none"  # gated — operator has not opted this detector into auto-stop
+    return _stop_then_record(lambda: _call_local_stop(project), emit=emit)
+
+
+def _stop_then_record(
+    stop: Callable[[], ServiceStatus],
+    *,
+    emit: Callable[..., None],
+) -> OnAlertVerdict:
+    """Run the stop, THEN record the outcome breadcrumb (best-effort via ``emit``,
+    which swallows its own write failures). The stop is never gated on a
+    breadcrumb write succeeding — an ENOSPC on the record must not undo a stop
+    that took. See on_alert's docstring for the draining/failed/triggered map."""
     try:
-        result = _call_local_stop(project)
-    except Exception as e:
+        result = stop()
+    except Exception as e:  # noqa: BLE001 — stop failure recorded and swallowed
         # Any stop failure (unit missing, permission denied, stale pidfile) is
         # recorded and swallowed: crashing the monitor here would take out the
         # supervision that noticed the problem. The dedup `seen` entry is left
         # standing (a "failed" verdict does not re-arm it), so on_alert
         # re-fires only after this alert clears from a poll and recurs — not
         # on the very next poll.
-        _emit_if_dir(MONITOR_AUTO_STOP_FAILED, error=f"{type(e).__name__}: {e}")
+        emit(MONITOR_AUTO_STOP_FAILED, error=f"{type(e).__name__}: {e}")
         return "failed"
     if result.active:
         # api.stop returned without raising but the service is STILL active —
@@ -325,12 +341,12 @@ def on_alert(
         # needed. Only a still-active non-PID_FILE mode is a real failure.
         if result.mode == ServiceMode.PID_FILE:
             return "draining"
-        _emit_if_dir(
+        emit(
             MONITOR_AUTO_STOP_FAILED,
             error=f"stop did not take effect (mode={result.mode.value}, still active)",
         )
         return "failed"
-    _emit_if_dir(MONITOR_AUTO_STOP_TRIGGERED)
+    emit(MONITOR_AUTO_STOP_TRIGGERED)
     return "triggered"
 
 

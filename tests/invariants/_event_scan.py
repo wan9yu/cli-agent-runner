@@ -55,8 +55,12 @@ def _emit_aliases(tree: ast.Module) -> set[str]:
 def _local_emit_wrappers(tree: ast.Module, aliases: set[str]) -> dict[str, int]:
     """Local functions (def or nested closure) that forward one of their OWN
     parameters straight into a real emit call's kind argument -- e.g.
-    ``def _emit_if_dir(kind, **fields): emit(log_dir, kind, ...)``, a closure
+    ``def emit(kind, **fields): emit_event(log_dir, kind, ...)``, a closure
     collapsing several duplicated direct emit sites into one (monitor.on_alert).
+    Name-based, not scope-aware: a second function elsewhere that calls a
+    same-named parameter (monitor._stop_then_record's ``emit`` argument,
+    bound to this exact closure) is picked up by the same match — see
+    ``on_alert``'s docstring for why the stop must land before that record.
 
     Maps the wrapper's name to the forwarded parameter's index, so a call to
     the wrapper resolves as an indirect emit site alongside the direct ones —
