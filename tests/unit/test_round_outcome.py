@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner import _throttle
+from agent_runner import _round_outcome, _throttle
 from agent_runner._throttle import (
     RoundOutcome,
     round_had_no_progress,
@@ -194,7 +194,11 @@ def test_round_had_no_progress_early_return_ahead_of_outcome_scan(
     def _boom(log_dir: Path) -> RoundOutcome:
         raise AssertionError("round_outcome must not be called on the early-return path")
 
-    monkeypatch.setattr(_throttle, "round_outcome", _boom)
+    # round_had_no_progress's internal `round_outcome(...)` call resolves via
+    # agent_runner._round_outcome's own module globals (that's where it now
+    # lives post-0.2.18 carve) -- patching _throttle's re-exported name here
+    # would leave the real round_outcome in place and the spy vacuous.
+    monkeypatch.setattr(_round_outcome, "round_outcome", _boom)
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     assert round_had_no_progress(log_dir, returncode=1, duration_s=3.0, threshold_s=30) is False
