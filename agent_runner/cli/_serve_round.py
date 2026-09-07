@@ -167,6 +167,10 @@ def _maybe_emit_recovered(log_dir, active=None) -> None:
 # drift.
 _ROUND_TERM_GRACE_S = 15
 
+# A round-child that even killpg can't reap in time (D-state leader): a defined,
+# classifiable returncode instead of a TimeoutExpired escaping cmd() as exit 1.
+_ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
+
 
 def _terminate_round(proc: subprocess.Popen) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
@@ -175,7 +179,12 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     Reads the grace period off this module's own ``_ROUND_TERM_GRACE_S`` global (no
     more reach-back through ``serve_cmd`` -- that module never used this constant
     itself, only re-exported it), so ``monkeypatch.setattr(_serve_round,
-    "_ROUND_TERM_GRACE_S", ...)`` (test_spawn_round_wedged.py) lands directly."""
+    "_ROUND_TERM_GRACE_S", ...)`` (test_spawn_round_wedged.py) lands directly.
+
+    Fail-open: a D-state (uninterruptible-sleep) leader can outlive even a killpg
+    SIGKILL, so the post-killpg wait is also guarded -- this must never raise
+    TimeoutExpired back into a caller (_spawn_round's own ``except BaseException``
+    calls this again on the way out), which would escape ``cmd()`` unclassified."""
     proc.terminate()
     try:
         return proc.wait(timeout=_ROUND_TERM_GRACE_S)
@@ -184,7 +193,10 @@ def _terminate_round(proc: subprocess.Popen) -> int:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
             pass
-        return proc.wait(timeout=10)
+        try:
+            return proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            return _ROUND_UNREAPED_RC  # D-state leader: don't re-raise into cmd()
 
 
 # Mid-round hard floor: how often (in clock.monotonic() seconds, not per-tick)
