@@ -17,6 +17,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+# Module-level (not the local-import style the rest of this file uses) so tests can
+# monkeypatch this module's own attribute directly, without a real on-disk events dir.
+from agent_runner._throttle import effective_throttle_view
+
 
 def serve_http_progress(log_dir: Path, narrative_file: Path | None, *, port: int) -> int:
     """Start the HTTP server and serve forever. Returns 1 on port-in-use error."""
@@ -148,12 +152,13 @@ def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
     """Rate limit throttle state — None if not currently throttled."""
     from datetime import UTC, datetime
 
-    from agent_runner._throttle import effective_throttle_view
-
     throttle, _active = effective_throttle_view(log_dir)
     if throttle is None:
         return None
-    iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()
+    try:
+        iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()
+    except (OverflowError, OSError, ValueError):
+        iso = "unknown"  # poisoned epoch — degrade the display, never crash the page
     return {
         "throttled_until_iso": iso,
         "limit_type": throttle.classification,

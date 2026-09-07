@@ -415,7 +415,10 @@ def detect_rate_limit_active(
             if log_dir is not None:
                 reset = _events_derived_reset(log_dir, agent, str(classification), reset)
             if reset > now:
-                iso = datetime.fromtimestamp(reset, UTC).isoformat()
+                try:
+                    iso = datetime.fromtimestamp(reset, UTC).isoformat()
+                except (OverflowError, OSError, ValueError):
+                    return None  # poisoned epoch — don't blind-crash the detector
                 return _alert(
                     "rate_limit_active",
                     "warning",

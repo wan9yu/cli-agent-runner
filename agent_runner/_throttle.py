@@ -103,6 +103,28 @@ def _coerce_float(value: Any, default: float) -> float:
     return default
 
 
+# A reset beyond this horizon is malformed (a poisoned/corrupted event line), not a
+# legitimate long back-off — see _coerce_epoch_int.
+_EPOCH_SANITY_WINDOW_S = 366 * 24 * 3600  # ~1 year
+
+
+def _coerce_epoch_int(value: Any, default: int, *, now_epoch: float) -> int:
+    """:func:`_coerce_int` for an epoch-like field (``reset_at_epoch``), additionally
+    clamping the coerced result to ``[0, now+~1y]``. A poisoned far-future/negative
+    epoch from a plugin-written event line would otherwise OverflowError-crash a
+    ``datetime.fromtimestamp`` on the status page / rate-limit detector, or pin a
+    throttle 'active' forever. Out-of-range → ``default`` + a ``UserWarning`` (the
+    same degrade contract as _coerce_int's non-numeric path)."""
+    coerced = _coerce_int(value, default)
+    if coerced < 0 or coerced > now_epoch + _EPOCH_SANITY_WINDOW_S:
+        warnings.warn(
+            f"epoch value {coerced} out of sane range; using default {default}",
+            stacklevel=2,
+        )
+        return default
+    return coerced
+
+
 def _iter_events(path: Path):
     """Yield parsed event dicts from a JSONL file; skip blank / corrupt lines
     and any line that decodes to something other than an object (a bare
@@ -291,7 +313,7 @@ def _active_throttles(
             log_dir,
             agent,
             classification,
-            _coerce_int(detected.get("reset_at_epoch"), 0),
+            _coerce_epoch_int(detected.get("reset_at_epoch"), 0, now_epoch=now),
             _exponent_cache=_exponent_cache,
         )
         if reset_at <= now:
@@ -574,7 +596,7 @@ def _check_throttle_state(
         log_dir,
         agent,
         classification,
-        _coerce_int(latest_detected.get("reset_at_epoch"), 0),
+        _coerce_epoch_int(latest_detected.get("reset_at_epoch"), 0, now_epoch=now),
         _exponent_cache=_exponent_cache,
     )
     if reset_at <= now:
@@ -824,8 +846,8 @@ def _apply_back_off(
     raw_detected = _latest_unrecovered_detected(log_dir)
     raw_reset_at_epoch = throttle.reset_at_epoch
     if raw_detected is not None and str(raw_detected.get("agent", "unknown")) == throttle.agent:
-        raw_reset_at_epoch = _coerce_int(
-            raw_detected.get("reset_at_epoch"), throttle.reset_at_epoch
+        raw_reset_at_epoch = _coerce_epoch_int(
+            raw_detected.get("reset_at_epoch"), throttle.reset_at_epoch, now_epoch=clock.epoch()
         )
 
     adjusted_reset_at, _consecutive_count, _capped = compute_adjusted_reset_at(

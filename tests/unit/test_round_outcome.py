@@ -270,6 +270,7 @@ def test_active_throttles_reuses_precomputed_latest_transient_map(tmp_path: Path
     throttle check -- must give the identical active-throttle map the
     from-scratch scan (`_latest=None`, the default) produces."""
     log_dir = tmp_path / "logs"
+    clock = FakeClock(epoch=1000.0)
     _write(
         log_dir,
         {
@@ -277,11 +278,10 @@ def test_active_throttles_reuses_precomputed_latest_transient_map(tmp_path: Path
             "event": "transient_error_detected",
             "agent": "claude",
             "classification": "rate_limit_account",
-            "reset_at_epoch": 99999999999,
+            "reset_at_epoch": clock.epoch() + 3600,
             "round_num": 1,
         },
     )
-    clock = FakeClock(epoch=1000.0)
     outcome = round_outcome(log_dir)
     fresh = _throttle._active_throttles(log_dir, clock=clock)
     reused = _throttle._active_throttles(
@@ -295,6 +295,8 @@ def test_ran_agent_throttled_reuses_precomputed_active_map(tmp_path: Path) -> No
     """serve_cmd's post-round block passes an already-computed `active` map into
     `_ran_agent_throttled` (via its new `active=` kwarg) instead of letting it
     scan again -- must agree with the from-scratch (`active=None`) call."""
+    import time
+
     from agent_runner.cli import serve_cmd
     from agent_runner.config import load_config
     from tests._test_helpers import make_toml
@@ -307,7 +309,7 @@ def test_ran_agent_throttled_reuses_precomputed_active_map(tmp_path: Path) -> No
             "event": "transient_error_detected",
             "agent": "claude",
             "classification": "rate_limit_account",
-            "reset_at_epoch": 99999999999,
+            "reset_at_epoch": time.time() + 3600,
             "round_num": 1,
         },
     )

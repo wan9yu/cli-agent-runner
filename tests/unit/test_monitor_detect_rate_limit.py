@@ -85,3 +85,21 @@ def test_given_log_dir_when_detect_then_uses_ladder_extended_reset(tmp_path):
     assert alert is not None
     expected_iso = datetime.fromtimestamp(raw_reset + 30, UTC).isoformat()
     assert alert.context["throttled_until_iso"] == expected_iso
+
+
+def test_given_poisoned_far_future_epoch_when_detect_then_no_crash():
+    """A huge finite reset_at_epoch (e.g. a corrupted event line) must not
+    OverflowError out of the detector — it degrades to no alert instead of
+    blind-crashing the monitor loop."""
+    from agent_runner.monitor import detect_rate_limit_active
+
+    events = [
+        {
+            "event": "transient_error_detected",
+            "ts": "2026-05-16T00:00:00Z",
+            "agent": "claude",
+            "reset_at_epoch": 10**20,
+            "classification": "rate_limit_account",
+        },
+    ]
+    assert detect_rate_limit_active(events, now=1_700_000_000) is None
