@@ -756,55 +756,6 @@ def _monitor_loop_iter(
         SYSTEM_CLOCK.sleep(interval_s)
 
 
-def _tail_events_jsonl(
-    log_dir: Path,
-    *,
-    start_at_now: bool,
-    poll_interval_s: float,
-) -> Iterator[dict[str, Any]]:
-    """Polling tailer: yields parsed event dicts from events-*.jsonl files.
-
-    ``start_at_now``: if True, snapshot current file sizes at init so existing
-    events are skipped (machine-consumption use case). If False, yield from
-    byte 0 of every file present at start (human-narrate use case).
-
-    Follows file rotation transparently — when a new events-YYYY-MM.jsonl
-    appears, it is picked up from byte 0.
-    """
-    from agent_runner.events import _iter_parsed_lines, open_events_jsonl
-
-    seen_positions: dict[Path, int] = {}
-    if start_at_now:
-        for path in sorted(log_dir.glob("events-*.jsonl")):
-            try:
-                seen_positions[path] = path.stat().st_size
-            except FileNotFoundError:
-                continue
-
-    while True:
-        files = sorted(log_dir.glob("events-*.jsonl"))
-        any_new = False
-        for path in files:
-            pos = seen_positions.get(path, 0)
-            try:
-                size = path.stat().st_size
-            except FileNotFoundError:
-                continue
-            if size <= pos:
-                continue
-            with open_events_jsonl(path) as f:
-                f.seek(pos)
-                # narrate_events -> _format_narrate_line does evt.get(...) --
-                # a non-dict line must not reach it or stream_events_jsonl's
-                # machine-consumption callers.
-                for _, evt in _iter_parsed_lines(f):
-                    yield evt
-                    any_new = True
-                seen_positions[path] = f.tell()
-        if not any_new:
-            SYSTEM_CLOCK.sleep(poll_interval_s)
-
-
 # Re-export emit_* wrappers from _emit module (extracted for size hygiene).
 # Preserves the public import surface: `from agent_runner.api import emit_*` continues to work.
 from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-export
@@ -877,7 +828,12 @@ def narrate_events(log_dir: Path, *, poll_interval_s: float = 0.5) -> Iterator[s
     live monitoring during debug / audit / short runs. Yields events from byte 0
     of all files present at iterator start, then follows new appends.
     """
-    for evt in _tail_events_jsonl(log_dir, start_at_now=False, poll_interval_s=poll_interval_s):
+    # narrate_events -> _format_narrate_line does evt.get(...) -- a non-dict
+    # line must not reach it (or stream_events_jsonl's machine-consumption
+    # callers); _tail_events_jsonl's read_new composition already guards that.
+    for evt in monitor._tail_events_jsonl(
+        log_dir, start_at_now=False, poll_interval_s=poll_interval_s
+    ):
         yield _format_narrate_line(evt)
 
 
@@ -894,7 +850,9 @@ def stream_events_jsonl(log_dir: Path, *, poll_interval_s: float = 0.1) -> Itera
     Polling-based (no inotify/kqueue — cross-platform). Designed for machine
     consumption (vs ``narrate_events`` which formats for humans).
     """
-    yield from _tail_events_jsonl(log_dir, start_at_now=True, poll_interval_s=poll_interval_s)
+    yield from monitor._tail_events_jsonl(
+        log_dir, start_at_now=True, poll_interval_s=poll_interval_s
+    )
 
 
 def relay_remote_events(

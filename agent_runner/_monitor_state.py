@@ -9,15 +9,16 @@ cycle-edge wiring (``run_all_detectors``/``on_alert``) in ``monitor.py``.
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from agent_runner.api_types import ProjectState, ServiceMode, ServiceStatus, SystemMetrics
 from agent_runner.builtin_plugins._constants import _TAIL_LINES
+from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.context_store import read_json
-from agent_runner.events import _iter_parsed_lines, iter_event_dicts, open_events_jsonl
+from agent_runner.events import iter_event_dicts, read_new
 
 
 class StateSource(Protocol):
@@ -82,22 +83,41 @@ class _EventTail:
     )
 
     def read(self, files: list[Path]) -> list[dict[str, Any]]:
-        for path in files:
-            pos = self.offsets.get(path, 0)
+        new_events, self.offsets = read_new(files, self.offsets)
+        self.buffer.extend(new_events)
+        return list(self.buffer)
+
+
+def _tail_events_jsonl(
+    log_dir: Path,
+    *,
+    start_at_now: bool,
+    poll_interval_s: float,
+) -> Iterator[dict[str, Any]]:
+    """Polling tailer: yields parsed event dicts from events-*.jsonl files.
+
+    ``start_at_now``: if True, snapshot current file sizes at init so existing
+    events are skipped (machine-consumption use case). If False, yield from
+    byte 0 of every file present at start (human-narrate use case).
+
+    Follows file rotation transparently — when a new events-YYYY-MM.jsonl
+    appears, it is picked up from byte 0.
+    """
+    offsets: dict[Path, int] = {}
+    if start_at_now:
+        for path in sorted(log_dir.glob("events-*.jsonl")):
             try:
-                size = path.stat().st_size
+                offsets[path] = path.stat().st_size
             except FileNotFoundError:
                 continue
-            if size < pos:
-                pos = 0  # rotated/truncated underneath us
-            if size == pos:
-                continue
-            with open_events_jsonl(path) as f:
-                f.seek(pos)
-                for _, parsed in _iter_parsed_lines(f):
-                    self.buffer.append(parsed)
-                self.offsets[path] = f.tell()
-        return list(self.buffer)
+
+    while True:
+        files = sorted(log_dir.glob("events-*.jsonl"))
+        new_events, offsets = read_new(files, offsets)
+        if new_events:
+            yield from new_events
+        else:
+            SYSTEM_CLOCK.sleep(poll_interval_s)
 
 
 _MAX_TAIL_FILES = 20

@@ -19,7 +19,7 @@ Public API:
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
@@ -252,3 +252,49 @@ def iter_event_dicts(path: Path) -> Iterator[dict]:
     with open_events_jsonl(path) as f:
         for _, obj in _iter_parsed_lines(f):
             yield obj
+
+
+def read_new(
+    paths: Iterable[Path], offsets: dict[Path, int]
+) -> tuple[list[dict[str, Any]], dict[Path, int]]:
+    """Read events appended to ``paths`` since ``offsets``; the single tailer
+    every offset-carrying events-*.jsonl reader (monitor poll, ``events --tail``,
+    ``narrate_events``/``stream_events_jsonl``) composes.
+
+    Returns ``(new_events, updated_offsets)``. ``offsets`` is read-only — the
+    returned dict is a copy with each visited path's byte position advanced to
+    where it was actually read to; a caller feeds that dict back in on its next
+    call to resume where it left off.
+
+    Two edge cases every prior copy of this loop handled separately, now
+    handled once:
+    - Rotation (a new events-*.jsonl file appears): an unseen path defaults to
+      offset 0 via ``offsets.get(path, 0)``, so its entire content reads as new
+      the first time it's passed in. A caller drops a rotated-away path from
+      ``paths`` simply by not passing it again; its stale entry, if still
+      carried in ``offsets``, is harmless since it's never re-stat'd.
+    - Truncation reset: if a path's current size is smaller than its recorded
+      offset, it was truncated or replaced beneath us — re-read from byte 0
+      instead of skipping forever.
+
+    A path that no longer exists (``FileNotFoundError`` on stat) yields no new
+    events this call and keeps its prior offset, rather than raising.
+    """
+    new_offsets = dict(offsets)
+    new_events: list[dict[str, Any]] = []
+    for path in paths:
+        pos = new_offsets.get(path, 0)
+        try:
+            size = path.stat().st_size
+        except FileNotFoundError:
+            continue
+        if size < pos:
+            pos = 0  # truncated/replaced beneath us -- re-read from byte 0
+        if size == pos:
+            continue
+        with open_events_jsonl(path) as f:
+            f.seek(pos)
+            for _, parsed in _iter_parsed_lines(f):
+                new_events.append(parsed)
+            new_offsets[path] = f.tell()
+    return new_events, new_offsets

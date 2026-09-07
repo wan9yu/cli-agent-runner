@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner import events
-from agent_runner.events import KNOWN_EVENT_KINDS, emit
+from agent_runner.events import KNOWN_EVENT_KINDS, emit, read_new
 from tests._test_helpers import isolating
 
 _reset = isolating(events._PLUGIN_KINDS)
@@ -274,3 +274,40 @@ def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path)
     # skip emitting None-valued kwargs).
     assert "original_reset_at_epoch" not in payload
     assert "consecutive_count" not in payload
+
+
+def test_read_new_handles_rotation_and_truncation_reset(tmp_path: Path) -> None:
+    """The two edge cases every tail reader composing ``read_new`` needs:
+
+    - rotation: a newly-appeared path is read from byte 0 the first time it's
+      passed in (nothing special to do -- ``offsets.get(path, 0)`` defaults it).
+    - truncation reset: a path whose current size is smaller than its recorded
+      offset was truncated/replaced beneath us and must be re-read from 0,
+      not skipped forever.
+    """
+    old = tmp_path / "events-2026-08.jsonl"
+    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
+
+    first_events, offsets = read_new([old], {})
+    assert [e["n"] for e in first_events] == [1]
+    assert offsets[old] == old.stat().st_size
+
+    with old.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"event": "round_end", "n": 2}) + "\n")
+    second_events, offsets = read_new([old], offsets)
+    assert [e["n"] for e in second_events] == [2]
+
+    # Rotation: a new file appears alongside the old one -- its offset
+    # defaults to 0, so its whole content reads as new the first time.
+    new = tmp_path / "events-2026-09.jsonl"
+    new.write_text(json.dumps({"event": "round_start", "n": 3}) + "\n")
+    rotated_events, offsets = read_new([old, new], offsets)
+    assert [e["n"] for e in rotated_events] == [3]
+    assert offsets[old] == old.stat().st_size  # untouched: no new bytes in the old file
+
+    # Truncation reset: the old file shrinks below its recorded offset (e.g.
+    # replaced/rotated-in-place beneath us) -- re-read from byte 0, not skipped.
+    old.write_text(json.dumps({"event": "round_start", "n": 4}) + "\n")
+    reset_events, offsets = read_new([old, new], offsets)
+    assert [e["n"] for e in reset_events] == [4]
+    assert offsets[old] == old.stat().st_size
