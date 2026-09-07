@@ -13,7 +13,10 @@ case "${1:-help}" in
     "$PY" -m pytest tests/literate/ -v
     ;;
   test)
-    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate
+    "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate --durations=15
+    ;;
+  test-lf)
+    .venv/bin/pytest -q --lf --ignore=tests/e2e --ignore=tests/literate
     ;;
   coverage)
     "$PY" -m pytest -q --ignore=tests/e2e --ignore=tests/literate \
@@ -35,10 +38,10 @@ case "${1:-help}" in
   check)
     "$0" lint
     "$0" vulture
-    "$0" test
     "$0" literate
     "$0" docs            # NOTE: must run before git diff --exit-code below
     git diff --exit-code docs/
+    "$0" test
     ;;
   e2e)
     AGENT_RUNNER_E2E_PI=1 "$PY" -m pytest tests/e2e/ -v
@@ -50,6 +53,7 @@ Usage: $0 <task>
   docs      Render <!-- gen:* --> blocks in docs/*.md.
   literate  Run quickstart.md as a test (bash blocks executed in sequence).
   test      Unit + integration suite.
+  test-lf   Re-run only last-failed tests (red->green inner loop; not the gate).
   lint      ruff check + ruff format --check.
   vulture   Dead-code scan ([tool.vulture]); fails on any finding.
   vulture-whitelist  Regenerate .vulture-whitelist.py from @dataclass fields.
