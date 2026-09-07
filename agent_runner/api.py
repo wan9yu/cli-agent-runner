@@ -681,14 +681,19 @@ def _monitor_loop_iter(
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
-    events.emit(
-        cfg.runtime.log_dir,
-        MONITOR_STARTED,
-        host=host,
-        interval_s=interval_s,
-        log_dir=str(cfg.runtime.log_dir),
-        mode="anomaly-only",
-    )
+    try:
+        events.emit(
+            cfg.runtime.log_dir,
+            MONITOR_STARTED,
+            host=host,
+            interval_s=interval_s,
+            log_dir=str(cfg.runtime.log_dir),
+            mode="anomaly-only",
+        )
+    except Exception as e:  # noqa: BLE001 — a startup breadcrumb write must not
+        warnings.warn(  # abort supervision before the loop even begins
+            f"monitor_started emit failed: {type(e).__name__}: {e}", stacklevel=2
+        )
 
     event_tail = monitor._EventTail()
     while True:
@@ -712,12 +717,18 @@ def _monitor_loop_iter(
             # work_dir with a non-preset log_dir would target the wrong dir, see no
             # pidfile, and no-op while serve keeps running. The Path resolves to the
             # real cfg.runtime.log_dir.
-            verdict = monitor.on_alert(
-                alert,
-                project=work_dir,
-                log_dir=cfg.runtime.log_dir,
-                allowed_stop_names=cfg.monitor.auto_stop_on,
-            )
+            try:
+                verdict = monitor.on_alert(
+                    alert,
+                    project=work_dir,
+                    log_dir=cfg.runtime.log_dir,
+                    allowed_stop_names=cfg.monitor.auto_stop_on,
+                )
+            except Exception as e:  # noqa: BLE001 — on_alert is the stop path; a
+                # raise here (a failure domain the supervisor exists to handle) must
+                # not end the generator and leave serve unsupervised.
+                warnings.warn(f"on_alert failed: {type(e).__name__}: {e}", stacklevel=2)
+                verdict = "failed"
             if verdict == "draining":
                 # Nothing was recorded for this alert this poll (see on_alert's
                 # docstring) — force-clear its `seen` entry so it is NOT treated

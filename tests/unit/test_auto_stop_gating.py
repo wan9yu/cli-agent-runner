@@ -101,7 +101,13 @@ def test_monitor_loop_passes_work_dir_path_not_bare_name_to_on_alert(
 ) -> None:
     """The loop must hand on_alert the work_dir Path, not the bare project name:
     api.stop resolves a name's log_dir cwd-dependently, so a monitor run from a
-    cwd != work_dir with a non-preset log_dir would target the wrong dir."""
+    cwd != work_dir with a non-preset log_dir would target the wrong dir.
+
+    Breaks the loop via the fake ``SYSTEM_CLOCK.sleep`` sentinel (like the other
+    ``_monitor_loop_iter`` tests), not by having ``fake_on_alert`` raise: since
+    F1b (0.2.18) wraps the ``on_alert`` call in its own try/except so a raise
+    there is fail-open, an on_alert-side raise no longer escapes the generator.
+    """
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     monkeypatch.setattr("agent_runner.api._poll_once", lambda *a, **k: [_make_alert("oauth_fail")])
@@ -109,9 +115,14 @@ def test_monitor_loop_passes_work_dir_path_not_bare_name_to_on_alert(
 
     def fake_on_alert(_alert, *, project, log_dir, allowed_stop_names):
         captured["project"] = project
-        raise _StopLoopError
+        return "failed"
 
     monkeypatch.setattr("agent_runner.monitor.on_alert", fake_on_alert)
+
+    def fake_sleep(_s):
+        raise _StopLoopError
+
+    monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", fake_sleep)
     with pytest.raises(_StopLoopError):
         for _ in api._monitor_loop_iter(tmp_git_repo):
             pass
