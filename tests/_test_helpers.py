@@ -179,6 +179,70 @@ def poll_until(predicate: Any, *, timeout_s: float = 5.0, interval_s: float = 0.
     return bool(predicate())
 
 
+def wait_for(
+    log_dir: Path,
+    predicate: Any,
+    *,
+    timeout_s: float = 5.0,
+    interval_s: float = 0.02,
+) -> bool:
+    """Poll ``predicate()`` until truthy or ``timeout_s`` elapses; the same
+    contract as ``poll_until`` (timeout fails LOUDLY -- callers assert the
+    return value).
+
+    ``log_dir`` isn't consulted by today's poll backend (any directory --
+    even one with no events written to it, e.g. a plain ``tmp_path`` in a
+    unit test -- works) -- it's kept in the signature because this is the
+    seam that later swaps the backend to a ``_notify.Listener(log_dir)``
+    doorbell (woken by a new event under that directory instead of polling
+    on a fixed interval) with ZERO edits to callers. Use this instead of the
+    raw ``poll_until`` for any predicate/path wait -- a pidfile, a lock
+    sidecar, a hand-rolled readiness file, ``api.status()`` -- so it
+    inherits that backend swap for free. ``poll_until`` itself survives only
+    for genuine process/pid OS conditions this seam doesn't cover (a
+    subprocess's own live children, a grandchild pid's liveness).
+    """
+    return poll_until(predicate, timeout_s=timeout_s, interval_s=interval_s)
+
+
+def wait_for_event(
+    log_dir: Path,
+    kind: str,
+    *,
+    where: Any = None,
+    timeout_s: float = 5.0,
+    interval_s: float = 0.02,
+) -> dict[str, Any] | None:
+    """Poll ``log_dir``'s events-*.jsonl for an event whose ``event`` field
+    equals ``kind`` (and, if given, ``where(event)`` is truthy). Returns the
+    matched event dict, or ``None`` on timeout -- same contract as
+    ``poll_until``/``wait_for`` (a timeout fails LOUDLY: callers assert the
+    return value, e.g. ``assert wait_for_event(log_dir, "round_start")``).
+
+    Backend: a ~20ms ``events.read_new`` poll -- an offset-carrying tailer,
+    so a burst of events between polls is never skipped or double-counted.
+    This is the seam that later swaps to a ``_notify.Listener(log_dir)``
+    doorbell (woken the instant a matching event is emitted, instead of
+    polling on a fixed interval) with ZERO edits to callers -- the
+    kind/``where`` CONTRACT here is exactly what survives that swap.
+    """
+    import time as _time
+
+    from agent_runner import events as _events
+
+    offsets: dict[Path, int] = {}
+    deadline = _time.monotonic() + timeout_s
+    while True:
+        paths = sorted(log_dir.glob("events-*.jsonl"))
+        new_events, offsets = _events.read_new(paths, offsets)
+        for ev in new_events:
+            if ev.get("event") == kind and (where is None or where(ev)):
+                return ev
+        if _time.monotonic() >= deadline:
+            return None
+        _time.sleep(interval_s)
+
+
 def read_events_for_current_month(log_dir: Path) -> list[dict]:
     """Read all events from the current month's events-YYYY-MM.jsonl.
 

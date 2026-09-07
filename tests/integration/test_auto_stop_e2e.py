@@ -16,11 +16,11 @@ from pathlib import Path
 import psutil
 import pytest
 
-from agent_runner import api
+from agent_runner import api, events
 from agent_runner.api_types import Alert
 from agent_runner.lifecycle import PIDFile, pid_alive
 from agent_runner.monitor import on_alert
-from tests._test_helpers import poll_until, read_events_for_current_month
+from tests._test_helpers import poll_until, read_events_for_current_month, wait_for, wait_for_event
 
 
 def _write_toml(
@@ -95,7 +95,7 @@ def test_alert_drives_real_serve_to_stop(
     )
     _reap_in_background(proc)
     try:
-        assert poll_until((log_dir / "serve.pid").exists, timeout_s=20), (
+        assert wait_for(log_dir, lambda: (log_dir / "serve.pid").exists(), timeout_s=20), (
             "serve never wrote its pidfile"
         )
 
@@ -114,10 +114,13 @@ def test_alert_drives_real_serve_to_stop(
             allowed_stop_names=["oauth_fail"],
         )
 
-        assert poll_until(lambda: not api.status(tmp_git_repo).active, timeout_s=20), (
+        # monitor.on_alert emits this ONLY after api.stop confirms active=False
+        # (its own docstring's invariant) -- waiting on it IS waiting for "serve
+        # was stopped by the auto-stop alert", not a separate re-derivation.
+        assert wait_for_event(log_dir, events.MONITOR_AUTO_STOP_TRIGGERED, timeout_s=20), (
             "serve was not stopped by the auto-stop alert"
         )
-        assert poll_until(lambda: proc.poll() is not None, timeout_s=20)
+        proc.wait(timeout=20)  # own child: an OS condition, not an event
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -156,11 +159,23 @@ def test_kill_reaps_round_and_agent_pgroup_via_holder_sidecar(
     _reap_in_background(round_proc)
     _reap_in_background(serve_stub)
     try:
-        holder = log_dir / "agent-runner.lock.holder"
-        assert poll_until(holder.exists, timeout_s=15), "round never wrote its lock holder sidecar"
+        # round_start fires only after the lock (and its .holder sidecar) is
+        # acquired (runner.py: _acquire_lock_or_raise then events.ROUND_START),
+        # so waiting on the event is a strict superset of "holder sidecar exists".
+        assert wait_for_event(log_dir, events.ROUND_START, timeout_s=15), (
+            "round never started (no round_start event)"
+        )
 
         round_ps = psutil.Process(round_proc.pid)
         agent_pid: list[int] = []
+
+        # agent_spawn fires just before the round execs the agent -- the event
+        # is the semantic "has the round decided to spawn" signal; the concrete
+        # OS pid still has to be resolved from the real process tree below
+        # (a grandchild condition, not an event -- stays a bounded poll_until).
+        assert wait_for_event(log_dir, events.AGENT_SPAWN, timeout_s=15), (
+            "round never spawned its hanging agent"
+        )
 
         def _agent_spawned() -> bool:
             children = round_ps.children()
@@ -169,16 +184,16 @@ def test_kill_reaps_round_and_agent_pgroup_via_holder_sidecar(
                 return True
             return False
 
-        assert poll_until(_agent_spawned, timeout_s=15), "round never spawned its hanging agent"
+        assert poll_until(_agent_spawned, timeout_s=15), (
+            "agent process never appeared as a child of round"
+        )
 
         PIDFile(log_dir / "serve.pid").write(serve_stub.pid)
 
         result = api.kill(tmp_git_repo)
 
         assert result.active is False
-        assert poll_until(lambda: round_proc.poll() is not None, timeout_s=20), (
-            "the round process was left running"
-        )
+        round_proc.wait(timeout=20)  # own child: an OS condition, not an event
         assert not pid_alive(agent_pid[0]), "the round's agent was orphaned by kill()"
         assert serve_stub.poll() is not None  # the serve stand-in was reaped too
     finally:

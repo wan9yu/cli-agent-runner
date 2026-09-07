@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent_runner import agent_runtime
 from agent_runner.agent_runtime import run
-from tests._test_helpers import poll_until
+from tests._test_helpers import poll_until, wait_for
 
 
 def _write_fake_script(tmp_path: Path, body: str) -> Path:
@@ -370,7 +370,9 @@ def test_kill_pgroup_reentrant_sigterm_during_grace_still_sigkills(tmp_path):
         # 15s (not the original 5s): measured under `-n auto` contention on a
         # busy host, bash's own fork+exec occasionally starved for several
         # real seconds before it got scheduled to run the trap+touch line.
-        assert poll_until(ready.exists, timeout_s=15), "child never installed its SIGTERM trap"
+        assert wait_for(tmp_path, ready.exists, timeout_s=15), (
+            "child never installed its SIGTERM trap"
+        )
         clock = FakeClock()
         real_sleep = clock.sleep
         calls = {"n": 0}

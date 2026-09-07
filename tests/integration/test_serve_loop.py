@@ -5,8 +5,9 @@ import os
 import signal as _sig
 import subprocess
 import sys
-import time
 from pathlib import Path
+
+from tests._test_helpers import wait_for
 
 
 def _write_toml(tmp_git_repo: Path, fake_agent: Path, *, round_timeout: int = 5) -> Path:
@@ -66,8 +67,15 @@ def test_given_serve_when_sigterm_received_then_exits_after_current_round(
         [sys.executable, "-m", "agent_runner.cli", "--config", str(toml), "serve"],
         env=env,
     )
+    log_dir = tmp_git_repo / "logs"
     try:
-        time.sleep(2)
+        # Wait for serve to be up (not an event -- the pidfile write predates
+        # the first round) rather than guessing a fixed delay: this is the
+        # SIGTERM-before-round case, sending the signal before serve has
+        # necessarily started its first round.
+        assert wait_for(log_dir, lambda: (log_dir / "serve.pid").exists(), timeout_s=20), (
+            "serve never wrote its pidfile"
+        )
         proc.send_signal(_sig.SIGTERM)
         rc = proc.wait(timeout=20)
         assert rc == 0
