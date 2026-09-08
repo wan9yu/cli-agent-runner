@@ -619,12 +619,13 @@ def cmd(args) -> int:
     # chained init -- freed for CRITICAL #1's throttle_active threading below
     # (cmd() sits at its 140-line budget; see round_throttle_active).
     consecutive_crashes = consecutive_mem_terminations = consecutive_no_progress = 0
-    # Give-up stops return one of five distinct non-zero codes (config_broken,
-    # mem_loop, mem_loop_persistent, crash_loop, stalled_no_progress); the systemd
-    # unit lists four of them in RestartPreventExitStatus so they stay stopped --
-    # mem_loop's restartable 71 is deliberately excluded, so systemd respawns serve
-    # to retry once the pressure clears. Every other stop (sentinel/stop_file/
-    # max_rounds/SIGTERM/once) is a clean exit 0.
+    # Give-up stops map five verdicts (config_broken, mem_loop, mem_loop_persistent,
+    # crash_loop, stalled_no_progress) to four distinct non-zero exit codes --
+    # crash_loop and stalled_no_progress deliberately share CRASH_LOOP_EXIT (75).
+    # The systemd unit lists three of those codes (78 75 70) in RestartPreventExitStatus
+    # so those stops stay stopped; mem_loop's restartable 71 is deliberately excluded,
+    # so systemd respawns serve to retry once the pressure clears. Every other stop
+    # (sentinel/stop_file/max_rounds/SIGTERM/once) is a clean exit 0.
     exit_code = 0
 
     try:
