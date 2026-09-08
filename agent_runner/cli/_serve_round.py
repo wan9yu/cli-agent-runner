@@ -468,12 +468,15 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
     ancestor. Returns the current usage dict (a future round-outcome
     classifier can reuse it as the one classification-time cgroup read).
     No-op (returns ``{}``, no emit) when this host has no finite cgroup
-    bound -- ``_spawn_round`` never stashes state in that case -- or when
+    bound -- ``_spawn_round`` never stashes state in that case -- when
     the bounding cgroup is no longer readable at round end (``cur`` empty:
-    it vanished or became unbounded mid-round). The latter must skip the
-    emit rather than write all-zero deltas against a now-stale
-    ``bounding_cgroup_path`` -- that would misreport "no pressure" when the
-    truth is "can no longer tell".
+    it vanished or became unbounded mid-round), or when the STARTING
+    ``memory.events`` read failed (``baseline_events`` empty). The middle
+    case must skip the emit rather than write all-zero deltas against a
+    now-stale ``bounding_cgroup_path`` -- that would misreport "no pressure"
+    when the truth is "can no longer tell"; the last case must skip it rather
+    than diff against zero, which would report the cumulative
+    since-cgroup-creation counter as this round's delta.
 
     As a side effect, also stashes this round's starting ``oom_kill`` count
     into ``_ROUND_CGROUP_OOM_BASELINE`` for :func:`_maybe_emit_oom_killed` to
@@ -487,6 +490,14 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
     if not cur:
         return {}
     base_ev = state["baseline_events"]
+    if not base_ev:
+        # The spawn-start memory.events read failed (metrics returns {} on
+        # OSError) but the round-end read above succeeded: diffing against an
+        # empty baseline would report the cumulative-since-cgroup-creation
+        # counter as if it were THIS round's delta -- a bogus absolute is
+        # worse than no event at all, so skip the emit entirely (also skips
+        # the OOM-kill baseline stash below, for the same reason).
+        return {}
     cur_ev = cur.get("memory_events", {})
     _ROUND_CGROUP_OOM_BASELINE[log_dir] = base_ev.get("oom_kill", 0)
 
@@ -522,12 +533,24 @@ def _mark_partial_log(round_log_path: Path) -> bool:
         return False
 
 
-def _maybe_emit_oom_killed(log_dir: Path, round_log_path: Path, cur_usage: dict) -> None:
+def _maybe_emit_oom_killed(
+    log_dir: Path, round_log_path: Path, cur_usage: dict, r_returncode: int
+) -> None:
     """If the bounding cgroup's ``memory.events.oom_kill`` counter rose over
-    this round, emit the pointer-only ``round_oom_killed``. Uses ``cur_usage``
-    -- the SAME read :func:`_emit_round_cgroup_memory` already took -- plus the
-    baseline it stashed in ``_ROUND_CGROUP_OOM_BASELINE``: no second sysfs read
-    at classification time.
+    this round AND this round itself died to that kill, emit the
+    pointer-only ``round_oom_killed``. Uses ``cur_usage`` -- the SAME read
+    :func:`_emit_round_cgroup_memory` already took -- plus the baseline it
+    stashed in ``_ROUND_CGROUP_OOM_BASELINE``: no second sysfs read at
+    classification time.
+
+    The bounding cgroup can be a shared ANCESTOR slice (not this round's own
+    cgroup), so a rising counter does not by itself mean this round was the
+    victim -- a SIBLING process under the same ancestor can trip it while
+    this round exits cleanly. Gated on ``r_returncode`` actually being a
+    kill (``_ROUND_UNREAPED_RC`` / 137, or the reaped-SIGKILL form -9): only
+    then is a positive delta attributed to this round, for both the emitted
+    event and the log's partial-log trailer -- a clean-exit round's INTACT
+    log must never be marked truncated on a sibling's OOM.
 
     Purely additive observability: this function returns nothing consumed by
     ``post_round_verdicts``, and its caller runs it only AFTER that function's
@@ -539,7 +562,8 @@ def _maybe_emit_oom_killed(log_dir: Path, round_log_path: Path, cur_usage: dict)
     if not cur_usage or baseline is None:
         return
     delta = max(0, cur_usage.get("memory_events", {}).get("oom_kill", 0) - baseline)
-    if delta <= 0:
+    round_was_killed = r_returncode == _ROUND_UNREAPED_RC or r_returncode == -9
+    if delta <= 0 or not round_was_killed:
         return
     try:
         log_bytes = round_log_path.stat().st_size
@@ -584,7 +608,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     leave NOTHING armed to prevent coma. Only a limit tighter than the host
     itself can plausibly trigger before host-wide exhaustion.
 
-    0.2.18 T1c adds a FOURTH plausibility guard, symmetric with the third:
+    0.2.18 adds a FOURTH plausibility guard, symmetric with the third:
     ``memory_swap_max`` must also be at most the HOST's own total swap
     (``metrics.swap_total_bytes``). A ``MemorySwapMax`` far above host swap
     can't bind before host-wide swap exhaustion either, so it must not
@@ -592,7 +616,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     both-finite shape (swap cap at or below host swap) is unaffected and
     still defers.
 
-    0.2.18 T1c also computes a startup ADVISORY -- carried as fields on this
+    0.2.18 also computes a startup ADVISORY -- carried as fields on this
     SAME host_cgroup_memory_limit event, never a new event kind -- when
     memory.swap.max is bounded but far below the host's own available swap
     (``_SWAP_CAP_ADVISORY_PCT``): the operator capped the cgroup's swap well
@@ -726,7 +750,7 @@ def post_round_verdicts(
     # kernel OOM-kill -- pure observability, run after every give-up decision
     # above is already computed, so it cannot change this round's verdict.
     cur_cgroup_usage = _emit_round_cgroup_memory(log_dir, round_log_path)
-    _maybe_emit_oom_killed(log_dir, round_log_path, cur_cgroup_usage)
+    _maybe_emit_oom_killed(log_dir, round_log_path, cur_cgroup_usage, r_returncode)
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's

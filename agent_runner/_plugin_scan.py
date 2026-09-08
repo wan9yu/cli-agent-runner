@@ -47,6 +47,7 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
             if not ep_file.is_file():
                 continue
             parser = configparser.ConfigParser(interpolation=None)
+            parser.optionxform = str  # preserve case -- entry-point names are case-sensitive
             parser.read(ep_file, encoding="utf-8")
             if group not in parser:
                 continue

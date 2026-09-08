@@ -348,7 +348,7 @@ def emit_host_cgroup_memory_limit(
     mid-round hard floor can defer to kernel cgroup-OOM -- see
     ``emit_mem_pressure_deferred_to_cgroup`` below.
 
-    0.2.18 T1c: carries an optional startup swap-cap advisory
+    0.2.18 adds an optional startup swap-cap advisory
     (``swap_total_bytes`` / ``swap_cap_pct`` / ``memory_high`` / ``advisory``)
     as FIELDS on this SAME event -- never a separate event kind, and never an
     auto-change to the operator's cgroup or unit. ``swap_total_bytes`` is the

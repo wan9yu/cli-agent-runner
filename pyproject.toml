@@ -129,6 +129,10 @@ ignore_names = [
     # SSOT: stdlib BaseHTTPRequestHandler.log_message override; called by the
     # framework's request-logging path, not from project code.
     "log_message",
+    # SSOT: stdlib configparser instance-attribute override convention
+    # (`parser.optionxform = str` to preserve option-name case). Read
+    # internally by ConfigParser's own methods, invisible to static analysis.
+    "optionxform",
     # Public back-compat shim over cfg.profile_for(phase).runtime. The runner now
     # reads profile.runtime directly (one profile_for per round, not two); this
     # helper survives only for external callers + its own tests, so vulture sees

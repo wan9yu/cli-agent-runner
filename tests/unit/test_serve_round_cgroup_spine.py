@@ -136,6 +136,36 @@ def test_emit_round_cgroup_memory_skips_when_bounding_cgroup_vanished(tmp_path, 
     assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
 
 
+def test_emit_round_cgroup_memory_skips_when_baseline_events_empty(tmp_path, monkeypatch):
+    """The spawn-start memory.events read failed (stashed as {}) but the
+    round-end read succeeds: diffing against an empty baseline would report
+    the cumulative-since-cgroup-creation counter (500 here) as if it were
+    this round's delta. Skip the emit entirely instead of shipping a bogus
+    absolute-as-delta payload."""
+    log_dir = tmp_path
+    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+        "baseline_events": {},
+        "peak_current": 300_000_000,
+        "peak_swap": 100_000_000,
+        "bounding_cgroup_path": "/user.slice",
+    }
+    monkeypatch.setattr(
+        _serve_round.metrics,
+        "cgroup_memory_usage",
+        lambda **k: {
+            "memory_events": {"high": 500, "max": 0, "oom": 0, "oom_kill": 0},
+            "memory_current": 310_000_000,
+            "memory_swap_current": 0,
+            "cgroup_path": "/user.slice",
+        },
+    )
+    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
+    assert result == {}
+    assert not list(log_dir.glob("events-*.jsonl"))
+    # Still consumed the stashed state -- no leak into a later round's call.
+    assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
+
+
 def test_emit_round_cgroup_memory_pops_state(tmp_path, monkeypatch):
     """State is consumed once -- a second call for the same log_dir (e.g. a stray
     double-call) must not re-emit from stale state."""

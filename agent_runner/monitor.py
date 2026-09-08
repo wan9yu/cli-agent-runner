@@ -290,9 +290,9 @@ def on_alert(
     )
 
     def emit(kind: str, **fields: Any) -> None:
-        if not log_dir.is_dir():
-            return
         try:
+            if not log_dir.is_dir():
+                return
             emit_event(log_dir, kind, detector=alert.detector, **fields)
         except Exception:  # noqa: BLE001 — a breadcrumb write (ENOSPC etc.) must never
             pass  # crash the supervision that noticed the problem

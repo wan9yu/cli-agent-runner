@@ -125,6 +125,22 @@ def test_scanner_discovers_third_party_style_dist_info(tmp_path):
     assert ("third_party_detector", "thirdparty_plugin.mod:Detector") in out
 
 
+def test_scanner_preserves_mixed_case_entry_point_names(tmp_path):
+    """configparser's default optionxform lowercases option keys -- an
+    entry-point NAME like 'MyPlugin' would silently come back as 'myplugin',
+    diverging from importlib.metadata (which preserves case). The scanner
+    must set optionxform = str so a mixed-case name round-trips intact."""
+    dist_info = tmp_path / "thirdparty_plugin-0.1.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "entry_points.txt").write_text(
+        "[agent_runner.detectors]\nMyPlugin = thirdparty_plugin.mod:Detector\n"
+    )
+
+    out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+    assert ("MyPlugin", "thirdparty_plugin.mod:Detector") in out
+    assert not any(name == "myplugin" for name, _ in out)
+
+
 def test_malformed_entry_points_txt_falls_back_without_dropping_plugins(tmp_path, monkeypatch):
     """A real (not mocked) malformed entry_points.txt on sys.path must not
     silently drop plugins -- the hard fallback to importlib.metadata kicks in

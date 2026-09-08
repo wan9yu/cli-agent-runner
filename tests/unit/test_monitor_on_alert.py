@@ -49,6 +49,38 @@ def test_on_alert_emit_failure_does_not_prevent_stop(
     assert verdict == "triggered"  # confirmed stop still classified correctly
 
 
+def test_on_alert_is_dir_eio_does_not_prevent_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An EIO from log_dir.is_dir() (e.g. a failing mount) must be swallowed by
+    the SAME fail-open try as the breadcrumb write itself -- the probe lives
+    inside the try, not before it -- so a hostile log_dir can't crash the stop
+    it was meant to protect."""
+    stopped = {"called": False}
+
+    def fake_stop(_project: object) -> ServiceStatus:
+        stopped["called"] = True
+        return ServiceStatus(mode=ServiceMode.PID_FILE, active=False, pid=None)
+
+    real_is_dir = Path.is_dir
+
+    def boom_is_dir(self: Path) -> bool:
+        if self == tmp_path:
+            raise OSError(5, "Input/output error")
+        return real_is_dir(self)
+
+    monkeypatch.setattr(monitor, "_call_local_stop", fake_stop)
+    monkeypatch.setattr(Path, "is_dir", boom_is_dir)
+    alert = _make_alert("disk_critical")
+
+    verdict = monitor.on_alert(
+        alert, project=tmp_path, log_dir=tmp_path, allowed_stop_names=["disk_critical"]
+    )
+
+    assert stopped["called"] is True  # stop happened despite the poisoned is_dir probe
+    assert verdict == "triggered"
+
+
 def test_on_alert_emit_failure_does_not_hide_stop_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
