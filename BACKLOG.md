@@ -104,19 +104,6 @@ change which failures warn vs which propagate, nor the specific fallback
 each site takes on failure (sleep-and-retry after a poll failure,
 `verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
-## cgroup ancestor is re-resolved every tick instead of cached per round
-
-`_resolve_cgroup` (introduced in 0.2.18) walks the cgroup hierarchy to find
-the bounding ancestor with a finite `memory.max`, but every ~10s mid-round
-tick plus round start/end calls it fresh — roughly 150–200 redundant sysfs
-reads per round for a value that cannot change once a round has started.
-The per-round cgroup state already has a natural home to stash it: resolve
-once on first read within a round, thread the cached ancestor through
-subsequent tick/end reads for that same round.
-
-Behavior-identical — same emitted values, fewer reads — and must not
-regress the tracemalloc per-round allocation-growth gate. Slated for 0.2.19.
-
 ## `StateSource(Protocol)` has exactly one implementation
 
 `_monitor_state.py` declares `StateSource` as a `Protocol` with one concrete

@@ -81,7 +81,11 @@ def _emit_round_cgroup_memory(
     state = _ROUND_CGROUP_STATE_BY_LOG_DIR.pop(log_dir, None)
     if not state:
         return {}, None
-    cur = metrics.cgroup_memory_usage()
+    # Reuse the bounding ancestor _spawn_round already resolved at round
+    # start (stashed as bounding_cgroup_path) -- skips re-walking the
+    # ancestor chain for this round's third (and last) cgroup_memory_usage
+    # read; see metrics.cgroup_memory_usage's bounding_cgroup docstring.
+    cur = metrics.cgroup_memory_usage(bounding_cgroup=state["bounding_cgroup_path"])
     if not cur:
         return {}, None
     base_ev = state["baseline_events"]

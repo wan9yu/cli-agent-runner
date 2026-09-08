@@ -351,10 +351,16 @@ def _spawn_round(
             # _emit_round_cgroup_memory correctly no-ops for the round.
             # cg_peak_* track the MAX over this loop's existing ~10s ticks
             # (NOT metrics.cgroup_memory_limits/memory.peak, which is
-            # cumulative since cgroup creation, not per-round).
+            # cumulative since cgroup creation, not per-round). This is the
+            # round's only un-cached read: it resolves the bounding ancestor
+            # (a /proc/self/cgroup read + a per-ancestor memory.max walk).
+            # cg_bounding stashes that resolved path (cannot change for the
+            # rest of THIS round) so every mid-round tick below passes it
+            # back in and skips re-resolving -- the redundant-reads fix.
             cg_base = metrics.cgroup_memory_usage()
             cg_peak_current = cg_base.get("memory_current", 0)
             cg_peak_swap = cg_base.get("memory_swap_current", 0)
+            cg_bounding = cg_base.get("cgroup_path")
 
             def _stash_cgroup() -> None:
                 _stash_round_cgroup_state(log_dir, cg_base, cg_peak_current, cg_peak_swap)
@@ -377,7 +383,7 @@ def _spawn_round(
                     )
                     prev_tick_sample = cur_sample
                     if cg_base:
-                        cg_now = metrics.cgroup_memory_usage()
+                        cg_now = metrics.cgroup_memory_usage(bounding_cgroup=cg_bounding)
                         cg_peak_current = max(cg_peak_current, cg_now.get("memory_current", 0))
                         cg_peak_swap = max(cg_peak_swap, cg_now.get("memory_swap_current", 0))
                     if pressure is not None and pressure.severity == "critical":

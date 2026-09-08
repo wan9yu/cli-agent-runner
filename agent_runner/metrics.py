@@ -351,6 +351,7 @@ def cgroup_memory_usage(
     root: Path = _CGROUP_ROOT,
     proc_self_cgroup: Path = _PROC_SELF_CGROUP,
     self_cgroup: str | None = None,
+    bounding_cgroup: str | None = None,
 ) -> dict[str, Any]:
     """Per-round pressure read at the BOUNDING ancestor (the one whose
     ``memory.max`` is the tightest finite value -- the same one
@@ -365,10 +366,26 @@ def cgroup_memory_usage(
     callers wanting a per-round signal (e.g. ``round_cgroup_memory``) must
     diff two reads, never report these fields directly.
 
+    ``bounding_cgroup`` lets a caller supply an ALREADY-RESOLVED bounding
+    ancestor path (the ``cgroup_path`` a prior call in the SAME round
+    already returned) directly, skipping both the ``/proc/self/cgroup`` read
+    AND the per-ancestor ``memory.max`` walk that finds it. The bounding
+    ancestor cannot change once a round has started, so a caller doing
+    repeated per-round reads -- ``_spawn_round``'s mid-round ticks,
+    ``_emit_round_cgroup_memory``'s round-end read -- resolves once (the
+    round's first, un-cached read) and passes the result back in on every
+    later read for that same round; a later round must NOT reuse it (the
+    bounding cgroup can differ across serve restarts / config changes), so
+    the cache lives only as long as the caller's own per-round state does.
+    Takes priority over ``self_cgroup`` when both are given; ``self_cgroup``
+    alone still only skips the ``/proc/self/cgroup`` read, not the ancestor
+    walk -- ``bounding_cgroup`` is the one that skips it too.
+
     One-shot pure file I/O, no clock -- ``_spawn_round`` calls this once at
-    round start (baseline) and again on each existing ~10s mid-round tick
-    (peak tracking); ``post_round_verdicts`` calls it once more at the round
-    boundary for the delta.
+    round start (baseline, un-cached) and again on each existing ~10s
+    mid-round tick (peak tracking, cached via ``bounding_cgroup``);
+    ``post_round_verdicts`` calls it once more at the round boundary for the
+    delta (also cached).
 
     Fail-open on ``OSError``: this runs inside ``_spawn_round``'s mid-round
     tick loop, which is itself inside a ``try / except BaseException:
@@ -379,13 +396,16 @@ def cgroup_memory_usage(
     cannot leave unguarded even though every helper it calls below already
     catches ``OSError`` on its own."""
     try:
-        resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
-        if resolved is None:
-            return {}
-        _cgroup_path, ancestors = resolved
-        bounding = _bounding_ancestor_path(root, ancestors)
-        if bounding is None:
-            return {}
+        if bounding_cgroup is not None:
+            bounding = bounding_cgroup
+        else:
+            resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+            if resolved is None:
+                return {}
+            _cgroup_path, ancestors = resolved
+            bounding = _bounding_ancestor_path(root, ancestors)
+            if bounding is None:
+                return {}
         base = root / bounding.lstrip("/")
     except OSError:
         return {}
