@@ -88,3 +88,141 @@ just succeeded in the same repo).
 Deferred because closing it is a naming decision, not cleanup: no event kind
 carries the meaning "stashed but ref lost" (`orphan_stash_failed` would be wrong
 — the stash exists). Left as-is until that kind is designed.
+
+## `_monitor_loop_iter`'s three fail-open guards are hand-duplicated
+
+`api._monitor_loop_iter` wraps the startup `monitor_started` emit, the
+per-tick poll, and `on_alert`'s per-alert dispatch each in its own
+`try/except Exception: warnings.warn(...)` block so a crash in any one of the
+three never ends monitor supervision. The three guards are structurally
+identical (catch, format a `type(e).__name__: {e}` warning, keep the loop
+alive) but hand-copied rather than sharing one implementation; `on_alert`'s
+own `emit()` closure already shows the pattern for factoring a shared guard.
+
+Collapsing them to one shared guard is behavior-preserving — it must not
+change which failures warn vs which propagate, nor the specific fallback
+each site takes on failure (sleep-and-retry after a poll failure,
+`verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
+
+## `kill()`'s SYSTEMD_USER SIGKILL escalation hand-rolls a sleep-then-recheck instead of `wait_until`
+
+`api.kill()`'s SYSTEMD_USER branch escalates to SIGKILL with a single
+`SYSTEM_CLOCK.sleep(_PID_SIGNAL_GRACE_S)` followed by one re-check of
+`_systemctl_is_active`, rather than the shared bounded-poll helper
+`clock.wait_until` that the PID_FILE branch's `_await_pid_exit` (and
+`lifecycle.py`) already use. A single sleep-then-check is coarser than a
+poll loop and duplicates, by hand, the one "wait up to N seconds, checking
+periodically" implementation the rest of the codebase standardizes on.
+
+Replacing it must reproduce the same grace window and escalation decision —
+the 0.2.18 grace-kill work showed how easily a wall-clock flake creeps back
+into code like this, so the replacement needs the same clock-injection
+discipline as `_await_pid_exit`. Slated for 0.2.19.
+
+## cgroup ancestor is re-resolved every tick instead of cached per round
+
+`_resolve_cgroup` (introduced in 0.2.18) walks the cgroup hierarchy to find
+the bounding ancestor with a finite `memory.max`, but every ~10s mid-round
+tick plus round start/end calls it fresh — roughly 150–200 redundant sysfs
+reads per round for a value that cannot change once a round has started.
+The per-round cgroup state already has a natural home to stash it: resolve
+once on first read within a round, thread the cached ancestor through
+subsequent tick/end reads for that same round.
+
+Behavior-identical — same emitted values, fewer reads — and must not
+regress the tracemalloc per-round allocation-growth gate. Slated for 0.2.19.
+
+## `StateSource(Protocol)` has exactly one implementation
+
+`_monitor_state.py` declares `StateSource` as a `Protocol` with one concrete
+implementation, `LocalSource`, and one construction site; `remote_relay.py`
+solved remote monitoring a different way and never implements the Protocol.
+An unimplemented seam like this is a real question for 0.3 (does
+per-agent/per-host monitoring in the plugin era need a second
+implementation?) but as written today it buys nothing over the concrete
+type.
+
+Default is to collapse it to `LocalSource` directly — vulture's dead-symbol
+gate requires the deletion and its last reference removed in the same
+commit — unless a check against the 0.3 direction shows the seam is
+genuinely load-bearing there, in which case keep it with a one-line
+"declared 0.3 seam" note instead of a bare unused abstraction. Slated for
+0.2.19.
+
+## `_live_children` can leak a secret through `argv[0]` despite the basename-only intent
+
+`agent_runtime._live_children` (agent_runtime.py:131) stores only
+`Path(argv[0]).name` for each descendant process specifically because full
+argv is where secrets leak (`PGPASSWORD=…`, `--api-key …`,
+`redis://:pass@…`) into the persisted `events-*.jsonl` stream — the
+function's own docstring states this intent. But `Path(...).name` only
+strips path *components*; if a process rewrites its own `argv[0]` to
+something that isn't a filesystem path at all (argv-rewriting can embed
+arbitrary text, including connection strings or tokens, with no `/` in it),
+`.name` returns the whole string unchanged and the secret still reaches
+disk.
+
+Closing the gap means minimizing/bounding what's stored regardless of
+whether `argv[0]` looks like a path (e.g. falling back to the
+kernel-reported process name for untrusted children, or capping length)
+rather than trusting `Path(...).name` alone. Security-low; a fix and test
+are slated for 0.2.19.
+
+## relay CLI has no SIGTERM handler — NEEDS_DESIGN
+
+The relay's process-group teardown convention (SIGTERM → grace → SIGKILL)
+governs how the relay tears down *its own* child group on interrupt,
+give-up, and each retry — but the relay CLI process itself installs no
+SIGTERM handler, so sending it SIGTERM (the normal way a process manager or
+`systemctl stop` asks a process to shut down) hits Python's default
+disposition: immediate termination, skipping the same clean-teardown path
+the relay already uses internally and that `serve`'s own SIGTERM handling
+follows.
+
+Making the relay catch SIGTERM and shut down through its normal drain path
+is user-visible: it changes what happens to the relay's child group and
+exit behavior when something external sends it SIGTERM, for anyone
+currently relying on — knowingly or not — the immediate-kill default.
+Tagged NEEDS_DESIGN because the target shutdown semantics (drain vs.
+immediate, and how much grace) need an explicit decision, not a silent
+behavior change. A fix matching the `serve` pattern is targeted for 0.2.19;
+if the semantics aren't settled by ship, this stays open.
+
+## `_plugin_scan` misses egg-info/zip-installed dists and mishandles extras-suffixed entry points
+
+`_plugin_scan._parse_entry_points_files` only globs `*.dist-info`
+directories on each `sys.path` entry; legacy `*.egg-info` layouts (older
+setuptools installs, some system packages) and zip-safe eggs are never
+globbed, so a plugin installed that way is invisible to the fast path —
+silently, since an empty scan result isn't an exception and so never trips
+the `AGENT_RUNNER_PLUGIN_DISCOVERY=metadata` fallback in
+`scan_entry_points` on its own; an operator has to already know to set it.
+
+Separately, an entry-point value can carry an extras marker suffix
+(`module:attr [extra1,extra2]`, from a package's extras-gated entry point)
+which `importlib.metadata.EntryPoint.value` strips automatically but the
+raw `value.partition(":")` parsing in `__init__.py:_load_plugins_from_group`
+does not — leaving the suffix text glued onto the attribute path and
+breaking `getattr` resolution for exactly the plugins that declare
+themselves this way.
+
+Both are plugin-discovery hardening ahead of 0.3's plugin surface; each
+needs its own parity test. Slated for 0.2.19.
+
+## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN
+
+The same cgroup `memory.events.oom_kill` delta is emitted under two
+different field names depending on which event carries it: `round_cgroup_memory`
+reports it as `events_oom_kill_delta` (matching its sibling counters
+`events_high_delta`/`events_max_delta`/`events_oom_delta`), while
+`round_oom_killed` — folded from the same scan, no second sysfs read —
+reports the identical value as bare `oom_kill_delta`. A reader correlating
+the two events for the same round has to know the same quantity carries two
+names.
+
+Renaming either side is a change to a published event field name — part of
+the peek/event JSON contract — so which name becomes canonical (and whether
+it lands as a rename or an additive alias) needs a decision, not a silent
+swap. Tagged NEEDS_DESIGN. A reconciliation (updating the emit call, the
+runbook, and any golden fixture) is targeted for 0.2.19; if the naming
+decision isn't made by ship, this stays open.
