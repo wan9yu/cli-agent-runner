@@ -16,6 +16,7 @@ injectable for exactly this reason.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -183,13 +184,21 @@ def test_mem_total_bytes_matches_psutil() -> None:
 # AND memory_max < host MemTotal is now required.
 
 
-def _patch_probe(monkeypatch, *, memory_max: int | None, memory_swap_max: int, mem_total: int):
+def _patch_probe(
+    monkeypatch,
+    *,
+    memory_max: int | None,
+    memory_swap_max: int,
+    mem_total: int,
+    swap_total: int,
+):
     monkeypatch.setattr(
         metrics,
         "cgroup_memory_limits",
         lambda: {"memory_max": memory_max, "memory_swap_max": memory_swap_max, "cgroup_path": "/x"},
     )
     monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
+    monkeypatch.setattr(metrics, "swap_total_bytes", lambda: swap_total)
 
 
 def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
@@ -206,6 +215,7 @@ def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
         memory_max=1024 * 1024 * 1024,  # 1G "limit"
         memory_swap_max=512 * 1024 * 1024,
         mem_total=462 * 1024 * 1024,  # 462MB host
+        swap_total=1024 * 1024 * 1024,  # plausible swap cap -- memory_max is the implausible one
     )
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -216,18 +226,122 @@ def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
 def test_probe_and_emit_cgroup_defer_plausible_limit_defers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Both finite AND tighter than host MemTotal (the field host's
-    MemoryMax=320M + MemorySwapMax=160M shape on far more RAM) -- cgroup-OOM
-    can plausibly fire before host exhaustion, so the floor defers."""
+    """Both finite AND tighter than host MemTotal/swap (the field host's
+    MemoryMax=320M + MemorySwapMax=160M shape on far more RAM/swap) --
+    cgroup-OOM can plausibly fire before host exhaustion, so the floor
+    defers. 0.2.18 T1c's swap-plausibility guard must NOT regress this: the
+    field host's own shape is exactly "both finite, swap cap within host
+    swap" -- the guard only disarms a swap cap ABOVE host swap (see
+    test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed below)."""
     from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
         memory_max=335544320,  # 320M
         memory_swap_max=167772160,  # 160M
-        mem_total=2 * 1024 * 1024 * 1024,  # 2G host
+        mem_total=2 * 1024 * 1024 * 1024,  # 2G host RAM
+        swap_total=2 * 1024 * 1024 * 1024,  # 2G host swap -- 160M cap is well within it
     )
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
     assert _probe_and_emit_cgroup_defer(log_dir) is True
+
+
+# --- 0.2.18 T1c: the swap-plausibility guard + startup swap-cap advisory ---
+#
+# Field-report ask #3: a huge MemorySwapMax (far above what the host actually
+# has) can't bind before host-wide swap exhaustion either -- symmetric with
+# the memory_max plausibility guard above -- so it must not disarm the floor.
+# Separately, a memory.swap.max bounded but far BELOW host swap is the exact
+# blind spot that caused the field host's OOMs: the floor may terminate a
+# round the kernel would have contained on a wider cap. Both are surfaced as
+# fields on the SAME host_cgroup_memory_limit event -- never a new kind --
+# and NEVER auto-change the operator's cgroup/unit.
+
+
+def test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A huge MemorySwapMax (>> host swap) can't bind before host-swap
+    exhaustion, so the floor must stay ARMED (defer=False), matching the
+    memory.max guard."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=300_000_000,
+        memory_swap_max=10**12,  # 1TB, absurd
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    assert _probe_and_emit_cgroup_defer(log_dir) is False
+
+
+def test_advisory_field_when_swap_cap_far_below_host(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """swap.max at 12.5% of host swap (well under the 25% advisory floor)
+    rides as fields on the EXISTING host_cgroup_memory_limit event -- not a
+    new kind -- plus one stderr line. Never changes the cgroup/unit."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=256_000_000,
+        memory_swap_max=200_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    _probe_and_emit_cgroup_defer(log_dir)
+
+    [ev] = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert ev["event"] == "host_cgroup_memory_limit"
+    assert ev["swap_total_bytes"] == 1_600_000_000
+    assert ev["swap_cap_pct"] == 12.5
+    assert ev["memory_high"] is None
+    assert ev["advisory"] is not None  # advisory rides as a FIELD, not a new kind
+
+    captured = capsys.readouterr()
+    assert "swap.max is far below host swap" in captured.err
+
+
+def test_advisory_absent_when_swap_cap_within_host_swap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """swap.max at 80% of host swap is a plausible operator choice -- no
+    advisory, no stderr line."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    _probe_and_emit_cgroup_defer(log_dir)
+
+    [ev] = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert ev["swap_cap_pct"] == 80.0
+    assert ev["advisory"] is None
+
+    captured = capsys.readouterr()
+    assert captured.err == ""

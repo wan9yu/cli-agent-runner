@@ -331,13 +331,32 @@ def emit_round_mem_critical_sample(
 
 
 def emit_host_cgroup_memory_limit(
-    log_dir: Path, *, memory_max: int | None, memory_swap_max: int | None, cgroup_path: str | None
+    log_dir: Path,
+    *,
+    memory_max: int | None,
+    memory_swap_max: int | None,
+    cgroup_path: str | None,
+    swap_total_bytes: int | None = None,
+    swap_cap_pct: float | None = None,
+    memory_high: str | None = None,
+    advisory: str | None = None,
 ) -> None:
     """Emit once at serve startup: this process's cgroup v2 memory budget
     (``metrics.cgroup_memory_limits``). ``None`` fields mean unlimited (or
     cgroup v2 unavailable). Serve uses this once to decide whether the
     mid-round hard floor can defer to kernel cgroup-OOM -- see
-    ``emit_mem_pressure_deferred_to_cgroup`` below."""
+    ``emit_mem_pressure_deferred_to_cgroup`` below.
+
+    0.2.18 T1c: carries an optional startup swap-cap advisory
+    (``swap_total_bytes`` / ``swap_cap_pct`` / ``memory_high`` / ``advisory``)
+    as FIELDS on this SAME event -- never a separate event kind, and never an
+    auto-change to the operator's cgroup or unit. ``swap_total_bytes`` is the
+    host's total swap (``metrics.swap_total_bytes``); ``swap_cap_pct`` is
+    ``memory_swap_max`` as a percentage of it (``None`` when either side is
+    unknown); ``memory_high`` is reserved for a future ``memory.high`` read
+    (``None``/unset today -- a bare ``"max"`` there would misleadingly read
+    as a real ceiling); ``advisory`` is the human-readable warning text when
+    the cap looks implausibly tight, else ``None``."""
     from agent_runner.events import HOST_CGROUP_MEMORY_LIMIT, emit
 
     emit(
@@ -346,6 +365,10 @@ def emit_host_cgroup_memory_limit(
         memory_max=memory_max,
         memory_swap_max=memory_swap_max,
         cgroup_path=cgroup_path,
+        swap_total_bytes=swap_total_bytes,
+        swap_cap_pct=swap_cap_pct,
+        memory_high=memory_high,
+        advisory=advisory,
     )
 
 

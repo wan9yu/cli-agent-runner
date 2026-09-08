@@ -139,6 +139,19 @@ def mem_total_bytes() -> int:
     return psutil.virtual_memory().total
 
 
+def swap_total_bytes() -> int:
+    """Host total swap in bytes (``psutil.swap_memory().total``) -- the
+    plausibility ceiling for both the cgroup-defer swap-plausibility guard
+    (a ``memory.swap.max`` far ABOVE this can't bind before host-wide swap
+    exhaustion either, so it must not disarm the mid-round floor) and the
+    startup swap-cap advisory (a ``memory.swap.max`` far BELOW this means the
+    operator capped the cgroup's swap well under what the host actually has
+    -- the floor may terminate a round the kernel would have contained on a
+    wider cap). One-shot psutil read, no caching -- same shape as
+    :func:`mem_total_bytes`."""
+    return psutil.swap_memory().total
+
+
 _CGROUP_ROOT = Path("/sys/fs/cgroup")
 _PROC_SELF_CGROUP = Path("/proc/self/cgroup")
 

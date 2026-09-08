@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess  # noqa: TID251
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -484,6 +485,14 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
     return cur
 
 
+# Below this swap-cap-as-percent-of-host-swap threshold, the startup advisory
+# fires: the operator has bounded memory.swap.max to well under what the host
+# actually has, which is the exact blind spot that let the mid-round floor
+# terminate a round the kernel would have contained on a wider cap (field
+# report ask #3). Advisory only -- never changes the operator's cgroup/unit.
+_SWAP_CAP_ADVISORY_PCT = 25.0
+
+
 def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     """Probe this process's cgroup v2 memory budget once at serve startup,
     emit host_cgroup_memory_limit for observability, and return whether the
@@ -503,18 +512,53 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     actually bind -- the process will exhaust host memory long before the
     cgroup's own ceiling, so cgroup-OOM never fires and deferring here would
     leave NOTHING armed to prevent coma. Only a limit tighter than the host
-    itself can plausibly trigger before host-wide exhaustion."""
+    itself can plausibly trigger before host-wide exhaustion.
+
+    0.2.18 T1c adds a FOURTH plausibility guard, symmetric with the third:
+    ``memory_swap_max`` must also be at most the HOST's own total swap
+    (``metrics.swap_total_bytes``). A ``MemorySwapMax`` far above host swap
+    can't bind before host-wide swap exhaustion either, so it must not
+    disarm the floor (post-0.2.17 audit low). The field host's plausible
+    both-finite shape (swap cap at or below host swap) is unaffected and
+    still defers.
+
+    0.2.18 T1c also computes a startup ADVISORY -- carried as fields on this
+    SAME host_cgroup_memory_limit event, never a new event kind -- when
+    memory.swap.max is bounded but far below the host's own available swap
+    (``_SWAP_CAP_ADVISORY_PCT``): the operator capped the cgroup's swap well
+    under what the host has, so the mid-round floor may terminate a round
+    the kernel would have contained on a wider cap. One line is also printed
+    to stderr in that case. Advisory only -- this never changes the
+    operator's cgroup or systemd unit."""
     limits = metrics.cgroup_memory_limits()
+    swap_total = metrics.swap_total_bytes()
+    swap_max = limits["memory_swap_max"]
+    swap_cap_pct = (
+        round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
+    )
+    advisory: str | None = None
+    if swap_max is not None and swap_cap_pct is not None and swap_cap_pct < _SWAP_CAP_ADVISORY_PCT:
+        advisory = (
+            "cgroup memory.swap.max is far below host swap; the mid-round floor may "
+            "terminate rounds the kernel would have contained -- consider bounding "
+            "both memory.max and memory.swap.max, or set in_round_mem_terminate=false"
+        )
+        print(f"agent-runner: {advisory}", file=sys.stderr)
     emit_host_cgroup_memory_limit(
         log_dir,
         memory_max=limits["memory_max"],
-        memory_swap_max=limits["memory_swap_max"],
+        memory_swap_max=swap_max,
         cgroup_path=limits["cgroup_path"],
+        swap_total_bytes=swap_total,
+        swap_cap_pct=swap_cap_pct,
+        memory_high=None,
+        advisory=advisory,
     )
     return (
         limits["memory_max"] is not None
-        and limits["memory_swap_max"] is not None
+        and swap_max is not None
         and limits["memory_max"] < metrics.mem_total_bytes()
+        and swap_max <= swap_total  # 4th guard: a >> host-swap cap can't bind -> stay armed
     )
 
 

@@ -92,6 +92,7 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
     "os",
     "signal",
     "subprocess",
+    "sys",
     "pathlib",
 }
 ALLOWED_SERVE_ROUND_FROM = [
