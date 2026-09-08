@@ -209,6 +209,18 @@ def _terminate_round(proc: subprocess.Popen) -> int:
             return _ROUND_UNREAPED_RC  # D-state leader: don't re-raise into cmd()
 
 
+# Real per-tick poll granularity for _spawn_round's proc.wait loop: how often
+# (in real wall-clock seconds, NOT clock.monotonic()) the round leader's exit
+# is checked. Hoisted to a module constant (mirrors _ROUND_TERM_GRACE_S above)
+# purely so test_spawn_round_mem_floor.py can monkeypatch it down and drive
+# that suite's assertions by sample_fn call count instead of real wall time --
+# production keeps the same value (1) it always had, so this changes no
+# behavior: proc.wait(timeout=_ROUND_POLL_TICK_S) still just bounds how
+# promptly a round's own exit is noticed, unrelated to the coarser cadences
+# below (host_health resampling, round_timeout_s) which run off
+# clock.monotonic() and are unaffected by this constant either way.
+_ROUND_POLL_TICK_S = 1
+
 # Mid-round hard floor: how often (in clock.monotonic() seconds, not per-tick)
 # _spawn_round resamples host_health while a round is in flight. Coarser than
 # the 1s proc.wait tick so a healthy round pays no real sampling cost.
@@ -352,7 +364,7 @@ def _spawn_round(
 
             while True:
                 try:
-                    returncode = proc.wait(timeout=1)
+                    returncode = proc.wait(timeout=_ROUND_POLL_TICK_S)
                     _stash_cgroup()
                     return returncode
                 except subprocess.TimeoutExpired:

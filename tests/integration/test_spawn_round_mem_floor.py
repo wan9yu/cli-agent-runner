@@ -34,10 +34,40 @@ block for a real ~10s interval."""
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-from agent_runner.cli import serve_cmd
+import pytest
+
+from agent_runner.cli import _serve_round, serve_cmd
 from agent_runner.config import MonitorHostHealthConfig
 from tests._test_helpers import read_events_for_current_month
+
+
+@pytest.fixture(autouse=True)
+def _fast_poll_tick(monkeypatch):
+    """Every test below drives _spawn_round's mid-round loop by sample_fn
+    CALL COUNT (via the sentinel-waiting children + _TickingClock), never by
+    real wall time -- so shrink the real per-tick proc.wait() from
+    production's 1s to 0.01s. This is the one file in the suite allowed to
+    do that; test_spawn_round_wedged.py keeps the real 1s tick as the sole
+    real-tick/real-TERM path."""
+    monkeypatch.setattr(_serve_round, "_ROUND_POLL_TICK_S", 0.01)
+
+
+def _sentinel_child_argv(sentinel: Path) -> list[str]:
+    """A round-leader child that idles until ``sentinel`` exists, then exits
+    0 -- lets a test's sample_fn decide exactly how many mid-round ticks the
+    round survives (call-count-driven) instead of pinning a real
+    ``time.sleep(N)`` that either outruns or idles past the fast test tick."""
+    return [
+        sys.executable,
+        "-c",
+        "import pathlib, time\n"
+        f"p = pathlib.Path({str(sentinel)!r})\n"
+        "while not p.exists():\n"
+        "    time.sleep(0.01)\n",
+    ]
+
 
 _CRITICAL_SAMPLE = {
     "psi_some_avg10": 10.0,
@@ -62,7 +92,7 @@ _HEALTHY_SAMPLE = {
 }
 
 
-def _slow_swap_sample_fn():
+def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
     """PSI unreadable, MemAvailable inflated at 82MB (comfortably above
     mem_avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
     alone), MemFree critically low (~5MB -- the "actively dying" condition
@@ -70,11 +100,20 @@ def _slow_swap_sample_fn():
     realistic SLOW SD/USB swap trickle whose PER-INTERVAL delta never crosses
     the 32 MiB floor. With the 0.2.16 per-tick `prev`, this NEVER reaches
     critical via the swap leg no matter how many ticks elapse (the reverted
-    0.2.15 behavior made it cross cumulatively; see the module docstring)."""
+    0.2.15 behavior made it cross cumulatively; see the module docstring).
+
+    Touches ``sentinel`` once ``stop_after`` ticks have been sampled --
+    comfortably past the 5th tick where the OLD cumulative accounting would
+    have crossed the 32 MiB floor -- so the sentinel-waiting round leader
+    (see ``_sentinel_child_argv``) exits promptly once the discriminator has
+    genuinely been exercised, instead of running a fixed real
+    ``time.sleep``."""
     calls = {"n": 0}
 
     def _fn():
         calls["n"] += 1
+        if calls["n"] >= stop_after:
+            sentinel.touch()
         return {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -159,11 +198,14 @@ def test_given_cache_poor_psi_off_host_slow_swap_per_tick_never_terminates(tmp_p
     lowered swap_sout_noise_floor_mb instead."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    # Long enough that the OLD cumulative accounting would have crossed the
-    # 32 MiB floor by the 5th ~10s tick (10MB/tick * 4 deltas = 40MB) --
-    # proving this is a genuine behavior discriminator, not just "too short
-    # a run to matter either way".
-    argv = [sys.executable, "-c", "import time; time.sleep(8)"]
+    # stop_after=6 (in _slow_swap_sample_fn) is comfortably past the 5th
+    # ~10s tick where the OLD cumulative accounting would have crossed the
+    # 32 MiB floor (10MB/tick * 4 deltas = 40MB) -- proving this is a
+    # genuine behavior discriminator, not just "too short a run to matter
+    # either way". The sentinel-waiting child exits the instant that many
+    # ticks have actually been sampled, instead of pinning a real sleep.
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -173,7 +215,7 @@ def test_given_cache_poor_psi_off_host_slow_swap_per_tick_never_terminates(tmp_p
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
         clock=_TickingClock(),
-        sample_fn=_slow_swap_sample_fn(),
+        sample_fn=_slow_swap_sample_fn(sentinel),
     )
     assert rc == 0  # never terminated -- the round completed on its own
 
@@ -189,7 +231,15 @@ def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_termina
     and no round_supervisor_wedged."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(3)"]  # exits on its own
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
+    calls = {"n": 0}
+
+    def _sample_fn():
+        calls["n"] += 1
+        if calls["n"] >= 3:  # a few ~10s ticks, same intent as the old sleep(3)
+            sentinel.touch()
+        return _HEALTHY_SAMPLE
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -199,7 +249,7 @@ def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_termina
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
         clock=_TickingClock(),
-        sample_fn=lambda: _HEALTHY_SAMPLE,
+        sample_fn=_sample_fn,
     )
     assert rc == 0  # clean exit, never terminated by the floor
 
@@ -243,12 +293,15 @@ def test_single_critical_sample_does_not_terminate(tmp_path):
     0.2.16 calibration signal an operator would otherwise never see."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(3)"]  # exits on its own
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
 
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
+        if calls["n"] >= 2:  # the one critical tick plus a healthy confirmation
+            sentinel.touch()
         return _CRITICAL_SAMPLE if calls["n"] == 1 else _HEALTHY_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -306,13 +359,16 @@ def test_swap_leg_streak_resets_with_per_tick_prev(tmp_path):
     so the round is NOT terminated."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(5)"]  # exits on its own
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
 
     jump = MonitorHostHealthConfig().swap_sout_noise_floor_mb * 1024 * 1024 + 1
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
+        if calls["n"] >= 4:  # jump tick + a couple of flat confirmation ticks
+            sentinel.touch()
         # tick 1: baseline (0). tick 2: one big jump (delta vs tick 1's
         # baseline crosses the noise floor). tick 3+: flat at the jumped
         # value (per-tick delta back to 0). mem_avail_min_mb is set below the
@@ -350,7 +406,15 @@ def test_off_switch_never_terminates(tmp_path):
     observability layer still sees the signal) but the kill switch is off."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(3)"]  # exits on its own
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
+    calls = {"n": 0}
+
+    def _sample_fn():
+        calls["n"] += 1
+        if calls["n"] >= 4:  # several sustained-critical ticks with the switch off
+            sentinel.touch()
+        return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -360,7 +424,7 @@ def test_off_switch_never_terminates(tmp_path):
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
         clock=_TickingClock(),
-        sample_fn=lambda: _CRITICAL_SAMPLE,
+        sample_fn=_sample_fn,
     )
     assert rc == 0  # never terminated despite sustained critical pressure
 
@@ -381,21 +445,30 @@ def test_off_switch_critical_sample_capped_then_resets(tmp_path):
     the cap is per streak-episode, not a one-shot lifetime limit."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    # Long enough for >= 8 critical ticks, 2 healthy ticks, then several more
-    # critical ticks -- comfortably past the cap (6) on both sides of the
-    # reset.
-    argv = [sys.executable, "-c", "import time; time.sleep(16)"]
+    # 8 critical ticks, 2 healthy ticks, then one more critical tick (11) --
+    # comfortably past the cap (6) on both sides of the reset. Ticks beyond
+    # 11 clamp back to healthy (rather than staying critical indefinitely,
+    # as production would): the sentinel is touched exactly at 11, but a
+    # couple of extra ticks may still land before the round leader notices
+    # it and exits, and this test's own assertions are exact-equality on
+    # `consecutive` -- clamping keeps any such overshoot a no-op (a healthy
+    # tick resets the streak and emits nothing) instead of resuming the
+    # critical run past 6 again and re-tripping the cap assertions below.
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
 
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
         n = calls["n"]
+        if n >= 11:
+            sentinel.touch()
         if n <= 8:
             return _CRITICAL_SAMPLE
-        if n <= 10:
-            return _HEALTHY_SAMPLE
-        return _CRITICAL_SAMPLE
+        if n == 11:
+            return _CRITICAL_SAMPLE
+        return _HEALTHY_SAMPLE
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -440,7 +513,15 @@ def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
     mem_pressure_deferred_to_cgroup and fail."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(5)"]
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
+    calls = {"n": 0}
+
+    def _sample_fn():
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            sentinel.touch()
+        return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -450,7 +531,7 @@ def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
         clock=_TickingClock(),
-        sample_fn=lambda: _CRITICAL_SAMPLE,
+        sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
     assert rc == 0  # never terminated -- the round completed on its own
@@ -477,7 +558,15 @@ def test_both_finite_defers_never_terminates(tmp_path):
     calibration signal independent of the terminate-vs-defer choice."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(5)"]
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
+    calls = {"n": 0}
+
+    def _sample_fn():
+        calls["n"] += 1
+        if calls["n"] >= 4:
+            sentinel.touch()
+        return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -487,7 +576,7 @@ def test_both_finite_defers_never_terminates(tmp_path):
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
         clock=_TickingClock(),
-        sample_fn=lambda: _CRITICAL_SAMPLE,
+        sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
     assert rc == 0  # round completed on its own -- the floor deferred, never terminated
