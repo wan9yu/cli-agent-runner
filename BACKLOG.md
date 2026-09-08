@@ -104,25 +104,6 @@ change which failures warn vs which propagate, nor the specific fallback
 each site takes on failure (sleep-and-retry after a poll failure,
 `verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
-## `_live_children` can leak a secret through `argv[0]` despite the basename-only intent
-
-`agent_runtime._live_children` (agent_runtime.py:131) stores only
-`Path(argv[0]).name` for each descendant process specifically because full
-argv is where secrets leak (`PGPASSWORD=…`, `--api-key …`,
-`redis://:pass@…`) into the persisted `events-*.jsonl` stream — the
-function's own docstring states this intent. But `Path(...).name` only
-strips path *components*; if a process rewrites its own `argv[0]` to
-something that isn't a filesystem path at all (argv-rewriting can embed
-arbitrary text, including connection strings or tokens, with no `/` in it),
-`.name` returns the whole string unchanged and the secret still reaches
-disk.
-
-Closing the gap means minimizing/bounding what's stored regardless of
-whether `argv[0]` looks like a path (e.g. falling back to the
-kernel-reported process name for untrusted children, or capping length)
-rather than trusting `Path(...).name` alone. Security-low; a fix and test
-are slated for 0.2.19.
-
 ## relay CLI has no SIGTERM handler — NEEDS_DESIGN
 
 The relay's process-group teardown convention (SIGTERM → grace → SIGKILL)

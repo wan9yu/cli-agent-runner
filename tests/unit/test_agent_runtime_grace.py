@@ -228,7 +228,12 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path, monkeypatch):
 
 def test_live_children_splits_on_ignore_pattern():
     """A child whose cmdline matches an ignore pattern goes to 'ignored', others to 'live'."""
-    # Use exec -a to rename a child's argv[0] to a matchable name.
+    # Use exec -a to rename a child's argv[0] to a matchable name. Matching
+    # runs against the full cmdline, so the rename alone is enough for that;
+    # the STORED "name" field no longer echoes argv[0] (see
+    # test_live_children_name_ignores_argv0_rewrite) -- both children exec
+    # into the same "sleep" binary, so their stored names are indistinguishable
+    # and only "matched" tells them apart.
     p = subprocess.Popen(
         ["bash", "-c", "exec -a snapshot-bash-xyz sleep 30 & sleep 30 & wait"],
         start_new_session=True,
@@ -237,23 +242,23 @@ def test_live_children_splits_on_ignore_pattern():
         # Both children fork off in the same shell statement, but wait until
         # BOTH are visible AND correctly classified before asserting --
         # returning as soon as the first one appears could catch the
-        # ignored/live split mid-populate. A raw count (`len(live) +
-        # len(ignored) >= 2`) is not enough: under heavy `-n auto`/host
-        # contention, a freshly forked child can be observed by psutil BEFORE
-        # its exec() lands, so it briefly counts toward the total while still
-        # named "bash" (pre-"snapshot-bash-xyz"/pre-"sleep") -- confirmed by
-        # reproduction. Wait for each side's OWN expected name instead.
+        # ignored/live split mid-populate. A raw count is not enough on its
+        # own: under heavy `-n auto`/host contention, a freshly forked child
+        # can be observed by psutil BEFORE its exec() lands, and pre-exec its
+        # cmdline is still the parent's full script text (which itself
+        # contains "snapshot-bash-"), so a transient sighting can put BOTH
+        # children in `ignored` -- confirmed by reproduction. Requiring at
+        # least one of EACH bucket only becomes true once exec() has landed
+        # for both and they've settled into their real, differentiated
+        # cmdlines.
         live, ignored = _wait_for_children(
             p,
-            lambda live, ignored: (
-                any(c["name"] == "sleep" for c in live)
-                and any(c["name"] == "snapshot-bash-xyz" for c in ignored)
-            ),
+            lambda live, ignored: bool(live) and bool(ignored),
             ignore_patterns=[re.compile(r"snapshot-bash-")],
         )
         # One child should match the ignore pattern; the plain sleep goes to live.
-        assert any(c["name"] in ("snapshot-bash-xyz", "sleep") for c in ignored)
-        assert any(c["name"] == "sleep" for c in live)
+        assert len(ignored) == 1 and ignored[0]["matched"] == "snapshot-bash-"
+        assert len(live) == 1 and live[0]["name"] == "sleep"
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
@@ -345,6 +350,30 @@ def test_live_children_stores_no_argv_secret():
         p.wait()
 
 
+def test_live_children_name_ignores_argv0_rewrite():
+    """A child that rewrites its OWN argv[0] to a secret-looking, slash-free
+    string (``exec -a NAME`` -- the same trick a compromised/malicious child
+    or a library like setproctitle could use) must not have that string
+    echoed back as the stored "name". ``Path(argv[0]).name`` is a no-op on a
+    slash-free string, so storing name from argv[0] directly would leak it
+    verbatim; the stored name must instead come from the kernel-reported
+    process name (comm), which reflects the exec()'d binary ("sleep"), not
+    the rewritten argv[0]."""
+    p = subprocess.Popen(
+        ["bash", "-c", "exec -a PGPASSWORD=hunter2-supersecret sleep 30 &\nwait\n"],
+        start_new_session=True,
+    )
+    try:
+        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
+        assert live, "the backgrounded child never appeared -- nothing was actually checked"
+        blob = repr(live + ignored)
+        assert "hunter2-supersecret" not in blob and "PGPASSWORD" not in blob
+        assert all(c["name"] == "sleep" for c in live)
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
+
+
 def test_live_children_matched_records_pattern_not_argv():
     """Ignore-pattern matches on full cmdline; the stored ignored entry records
     the matched pattern string + basename, never the full argv."""
@@ -364,6 +393,7 @@ def test_live_children_matched_records_pattern_not_argv():
         assert ignored and ignored[0]["matched"] == "sk-MATCHME"
         # Only name/pid/matched stored — not the raw cmdline
         assert all(set(c) == {"name", "pid", "matched"} for c in ignored)
+        assert ignored[0]["name"] != "sk-MATCHME"  # name is comm-derived, not argv[0]
     finally:
         os.killpg(os.getpgid(p.pid), signal.SIGKILL)
         p.wait()

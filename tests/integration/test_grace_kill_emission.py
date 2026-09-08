@@ -180,8 +180,11 @@ def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
 
     # The plain sleep goes to live_children (real worker)
     assert any(c["name"] == "sleep" for c in ev["live_children"])
-    # The exec -a snapshot-bash-test process goes to ignored_children
-    assert any(c["name"] == "snapshot-bash-test" for c in ev["ignored_children"])
+    # The exec -a snapshot-bash-test process goes to ignored_children -- matched
+    # on its full cmdline; the stored "name" is comm-derived (not argv[0]-derived,
+    # see agent_runtime._live_children), so both children show up as "sleep" and
+    # only "matched" tells them apart.
+    assert any(c["matched"] == "snapshot-bash-test" for c in ev["ignored_children"])
 
     # round_grace_kill must NOT appear (real worker still alive)
     grace_kill_events = [e for e in events_list if e.get("event") == "round_grace_kill"]

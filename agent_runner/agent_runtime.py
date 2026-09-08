@@ -26,6 +26,11 @@ from agent_runner.clock import SYSTEM_CLOCK, Clock
 
 REAP_GRACE_S = 5
 
+# Backstop cap on the stored child "name" (see _live_children). The primary
+# source (kernel comm) is already bounded (15 bytes on Linux); this only
+# guards the argv[0]-basename fallback used when comm is unavailable.
+_MAX_CHILD_NAME_LEN = 64
+
 
 def signal_name(exit_code: int) -> str | None:
     """Signal name for a signal death, else None.
@@ -109,12 +114,22 @@ def _live_children(
 ) -> tuple[list[dict], list[dict]]:
     """Live (non-zombie) descendants of ``proc``, split into ``(live, ignored)``.
 
-    Each entry is ``{"name": <executable basename>, "pid": <int>}``; an ignored
-    entry also carries ``"matched": <pattern str>``. We store only basename+pid,
-    NOT argv — process arguments are where secrets leak (PGPASSWORD=…, --api-key
-    …, redis://:pass@…) and these lists are persisted to events-*.jsonl.
-    Ignore-pattern MATCHING runs against the full cmdline (detection unchanged);
-    only what we STORE is minimized.
+    Each entry is ``{"name": <process name>, "pid": <int>}``; an ignored entry
+    also carries ``"matched": <pattern str>``. We store only a bounded name +
+    pid, NOT argv — process arguments are where secrets leak (PGPASSWORD=…,
+    --api-key …, redis://:pass@…) and these lists are persisted to
+    events-*.jsonl. Ignore-pattern MATCHING runs against the full cmdline
+    (detection unchanged); only what we STORE is minimized.
+
+    The stored name is read from the kernel-reported process name (comm —
+    e.g. /proc/<pid>/comm on Linux), not from ``Path(argv[0]).name``: comm is
+    derived from the exec()'d binary, not from argv[0], and is itself
+    kernel-bounded (15 bytes on Linux) -- so a process that rewrites its own
+    argv[0] to an arbitrary, slash-free string (``exec -a <secret>``,
+    setproctitle, …) can't smuggle that string into the stored name the way
+    a plain ``Path(argv[0]).name`` (a no-op on a slash-free string) would.
+    The argv[0]-basename is kept only as a fallback for when comm is
+    unavailable, length-capped as a backstop against the same rewrite class.
     """
     try:
         parent = psutil.Process(proc.pid)
@@ -128,7 +143,8 @@ def _live_children(
                 continue
             argv = child.cmdline()
             full = " ".join(argv) or child.name()  # MATCHING only
-            name = (Path(argv[0]).name if argv else "") or child.name()
+            fallback = (Path(argv[0]).name if argv else "")[:_MAX_CHILD_NAME_LEN]
+            name = child.name() or fallback
             pid = child.pid
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
