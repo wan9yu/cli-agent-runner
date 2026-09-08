@@ -95,7 +95,7 @@ API quota / writing to a near-full disk).
 `mem_pressure`'s own `auto_action` stays `"none"` — the graded, plugin-
 configurable admission lever through `on_alert` is 0.3. The actual
 coma-preventer is a separate, serve-local admission gate
-(`agent_runner/host_health.py` + `cli/serve_cmd.py`), independent of the
+(`agent_runner/host_health.py` + `cli/_serve_round.py`), independent of the
 monitor's `auto_action`: before starting a round the loop samples
 `host_health` and **defers** while it reports `critical` pressure only
 (`round_deferred` / `round_resumed`, mirroring `schedule_paused`/`resumed`);

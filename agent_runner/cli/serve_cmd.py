@@ -330,9 +330,10 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
     """Was the round that JUST ran throttled? — so the crash-loop breaker
     excuses a fast throttle-induced exit rather than counting it as a crash.
     A mem-terminated round (round_mem_terminated — a coma-preventer kill, not
-    a crash) is excused the same way, but that check is computed ONCE in
-    cmd() (``round_was_mem_terminated``) and OR'd into ``throttle_active``
-    there, not repeated here.
+    a crash) is excused the same way, but that check
+    (:func:`agent_runner._round_outcome.round_was_mem_terminated`) is computed
+    ONCE per round, in :func:`_round_scan` below, and OR'd into
+    ``throttle_active`` there, not repeated here.
 
     When serve chose the phase (``phase_arg`` set) we check that exact agent. When the
     round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
@@ -340,10 +341,11 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
     pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
     being misread as a crash (a false ``crash_loop`` permanent stop).
 
-    ``active``, when given, is an already-computed :func:`_active_throttles` map
-    (cmd()'s post-round block passes one built off that round's :func:`round_outcome`
-    — see INVARIANT 3) — skips a fresh scan here. Omitted (every existing caller/test),
-    computed fresh: unchanged pre-0.2.17 behavior."""
+    ``active``, when given, is an already-computed :func:`_active_throttles` map —
+    :func:`_round_scan` below is the one production caller that passes it, built off
+    that round's :func:`agent_runner._round_outcome.round_outcome` (see INVARIANT 3)
+    — skips a fresh scan here. Every other caller (and most tests) omits it and gets
+    a freshly computed one: unchanged pre-0.2.17 behavior."""
     if active is None:
         active = _active_throttles(log_dir)
     if phase_arg is None:
@@ -617,9 +619,12 @@ def cmd(args) -> int:
     # chained init -- freed for CRITICAL #1's throttle_active threading below
     # (cmd() sits at its 140-line budget; see round_throttle_active).
     consecutive_crashes = consecutive_mem_terminations = consecutive_no_progress = 0
-    # Give-up stops (config_broken/crash_loop) return a distinct non-zero code the
-    # systemd unit lists in RestartPreventExitStatus so they stay stopped; every
-    # other stop (sentinel/stop_file/max_rounds/SIGTERM/once) is a clean exit 0.
+    # Give-up stops return one of five distinct non-zero codes (config_broken,
+    # mem_loop, mem_loop_persistent, crash_loop, stalled_no_progress); the systemd
+    # unit lists four of them in RestartPreventExitStatus so they stay stopped --
+    # mem_loop's restartable 71 is deliberately excluded, so systemd respawns serve
+    # to retry once the pressure clears. Every other stop (sentinel/stop_file/
+    # max_rounds/SIGTERM/once) is a clean exit 0.
     exit_code = 0
 
     try:

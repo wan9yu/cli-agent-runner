@@ -144,7 +144,7 @@ def test_given_good_file_when_recent_events_then_output_unchanged(tmp_path: Path
 
 
 def test_given_non_dict_json_line_when_narrate_events_then_skipped(tmp_path: Path) -> None:
-    """api._tail_events_jsonl (narrate_events / stream_events_jsonl's shared
+    """monitor._tail_events_jsonl (narrate_events / stream_events_jsonl's shared
     reader) -- a non-dict line must not reach _format_narrate_line's .get(...)."""
     from agent_runner.api import narrate_events
 

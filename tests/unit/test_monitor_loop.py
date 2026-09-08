@@ -1,5 +1,5 @@
-"""Failure-injection coverage for `_monitor_loop_iter`'s two fail-open guards
-(F1b): a raise from `monitor.on_alert` must not end the generator, and a raise
+"""Failure-injection coverage for `_monitor_loop_iter`'s two fail-open guards:
+a raise from `monitor.on_alert` must not end the generator, and a raise
 from the startup `MONITOR_STARTED` emit must not abort the loop before it even
 starts polling. Both are the supervisor's own failure domain -- the loop must
 survive them, not just call through them."""

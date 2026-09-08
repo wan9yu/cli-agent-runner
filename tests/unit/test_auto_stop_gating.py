@@ -105,7 +105,7 @@ def test_monitor_loop_passes_work_dir_path_not_bare_name_to_on_alert(
 
     Breaks the loop via the fake ``SYSTEM_CLOCK.sleep`` sentinel (like the other
     ``_monitor_loop_iter`` tests), not by having ``fake_on_alert`` raise: since
-    F1b (0.2.18) wraps the ``on_alert`` call in its own try/except so a raise
+    0.2.18 wraps the ``on_alert`` call in its own try/except so a raise
     there is fail-open, an on_alert-side raise no longer escapes the generator.
     """
     monkeypatch.setenv("HOME", str(tmp_git_repo))

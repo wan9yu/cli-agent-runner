@@ -44,6 +44,8 @@ def test_core_is_price_blind():
                 ident_hits.append(f"{rel}:{node.lineno} {node.id}")
             if isinstance(node, (ast.BinOp, ast.Compare)) and _reads_cost_usd(node):
                 arith_hits.append(f"{rel}:{node.lineno}")
+            if isinstance(node, ast.AugAssign) and _reads_cost_usd(node.value):
+                arith_hits.append(f"{rel}:{node.lineno}")
     assert scanned > 20, "core scan found too few modules — vacuous"  # vacuity-guard
     assert not ident_hits, f"price identifiers in core: {ident_hits}"
     assert not arith_hits, f"arithmetic/comparison on cost_usd in core: {arith_hits}"

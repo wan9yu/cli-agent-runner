@@ -1,4 +1,4 @@
-"""F1c: `_terminate_round`'s post-killpg wait must fail open. A D-state
+"""`_terminate_round`'s post-killpg wait must fail open. A D-state
 (uninterruptible-sleep) leader can outlive even a killpg SIGKILL, so a bare
 `proc.wait(timeout=10)` there would raise `TimeoutExpired` straight back into
 `_spawn_round`'s own `except BaseException` cleanup call -- which calls

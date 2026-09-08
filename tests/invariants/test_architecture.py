@@ -14,15 +14,10 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 ALLOWED_SERVE_IMPORTS = {
-    "argparse",
     "fcntl",
     "os",
     "sys",
     "signal",
-    "subprocess",
-    "time",
-    "pathlib",
-    "agent_runner",  # only sub-imports below
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"metrics", "phase_select", "schedule"}),

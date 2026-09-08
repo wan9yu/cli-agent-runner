@@ -44,11 +44,12 @@ class RoundOutcome:
     newest_usage_ts: str | None
     newest_substrate_before_ts: str | None
     latest_transient_per_agent: dict[str, Any]
-    # Per-agent verdict INPUTS (0.2.18 agent axis — the audit's mixed-[phases]
-    # fix). Streaks stay DEPLOYMENT-WIDE (post_round_verdicts' consecutive
-    # counters are untouched); only these per-round inputs are keyed by
-    # ev["agent"] (the binary basename — already required on
-    # agent_usage_recorded/transient events and on _active_throttles' map).
+    # Per-agent verdict INPUTS (0.2.18 agent axis — the mixed-[phases] fix; see
+    # round_had_no_progress below). Streaks stay DEPLOYMENT-WIDE
+    # (post_round_verdicts' consecutive counters are untouched); only these
+    # per-round inputs are keyed by ev["agent"] (the binary basename — already
+    # required on agent_usage_recorded/transient events and on
+    # _active_throttles' map).
     # `ran_agent` is None when the caller can't attribute the round to one
     # agent (no [phases] / --ignore-schedule), matching _ran_agent_throttled's
     # any-agent fallback — see round_had_no_progress.
@@ -203,8 +204,8 @@ def round_had_no_progress(
        perfectly healthy deployment after 5 fast clean rounds. In a mixed
        ``[phases]`` deployment (e.g. pi + kimi) a DEPLOYMENT-WIDE gate would
        misjudge a usage-less kimi round against pi's usage and falsely arm --
-       the audit's fix. If the agent's own plugin stack ever emits usage (pi
-       does on a good round), a round with none from THAT agent is genuine
+       this per-agent keying is the fix. If the agent's own plugin stack ever
+       emits usage (pi does on a good round), a round with none from THAT agent is genuine
        no-progress and still trips -- this makes the breaker CLI-adaptive with
        no config descriptor. ``outcome.ran_agent is None`` (no ``[phases]`` /
        ``--ignore-schedule`` -- serve doesn't know which agent ran) falls back

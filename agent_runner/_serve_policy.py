@@ -85,7 +85,7 @@ _MEM_LOOP_PERSIST_THRESHOLD = 3
 # invisible "success" loop with no breaker, no back-off, and no alert -- on a
 # constrained host, that tight loop is itself a memory-pressure generator.
 # "No progress" = exit 0, a SHORT round (< _NO_PROGRESS_SHORT_S), and no
-# agent_usage_recorded for it (see _throttle.round_had_no_progress for the
+# agent_usage_recorded for it (see _round_outcome.round_had_no_progress for the
 # events-derived scoping). Deliberately reuses CRASH_LOOP_THRESHOLD /
 # CRASH_LOOP_EXIT rather than minting new ones: this is the SAME give-up
 # verdict as the crash-loop breaker ("an unknown failure kept recurring, stop

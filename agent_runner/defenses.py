@@ -2,7 +2,8 @@
 
 Each defense is a tuple of (current value, what historical incident it codifies,
 which invariant test guards it, current health). This is the single source of
-truth — peek/status/start banner all import from here.
+truth — ``api.peek`` and the generated defenses table in ``docs/architecture.md``
+(via ``_docgen.render_defenses_table``) both import from here.
 
 Adding a new defense = one entry here + auto-surfaces everywhere via the API.
 """

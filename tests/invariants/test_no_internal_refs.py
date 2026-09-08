@@ -20,7 +20,11 @@ _THIS = Path(__file__).relative_to(_REPO).as_posix()
 # uspi / eye.service / claude-helped are 0-hit today: a gap to close, not a leak.
 # dietpi is an allowed distro name — do NOT add it here.
 _FORBIDDEN = re.compile(
-    r"argus|inception|\bplan[-_ ]b\b|\buspi\b|eye\.service|claude[- ]helped", re.IGNORECASE
+    r"argus|inception"
+    r"|(?<![a-z0-9])plan[-_ ]b(?![a-z0-9])"
+    r"|(?<![a-z0-9])uspi(?![a-z0-9])"
+    r"|eye\.service|claude[- ]helped",
+    re.IGNORECASE,
 )
 _SKIP = {_THIS, ".vulture-whitelist.py"}  # self-exclude: this file's own regex text matches
 _SCAN_SUFFIXES = (".py", ".md", ".toml", ".cfg", ".txt", ".yml", ".sh", ".jsonl")

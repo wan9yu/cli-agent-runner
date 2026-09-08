@@ -70,7 +70,7 @@ Usage: $0 <task>
   lint      ruff check + ruff format --check.
   vulture   Dead-code scan ([tool.vulture]); fails on any finding.
   vulture-whitelist  Regenerate .vulture-whitelist.py from @dataclass fields.
-  check     Full local-CI sweep: lint + vulture + test + literate + docs (gate).
+  check     Full local-CI sweep: lint + vulture + literate + docs + test (gate).
   coverage  Run unit + integration tests with coverage (HTML + terminal).
   e2e       Pi e2e suite (needs ssh alias 'pi' and AGENT_RUNNER_E2E_PI=1).
 HELP

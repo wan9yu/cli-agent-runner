@@ -14,6 +14,7 @@ from __future__ import annotations
 from agent_runner import _serve_policy
 from agent_runner.agent_runtime import REAP_GRACE_S
 from agent_runner.api import _ROUND_TERM_GRACE_S
+from agent_runner.cli._serve_round import _ROUND_TERM_GRACE_S as _SERVE_ROUND_TERM_GRACE_S
 from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
 
 
@@ -39,9 +40,19 @@ def test_budget_scales_linearly_with_round_timeout():
 
 def test_leaf_margin_constants_mirror_their_source_of_truth():
     """_serve_policy is a dependency-free leaf (service_unit.py must not import
-    api.py -- cycle), so its margin constants are LITERAL mirrors of the real
-    sources of truth rather than imports. Pin the mirror here so a change to
-    any of the three can't silently drift the budget out of sync."""
+    api.py -- cycle), so two of its margin constants (_REAP_GRACE_S,
+    _GIT_COMMIT_TIMEOUT_S) are LITERAL mirrors of the real sources of truth
+    (agent_runtime.REAP_GRACE_S, vcs_state.GIT_COMMIT_TIMEOUT_S) rather than
+    imports. Pin the mirror here so either hand-authored copy can't silently
+    drift the budget out of sync.
+
+    _ROUND_TERM_GRACE_S itself is single-sourced in _serve_policy (0.2.18):
+    api.py and cli/_serve_round.py both import it directly rather than
+    mirroring a literal, so comparing either one back to _serve_policy alone
+    is a vacuous ``x == x`` (same bound object). Instead pin that BOTH real
+    importers still see the identical single-sourced value -- guarding the
+    "single source, two importers" property itself against a future
+    regression (e.g. one side re-acquiring its own literal)."""
     assert _serve_policy._REAP_GRACE_S == REAP_GRACE_S
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
-    assert _serve_policy._ROUND_TERM_GRACE_S == _ROUND_TERM_GRACE_S
+    assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S

@@ -1,11 +1,15 @@
 """Round-lifecycle helpers for the serve loop: spawn/terminate the round
 subprocess, pre-round + mid-round memory-pressure gating, and the post-round
-give-up decision (config_broken / mem_loop / crash_loop -> exit code).
+give-up decision (config_broken / mem_loop / mem_loop_persistent / crash_loop
+/ stalled_no_progress -> exit code).
 
 Split out of ``serve_cmd.py`` (0.2.16 Task 5a) purely to buy LOC headroom
 under the module-size gate (``test_module_sizes.py``) and ``cmd()``'s
 loop-size gate (``test_layer_2_loop_size.py``) -- no behavior changed.
-``serve_cmd.py`` re-imports every name here back into its own namespace, so
+``serve_cmd.py`` re-imports the names it calls directly
+(``_maybe_emit_recovered``, ``_maybe_pause_for_memory_pressure``,
+``_pause_poll``, ``_probe_and_emit_cgroup_defer``, ``_spawn_round``,
+``post_round_verdicts``) back into its own namespace, so
 ``monkeypatch.setattr("agent_runner.cli.serve_cmd.X", ...)`` and a bare call
 to ``X(...)`` from ``cmd()`` both keep working exactly as before the split.
 """
