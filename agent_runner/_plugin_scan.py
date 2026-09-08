@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import configparser
 import os
+import warnings
 from pathlib import Path
 
 
@@ -28,9 +29,15 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
     """(name, value) pairs for ``group`` by parsing each ``*.dist-info/entry_points.txt``
     found on ``sys_path``. A name seen in an earlier ``sys.path`` entry wins over a
     later one — the same first-found precedence ``sys.path`` gives real imports.
+
+    A dropped duplicate emits a ``UserWarning`` naming the group, the duplicated
+    name, and which value won — the same diagnostic value the old
+    ``importlib.metadata`` + ``ensure_unique`` path gave operators (that path
+    let both entries load and had ``ensure_unique`` reject the second with a
+    warning); silently dropping it here would regress that visibility.
     """
     out: list[tuple[str, str]] = []
-    seen: set[str] = set()
+    seen: dict[str, str] = {}
     for entry in sys_path:
         base = Path(entry) if entry else Path.cwd()
         if not base.is_dir():
@@ -44,9 +51,17 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
             if group not in parser:
                 continue
             for name, value in parser[group].items():
-                if name not in seen:  # dedup: first sys.path entry wins
-                    seen.add(name)
+                winner = seen.get(name)
+                if winner is None:  # dedup: first sys.path entry wins
+                    seen[name] = value
                     out.append((name, value))
+                elif winner != value:
+                    warnings.warn(
+                        f"duplicate entry_point {name!r} in group {group!r}: "
+                        f"{value!r} dropped in favor of the earlier {winner!r} "
+                        f"(first sys.path entry wins)",
+                        stacklevel=2,
+                    )
     return out
 
 

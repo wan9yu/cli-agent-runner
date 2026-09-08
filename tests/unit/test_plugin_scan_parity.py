@@ -12,6 +12,8 @@ from __future__ import annotations
 import sys
 from importlib.metadata import entry_points
 
+import pytest
+
 from agent_runner import _HOOK_GROUPS, _plugin_scan
 
 
@@ -59,10 +61,10 @@ def test_env_override_absent_uses_the_scan(monkeypatch):
     assert scanned == _md("agent_runner.post_round_hooks")
 
 
-def test_scanner_dedups_by_name_first_sys_path_entry_wins(tmp_path):
-    """Two dist-info dirs on different sys.path entries declaring the same
-    plugin name in the same group: the earlier sys.path entry wins, and the
-    name is not returned twice."""
+def _write_dup_dist_info(tmp_path, name="dup_name", group="agent_runner.post_round_hooks"):
+    """Two dist-info dirs on separate sys.path entries declaring the same
+    ``name`` in the same ``group`` with DIFFERENT targets. Returns the two
+    sys.path entries in winner-first order."""
     site1 = tmp_path / "site1"
     site2 = tmp_path / "site2"
     for site, target in (
@@ -71,13 +73,42 @@ def test_scanner_dedups_by_name_first_sys_path_entry_wins(tmp_path):
     ):
         dist_info = site / "somepkg-1.0.dist-info"
         dist_info.mkdir(parents=True)
-        (dist_info / "entry_points.txt").write_text(
-            f"[agent_runner.post_round_hooks]\ndup_name = {target}\n"
-        )
+        (dist_info / "entry_points.txt").write_text(f"[{group}]\n{name} = {target}\n")
+    return [str(site1), str(site2)]
 
-    out = _plugin_scan.scan_entry_points([str(site1), str(site2)], "agent_runner.post_round_hooks")
+
+def test_scanner_dedups_by_name_first_sys_path_entry_wins(tmp_path):
+    """Two dist-info dirs on different sys.path entries declaring the same
+    plugin name in the same group: the earlier sys.path entry wins, and the
+    name is not returned twice."""
+    sys_path = _write_dup_dist_info(tmp_path)
+    with pytest.warns(UserWarning):  # the collision itself is asserted below
+        out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.post_round_hooks")
     matches = [pair for pair in out if pair[0] == "dup_name"]
     assert matches == [("dup_name", "pkg_a.mod:First")]
+
+
+def test_scanner_warns_when_dropping_a_duplicate_entry_point_name(tmp_path):
+    """A dropped duplicate must stay operator-visible: the OLD importlib.metadata
+    + ensure_unique path surfaced a UserWarning naming the plugin when two
+    dist-infos declared the same entry_point name in the same group. The
+    scanner's own first-sys.path-wins dedup must not silently swallow that
+    signal -- it has to warn, naming the group, the duplicated name, and which
+    value won."""
+    sys_path = _write_dup_dist_info(tmp_path, name="dup_name", group="agent_runner.detectors")
+
+    with pytest.warns(UserWarning) as caught:
+        out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.detectors")
+
+    assert [pair for pair in out if pair[0] == "dup_name"] == [("dup_name", "pkg_a.mod:First")]
+    messages = [str(w.message) for w in caught.list]
+    assert any(
+        "dup_name" in m and "agent_runner.detectors" in m and "pkg_b.mod:Second" in m
+        for m in messages
+    ), (
+        f"expected a warning naming the group, the duplicate name, and the dropped "
+        f"value; got {messages}"
+    )
 
 
 def test_scanner_discovers_third_party_style_dist_info(tmp_path):
