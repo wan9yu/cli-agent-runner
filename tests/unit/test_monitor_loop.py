@@ -1,12 +1,16 @@
-"""Failure-injection coverage for `_monitor_loop_iter`'s two fail-open guards:
-a raise from `monitor.on_alert` must not end the generator, and a raise
-from the startup `MONITOR_STARTED` emit must not abort the loop before it even
-starts polling. Both are the supervisor's own failure domain -- the loop must
-survive them, not just call through them."""
+"""Failure-injection coverage for `_monitor_loop_iter`'s three fail-open
+guards (all sharing `api._FailOpenGuard`): a raise from `monitor.on_alert`
+must not end the generator, a raise from the startup `MONITOR_STARTED` emit
+must not abort the loop before it even starts polling, and a raise from
+`_poll_once` must not kill the loop either. All three are the supervisor's
+own failure domain -- the loop must survive them, not just call through
+them -- and each keeps its OWN pre-unification warn message and fallback."""
 
 from __future__ import annotations
 
 import itertools
+
+import pytest
 
 from agent_runner import api, monitor
 from agent_runner.api_types import Alert
@@ -67,10 +71,11 @@ def test_loop_survives_on_alert_raise(tmp_path, monkeypatch) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     gen = api._monitor_loop_iter(tmp_path, interval_s=0)
-    try:
-        list(itertools.islice(gen, 5))
-    except _StopError:
-        pass
+    with pytest.warns(UserWarning, match=r"^on_alert failed: RuntimeError: on_alert exploded$"):
+        try:
+            list(itertools.islice(gen, 5))
+        except _StopError:
+            pass
 
     assert calls["n"] >= 1  # the exception path was actually exercised
     # Non-vacuous: the loop reached a second poll cycle -- proof the raise
@@ -99,12 +104,52 @@ def test_monitor_started_emit_failure_does_not_crash_startup(tmp_path, monkeypat
     tmp_path.mkdir(exist_ok=True)
 
     gen = api._monitor_loop_iter(tmp_path, interval_s=0)
-    try:
-        list(itertools.islice(gen, 5))
-    except _StopError:
-        pass
+    with pytest.warns(UserWarning, match=r"^monitor_started emit failed: OSError: ENOSPC$"):
+        try:
+            list(itertools.islice(gen, 5))
+        except _StopError:
+            pass
 
     # Non-vacuous: the loop reached its first sleep -- proof startup survived
     # the poisoned emit and the poll loop actually began, not just that the
     # generator object was constructed (generators don't run until iterated).
     assert sleeps["n"] >= 1
+
+
+def test_loop_survives_poll_raise(tmp_path, monkeypatch) -> None:
+    """A raise inside `_poll_once` (a poll crash) must not end supervision:
+    the loop warns, then falls back to its OWN poll-site behavior --
+    sleep-and-retry -- rather than the on_alert site's `verdict = "failed"`
+    or the startup site's no-op fallback.
+    """
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("poll exploded")
+
+    monkeypatch.setattr(api, "_poll_once", boom)
+
+    sleeps = {"n": 0}
+
+    def stop_after_two(_s):
+        sleeps["n"] += 1
+        if sleeps["n"] >= 2:
+            raise _StopError
+
+    monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", stop_after_two)
+    monkeypatch.setattr(api, "load_config", lambda _p: _fake_cfg(tmp_path))
+    tmp_path.mkdir(exist_ok=True)
+
+    gen = api._monitor_loop_iter(tmp_path, interval_s=0)
+    with pytest.warns(UserWarning, match=r"^monitor poll failed: RuntimeError: poll exploded$"):
+        try:
+            list(itertools.islice(gen, 5))
+        except _StopError:
+            pass
+
+    # Non-vacuous: the loop retried the poll after the first raise (the
+    # sleep-and-retry fallback), and reached a second fallback sleep -- proof
+    # the raise inside `_poll_once` did not end the generator.
+    assert calls["n"] >= 2
+    assert sleeps["n"] >= 2

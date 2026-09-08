@@ -674,6 +674,44 @@ def monitor_loop(
     return _monitor_loop_iter(project, host=host, interval_s=interval_s)
 
 
+class _FailOpenGuard:
+    """Context manager for one of ``_monitor_loop_iter``'s supervision ops.
+
+    agent-runner is a systemd-level supervisor: an exception raised inside
+    the ``with`` block is the supervisor's OWN failure domain and must never
+    end the monitor loop that noticed the problem. Swallows any ``Exception``
+    (NOT ``BaseException`` — a ``KeyboardInterrupt``/``SystemExit`` still
+    propagates), warns with the same ``{what}: {type(e).__name__}: {e}``
+    shape every fail-open site hand-copied before this was unified, and sets
+    ``.failed`` so the caller applies its OWN fallback afterward — this guard
+    deliberately does NOT choose or homogenize what happens next: the poll
+    site still sleeps-and-retries, the on_alert site still yields
+    ``verdict = "failed"``, and the startup emit site takes no fallback at all.
+    """
+
+    def __init__(self, what: str) -> None:
+        self.what = what
+        self.failed = False
+
+    def __enter__(self) -> _FailOpenGuard:
+        return self
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object
+    ) -> bool:
+        if exc is None or not isinstance(exc, Exception):
+            return False  # nothing raised, or a BaseException we don't fail open on
+        import warnings  # module-private: kept out of api's pinned public surface
+
+        self.failed = True
+        # stacklevel=3: __exit__ is itself one frame more than the
+        # pre-unification inline `except Exception as e: warnings.warn(...,
+        # stacklevel=2)` had, so this attributes the warning to the SAME
+        # caller frame as before unification.
+        warnings.warn(f"{self.what}: {type(exc).__name__}: {exc}", stacklevel=3)
+        return True  # suppress: fail open, never crash the loop that noticed this
+
+
 def _monitor_loop_iter(
     project: str | Path | None = None, *, host: str | None = None, interval_s: int = 30
 ) -> Iterator[monitor.Alert]:
@@ -683,14 +721,13 @@ def _monitor_loop_iter(
     it is carried into the ``monitor_started`` payload as an explicit record
     that this monitor watches its own host.
     """
-    import warnings
     from collections import OrderedDict
 
     seen: OrderedDict[str, None] = OrderedDict()
     work_dir = project if isinstance(project, Path) else Path.cwd()
     cfg = load_config(work_dir / "agent-runner.toml")
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
-    try:
+    with _FailOpenGuard("monitor_started emit failed"):  # abort-proof startup breadcrumb
         events.emit(
             cfg.runtime.log_dir,
             MONITOR_STARTED,
@@ -699,17 +736,13 @@ def _monitor_loop_iter(
             log_dir=str(cfg.runtime.log_dir),
             mode="anomaly-only",
         )
-    except Exception as e:  # noqa: BLE001 — a startup breadcrumb write must not
-        warnings.warn(  # abort supervision before the loop even begins
-            f"monitor_started emit failed: {type(e).__name__}: {e}", stacklevel=2
-        )
 
     event_tail = monitor._EventTail()
     while True:
-        try:
+        poll_guard = _FailOpenGuard("monitor poll failed")
+        with poll_guard:
             alerts = _poll_once(work_dir, event_tail=event_tail)
-        except Exception as e:  # noqa: BLE001 — a poll crash must not kill supervision
-            warnings.warn(f"monitor poll failed: {type(e).__name__}: {e}", stacklevel=2)
+        if poll_guard.failed:  # a poll crash must not kill supervision
             SYSTEM_CLOCK.sleep(interval_s)
             continue
         for alert in alerts:
@@ -726,18 +759,17 @@ def _monitor_loop_iter(
             # work_dir with a non-preset log_dir would target the wrong dir, see no
             # pidfile, and no-op while serve keeps running. The Path resolves to the
             # real cfg.runtime.log_dir.
-            try:
+            # on_alert is the stop path; a raise here (a failure domain the
+            # supervisor exists to handle) must not end the generator and
+            # leave serve unsupervised.
+            verdict: monitor.OnAlertVerdict = "failed"
+            with _FailOpenGuard("on_alert failed"):
                 verdict = monitor.on_alert(
                     alert,
                     project=work_dir,
                     log_dir=cfg.runtime.log_dir,
                     allowed_stop_names=cfg.monitor.auto_stop_on,
                 )
-            except Exception as e:  # noqa: BLE001 — on_alert is the stop path; a
-                # raise here (a failure domain the supervisor exists to handle) must
-                # not end the generator and leave serve unsupervised.
-                warnings.warn(f"on_alert failed: {type(e).__name__}: {e}", stacklevel=2)
-                verdict = "failed"
             if verdict == "draining":
                 # Nothing was recorded for this alert this poll (see on_alert's
                 # docstring) — force-clear its `seen` entry so it is NOT treated
