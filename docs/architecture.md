@@ -22,6 +22,10 @@ production, but the supervisor's defenses, observability, and lifecycle make
 no CLI-specific assumptions in core. Set `[agent].command` to any prompt-arg
 CLI and the same Round / Loop / Witness layers apply.
 
+**Price-blind by design.** The framework is price-blind: it records
+`cost_usd` verbatim from a plugin and never reads, compares, or computes on
+it. Cost-aware behavior belongs in plugins (`builtin_plugins/`).
+
 ## Three-view symmetry (operator surface)
 
 | View | Mental model | Command |

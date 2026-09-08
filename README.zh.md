@@ -10,7 +10,7 @@ supervisor 重启 —— 这是核心模式。中间穿插一组防御，避开 
 
 三层，每层都能独立运行，上层都是可选的：`round` 跑一次 agent 跑完即退；
 `serve` 捕获信号循环拉起 round；`monitor` 检测器 + 告警，critical 时自动停服
-（本机或 ssh 远程）。
+（本机）。
 
 ## 安装
 

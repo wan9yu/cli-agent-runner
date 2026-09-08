@@ -446,8 +446,9 @@ round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress hea
 # mem_free_low_mb = 16            # raise if a larger host comas above 16 MiB free
 ```
 
-Comment out individual entries to disable; e.g. `# auto_stop_on = []` disables
-all auto-stop behaviour and reduces monitor to alert-only.
+Set `auto_stop_on = []` *uncommented* to disable all auto-stop behaviour and
+reduce monitor to alert-only; omitting the key entirely keeps the default
+`("oauth_fail", "disk_critical")` pair.
 
 `remote_failure_tolerance_s` is read on the **relay client** only: it is how
 long `monitor --host <alias> --mode events` keeps reconnecting before it emits

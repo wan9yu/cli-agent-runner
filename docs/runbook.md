@@ -771,6 +771,53 @@ mid-round ticks (or one below the pressure ladder's floor) is invisible. A
 wrapper script around `[agent] command` that tracks the child's own RSS
 remains the answer for per-agent accounting today.
 
+### Sizing a cgroup for the real RAM it costs (zram hosts)
+
+`MemoryMax` and `MemorySwapMax` are systemd-unit cgroup limits, not a direct
+real-RAM budget — on a zram-backed host, the cgroup's `memory.swap.current`
+counts *uncompressed* pages, so a generous swap cap costs only a fraction of
+its own number in real RAM:
+
+```
+MemoryMax + MemorySwapMax ÷ zram_ratio ≈ real host RAM the cgroup can take
+```
+
+Worked example: `MemoryMax=256M` + `MemorySwapMax=224M` on a zram host with
+~3× compression ≈ 256 + (224 ÷ 3) ≈ 256 + 75 ≈ 331M real RAM backing the
+cgroup — not 480M. Size the swap cap against this ledger, not against the
+raw number; a cap that looks generous on paper can be near-free in real RAM
+on a fast zram device.
+
+```ini
+[Service]
+MemoryMax=256M
+# MemoryHigh=224M    # soft ceiling below MemoryMax: docs-only example. The
+                      # first reaction to a MemoryHigh breach is graceful
+                      # throttling, not an OOM kill — but agent-runner's own
+                      # generated unit never emits this directive itself;
+                      # add it to the unit by hand if you want the softer
+                      # ceiling, and read the floor-interaction warning below
+                      # first.
+MemorySwapMax=224M
+```
+
+**Floor interaction — read this before setting `MemoryHigh`.** `MemoryHigh`
+without a matching finite `MemorySwapMax` throttles the cgroup under the
+kernel's own `memory.high` reclaim, and that throttling shows up to the
+supervisor as rising PSI-full — which can cross the supervisor's own PSI
+floor (`[monitor.host_health] psi_full_avg10_critical`, once sustained for
+`mem_critical_consecutive_samples` consecutive ticks) and terminate the very
+round `MemoryHigh` was trying to protect. Either bound `MemorySwapMax` too —
+with both `memory.max` and `memory.swap.max` finite, the mid-round floor
+auto-defers to the kernel's own cgroup-OOM instead of firing itself (see
+`host_cgroup_memory_limit` above) — or set `in_round_mem_terminate = false`
+so `MemoryHigh` can throttle without the floor ever stepping in.
+
+**`vm.swappiness` on a zram host.** A fast zram device should be used, not
+avoided: raise `vm.swappiness` well above the conservative value tuned for
+spinning-disk swap (not down to `1`), so the kernel reclaims into zram
+readily instead of holding pages in RAM until real pressure hits.
+
 ## Troubleshooting
 
 ### Serve stopped on its own (`crash_loop` / `config_broken` / `mem_loop` / `mem_loop_persistent` / `stalled_no_progress`)
@@ -1028,7 +1075,7 @@ transient_error_action = "stop"   # 0.1.23+ canonical name
 ```
 
 This causes the supervisor to emit `agent_self_terminated` with
-`reason = "transient_error"` and exit cleanly. Restart with
+`reason = "rate_limit"` and exit cleanly. Restart with
 `agent-runner start` after the underlying issue resolves.
 
 **Checking throttle status:**
