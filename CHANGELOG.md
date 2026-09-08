@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.18] - 2026-09-08
+
+### Added
+- Cgroup pressure spine: `round_cgroup_memory` emits once per round (when this process's cgroup has a finite `memory.max`) with peak `memory.current`/`memory.swap.current` and `memory.events` counter deltas over the round — pressure becomes visible before it trips a give-up verdict.
+- `round_oom_killed`: a pointer-only event (never round-log content) when the kernel cgroup-OOM-kills a round; the round still exits 137 and counts toward the crash streak exactly as before — this only names the cause.
+- `host_cgroup_memory_limit` gains four advisory fields (`swap_total_bytes`, `swap_cap_pct`, `memory_high`, `advisory`) computed once at serve startup, plus a swap-plausibility guard on the cgroup-defer decision.
+- Docs: a real-RAM ledger, a zram worked example, and a commented `# MemoryHigh` hint (with the PSI-floor interaction warning).
+
+### Fixed
+- Per-agent no-progress verdict: a usageless round on a never-emits-usage CLI is no longer misread as stalled in a mixed `[phases]` config.
+- Fail-open hardening: the monitor no longer crashes on the stop/classify path (an emit error, a poisoned epoch field, or an unreapable round now degrade instead of raising).
+- `kill` now escalates SIGTERM to SIGKILL under systemd-user after the grace window, matching the docs.
+
+### Changed
+- Plugin discovery scans `entry_points.txt` directly with a metadata parity fallback, ahead of 0.3's group growth.
+- Internal cleanup: `RoundOutcome` carved into `_round_outcome`, constants single-sourced, lazy `hashlib`/`zoneinfo` behind an import-footprint gate, a tenet-3 price-blind invariant, plus test-speed work (parallel gate + faster inner loop).
+
+### Notes
+- Not breaking: no `agent-runner migrate` step, no systemd unit change; `peek --json` gains the two new event kinds above, existing kinds unchanged.
+
+See `docs/migrations/0.2.md`.
+
 ## [0.2.17] - 2026-09-05
 
 ### Changed
