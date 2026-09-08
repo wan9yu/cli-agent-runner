@@ -19,7 +19,7 @@ from typing import Any
 
 # Module-level (not the local-import style the rest of this file uses) so tests can
 # monkeypatch this module's own attribute directly, without a real on-disk events dir.
-from agent_runner._throttle import effective_throttle_view
+from agent_runner._throttle import _safe_epoch_iso, effective_throttle_view
 
 
 def serve_http_progress(log_dir: Path, narrative_file: Path | None, *, port: int) -> int:
@@ -150,14 +150,11 @@ def _self_terminated_state(log_dir: Path) -> dict[str, Any]:
 
 def _rate_limit_state(log_dir: Path) -> dict[str, Any] | None:
     """Rate limit throttle state — None if not currently throttled."""
-    from datetime import UTC, datetime
-
     throttle, _active = effective_throttle_view(log_dir)
     if throttle is None:
         return None
-    try:
-        iso = datetime.fromtimestamp(throttle.reset_at_epoch, UTC).isoformat()
-    except (OverflowError, OSError, ValueError):
+    iso = _safe_epoch_iso(throttle.reset_at_epoch)
+    if iso is None:
         iso = "unknown"  # poisoned epoch — degrade the display, never crash the page
     return {
         "throttled_until_iso": iso,

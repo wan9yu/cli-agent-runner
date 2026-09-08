@@ -14,7 +14,7 @@ import math
 import random
 import warnings
 from collections.abc import Callable, Iterator
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +118,20 @@ def _coerce_epoch_int(value: Any, default: int, *, now_epoch: float) -> int:
         )
         return default
     return coerced
+
+
+def _safe_epoch_iso(epoch: float) -> str | None:
+    """``datetime.fromtimestamp(epoch, UTC).isoformat()``, or ``None`` on a
+    poisoned/out-of-range epoch (``OverflowError``/``OSError``/``ValueError``)
+    -- shared by the rate-limit detector and the status-page throttle display,
+    both formatting an already-coerced ``reset_at_epoch`` for a human so a
+    corrupted event line degrades the reading instead of crashing it. Each
+    caller keeps its own fallback for the ``None`` case (a suppressed alert vs.
+    a displayed ``"unknown"``)."""
+    try:
+        return datetime.fromtimestamp(epoch, UTC).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _iter_events(path: Path):

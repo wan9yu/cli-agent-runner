@@ -25,6 +25,35 @@ def _metadata_entry_points(group: str) -> list[tuple[str, str]]:
     return [(ep.name, ep.value) for ep in entry_points(group=group)]
 
 
+# Parsed entry_points.txt contents, memoized per dist-info file for the life
+# of the process: {ep_file_path: {group: [(name, value), ...]}}. Package
+# import calls _parse_entry_points_files once per plugin group (7x today,
+# _HOOK_GROUPS + event_kinds + detectors) across the SAME sys.path, so every
+# call after the first re-walks the identical dist-info directories --
+# without this cache each one would re-open and re-parse (configparser) every
+# entry_points.txt found, 7x over, just to pull out a different [group]
+# section each time. Keyed by the file's path only (not mtime) -- a dist-info
+# is not expected to change under a running process.
+_PARSED_DIST_INFO_CACHE: dict[Path, dict[str, list[tuple[str, str]]]] = {}
+
+
+def _parsed_entry_points_by_group(ep_file: Path) -> dict[str, list[tuple[str, str]]]:
+    """One ``entry_points.txt``, parsed once and bucketed by ``[group]``
+    section: ``{group: [(name, value), ...]}``. Memoized in
+    :data:`_PARSED_DIST_INFO_CACHE` so a second call for the same file (a
+    different plugin group asking about the same dist-info) reuses the
+    parse instead of re-opening + re-running configparser over it."""
+    cached = _PARSED_DIST_INFO_CACHE.get(ep_file)
+    if cached is not None:
+        return cached
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str  # preserve case -- entry-point names are case-sensitive
+    parser.read(ep_file, encoding="utf-8")
+    parsed = {section: list(parser[section].items()) for section in parser.sections()}
+    _PARSED_DIST_INFO_CACHE[ep_file] = parsed
+    return parsed
+
+
 def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str, str]]:
     """(name, value) pairs for ``group`` by parsing each ``*.dist-info/entry_points.txt``
     found on ``sys_path``. A name seen in an earlier ``sys.path`` entry wins over a
@@ -46,12 +75,10 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
             ep_file = dist_info / "entry_points.txt"
             if not ep_file.is_file():
                 continue
-            parser = configparser.ConfigParser(interpolation=None)
-            parser.optionxform = str  # preserve case -- entry-point names are case-sensitive
-            parser.read(ep_file, encoding="utf-8")
-            if group not in parser:
+            groups = _parsed_entry_points_by_group(ep_file)
+            if group not in groups:
                 continue
-            for name, value in parser[group].items():
+            for name, value in groups[group]:
                 winner = seen.get(name)
                 if winner is None:  # dedup: first sys.path entry wins
                     seen[name] = value

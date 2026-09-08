@@ -709,6 +709,7 @@ def cmd(args) -> int:
                 cfg,
                 log_dir=log_dir,
                 round_log_path=round_log_path,
+                round_num=round_num,
                 r_returncode=r_returncode,
                 round_duration_s=round_duration_s,
                 round_throttle_active=round_throttle_active,

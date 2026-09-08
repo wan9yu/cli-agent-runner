@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.events import _iter_parsed_lines, open_events_jsonl, parse_iso_ms, read_new
+from agent_runner.events import _iter_parsed_lines, open_events_jsonl, parse_iso_ms
 
 # Sentinel for "user did not explicitly set --window" so we can detect
 # --window + --tail combinations. argparse mutually-exclusive group would
@@ -244,13 +244,36 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
     return 0
 
 
+def _read_new_lines(path: Path, start: int) -> tuple[list[tuple[str, dict]], int]:
+    """Single-path variant of :func:`agent_runner.events.read_new`: same
+    contract (a missing path or ``size <= start`` yields nothing; a size
+    smaller than ``start`` means truncated/replaced beneath us, reset to a
+    from-byte-0 read), but keeps the RAW line text ``read_new`` discards
+    alongside each parsed dict — so a caller wanting to print the original
+    bytes (matching ``_replay_since``/``_query_events`` below) doesn't have
+    to re-encode via ``json.dumps``."""
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return [], start
+    if size < start:
+        start = 0
+    if size == start:
+        return [], start
+    with open_events_jsonl(path) as f:
+        f.seek(start)
+        pairs = list(_iter_parsed_lines(f))
+        end = f.tell()
+    return pairs, end
+
+
 def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
     """Print matching lines of ``path`` from byte ``start`` to true EOF; return EOF."""
-    new_events, offsets = read_new([path], {path: start})
-    for evt in new_events:
+    pairs, end = _read_new_lines(path, start)
+    for line, evt in pairs:
         if evt.get("event") in kind_set:
-            print(json.dumps(evt, ensure_ascii=False), flush=True)
-    return offsets.get(path, start)
+            print(line, flush=True)
+    return end
 
 
 def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = None) -> int:

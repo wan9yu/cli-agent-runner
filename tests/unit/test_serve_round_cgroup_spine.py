@@ -93,7 +93,7 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
             "cgroup_path": "/user.slice",
         },
     )
-    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log")
+    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
     ev = [e for e in _events(log_dir) if e["event"] == "round_cgroup_memory"][0]
     assert ev["events_high_delta"] == 15  # 25 - 10, a DELTA not an absolute
     assert ev["events_max_delta"] == 0
@@ -110,8 +110,8 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
 def test_emit_round_cgroup_memory_noop_without_finite_bound(tmp_path):
     """No stashed state (host has no finite cgroup bound) -> no emit, no error."""
     log_dir = tmp_path
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
-    assert result == {}
+    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
 
 
@@ -129,8 +129,8 @@ def test_emit_round_cgroup_memory_skips_when_bounding_cgroup_vanished(tmp_path, 
         "bounding_cgroup_path": "/user.slice",
     }
     monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: {})
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
-    assert result == {}
+    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
     # Still consumed the stashed state -- no leak into a later round's call.
     assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
@@ -159,8 +159,8 @@ def test_emit_round_cgroup_memory_skips_when_baseline_events_empty(tmp_path, mon
             "cgroup_path": "/user.slice",
         },
     )
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
-    assert result == {}
+    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
     # Still consumed the stashed state -- no leak into a later round's call.
     assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
@@ -181,14 +181,7 @@ def test_emit_round_cgroup_memory_pops_state(tmp_path, monkeypatch):
         "cgroup_memory_usage",
         lambda **k: {"memory_events": {}, "memory_current": 1, "memory_swap_current": 0},
     )
-    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log")
+    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
     assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
-    second = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-2.log")
-    assert second == {}
-
-
-def test_round_num_from_log_path():
-    from pathlib import Path
-
-    assert _serve_round._round_num_from_log_path(Path("/x/round-42.log")) == 42
-    assert _serve_round._round_num_from_log_path(Path("/x/not-a-round.log")) == 0
+    second = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-2.log", 2)
+    assert second == ({}, None)

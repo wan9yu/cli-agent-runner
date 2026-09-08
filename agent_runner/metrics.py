@@ -239,6 +239,25 @@ def _bounding_ancestor_path(root: Path, ancestors: list[str]) -> str | None:
     return candidate[1] if candidate is not None else None
 
 
+def _resolve_cgroup(
+    root: Path, proc_self_cgroup: Path, self_cgroup: str | None
+) -> tuple[str, list[str]] | None:
+    """Shared cgroup-v2-availability + ancestor-resolution prologue for
+    :func:`cgroup_memory_limits`, :func:`cgroup_memory_high`, and
+    :func:`cgroup_memory_usage`: ``(cgroup_path, ancestors)``, or ``None``
+    when cgroup v2 is unavailable (``root/cgroup.controllers`` missing) or
+    ``self_cgroup``/``/proc/self/cgroup`` did not resolve to a path.
+
+    ``self_cgroup`` lets a caller supply the resolved cgroup path directly,
+    skipping the ``/proc/self/cgroup`` read (see each caller's docstring)."""
+    if not (root / "cgroup.controllers").exists():
+        return None
+    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
+    if cgroup_path is None:
+        return None
+    return cgroup_path, _cgroup_ancestors(cgroup_path)
+
+
 def _read_events_counters(path: Path) -> dict[str, int]:
     """Parse a cgroup v2 ``memory.events`` file (``key value`` lines per
     line) into the ``high``/``max``/``oom``/``oom_kill`` counters. These are
@@ -286,13 +305,10 @@ def cgroup_memory_limits(
     One-shot pure file I/O (a handful of small reads), no clock -- serve
     probes once at startup and caches the result for the process's life.
     """
-    if not (root / "cgroup.controllers").exists():
+    resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+    if resolved is None:
         return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
-    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
-    if cgroup_path is None:
-        return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
-
-    ancestors = _cgroup_ancestors(cgroup_path)
+    cgroup_path, ancestors = resolved
     return {
         "memory_max": _min_ancestor_limit(root, ancestors, "memory.max"),
         "memory_swap_max": _min_ancestor_limit(root, ancestors, "memory.swap.max"),
@@ -323,12 +339,10 @@ def cgroup_memory_high(
 
     Same params/defaults as :func:`cgroup_memory_limits` (injectable for
     tests); one-shot pure file I/O, no clock."""
-    if not (root / "cgroup.controllers").exists():
+    resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+    if resolved is None:
         return None
-    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
-    if cgroup_path is None:
-        return None
-    ancestors = _cgroup_ancestors(cgroup_path)
+    _cgroup_path, ancestors = resolved
     return _min_ancestor_limit(root, ancestors, "memory.high")
 
 
@@ -365,14 +379,10 @@ def cgroup_memory_usage(
     cannot leave unguarded even though every helper it calls below already
     catches ``OSError`` on its own."""
     try:
-        if not (root / "cgroup.controllers").exists():
+        resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+        if resolved is None:
             return {}
-        cgroup_path = (
-            self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
-        )
-        if cgroup_path is None:
-            return {}
-        ancestors = _cgroup_ancestors(cgroup_path)
+        _cgroup_path, ancestors = resolved
         bounding = _bounding_ancestor_path(root, ancestors)
         if bounding is None:
             return {}

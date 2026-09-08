@@ -271,7 +271,7 @@ def _patch_probe(
     )
     monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
     monkeypatch.setattr(metrics, "swap_total_bytes", lambda: swap_total)
-    monkeypatch.setattr(metrics, "cgroup_memory_high", lambda: memory_high)
+    monkeypatch.setattr(metrics, "cgroup_memory_high", lambda **_k: memory_high)
 
 
 def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(

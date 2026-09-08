@@ -46,10 +46,10 @@ def test_oom_kill_delta_emits_pointer_only_event(tmp_path, monkeypatch):
     _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=3)
     monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: _usage(4, oom=1))
 
-    cur = _serve_round._emit_round_cgroup_memory(tmp_path, log)
+    cur, baseline = _serve_round._emit_round_cgroup_memory(tmp_path, log, 9)
     # 137 == _ROUND_UNREAPED_RC: this round actually died to the kill, so the
     # delta is attributable to it (not a sibling under the same ancestor).
-    _serve_round._maybe_emit_oom_killed(tmp_path, log, cur, 137)
+    _serve_round._maybe_emit_oom_killed(tmp_path, log, 9, cur, 137, baseline)
 
     evs = _events(tmp_path)
     ooms = [e for e in evs if e["event"] == "round_oom_killed"]
@@ -76,8 +76,9 @@ def test_sibling_oom_kill_with_clean_exit_does_not_emit(tmp_path, monkeypatch):
     _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=3)
     monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: _usage(4))
 
-    cur = _serve_round._emit_round_cgroup_memory(tmp_path, log)
-    _serve_round._maybe_emit_oom_killed(tmp_path, log, cur, 0)  # clean exit, not a kill
+    cur, baseline = _serve_round._emit_round_cgroup_memory(tmp_path, log, 9)
+    # clean exit, not a kill
+    _serve_round._maybe_emit_oom_killed(tmp_path, log, 9, cur, 0, baseline)
 
     assert [e for e in _events(tmp_path) if e["event"] == "round_oom_killed"] == []
     assert log.read_text() == "this round exited cleanly"  # no trailer appended
@@ -90,8 +91,8 @@ def test_normal_round_does_not_emit_oom_killed(tmp_path, monkeypatch):
     _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=2)
     monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: _usage(2))
 
-    cur = _serve_round._emit_round_cgroup_memory(tmp_path, log)
-    _serve_round._maybe_emit_oom_killed(tmp_path, log, cur, 0)
+    cur, baseline = _serve_round._emit_round_cgroup_memory(tmp_path, log, 1)
+    _serve_round._maybe_emit_oom_killed(tmp_path, log, 1, cur, 0, baseline)
 
     assert [e for e in _events(tmp_path) if e["event"] == "round_oom_killed"] == []
     assert log.read_text() == "clean round output"  # no trailer appended
@@ -103,8 +104,8 @@ def test_no_finite_cgroup_bound_does_not_emit_oom_killed(tmp_path):
     log = tmp_path / "round-1.log"
     log.write_text("no cgroup on this host")
 
-    cur = _serve_round._emit_round_cgroup_memory(tmp_path, log)
-    _serve_round._maybe_emit_oom_killed(tmp_path, log, cur, 0)
+    cur, baseline = _serve_round._emit_round_cgroup_memory(tmp_path, log, 1)
+    _serve_round._maybe_emit_oom_killed(tmp_path, log, 1, cur, 0, baseline)
 
     assert [e for e in _events(tmp_path) if e["event"] == "round_oom_killed"] == []
 
@@ -130,10 +131,10 @@ def test_supervisor_mem_terminated_round_does_not_also_emit_oom_killed(tmp_path,
         consecutive=3,
         context={},
     )
-    cur = _serve_round._emit_round_cgroup_memory(tmp_path, log)
+    cur, baseline = _serve_round._emit_round_cgroup_memory(tmp_path, log, 1)
     # -15: reaped SIGTERM (the supervisor's own signal, not a kernel SIGKILL) --
     # not a "round_was_killed" returncode either, so this exercises both guards.
-    _serve_round._maybe_emit_oom_killed(tmp_path, log, cur, -15)
+    _serve_round._maybe_emit_oom_killed(tmp_path, log, 1, cur, -15, baseline)
 
     evs = _events(tmp_path)
     assert any(e["event"] == "round_mem_terminated" for e in evs)
@@ -173,6 +174,7 @@ def test_give_up_classification_unchanged_when_oom_killed_fires(tmp_path, monkey
             cfg,
             log_dir=log_dir,
             round_log_path=log_path,
+            round_num=1,
             r_returncode=137,
             round_duration_s=5.0,
             round_throttle_active=False,

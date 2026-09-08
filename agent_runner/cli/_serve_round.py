@@ -89,14 +89,6 @@ _PRE_ROUND_MEM_STATE_BY_LOG_DIR: dict[Path, dict] = {}
 # entry can never leak into the next round.
 _ROUND_CGROUP_STATE_BY_LOG_DIR: dict[Path, dict] = {}
 
-# OOM-kill baseline handoff: _emit_round_cgroup_memory stashes the round's
-# starting memory.events.oom_kill count here (as a side effect, right when it
-# pops _ROUND_CGROUP_STATE_BY_LOG_DIR above) so _maybe_emit_oom_killed can diff
-# it against the CURRENT usage dict _emit_round_cgroup_memory already read and
-# returns -- folded from that SAME scan, never a second sysfs read. Popped on
-# read, same stale-entry-can't-leak shape as the dict above.
-_ROUND_CGROUP_OOM_BASELINE: dict[Path, int] = {}
-
 
 def _memory_pressure_now(cfg, log_dir, sample_fn) -> host_health.Pressure | None:
     """Pre-round host_health read, using (and updating) this ``log_dir``'s
@@ -453,42 +445,33 @@ def _spawn_round(
         return returncode
 
 
-def _round_num_from_log_path(round_log_path: Path) -> int:
-    """``round-<N>.log`` -> ``N`` (0 if unparseable)."""
-    stem = round_log_path.stem  # "round-42"
-    try:
-        return int(stem.rsplit("-", 1)[1])
-    except (IndexError, ValueError):
-        return 0
-
-
-def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
+def _emit_round_cgroup_memory(
+    log_dir: Path, round_log_path: Path, round_num: int
+) -> tuple[dict, int | None]:
     """Emit ``round_cgroup_memory`` from the per-round baseline/peak
     :func:`_spawn_round` stashed, diffing ``memory.events`` at the bounding
-    ancestor. Returns the current usage dict (a future round-outcome
-    classifier can reuse it as the one classification-time cgroup read).
-    No-op (returns ``{}``, no emit) when this host has no finite cgroup
-    bound -- ``_spawn_round`` never stashes state in that case -- when
-    the bounding cgroup is no longer readable at round end (``cur`` empty:
-    it vanished or became unbounded mid-round), or when the STARTING
-    ``memory.events`` read failed (``baseline_events`` empty). The middle
-    case must skip the emit rather than write all-zero deltas against a
-    now-stale ``bounding_cgroup_path`` -- that would misreport "no pressure"
-    when the truth is "can no longer tell"; the last case must skip it rather
-    than diff against zero, which would report the cumulative
-    since-cgroup-creation counter as this round's delta.
-
-    As a side effect, also stashes this round's starting ``oom_kill`` count
-    into ``_ROUND_CGROUP_OOM_BASELINE`` for :func:`_maybe_emit_oom_killed` to
-    diff the returned ``cur`` against -- the one place both halves of that
-    single cgroup read are available together, so detecting an OOM-kill never
-    needs a second sysfs read."""
+    ancestor. Returns ``(cur, oom_kill_baseline)``: ``cur`` is the current
+    usage dict (a future round-outcome classifier can reuse it as the one
+    classification-time cgroup read); ``oom_kill_baseline`` is this round's
+    starting ``memory.events.oom_kill`` count, for :func:`_maybe_emit_oom_killed`
+    to diff ``cur`` against -- the one place both halves of that single
+    cgroup read are available together, so detecting an OOM-kill never needs
+    a second sysfs read. Both are ``({}, None)`` (no emit) when this host has
+    no finite cgroup bound -- ``_spawn_round`` never stashes state in that
+    case -- when the bounding cgroup is no longer readable at round end
+    (``cur`` empty: it vanished or became unbounded mid-round), or when the
+    STARTING ``memory.events`` read failed (``baseline_events`` empty). The
+    middle case must skip the emit rather than write all-zero deltas against
+    a now-stale ``bounding_cgroup_path`` -- that would misreport "no
+    pressure" when the truth is "can no longer tell"; the last case must
+    skip it rather than diff against zero, which would report the cumulative
+    since-cgroup-creation counter as this round's delta."""
     state = _ROUND_CGROUP_STATE_BY_LOG_DIR.pop(log_dir, None)
     if not state:
-        return {}
+        return {}, None
     cur = metrics.cgroup_memory_usage()
     if not cur:
-        return {}
+        return {}, None
     base_ev = state["baseline_events"]
     if not base_ev:
         # The spawn-start memory.events read failed (metrics returns {} on
@@ -496,15 +479,14 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
         # empty baseline would report the cumulative-since-cgroup-creation
         # counter as if it were THIS round's delta -- a bogus absolute is
         # worse than no event at all, so skip the emit entirely (also skips
-        # the OOM-kill baseline stash below, for the same reason).
-        return {}
+        # the OOM-kill baseline return below, for the same reason).
+        return {}, None
     cur_ev = cur.get("memory_events", {})
-    _ROUND_CGROUP_OOM_BASELINE[log_dir] = base_ev.get("oom_kill", 0)
+    oom_kill_baseline = base_ev.get("oom_kill", 0)
 
     def _delta(key: str) -> int:
         return max(0, cur_ev.get(key, 0) - base_ev.get(key, 0))
 
-    round_num = _round_num_from_log_path(round_log_path)
     emit_round_cgroup_memory(
         log_dir,
         round_num=round_num,
@@ -516,7 +498,7 @@ def _emit_round_cgroup_memory(log_dir: Path, round_log_path: Path) -> dict:
         events_oom_kill_delta=_delta("oom_kill"),
         bounding_cgroup_path=state["bounding_cgroup_path"],
     )
-    return cur
+    return cur, oom_kill_baseline
 
 
 def _mark_partial_log(round_log_path: Path) -> bool:
@@ -534,14 +516,19 @@ def _mark_partial_log(round_log_path: Path) -> bool:
 
 
 def _maybe_emit_oom_killed(
-    log_dir: Path, round_log_path: Path, cur_usage: dict, r_returncode: int
+    log_dir: Path,
+    round_log_path: Path,
+    round_num: int,
+    cur_usage: dict,
+    r_returncode: int,
+    oom_kill_baseline: int | None,
 ) -> None:
     """If the bounding cgroup's ``memory.events.oom_kill`` counter rose over
     this round AND this round itself died to that kill, emit the
-    pointer-only ``round_oom_killed``. Uses ``cur_usage`` -- the SAME read
-    :func:`_emit_round_cgroup_memory` already took -- plus the baseline it
-    stashed in ``_ROUND_CGROUP_OOM_BASELINE``: no second sysfs read at
-    classification time.
+    pointer-only ``round_oom_killed``. Uses ``cur_usage`` and
+    ``oom_kill_baseline`` -- both halves of the SAME read
+    :func:`_emit_round_cgroup_memory` already took, threaded through
+    explicitly by the caller: no second sysfs read at classification time.
 
     The bounding cgroup can be a shared ANCESTOR slice (not this round's own
     cgroup), so a rising counter does not by itself mean this round was the
@@ -558,10 +545,9 @@ def _maybe_emit_oom_killed(
     crash-loop / mem-loop / stalled-no-progress verdict or the round's exit
     code -- a kernel SIGKILL still exits 137 and counts toward the crash streak
     exactly as before this event existed."""
-    baseline = _ROUND_CGROUP_OOM_BASELINE.pop(log_dir, None)
-    if not cur_usage or baseline is None:
+    if not cur_usage or oom_kill_baseline is None:
         return
-    delta = max(0, cur_usage.get("memory_events", {}).get("oom_kill", 0) - baseline)
+    delta = max(0, cur_usage.get("memory_events", {}).get("oom_kill", 0) - oom_kill_baseline)
     round_was_killed = r_returncode == _ROUND_UNREAPED_RC or r_returncode == -9
     if delta <= 0 or not round_was_killed:
         return
@@ -571,7 +557,7 @@ def _maybe_emit_oom_killed(
         log_bytes = 0
     emit_round_oom_killed(
         log_dir,
-        round_num=_round_num_from_log_path(round_log_path),
+        round_num=round_num,
         log_path=round_log_path,
         log_bytes=log_bytes,
         oom_kill_delta=delta,
@@ -630,7 +616,15 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     cgroup or systemd unit."""
     limits = metrics.cgroup_memory_limits()
     swap_total = metrics.swap_total_bytes()
-    memory_high = metrics.cgroup_memory_high()
+    # Reuse the leaf cgroup_memory_limits already resolved above -- skips
+    # re-walking /proc/self/cgroup + the ancestor chain a second time at
+    # startup. None (cgroup v2 unavailable) is passed through unchanged:
+    # cgroup_memory_high treats a supplied None the same as "not supplied"
+    # only via its own default-arg sentinel, and cgroup_memory_limits
+    # already returns cgroup_path=None in that exact case, so a bare
+    # `self_cgroup=limits["cgroup_path"]` dead-ends at the same place either
+    # way as calling with no override would.
+    memory_high = metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"])
     swap_max = limits["memory_swap_max"]
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
@@ -666,6 +660,7 @@ def post_round_verdicts(
     *,
     log_dir,
     round_log_path,
+    round_num: int,
     r_returncode: int,
     round_duration_s: float,
     round_throttle_active: bool,
@@ -749,8 +744,12 @@ def post_round_verdicts(
     # _maybe_emit_oom_killed reuses that SAME cgroup read (cur) to detect a
     # kernel OOM-kill -- pure observability, run after every give-up decision
     # above is already computed, so it cannot change this round's verdict.
-    cur_cgroup_usage = _emit_round_cgroup_memory(log_dir, round_log_path)
-    _maybe_emit_oom_killed(log_dir, round_log_path, cur_cgroup_usage, r_returncode)
+    cur_cgroup_usage, oom_kill_baseline = _emit_round_cgroup_memory(
+        log_dir, round_log_path, round_num
+    )
+    _maybe_emit_oom_killed(
+        log_dir, round_log_path, round_num, cur_cgroup_usage, r_returncode, oom_kill_baseline
+    )
     if action == "config_broken":
         # classify_round_exit maps ANY ConfigError to this exit code (Group
         # A) — not only a startup-battery check failure (e.g. _phase_for's
