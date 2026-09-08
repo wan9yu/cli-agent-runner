@@ -70,6 +70,10 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
     {
         "agent_runner",
         "agent_runner._emit",
+        "agent_runner._emit.agent",
+        "agent_runner._emit.memory",
+        "agent_runner._emit.rounds",
+        "agent_runner._emit.serve",
         "agent_runner._monitor_detectors",
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
