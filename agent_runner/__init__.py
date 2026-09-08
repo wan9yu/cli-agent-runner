@@ -27,16 +27,31 @@ def _load_plugins_from_group(group: str) -> None:
 
     Called at package import. A broken plugin must not crash the supervisor;
     each failure surfaces as a ``UserWarning``.
-    """
-    import warnings
-    from importlib.metadata import entry_points
 
-    for ep in entry_points(group=group):
+    Discovery goes through the ``entry_points.txt`` scanner (cheaper than a
+    fresh ``importlib.metadata.entry_points()`` scan per group per process;
+    see ``_plugin_scan``), with a hard fallback to ``importlib.metadata`` on
+    any parse failure. Loading a plugin means only importing its module and
+    resolving its attribute — same as ``EntryPoint.load()`` — since every
+    built-in plugin registers itself as a module-top side effect (documented
+    in docs/plugins.md); this loader never instantiates or calls the target.
+    """
+    import importlib
+    import sys
+    import warnings
+
+    from agent_runner._plugin_scan import scan_entry_points
+
+    for name, value in scan_entry_points(sys.path, group):
         try:
-            ep.load()
+            module_path, _, attr_path = value.partition(":")
+            mod = importlib.import_module(module_path)
+            target = mod
+            for attr in filter(None, attr_path.split(".")):
+                target = getattr(target, attr)
         except Exception as e:
             warnings.warn(
-                f"failed to load {group} plugin {ep.name!r}: {e}",
+                f"failed to load {group} plugin {name!r}: {e}",
                 stacklevel=3,
             )
 
@@ -80,7 +95,7 @@ def apply_plugin_disable(names: list[str]) -> None:
     registered plugin (typo catcher; tolerates cross-env config drift).
 
     Plugin packages still load at import time — this removes from the registries
-    that the runner and peek consult. Side effects from ep.load() (module-level
+    that the runner and peek consult. Side effects from loading (module-level
     imports, etc.) have already happened by the time this runs.
 
     Known limitation: vcs_state._PLUGIN_OWNED_PATHS lacks per-plugin name

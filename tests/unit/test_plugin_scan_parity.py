@@ -1,0 +1,109 @@
+"""Parity + fallback + override tests for the entry_points.txt scanner.
+
+The scanner (agent_runner._plugin_scan) replaces a per-group
+importlib.metadata.entry_points() call at package-import time with one cheap
+parse of installed dist-info entry_points.txt files. Its discovery contract
+must match importlib.metadata.entry_points() exactly -- these tests pin that,
+plus the hard fallback and the env override that forces the old path.
+"""
+
+from __future__ import annotations
+
+import sys
+from importlib.metadata import entry_points
+
+from agent_runner import _HOOK_GROUPS, _plugin_scan
+
+
+def _md(group: str) -> list[tuple[str, str]]:
+    return sorted((ep.name, ep.value) for ep in entry_points(group=group))
+
+
+def test_scanner_matches_importlib_metadata_per_group():
+    """scanner(sys.path, group) == entry_points(group) for every group we load --
+    run on the dev venv's real (possibly stale) dist-info + in CI."""
+    groups = (*_HOOK_GROUPS, "agent_runner.event_kinds", "agent_runner.detectors")
+    for group in groups:
+        scanned = sorted(_plugin_scan.scan_entry_points(sys.path, group))
+        assert scanned == _md(group), f"parity drift in {group}: {scanned} != {_md(group)}"
+
+
+def test_scanner_hard_falls_back_to_metadata_on_parse_error(monkeypatch):
+    def boom(*a, **k):
+        raise ValueError("corrupt entry_points.txt")
+
+    monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", boom)
+    # must not raise -- falls back to importlib.metadata
+    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
+
+
+def test_env_override_forces_metadata_path_without_touching_the_scan(monkeypatch):
+    """AGENT_RUNNER_PLUGIN_DISCOVERY=metadata must skip the file scan entirely,
+    not merely fall back to it after a failed attempt."""
+    monkeypatch.setenv("AGENT_RUNNER_PLUGIN_DISCOVERY", "metadata")
+
+    def must_not_run(*a, **k):
+        raise AssertionError("scan should not run when the env override is set")
+
+    monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", must_not_run)
+    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
+
+
+def test_env_override_absent_uses_the_scan(monkeypatch):
+    """Sanity check for the previous test: without the override, the real scan
+    path IS exercised (and still agrees with importlib.metadata)."""
+    monkeypatch.delenv("AGENT_RUNNER_PLUGIN_DISCOVERY", raising=False)
+    scanned = sorted(_plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks"))
+    assert scanned == _md("agent_runner.post_round_hooks")
+
+
+def test_scanner_dedups_by_name_first_sys_path_entry_wins(tmp_path):
+    """Two dist-info dirs on different sys.path entries declaring the same
+    plugin name in the same group: the earlier sys.path entry wins, and the
+    name is not returned twice."""
+    site1 = tmp_path / "site1"
+    site2 = tmp_path / "site2"
+    for site, target in (
+        (site1, "pkg_a.mod:First"),
+        (site2, "pkg_b.mod:Second"),
+    ):
+        dist_info = site / "somepkg-1.0.dist-info"
+        dist_info.mkdir(parents=True)
+        (dist_info / "entry_points.txt").write_text(
+            f"[agent_runner.post_round_hooks]\ndup_name = {target}\n"
+        )
+
+    out = _plugin_scan.scan_entry_points([str(site1), str(site2)], "agent_runner.post_round_hooks")
+    matches = [pair for pair in out if pair[0] == "dup_name"]
+    assert matches == [("dup_name", "pkg_a.mod:First")]
+
+
+def test_scanner_discovers_third_party_style_dist_info(tmp_path):
+    """A plugin registered via [project.entry-points] in an installed dist
+    (simulated here as a bare dist-info dir on a synthetic sys.path entry)
+    must still be discovered."""
+    dist_info = tmp_path / "thirdparty_plugin-0.1.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "entry_points.txt").write_text(
+        "[agent_runner.detectors]\nthird_party_detector = thirdparty_plugin.mod:Detector\n"
+    )
+
+    out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+    assert ("third_party_detector", "thirdparty_plugin.mod:Detector") in out
+
+
+def test_malformed_entry_points_txt_falls_back_without_dropping_plugins(tmp_path, monkeypatch):
+    """A real (not mocked) malformed entry_points.txt on sys.path must not
+    silently drop plugins -- the hard fallback to importlib.metadata kicks in
+    and the real, installed entries still come back."""
+    monkeypatch.delenv("AGENT_RUNNER_PLUGIN_DISCOVERY", raising=False)
+    dist_info = tmp_path / "broken_plugin-0.1.0.dist-info"
+    dist_info.mkdir()
+    # Not valid INI: a bare line with no section header.
+    (dist_info / "entry_points.txt").write_text("this is not ini content\nno section header\n")
+
+    sys_path = [str(tmp_path), *sys.path]
+    out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.post_round_hooks")
+    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out

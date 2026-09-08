@@ -1,9 +1,17 @@
-"""Tests for agent_runner package entry_points loading."""
+"""Tests for agent_runner package entry_points loading.
+
+Discovery itself (scan == importlib.metadata.entry_points per group, the
+malformed-file fallback, the env override) is pinned by
+tests/unit/test_plugin_scan_parity.py. These tests cover the loader built on
+top of the scanner: per-plugin failure isolation, the groups queried, and a
+successful load.
+"""
 
 from __future__ import annotations
 
+import sys
 import warnings
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,11 +33,8 @@ def test_given_failing_plugin_when_loader_runs_then_warns_but_does_not_crash() -
     """A plugin import error must not crash the supervisor."""
     from agent_runner import _load_event_kind_plugins
 
-    bad_ep = MagicMock()
-    bad_ep.name = "bad-plugin"
-    bad_ep.load.side_effect = RuntimeError("simulated import failure")
-
-    with patch("importlib.metadata.entry_points", return_value=[bad_ep]):
+    scanned = [("bad-plugin", "definitely_not_a_real_module_xyz:Attr")]
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             _load_event_kind_plugins()
@@ -38,38 +43,36 @@ def test_given_failing_plugin_when_loader_runs_then_warns_but_does_not_crash() -
         )
 
 
-def test_given_good_plugin_when_loader_runs_then_ep_load_called() -> None:
-    """The loader calls ``ep.load()`` for each entry_points entry."""
+def test_given_good_plugin_when_loader_runs_then_module_imported_without_warning() -> None:
+    """A well-formed target (module importable, attribute present) loads clean --
+    mirroring EntryPoint.load(): import the module, resolve the attribute, done."""
     from agent_runner import _load_event_kind_plugins
 
-    good_ep = MagicMock()
-    good_ep.name = "good-plugin"
-    good_ep.load = MagicMock(return_value=None)
-
-    with patch("importlib.metadata.entry_points", return_value=[good_ep]):
-        _load_event_kind_plugins()
-
-    good_ep.load.assert_called_once()
+    scanned = [("good-plugin", "warnings:catch_warnings")]
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _load_event_kind_plugins()
+        assert not caught, (
+            f"expected no warnings for a good plugin; got {[str(w.message) for w in caught]}"
+        )
 
 
 def test_given_loader_called_then_uses_correct_entry_points_group() -> None:
     """The loader queries the ``agent_runner.event_kinds`` group, not arbitrary."""
     from agent_runner import _load_event_kind_plugins
 
-    with patch("importlib.metadata.entry_points", return_value=[]) as mock_ep:
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=[]) as mock_scan:
         _load_event_kind_plugins()
-    mock_ep.assert_called_once_with(group="agent_runner.event_kinds")
+    mock_scan.assert_called_once_with(sys.path, "agent_runner.event_kinds")
 
 
 def test_given_failing_hook_plugin_when_loader_runs_then_warns_but_does_not_crash() -> None:
     """Hook plugin import failures degrade to UserWarning, same as event_kinds."""
     from agent_runner import _load_hook_plugins
 
-    bad_ep = MagicMock()
-    bad_ep.name = "bad-hook"
-    bad_ep.load.side_effect = RuntimeError("simulated hook import failure")
-
-    with patch("importlib.metadata.entry_points", return_value=[bad_ep]):
+    scanned = [("bad-hook", "definitely_not_a_real_module_xyz:Attr")]
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             _load_hook_plugins()
@@ -84,11 +87,11 @@ def test_given_loader_called_then_uses_five_hook_groups() -> None:
 
     call_groups: list[str] = []
 
-    def fake_eps(group):
+    def fake_scan(sys_path, group):
         call_groups.append(group)
         return []
 
-    with patch("importlib.metadata.entry_points", side_effect=fake_eps):
+    with patch("agent_runner._plugin_scan.scan_entry_points", side_effect=fake_scan):
         _load_hook_plugins()
 
     assert sorted(call_groups) == sorted(
@@ -105,11 +108,8 @@ def test_given_loader_called_then_uses_five_hook_groups() -> None:
 def test_given_failing_detector_plugin_when_loader_runs_then_warns_but_does_not_crash() -> None:
     from agent_runner import _load_detector_plugins
 
-    bad_ep = MagicMock()
-    bad_ep.name = "bad-detector"
-    bad_ep.load.side_effect = RuntimeError("simulated detector import failure")
-
-    with patch("importlib.metadata.entry_points", return_value=[bad_ep]):
+    scanned = [("bad-detector", "definitely_not_a_real_module_xyz:Attr")]
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             _load_detector_plugins()
@@ -119,9 +119,9 @@ def test_given_failing_detector_plugin_when_loader_runs_then_warns_but_does_not_
 def test_given_detector_loader_called_then_uses_correct_group() -> None:
     from agent_runner import _load_detector_plugins
 
-    with patch("importlib.metadata.entry_points", return_value=[]) as mock_ep:
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=[]) as mock_scan:
         _load_detector_plugins()
-    mock_ep.assert_called_once_with(group="agent_runner.detectors")
+    mock_scan.assert_called_once_with(sys.path, "agent_runner.detectors")
 
 
 def test_given_disable_list_when_apply_plugin_disable_then_named_hooks_removed() -> None:
