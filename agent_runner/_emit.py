@@ -32,6 +32,7 @@ __all__ = [
     "emit_round_logs_prune_deferred",
     "emit_round_mem_critical_sample",
     "emit_round_mem_terminated",
+    "emit_round_oom_killed",
     "emit_round_progress",
     "emit_round_resumed",
     "emit_round_substrate_after",
@@ -413,6 +414,45 @@ def emit_round_cgroup_memory(
         events_oom_delta=events_oom_delta,
         events_oom_kill_delta=events_oom_kill_delta,
         bounding_cgroup_path=bounding_cgroup_path,
+    )
+
+
+def emit_round_oom_killed(
+    log_dir: Path,
+    *,
+    round_num: int,
+    log_path: Path,
+    log_bytes: int,
+    oom_kill_delta: int,
+    partial_log: bool,
+) -> None:
+    """Emit when the kernel cgroup-OOM-killed a round (``memory.events.oom_kill``
+    rose over the round, per ``_serve_round._maybe_emit_oom_killed`` -- folded
+    from the SAME ``cgroup_memory_usage()`` read ``round_cgroup_memory`` already
+    took, no second sysfs read). Symmetric with ``round_mem_terminated``
+    (supervisor-killed) -- this is the kernel-killed sibling.
+
+    POINTER-ONLY: ``log_path`` + ``log_bytes`` + ``oom_kill_delta`` -- NEVER the
+    round-log/transcript content itself (durability, secret-redaction, size all
+    argue against embedding it in events.jsonl). ``partial_log`` reports whether
+    the supervisor's own truncation trailer (see ``_mark_partial_log``) was
+    written onto the round log, so a later reader can tell the log's tail is
+    supervisor residue, not the agent's own output.
+
+    Classification is UNCHANGED by this event: the round still exits 137 and
+    counts toward the crash streak exactly as before -- this is pure
+    observability layered on top, computed and emitted after that decision is
+    already made."""
+    from agent_runner.events import ROUND_OOM_KILLED, emit
+
+    emit(
+        log_dir,
+        ROUND_OOM_KILLED,
+        round_num=round_num,
+        log_path=str(log_path),
+        log_bytes=log_bytes,
+        oom_kill_delta=oom_kill_delta,
+        partial_log=partial_log,
     )
 
 

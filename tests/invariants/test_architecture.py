@@ -129,6 +129,7 @@ ALLOWED_SERVE_ROUND_FROM = [
             "emit_round_deferred",
             "emit_round_mem_critical_sample",
             "emit_round_mem_terminated",
+            "emit_round_oom_killed",
             "emit_round_resumed",
             "emit_round_supervisor_wedged",
             "emit_stalled_no_progress",
