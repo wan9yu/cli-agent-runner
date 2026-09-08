@@ -58,6 +58,25 @@ def test_given_good_plugin_when_loader_runs_then_module_imported_without_warning
         )
 
 
+def test_given_extras_marker_when_loader_runs_then_resolves_attr_without_extras() -> None:
+    """An entry-point value can carry a trailing extras marker
+    (``module:attr [extra1,extra2]``, per importlib.metadata.EntryPoint's own
+    grammar). The loader must strip it before resolving -- otherwise it glues
+    onto the attribute path and getattr() fails, surfacing as a spurious
+    UserWarning for an otherwise well-formed plugin."""
+    from agent_runner import _load_event_kind_plugins
+
+    scanned = [("extras-plugin", "warnings:catch_warnings [extra1,extra2]")]
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _load_event_kind_plugins()
+        assert not caught, (
+            f"expected the extras marker to be stripped and the plugin to load clean; "
+            f"got {[str(w.message) for w in caught]}"
+        )
+
+
 def test_given_loader_called_then_uses_correct_entry_points_group() -> None:
     """The loader queries the ``agent_runner.event_kinds`` group, not arbitrary."""
     from agent_runner import _load_event_kind_plugins

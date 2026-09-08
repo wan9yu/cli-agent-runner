@@ -56,8 +56,16 @@ def _parsed_entry_points_by_group(ep_file: Path) -> dict[str, list[tuple[str, st
 
 def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str, str]]:
     """(name, value) pairs for ``group`` by parsing each ``*.dist-info/entry_points.txt``
-    found on ``sys_path``. A name seen in an earlier ``sys.path`` entry wins over a
-    later one — the same first-found precedence ``sys.path`` gives real imports.
+    (and the legacy ``*.egg-info`` layout, same file format) found on ``sys_path``.
+    A name seen in an earlier ``sys.path`` entry wins over a later one — the
+    same first-found precedence ``sys.path`` gives real imports.
+
+    Zip-safe eggs (a single ``.egg`` file on ``sys.path``, not a directory) are
+    NOT scanned here — ``base.is_dir()`` skips them, same as any other
+    non-directory ``sys.path`` entry. That's a real gap, but zipped eggs are
+    long-legacy and rare; ``AGENT_RUNNER_PLUGIN_DISCOVERY=metadata`` (or the
+    automatic fallback on parse failure) still finds them via
+    ``importlib.metadata``.
 
     A dropped duplicate emits a ``UserWarning`` naming the group, the duplicated
     name, and which value won — the same diagnostic value the old
@@ -71,7 +79,7 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
         base = Path(entry) if entry else Path.cwd()
         if not base.is_dir():
             continue
-        for dist_info in base.glob("*.dist-info"):
+        for dist_info in (*base.glob("*.dist-info"), *base.glob("*.egg-info")):
             ep_file = dist_info / "entry_points.txt"
             if not ep_file.is_file():
                 continue

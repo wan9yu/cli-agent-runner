@@ -125,6 +125,38 @@ def test_scanner_discovers_third_party_style_dist_info(tmp_path):
     assert ("third_party_detector", "thirdparty_plugin.mod:Detector") in out
 
 
+def test_scanner_discovers_legacy_egg_info(tmp_path):
+    """A legacy setuptools egg-info install (pre-dist-info layout, same
+    entry_points.txt format) must be found by the fast path too — not only
+    via the importlib.metadata fallback."""
+    egg_info = tmp_path / "thirdparty_plugin-0.1.0.egg-info"
+    egg_info.mkdir()
+    (egg_info / "entry_points.txt").write_text(
+        "[agent_runner.detectors]\nlegacy_detector = thirdparty_plugin.mod:Detector\n"
+    )
+
+    out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+    assert ("legacy_detector", "thirdparty_plugin.mod:Detector") in out
+
+
+def test_scanner_dist_info_wins_over_egg_info_same_sys_path_entry(tmp_path):
+    """When a single sys.path entry has BOTH a dist-info and an egg-info
+    declaring the same name (e.g. a stale egg-info left behind by an
+    upgrade), the dist-info entry wins — dist-info is scanned first."""
+    (tmp_path / "pkg-2.0.dist-info").mkdir()
+    (tmp_path / "pkg-2.0.dist-info" / "entry_points.txt").write_text(
+        "[agent_runner.detectors]\nsame_name = pkg.mod:New\n"
+    )
+    (tmp_path / "pkg-1.0.egg-info").mkdir()
+    (tmp_path / "pkg-1.0.egg-info" / "entry_points.txt").write_text(
+        "[agent_runner.detectors]\nsame_name = pkg.mod:Old\n"
+    )
+
+    with pytest.warns(UserWarning):
+        out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+    assert [pair for pair in out if pair[0] == "same_name"] == [("same_name", "pkg.mod:New")]
+
+
 def test_scanner_preserves_mixed_case_entry_point_names(tmp_path):
     """configparser's default optionxform lowercases option keys -- an
     entry-point NAME like 'MyPlugin' would silently come back as 'myplugin',

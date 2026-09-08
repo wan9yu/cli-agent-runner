@@ -44,7 +44,12 @@ def _load_plugins_from_group(group: str) -> None:
 
     for name, value in scan_entry_points(sys.path, group):
         try:
-            module_path, _, attr_path = value.partition(":")
+            # An entry-point value may carry a trailing extras marker
+            # (``module:attr [extra1,extra2]``); importlib.metadata.EntryPoint's
+            # own module/attr grammar excludes "[", so anything from the first
+            # "[" onward is always extras, never part of the path — strip it
+            # before resolving, or it glues onto attr_path and breaks getattr().
+            module_path, _, attr_path = value.partition("[")[0].rstrip().partition(":")
             mod = importlib.import_module(module_path)
             target = mod
             for attr in filter(None, attr_path.split(".")):

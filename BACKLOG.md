@@ -124,27 +124,6 @@ immediate, and how much grace) need an explicit decision, not a silent
 behavior change. A fix matching the `serve` pattern is targeted for 0.2.19;
 if the semantics aren't settled by ship, this stays open.
 
-## `_plugin_scan` misses egg-info/zip-installed dists and mishandles extras-suffixed entry points
-
-`_plugin_scan._parse_entry_points_files` only globs `*.dist-info`
-directories on each `sys.path` entry; legacy `*.egg-info` layouts (older
-setuptools installs, some system packages) and zip-safe eggs are never
-globbed, so a plugin installed that way is invisible to the fast path —
-silently, since an empty scan result isn't an exception and so never trips
-the `AGENT_RUNNER_PLUGIN_DISCOVERY=metadata` fallback in
-`scan_entry_points` on its own; an operator has to already know to set it.
-
-Separately, an entry-point value can carry an extras marker suffix
-(`module:attr [extra1,extra2]`, from a package's extras-gated entry point)
-which `importlib.metadata.EntryPoint.value` strips automatically but the
-raw `value.partition(":")` parsing in `__init__.py:_load_plugins_from_group`
-does not — leaving the suffix text glued onto the attribute path and
-breaking `getattr` resolution for exactly the plugins that declare
-themselves this way.
-
-Both are plugin-discovery hardening ahead of 0.3's plugin surface; each
-needs its own parity test. Slated for 0.2.19.
-
 ## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN
 
 The same cgroup `memory.events.oom_kill` delta is emitted under two
