@@ -425,9 +425,9 @@ hand-rolled loop gets wrong:
   *line*, not on a successful connect. ssh's own stderr never reaches stdout;
   stdout is JSONL and nothing else.
 - **No orphan process tree.** ssh runs in its own process group, and the whole
-  group is torn down (SIGTERM → grace → SIGKILL) on Ctrl-C, on give-up and
-  before every reconnect — including the `sleep` children a `pkill -f ssh`
-  leaves behind.
+  group is torn down (SIGTERM → grace → SIGKILL) on Ctrl-C or SIGTERM to the
+  relay itself, on give-up and before every reconnect — including the `sleep`
+  children a `pkill -f ssh` leaves behind.
 
 Flags:
 

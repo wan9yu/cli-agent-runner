@@ -38,6 +38,17 @@ def fast_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(remote_relay, "_RECONNECT_BACKOFF_S", (0.01,))
 
 
+@pytest.fixture
+def no_term_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize the SIGTERM handler ``relay_remote_events`` installs on
+    every call. Behavioral tests below call it in THIS process (no
+    subprocess), and ``signal.signal`` is a raw OS call monkeypatch cannot
+    auto-revert — leaving the real handler armed would permanently rewire
+    this pytest worker's SIGTERM disposition for the rest of the session.
+    Only the dedicated SIGTERM tests want the real handler installed."""
+    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: None)
+
+
 def _events(log_dir: Path) -> list[dict]:
     out: list[dict] = []
     for f in sorted(log_dir.glob("events-*.jsonl")):
@@ -75,7 +86,9 @@ def test_given_explicit_kinds_and_remote_config_when_argv_built_then_passed_thro
     assert argv[argv.index("--config") + 1] == "/srv/proj/agent-runner.toml"
 
 
-def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Path) -> None:
+def test_given_host_starting_with_dash_when_relay_then_value_error(
+    tmp_path: Path, no_term_handler: None
+) -> None:
     """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
     with pytest.raises(ValueError, match="starts with '-'"):
         remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
@@ -87,7 +100,7 @@ def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Pat
 
 
 def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, no_term_handler: None
 ) -> None:
     """Lines pass through byte-identically; every RE-connect carries --since <max ts>."""
     argv_log = tmp_path / "argv.log"
@@ -128,7 +141,7 @@ def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
 
 
 def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, no_term_handler: None
 ) -> None:
     """Garbage is relayed verbatim but never becomes the resume point."""
     argv_log = tmp_path / "argv.log"
@@ -157,7 +170,11 @@ def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchan
 
 
 def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, capsys
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_backoff: None,
+    no_term_handler: None,
+    capsys,
 ) -> None:
     stub = _write_stub(
         tmp_path / "fake-ssh", 'echo "ssh: connect: no route to host" >&2\nexit 255\n'
@@ -181,7 +198,7 @@ def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
 
 
 def test_given_zero_tolerance_when_ssh_exits_then_gives_up_without_reconnecting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_term_handler: None
 ) -> None:
     """tolerance 0 disables reconnection: one shot, no blip."""
     argv_log = tmp_path / "argv.log"
@@ -214,9 +231,32 @@ def _alive(pid: int) -> bool:
     return True
 
 
+def test_install_term_handler_raises_keyboardinterrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit-level check of the handler itself: SIGTERM must convert to
+    KeyboardInterrupt so it drains through the SAME path SIGINT already gets
+    from Python's own default handler -- not Python's default SIGTERM
+    disposition (immediate termination). Same technique as
+    ``round_cmd._install_term_handler``; see the subprocess test below for
+    proof the whole relay actually drains when really sent SIGTERM."""
+    captured = {}
+    monkeypatch.setattr(signal, "signal", lambda s, h: captured.__setitem__(s, h))
+    remote_relay._install_term_handler()
+    with pytest.raises(KeyboardInterrupt):
+        captured[signal.SIGTERM](signal.SIGTERM, None)
+
+
 @pytest.mark.timeout(90)  # see the wait(timeout=45) comment below for the arithmetic
-def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: Path) -> None:
-    """The orphan-tree scar: SIGINT must take out ssh AND its children."""
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
+def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
+    tmp_path: Path, sig: signal.Signals
+) -> None:
+    """The orphan-tree scar: both stop signals must take out ssh AND its
+    children via the relay's normal drain (tear down the ssh group, then exit
+    0), not Python's own default disposition for that signal. SIGINT got this
+    for free from Python's built-in KeyboardInterrupt default; SIGTERM needed
+    this task's explicit handler -- without it, SIGTERM kills the driver
+    immediately (rc -15, not 0) and orphans the stub plus its backgrounded
+    sleep, which is exactly what this parametrization would catch."""
     stub = _write_stub(
         tmp_path / "fake-ssh",
         "sleep 300 &\n"
@@ -229,9 +269,9 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         # A background job (`cmd &` from a non-interactive shell) inherits
         # SIGINT=SIG_IGN, which CPython propagates across exec and leaves in
         # place at startup (no default KeyboardInterrupt handler installed).
-        # Force the default disposition here so the SIGINT this test sends
-        # below is deliverable regardless of how the test harness itself was
-        # launched.
+        # Force the default disposition here so a SIGINT this test sends is
+        # deliverable regardless of how the test harness itself was launched
+        # (irrelevant to the SIGTERM parametrization, harmless either way).
         "import signal\n"
         "signal.signal(signal.SIGINT, signal.default_int_handler)\n"
         "import sys\n"
@@ -258,7 +298,7 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         stub_pid, sleep_pid = payload["stub_pid"], payload["sleep_pid"]
         assert _alive(sleep_pid), "stub's child should be running before the interrupt"
 
-        os.kill(proc.pid, signal.SIGINT)
+        os.kill(proc.pid, sig)
         # The driver's own teardown (relay_remote_events's finally -> _kill_pgroup)
         # has an intrinsic real-wall-clock floor of REAP_GRACE_S(5) + the
         # post-SIGKILL proc.wait(10) = 15s BEFORE any scheduling delay at all --
@@ -270,7 +310,7 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         # `@pytest.mark.timeout(90)` above keeps this test's own generous
         # budget independent of the suite's shared 60s ceiling (15s probe-read
         # + 45s here + 10s liveness-poll below = 70s, safely under 90).
-        assert proc.wait(timeout=45) == 0, "SIGINT is a clean relay shutdown"
+        assert proc.wait(timeout=45) == 0, f"{sig.name} must be a clean, draining relay shutdown"
 
         deadline = time.time() + 10
         while time.time() < deadline and (_alive(stub_pid) or _alive(sleep_pid)):

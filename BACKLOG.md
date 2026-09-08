@@ -104,27 +104,7 @@ change which failures warn vs which propagate, nor the specific fallback
 each site takes on failure (sleep-and-retry after a poll failure,
 `verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
-## relay CLI has no SIGTERM handler — NEEDS_DESIGN
-
-The relay's process-group teardown convention (SIGTERM → grace → SIGKILL)
-governs how the relay tears down *its own* child group on interrupt,
-give-up, and each retry — but the relay CLI process itself installs no
-SIGTERM handler, so sending it SIGTERM (the normal way a process manager or
-`systemctl stop` asks a process to shut down) hits Python's default
-disposition: immediate termination, skipping the same clean-teardown path
-the relay already uses internally and that `serve`'s own SIGTERM handling
-follows.
-
-Making the relay catch SIGTERM and shut down through its normal drain path
-is user-visible: it changes what happens to the relay's child group and
-exit behavior when something external sends it SIGTERM, for anyone
-currently relying on — knowingly or not — the immediate-kill default.
-Tagged NEEDS_DESIGN because the target shutdown semantics (drain vs.
-immediate, and how much grace) need an explicit decision, not a silent
-behavior change. A fix matching the `serve` pattern is targeted for 0.2.19;
-if the semantics aren't settled by ship, this stays open.
-
-## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN
+## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN, DEFERRED to 0.3
 
 The same cgroup `memory.events.oom_kill` delta is emitted under two
 different field names depending on which event carries it: `round_cgroup_memory`
@@ -138,6 +118,8 @@ names.
 Renaming either side is a change to a published event field name — part of
 the peek/event JSON contract — so which name becomes canonical (and whether
 it lands as a rename or an additive alias) needs a decision, not a silent
-swap. Tagged NEEDS_DESIGN. A reconciliation (updating the emit call, the
-runbook, and any golden fixture) is targeted for 0.2.19; if the naming
-decision isn't made by ship, this stays open.
+swap. Tagged NEEDS_DESIGN. Deferred to 0.3's event-model canonicalization
+(see [[project-03-direction]]) rather than reconciled standalone in 0.2.19 —
+0.3 is already renaming/unifying event fields wholesale, and settling this
+name now risks a double-rename (once here, again when 0.3's canonical model
+lands). No field name changes in code until that decision is made.

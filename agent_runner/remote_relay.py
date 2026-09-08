@@ -21,7 +21,9 @@ things a hand-rolled ``while true; ssh …; sleep 30; done`` loop gets wrong:
    connection that comes up and immediately dies is not recovery.
 3. **Process hygiene.** ssh is spawned in its own session, and the whole process
    GROUP is torn down (SIGTERM → grace → SIGKILL) on interrupt, give-up and each
-   reconnect — so no orphaned ssh/sleep tree survives a dropped link.
+   reconnect — so no orphaned ssh/sleep tree survives a dropped link. The relay
+   itself drains the same way on SIGTERM or SIGINT — like ``serve``, a stop
+   signal tears its child group down and exits clean rather than dying immediately.
 
 Detection is NOT relayed: the detectors run on the supervised host by design
 (``auto_stop_on`` acts there with zero client involvement). This module moves
@@ -33,6 +35,7 @@ client's ``log_dir``.
 from __future__ import annotations
 
 import json
+import signal
 import subprocess  # noqa: TID251 — the relay is the ssh spawner
 import sys
 import threading
@@ -158,6 +161,22 @@ def _line_ts(line: str) -> tuple[str, datetime] | None:
         return None
 
 
+def _install_term_handler() -> None:
+    """Convert SIGTERM into KeyboardInterrupt so it drains through this
+    module's OWN existing shutdown path — the ``except KeyboardInterrupt:
+    return 0`` / ``finally: _kill_pgroup(proc)`` below — instead of Python's
+    default disposition (immediate termination, which never runs that
+    ``finally`` and orphans ssh). SIGINT already raises KeyboardInterrupt by
+    default; SIGTERM (how a process manager or `systemctl stop` normally asks
+    a process to shut down) does not, so it is installed explicitly here —
+    same technique ``round_cmd`` uses for the same reason."""
+
+    def _raise_term(_sig, _frame):
+        raise KeyboardInterrupt("relay received SIGTERM")
+
+    signal.signal(signal.SIGTERM, _raise_term)
+
+
 def relay_remote_events(
     host: str,
     *,
@@ -169,7 +188,9 @@ def relay_remote_events(
 ) -> int:
     """Relay a remote event stream to ``out``; returns a CLI exit code.
 
-    Returns 0 on interrupt (SIGINT) and 1 when the link stays down longer than
+    Returns 0 on interrupt (SIGINT or SIGTERM — both drain: tear down the ssh
+    process group, then exit clean, matching how ``serve`` treats its own
+    stop signals) and 1 when the link stays down longer than
     ``failure_tolerance_s``, printing why to stderr. ``failure_tolerance_s = 0``
     disables reconnection entirely: the first ssh exit gives up immediately
     (no blip).
@@ -177,6 +198,7 @@ def relay_remote_events(
     ``log_dir`` is the CLIENT's log dir — blip/give-up events describe this
     machine's link to ``host``, not the supervised project's health.
     """
+    _install_term_handler()
     # ssh reads a leading '-' as an option (-oProxyCommand=… runs a local
     # command), so an attacker-supplied "host" must never reach the argv.
     if host.startswith("-"):
