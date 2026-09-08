@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_runner._serve_policy import timeout_budget
+from agent_runner._serve_policy import (
+    CRASH_LOOP_EXIT,
+    MEM_LOOP_PERSISTENT_EXIT,
+    PERMANENT_CONFIG_EXIT,
+    timeout_budget,
+)
 from agent_runner.config import Config, _reject_control_chars
 
 
@@ -101,15 +106,13 @@ def render_serve_unit(
         # still recovers. Clean stops (max_rounds/stop_file/sentinel/SIGTERM → 0)
         # never restart.
         f"Restart=on-failure\n"
-        # 78 = api.PERMANENT_CONFIG_EXIT, 75 = api.CRASH_LOOP_EXIT, 70 =
-        # api.MEM_LOOP_PERSISTENT_EXIT (literal here to avoid an
-        # api→service_unit→api import cycle; pinned by test_service_unit).
-        # NOTE: mem_loop (71) is deliberately absent here — it must restart
-        # (break-then-restart, not a deliberate stop; see api.MEM_LOOP_EXIT).
+        # NOTE: mem_loop (71 = _serve_policy.MEM_LOOP_EXIT) is deliberately absent
+        # here — it must restart (break-then-restart, not a deliberate stop).
         # mem_loop_persistent (70) IS listed: once mem_loop itself keeps
         # recurring across restarts within the escalation window, that's a
         # deliberate stop too (0.2.16 Task 5 cross-restart convergence).
-        f"RestartPreventExitStatus=78 75 70\n"
+        f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT} "
+        f"{MEM_LOOP_PERSISTENT_EXIT}\n"
         f"RestartSec=3\n"
         f"KillMode=mixed\n"
         f"KillSignal=SIGTERM\n"

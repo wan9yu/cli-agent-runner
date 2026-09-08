@@ -26,7 +26,7 @@ CRASH_LOOP_EXIT = 75
 
 # Exit code for an ENVIRONMENTAL startup-battery failure (ENOSPC, mount hiccup,
 # an unclassified check): recoverable, unlike a permanent config break. NOT in
-# the unit's RestartPreventExitStatus (stays "78 75") so 76 restarts; treated
+# the unit's RestartPreventExitStatus (stays "78 75 70") so 76 restarts; treated
 # exactly like an active throttle (post_round_decision), so serve keeps
 # retrying at a fixed doubled delay with the crash-loop breaker disarmed,
 # staying alive until the environment heals. StartLimit bounds only repeated
@@ -265,17 +265,19 @@ def classify_round_exit(exc: BaseException) -> int:
 #
 # service_unit.py must not import api.py (cycle: api.py already imports
 # service_unit.render_serve_unit), so this lives here — a dependency-free leaf
-# both service_unit.py and api.py can import. Its margin constants are
-# LITERAL mirrors of the real sources of truth (agent_runtime.REAP_GRACE_S,
-# vcs_state.GIT_COMMIT_TIMEOUT_S, api._ROUND_TERM_GRACE_S) rather than
-# imports, same as service_unit.py's literal "78 75" RestartPreventExitStatus
-# mirroring PERMANENT_CONFIG_EXIT/CRASH_LOOP_EXIT — pinned by
-# test_timeout_budget_invariant.py so a change to any of the three can't
-# silently drift this budget out of sync.
+# both service_unit.py and api.py can import. Two margin constants are LITERAL
+# mirrors of the real sources of truth (agent_runtime.REAP_GRACE_S,
+# vcs_state.GIT_COMMIT_TIMEOUT_S) rather than imports, pinned by
+# test_timeout_budget_invariant.py so a change to either can't silently drift
+# this budget out of sync. _ROUND_TERM_GRACE_S is instead THE single source —
+# api.py and cli._serve_round.py both import it from here (no longer a
+# mirror), same as service_unit.py's rendered RestartPreventExitStatus line,
+# which derives from PERMANENT_CONFIG_EXIT/CRASH_LOOP_EXIT/
+# MEM_LOOP_PERSISTENT_EXIT above rather than a literal.
 _REAP_GRACE_S = 5
 _GIT_COMMIT_TIMEOUT_S = 120
 _HOOK_ALLOWANCE_S = 60  # slack for post-round hooks between the inner wall and the ceiling
-_ROUND_TERM_GRACE_S = 15  # mirrors api._ROUND_TERM_GRACE_S / cli._serve_round._ROUND_TERM_GRACE_S
+_ROUND_TERM_GRACE_S = 15  # single source; api.py / cli._serve_round.py import this
 _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-request overhead
 
 

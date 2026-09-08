@@ -212,7 +212,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
         ServiceStatus,
         SystemMetrics,
     )
-    from agent_runner.cli.common import emit
+    from agent_runner.cli.common import PEEK_SCHEMA_VERSION, emit
 
     state = ProjectState(
         project="t",
@@ -226,7 +226,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     )
     emit(state, json_mode=True)
     out = json.loads(capsys.readouterr().out)
-    assert out["schema_version"] == "1.10"
+    assert out["schema_version"] == PEEK_SCHEMA_VERSION
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
     assert "owned_paths" in out["plugins"]

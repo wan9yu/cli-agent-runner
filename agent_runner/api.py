@@ -318,12 +318,12 @@ def start(project: str | Path) -> ServiceStatus:
 # grace are the same bound, just followed by different escalation.
 _PID_SIGNAL_GRACE_S = 5
 
-# Grace after TERMing the round-lock holder before escalating to SIGKILL: mirrors
-# cli._serve_round._ROUND_TERM_GRACE_S (the round's own SIGTERM handler needs
-# agent_runtime.REAP_GRACE_S + margin to reap its agent pgroup and exit).
-# Cross-checked against that module's value by
-# test_round_kill_grace_matches_serve so the two never drift.
-_ROUND_TERM_GRACE_S = 15
+# Grace after TERMing the round-lock holder before escalating to SIGKILL: the
+# round's own SIGTERM handler needs agent_runtime.REAP_GRACE_S + margin to reap
+# its agent pgroup and exit. Single-sourced in _serve_policy (cli._serve_round
+# imports it too) so the two paths can no longer drift apart; cross-checked
+# anyway by test_round_kill_grace_matches_serve_cmd_grace.
+from agent_runner._serve_policy import _ROUND_TERM_GRACE_S  # noqa: E402 — single source
 
 
 def _await_pid_exit(pid: int, timeout_s: float) -> bool:

@@ -24,6 +24,7 @@ from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
     _MEM_LOOP_PERSIST_WINDOW_S,
     _NO_PROGRESS_SHORT_S,
+    _ROUND_TERM_GRACE_S,
     CRASH_LOOP_EXIT,
     MEM_LOOP_EXIT,
     MEM_LOOP_PERSISTENT_EXIT,
@@ -184,8 +185,8 @@ def _maybe_emit_recovered(log_dir, active=None) -> None:
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler
 # reaps its agent pgroup (agent_runtime.REAP_GRACE_S) then exits, so allow that plus
 # margin. test_spawn_round_wedged asserts it stays >= REAP_GRACE_S so the two never
-# drift.
-_ROUND_TERM_GRACE_S = 15
+# drift. Single-sourced in _serve_policy (imported above) -- api.py imports the same
+# constant, so this and the out-of-process kill path can no longer drift apart.
 
 # A round-child that even killpg can't reap in time (D-state leader): a defined,
 # classifiable returncode instead of a TimeoutExpired escaping cmd() as exit 1.
@@ -196,10 +197,12 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
     flock/sidecar released), grace, then killpg as last resort. Returns the returncode.
 
-    Reads the grace period off this module's own ``_ROUND_TERM_GRACE_S`` global (no
-    more reach-back through ``serve_cmd`` -- that module never used this constant
-    itself, only re-exported it), so ``monkeypatch.setattr(_serve_round,
-    "_ROUND_TERM_GRACE_S", ...)`` (test_spawn_round_wedged.py) lands directly.
+    Reads the grace period off this module's own ``_ROUND_TERM_GRACE_S`` global --
+    imported from ``_serve_policy`` (the single source; ``api.py`` imports the same
+    constant) but bound in this module's namespace by that import, so
+    ``monkeypatch.setattr(_serve_round, "_ROUND_TERM_GRACE_S", ...)``
+    (test_spawn_round_wedged.py) still lands directly, with no reach-back through
+    ``serve_cmd``.
 
     Fail-open: a D-state (uninterruptible-sleep) leader can outlive even a killpg
     SIGKILL, so the post-killpg wait is also guarded -- this must never raise

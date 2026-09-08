@@ -103,6 +103,7 @@ ALLOWED_SERVE_ROUND_FROM = [
             "_MEM_LOOP_PERSIST_THRESHOLD",
             "_MEM_LOOP_PERSIST_WINDOW_S",
             "_NO_PROGRESS_SHORT_S",
+            "_ROUND_TERM_GRACE_S",
             "_mem_loop_decision",
             "_no_progress_decision",
             "post_round_decision",
