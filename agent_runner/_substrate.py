@@ -7,7 +7,6 @@ file-tree content hash; raw data for downstream confabulation detectors.
 
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
 
@@ -49,6 +48,8 @@ def compute_paths_hash(work_dir: Path, patterns: list[str]) -> str | None:
     """
     if not patterns:
         return None
+    import hashlib
+
     matched: list[Path] = []
     for pattern in patterns:
         matched.extend(work_dir.glob(pattern))

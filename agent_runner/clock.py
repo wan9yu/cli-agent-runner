@@ -24,7 +24,6 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 
 class Clock(Protocol):
@@ -71,6 +70,8 @@ class RealClock:
     def now_in_zone(self, tz_name: str | None) -> datetime:
         if tz_name is None:
             return datetime.now().astimezone()
+        from zoneinfo import ZoneInfo
+
         return datetime.now(ZoneInfo(tz_name))
 
 

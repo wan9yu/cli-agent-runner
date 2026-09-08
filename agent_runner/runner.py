@@ -6,7 +6,6 @@ branches based on prior round state (§7 IMMUTABLE).
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -314,7 +313,13 @@ def _run_pre_round_hooks(
     if disabled:
         return
 
+    round_hooks = hooks.pre_round_hooks()
+    if not round_hooks:
+        return  # nothing to run — skip the prompt hash entirely (lazy hashlib)
+
     def _file_sha256(p: Path) -> str:
+        import hashlib
+
         try:
             return hashlib.sha256(p.read_bytes()).hexdigest()
         except FileNotFoundError:
@@ -322,7 +327,7 @@ def _run_pre_round_hooks(
 
     prev_hash = _file_sha256(prompt_file) if prompt_file is not None else ""
 
-    for hook in hooks.pre_round_hooks():
+    for hook in round_hooks:
         try:
             hook.before_round(hook_ctx)
         except Exception as exc:

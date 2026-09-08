@@ -8,7 +8,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from agent_runner.clock import SYSTEM_CLOCK
 
@@ -172,6 +171,8 @@ def now_in_zone(tz_name: str | None) -> datetime:
 
 
 def valid_timezone(tz_name: str) -> bool:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
     try:
         ZoneInfo(tz_name)
     except (ZoneInfoNotFoundError, ValueError):
