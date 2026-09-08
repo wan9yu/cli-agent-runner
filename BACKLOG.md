@@ -104,23 +104,6 @@ change which failures warn vs which propagate, nor the specific fallback
 each site takes on failure (sleep-and-retry after a poll failure,
 `verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
-## `StateSource(Protocol)` has exactly one implementation
-
-`_monitor_state.py` declares `StateSource` as a `Protocol` with one concrete
-implementation, `LocalSource`, and one construction site; `remote_relay.py`
-solved remote monitoring a different way and never implements the Protocol.
-An unimplemented seam like this is a real question for 0.3 (does
-per-agent/per-host monitoring in the plugin era need a second
-implementation?) but as written today it buys nothing over the concrete
-type.
-
-Default is to collapse it to `LocalSource` directly — vulture's dead-symbol
-gate requires the deletion and its last reference removed in the same
-commit — unless a check against the 0.3 direction shows the seam is
-genuinely load-bearing there, in which case keep it with a one-line
-"declared 0.3 seam" note instead of a bare unused abstraction. Slated for
-0.2.19.
-
 ## `_live_children` can leak a secret through `argv[0]` despite the basename-only intent
 
 `agent_runtime._live_children` (agent_runtime.py:131) stores only

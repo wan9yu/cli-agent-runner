@@ -625,7 +625,7 @@ def _poll_once(
     # Always local: detection runs on the supervised host by design. Remote
     # observation is an event RELAY (``monitor --host X --mode events``), not a
     # remote poll — see agent_runner/remote_relay.py.
-    src: monitor.StateSource = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
+    src: monitor.LocalSource = monitor.LocalSource(log_dir=cfg.runtime.log_dir)
     if event_tail is not None:
         events = event_tail.read(src.events_files())
     else:

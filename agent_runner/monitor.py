@@ -356,7 +356,7 @@ def _stop_then_record(
 # for runner.py (NETWORK_PATTERNS), _docgen.py (KNOWN_ALERT_KINDS), cli.common
 # (plugin_detectors), __init__.py (_PLUGIN_DETECTORS — same list object, so
 # in-place mutation through either name stays visible to both), api.py
-# (LocalSource/StateSource/assemble_project_state/load_round_log_tails/
+# (LocalSource/assemble_project_state/load_round_log_tails/
 # alert_identity/_EventTail/_tail_events_jsonl), and every existing test patch
 # target.
 # ---------------------------------------------------------------------------
@@ -380,7 +380,6 @@ from agent_runner._monitor_registry import (  # noqa: E402,F401 — intentional 
 )
 from agent_runner._monitor_state import (  # noqa: E402,F401 — intentional bottom re-export
     LocalSource,
-    StateSource,
     _EventTail,
     _latest_metric_dict,
     _tail_events_jsonl,

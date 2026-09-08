@@ -1,9 +1,9 @@
 """State-tree assembly: reading the local filesystem into a ``ProjectState``.
 
-``LocalSource`` is the only ``StateSource`` implementation — detection always
-runs on the supervised host, so every path is local. Detector *logic* lives in
-``_monitor_detectors``; the plugin registry in ``_monitor_registry``; the
-cycle-edge wiring (``run_all_detectors``/``on_alert``) in ``monitor.py``.
+Detection always runs on the supervised host, so every path a poll reads is
+local (see ``LocalSource``). Detector *logic* lives in ``_monitor_detectors``;
+the plugin registry in ``_monitor_registry``; the cycle-edge wiring
+(``run_all_detectors``/``on_alert``) in ``monitor.py``.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from collections import deque
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from agent_runner.api_types import ProjectState, ServiceMode, ServiceStatus, SystemMetrics
 from agent_runner.builtin_plugins._constants import _TAIL_LINES
@@ -21,19 +21,11 @@ from agent_runner.context_store import read_json
 from agent_runner.events import iter_event_dicts, read_new
 
 
-class StateSource(Protocol):
-    """The paths a poll reads. ``LocalSource`` is the only implementation:
-    detection runs on the supervised host, so every path is local."""
-
-    def events_files(self) -> list[Path]: ...
-    def metrics_files(self) -> list[Path]: ...
-    def rounds_dir(self) -> Path: ...
-    def status_path(self) -> Path: ...
-    def orphan_path(self) -> Path: ...
-
-
 @dataclass(frozen=True)
 class LocalSource:
+    """The paths a poll reads. Detection runs on the supervised host, so
+    every path is local."""
+
     log_dir: Path
 
     def events_files(self) -> list[Path]:
@@ -162,7 +154,7 @@ def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics[-1] if metrics else {}
 
 
-def assemble_project_state(source: StateSource, *, project: str) -> ProjectState:
+def assemble_project_state(source: LocalSource, *, project: str) -> ProjectState:
     metrics = parse_events_from_jsonl_files(source.metrics_files())
     status = read_json(source.status_path()) or {}
     orphan = read_json(source.orphan_path())
