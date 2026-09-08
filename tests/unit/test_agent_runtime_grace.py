@@ -105,7 +105,7 @@ def test_no_grace_kill_when_result_not_emitted(tmp_path, monkeypatch):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=5,
+        timeout_s=15,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,

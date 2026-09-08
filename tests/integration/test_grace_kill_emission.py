@@ -48,8 +48,10 @@ def _make_grace_config(work_dir: Path, script_path: Path, grace_s: int) -> Confi
             # occasionally starved for several seconds of real CPU time before
             # ever getting scheduled to run its scan/grace check, so a trimmed
             # round_timeout_s=4 raced (and lost to) the round's own wall clock
-            # before the grace path ever fired -- 10s is the reliable floor.
-            round_timeout_s=10,
+            # before the grace path ever fired -- 30s gives headroom for a
+            # host-wide spawn stall on top of that floor (measured up to ~12s
+            # under 2x-oversubscribed concurrent gates).
+            round_timeout_s=30,
             max_grace_after_result_s=grace_s,
         ),
         prompt=PromptConfig(file=prompt, inject_context=False),
@@ -64,7 +66,7 @@ def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
 
     script = tmp_path / "agent.sh"
     script.write_text(
-        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nexec sleep 10\n',
+        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nexec sleep 60\n',
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -98,7 +100,7 @@ def _make_grace_config_with_patterns(
         runtime=RuntimeConfig(
             work_dir=work_dir,
             log_dir=log_dir,
-            round_timeout_s=10,  # see _make_grace_config: reliable floor under real contention
+            round_timeout_s=30,  # see _make_grace_config: reliable floor under real contention
             max_grace_after_result_s=grace_s,
             grace_kill_ignore_patterns=patterns,
         ),
@@ -114,8 +116,11 @@ def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
     _init_git(tmp_path)
 
     script = tmp_path / "agent.sh"
+    # Backgrounded worker outlives round_timeout_s=30 by a wide margin (90 >>
+    # 30) so the round's own wall clock -- not the worker's natural exit --
+    # is what reaps it, even under scheduling delay.
     script.write_text(
-        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nsleep 30 &\nwait\n',
+        '#!/bin/bash\necho \'{"type":"result","is_error":false}\'\nsleep 90 &\nwait\n',
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -148,11 +153,13 @@ def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
     script = tmp_path / "agent.sh"
     # Emit result, then background both a snapshot-like helper and a 'real' sleep.
     # exec -a renames the subprocess's argv[0] so the pattern can match it.
+    # Both outlive round_timeout_s=30 by a wide margin (90 >> 30) so the
+    # round's own wall clock is what reaps it, even under scheduling delay.
     script.write_text(
         "#!/bin/bash\n"
         'echo \'{"type":"result","is_error":false}\'\n'
-        "exec -a snapshot-bash-test sleep 30 &\n"
-        "sleep 30 &\n"
+        "exec -a snapshot-bash-test sleep 90 &\n"
+        "sleep 90 &\n"
         "wait\n",
         encoding="utf-8",
     )

@@ -48,7 +48,7 @@ def _make_config(
     script_copy.chmod(0o755)
     return Config(
         agent=AgentConfig(command=[str(script_copy)], prompt_arg_template=[]),
-        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=10),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=30),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
         phases=phases_cfg if phases_cfg is not None else PhasesConfig(list=phases),

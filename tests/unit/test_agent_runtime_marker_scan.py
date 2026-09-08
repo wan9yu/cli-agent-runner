@@ -66,14 +66,14 @@ def test_delta_scan_does_not_reread_prefix(tmp_path, monkeypatch):
     # >4KB of pre-marker output (2000 lines * ~9 bytes ≈ 18KB) so a whole-file
     # re-read is a real, sizeable cost -- not a rounding artifact (red phase
     # is genuine: today's f.read() reads all ~18KB on every 0.2s tick).
-    script = _script(tmp_path, "for i in $(seq 1 2000); do echo line$i; done\nexec sleep 5\n")
+    script = _script(tmp_path, "for i in $(seq 1 2000); do echo line$i; done\nexec sleep 30\n")
     log_path = tmp_path / "round.log"
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=8,
+        timeout_s=20,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,

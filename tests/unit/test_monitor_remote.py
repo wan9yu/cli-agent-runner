@@ -226,6 +226,14 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
     )
     driver = tmp_path / "driver.py"
     driver.write_text(
+        # A background job (`cmd &` from a non-interactive shell) inherits
+        # SIGINT=SIG_IGN, which CPython propagates across exec and leaves in
+        # place at startup (no default KeyboardInterrupt handler installed).
+        # Force the default disposition here so the SIGINT this test sends
+        # below is deliverable regardless of how the test harness itself was
+        # launched.
+        "import signal\n"
+        "signal.signal(signal.SIGINT, signal.default_int_handler)\n"
         "import sys\n"
         "from pathlib import Path\n"
         "from agent_runner import remote_relay\n"

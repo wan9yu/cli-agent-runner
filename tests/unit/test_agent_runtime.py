@@ -27,13 +27,13 @@ def test_given_subprocess_within_timeout_when_run_then_returns_exit_code_zero(
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=10,
+        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
     assert isinstance(result, RunResult)
     assert result.exit_code == 0
-    # 2x headroom over the configured timeout_s=10 -- the original bound was
+    # Headroom over the configured timeout_s=15 -- the original bound was
     # exactly equal to it, leaving zero slack for scheduling jitter under a
     # busy parallel run (an "echo hello" that legitimately took right up to
     # timeout_s under contention would fail this assert even though it never
@@ -51,7 +51,7 @@ def test_given_subprocess_returning_nonzero_when_run_then_exit_code_propagated(
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=10,
+        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=tmp_path / "out.log",
         env_extra={},
     )
@@ -154,17 +154,19 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         tmp_path,
         f"sleep 30 & echo $! > {pid_file} ; wait",
     )
-    # timeout_s=10 (not 2): under `-n auto` contention on a busy host, a
-    # too-tight timeout_s can fire before bash even gets scheduled to fork
-    # the grandchild and write its pidfile, killing the pgroup before the
-    # thing under test ever ran -- the assertion below then fails for a
-    # reason unrelated to the descendants-terminate property it checks.
+    # timeout_s=15 (not 2, and not the 10 this was for a while): under
+    # `-n auto` contention on a busy host, a too-tight timeout_s can fire
+    # before bash even gets scheduled to fork the grandchild and write its
+    # pidfile, killing the pgroup before the thing under test ever ran -- the
+    # assertion below then fails for a reason unrelated to the
+    # descendants-terminate property it checks (observed: a 10s bound missed
+    # this exact class of contention stall and flaked).
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=10,
+        timeout_s=15,
         log_path=tmp_path / "out.log",
         env_extra={},
     )
@@ -222,7 +224,7 @@ def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path)
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=10,
+        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
@@ -240,7 +242,7 @@ def test_given_stderr_output_when_run_then_merged_into_round_log(tmp_path: Path)
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=10,
+        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
