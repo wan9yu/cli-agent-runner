@@ -29,6 +29,7 @@ from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_WINDOW_S,
     _NO_PROGRESS_SHORT_S,
     _ROUND_TERM_GRACE_S,
+    _ROUND_UNREAPED_RC,
     CRASH_LOOP_EXIT,
     MEM_LOOP_EXIT,
     MEM_LOOP_PERSISTENT_EXIT,
@@ -183,10 +184,9 @@ def _maybe_emit_recovered(log_dir, active=None) -> None:
 # margin. test_spawn_round_wedged asserts it stays >= REAP_GRACE_S so the two never
 # drift. Single-sourced in _serve_policy (imported above) -- api.py imports the same
 # constant, so this and the out-of-process kill path can no longer drift apart.
-
-# A round-child that even killpg can't reap in time (D-state leader): a defined,
-# classifiable returncode instead of a TimeoutExpired escaping cmd() as exit 1.
-_ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
+#
+# _ROUND_UNREAPED_RC (the D-state-leader sentinel returned below) is likewise
+# single-sourced in _serve_policy (imported above), not defined here.
 
 
 def _terminate_round(proc: subprocess.Popen) -> int:
