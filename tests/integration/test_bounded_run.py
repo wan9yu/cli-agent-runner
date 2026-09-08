@@ -4,9 +4,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests._test_helpers import make_toml_with_sections, read_events_for_current_month
 
+# Every test below spawns a REAL `agent-runner serve` subprocess (its own
+# python interpreter startup, one `agent-runner round` sub-invocation per
+# round, plus restart_delay_s sleeps) and bounds the WHOLE run with a fixed
+# subprocess.run(timeout=...). Confirmed by reproduction: under `-n auto`
+# combined with heavy host contention, that fixed bound can be exceeded even
+# though nothing is actually wedged -- just genuinely slow interpreter
+# startup/scheduling under contention. Each test below widens its bound with
+# real headroom and pins its OWN `@pytest.mark.timeout` so that headroom
+# doesn't eat into the suite's shared 60s per-test ceiling.
 
+
+@pytest.mark.timeout(90)
 def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: Path):
     cfg_path = make_toml_with_sections(
         tmp_path,
@@ -28,7 +41,7 @@ def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: 
         ],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=60,  # widened from 20 -- see the file-header comment above
     )
     assert proc.returncode == 0
     events = read_events_for_current_month(log_dir)
@@ -38,6 +51,7 @@ def test_given_max_rounds_3_when_serve_runs_then_exits_after_3_rounds(tmp_path: 
     assert max_rounds_events[0]["max_rounds"] == 3
 
 
+@pytest.mark.timeout(70)
 def test_given_stop_file_touched_when_serve_runs_then_exits_with_event(tmp_path: Path):
     stop_file = tmp_path / "logs" / "stop-now"
     cfg_path = make_toml_with_sections(
@@ -58,7 +72,7 @@ def test_given_stop_file_touched_when_serve_runs_then_exits_with_event(tmp_path:
         ],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=40,  # widened from 10 -- see the file-header comment above
     )
     assert proc.returncode == 0
     events = read_events_for_current_month(log_dir)
@@ -68,6 +82,7 @@ def test_given_stop_file_touched_when_serve_runs_then_exits_with_event(tmp_path:
     assert stop_events[0]["stop_file"] == str(stop_file)
 
 
+@pytest.mark.timeout(90)
 def test_given_cli_max_rounds_overrides_config_value(tmp_path: Path):
     """CLI --max-rounds 2 overrides [runtime] max_rounds = 5."""
     cfg_path = make_toml_with_sections(
@@ -90,7 +105,7 @@ def test_given_cli_max_rounds_overrides_config_value(tmp_path: Path):
         ],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=60,  # widened from 20 -- see the file-header comment above
     )
     assert proc.returncode == 0
     events = read_events_for_current_month(log_dir)

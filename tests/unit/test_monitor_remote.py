@@ -214,6 +214,7 @@ def _alive(pid: int) -> bool:
     return True
 
 
+@pytest.mark.timeout(90)  # see the wait(timeout=45) comment below for the arithmetic
 def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: Path) -> None:
     """The orphan-tree scar: SIGINT must take out ssh AND its children."""
     stub = _write_stub(
@@ -238,6 +239,7 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         text=True,
         start_new_session=True,
     )
+    stub_pid: int | None = None
     try:
         assert proc.stdout is not None
         deadline = time.time() + 15
@@ -249,7 +251,18 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         assert _alive(sleep_pid), "stub's child should be running before the interrupt"
 
         os.kill(proc.pid, signal.SIGINT)
-        assert proc.wait(timeout=15) == 0, "SIGINT is a clean relay shutdown"
+        # The driver's own teardown (relay_remote_events's finally -> _kill_pgroup)
+        # has an intrinsic real-wall-clock floor of REAP_GRACE_S(5) + the
+        # post-SIGKILL proc.wait(10) = 15s BEFORE any scheduling delay at all --
+        # confirmed by reproduction: under `-n auto` combined with heavy host
+        # contention (co-tenant parallel suites), this consistently raised
+        # subprocess.TimeoutExpired at exactly the old 15s bound (zero headroom
+        # over that floor). 45s (3x the floor) gives real margin for the
+        # interpreter to even get scheduled to run the teardown; the per-test
+        # `@pytest.mark.timeout(90)` above keeps this test's own generous
+        # budget independent of the suite's shared 60s ceiling (15s probe-read
+        # + 45s here + 10s liveness-poll below = 70s, safely under 90).
+        assert proc.wait(timeout=45) == 0, "SIGINT is a clean relay shutdown"
 
         deadline = time.time() + 10
         while time.time() < deadline and (_alive(stub_pid) or _alive(sleep_pid)):
@@ -260,6 +273,19 @@ def test_given_sigint_when_relaying_then_ssh_process_group_is_killed(tmp_path: P
         if proc.poll() is None:  # pragma: no cover — only on assertion failure
             proc.kill()
             proc.wait(timeout=5)
+        # Belt-and-suspenders: if the driver died/timed out before its OWN
+        # relay_remote_events -> _kill_pgroup teardown ran (e.g. an
+        # assertion above fired first), the ssh stub + its backgrounded
+        # `sleep 300` are orphaned (reparented to init) and would otherwise
+        # sit around consuming a pid/process slot for up to 5 real minutes,
+        # adding to any concurrent contention. stub_pid is its own session
+        # leader (start_new_session=True in the stub's spawn), so killing its
+        # pgroup takes the sleep child with it.
+        if stub_pid is not None and _alive(stub_pid):  # pragma: no cover
+            try:
+                os.killpg(stub_pid, signal.SIGKILL)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------

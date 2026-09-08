@@ -129,7 +129,16 @@ def test_live_children_empty_when_no_children():
 def test_live_children_lists_backgrounded_child():
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
     try:
-        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
+        # Predicate waits for the child to actually be named "sleep", not just
+        # "any live child exists": under heavy `-n auto`/host contention, bash's
+        # fork() of the backgrounded job can be observed by psutil BEFORE its
+        # exec() into /bin/sleep lands, briefly showing as a live child still
+        # named "bash" -- `bool(live)` alone would satisfy the predicate on
+        # that transient pre-exec sighting and go on to fail the name assert
+        # below (confirmed by reproduction under heavy contention).
+        live, ignored = _wait_for_children(
+            p, lambda live, _ignored: any(c["name"] == "sleep" for c in live)
+        )
         assert any(c["name"] == "sleep" for c in live)
         assert ignored == []
     finally:
@@ -226,11 +235,20 @@ def test_live_children_splits_on_ignore_pattern():
     )
     try:
         # Both children fork off in the same shell statement, but wait until
-        # BOTH are visible before asserting -- returning as soon as the first
-        # one appears could catch the ignored/live split mid-populate.
+        # BOTH are visible AND correctly classified before asserting --
+        # returning as soon as the first one appears could catch the
+        # ignored/live split mid-populate. A raw count (`len(live) +
+        # len(ignored) >= 2`) is not enough: under heavy `-n auto`/host
+        # contention, a freshly forked child can be observed by psutil BEFORE
+        # its exec() lands, so it briefly counts toward the total while still
+        # named "bash" (pre-"snapshot-bash-xyz"/pre-"sleep") -- confirmed by
+        # reproduction. Wait for each side's OWN expected name instead.
         live, ignored = _wait_for_children(
             p,
-            lambda live, ignored: len(live) + len(ignored) >= 2,
+            lambda live, ignored: (
+                any(c["name"] == "sleep" for c in live)
+                and any(c["name"] == "snapshot-bash-xyz" for c in ignored)
+            ),
             ignore_patterns=[re.compile(r"snapshot-bash-")],
         )
         # One child should match the ignore pattern; the plain sleep goes to live.
@@ -245,7 +263,12 @@ def test_live_children_no_patterns_preserves_0138_behavior():
     """ignore_patterns=None -> tuple shape, but everything alive goes to 'live'."""
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
     try:
-        live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
+        # See test_live_children_lists_backgrounded_child: wait for the actual
+        # "sleep"-named child, not just "any live child" (a pre-exec "bash"
+        # sighting would satisfy the latter under heavy contention).
+        live, ignored = _wait_for_children(
+            p, lambda live, _ignored: any(c["name"] == "sleep" for c in live)
+        )
         assert ignored == []
         assert any(c["name"] == "sleep" for c in live)
     finally:

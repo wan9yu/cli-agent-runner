@@ -65,6 +65,7 @@ def _reap_in_background(proc: subprocess.Popen) -> None:
     threading.Thread(target=proc.wait, daemon=True).start()
 
 
+@pytest.mark.timeout(150)  # see the wait_for(_drive_alert, ...) comment below for the budget
 def test_alert_drives_real_serve_to_stop(
     tmp_git_repo: Path,
     fake_agent_script: Path,
@@ -107,16 +108,42 @@ def test_alert_drives_real_serve_to_stop(
             ts="2026-01-01T00:00:00.000Z",
             auto_action="stop_service",
         )
-        on_alert(
-            alert,
-            project=tmp_git_repo,
-            log_dir=log_dir,
-            allowed_stop_names=["oauth_fail"],
+        # A single on_alert() call races api.stop's PID_FILE confirm window
+        # (api._PID_SIGNAL_GRACE_S, 5s of REAL wall clock) against the real
+        # `serve` subprocess actually noticing SIGTERM and exiting. Under
+        # heavy `-n auto`/host contention that subprocess can still be
+        # mid-round (or just slow to get scheduled) past that window, so
+        # on_alert legitimately returns "draining" and records NOTHING --
+        # see on_alert's own docstring: production's `_monitor_loop_iter`
+        # re-arms and hands the SAME alert back on its next poll, converging
+        # once the drain resolves. Confirmed by reproduction: a single call
+        # can permanently land in "draining" under load, after which NO event
+        # would ever arrive for wait_for_event to catch, however long it
+        # waited -- so mirror the real retry here instead of one shot.
+        verdict = None
+
+        def _drive_alert() -> bool:
+            nonlocal verdict
+            verdict = on_alert(
+                alert,
+                project=tmp_git_repo,
+                log_dir=log_dir,
+                allowed_stop_names=["oauth_fail"],
+            )
+            return verdict != "draining"
+
+        # 60s outer ceiling for the retry loop (each attempt paces itself via
+        # api.stop's own internal confirm window) + 20s pidfile wait above +
+        # 20s event-confirm below + 20s final proc.wait = 120s worst case,
+        # under the @pytest.mark.timeout(150) on this test.
+        assert wait_for(log_dir, _drive_alert, timeout_s=60), (
+            f"on_alert never left 'draining' (last verdict={verdict!r})"
         )
+        assert verdict == "triggered", f"expected 'triggered', got {verdict!r}"
 
         # monitor.on_alert emits this ONLY after api.stop confirms active=False
-        # (its own docstring's invariant) -- waiting on it IS waiting for "serve
-        # was stopped by the auto-stop alert", not a separate re-derivation.
+        # (its own docstring's invariant) -- this just confirms the breadcrumb
+        # landed; _drive_alert above already proved the stop itself converged.
         assert wait_for_event(log_dir, events.MONITOR_AUTO_STOP_TRIGGERED, timeout_s=20), (
             "serve was not stopped by the auto-stop alert"
         )
