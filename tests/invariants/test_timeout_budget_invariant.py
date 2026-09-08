@@ -14,6 +14,7 @@ from __future__ import annotations
 from agent_runner import _serve_policy
 from agent_runner.agent_runtime import REAP_GRACE_S
 from agent_runner.api import _ROUND_TERM_GRACE_S
+from agent_runner.cli._serve_cgroup import _ROUND_UNREAPED_RC as _SERVE_CGROUP_UNREAPED_RC
 from agent_runner.cli._serve_round import _ROUND_TERM_GRACE_S as _SERVE_ROUND_TERM_GRACE_S
 from agent_runner.cli._serve_round import _ROUND_UNREAPED_RC as _SERVE_ROUND_UNREAPED_RC
 from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
@@ -55,11 +56,12 @@ def test_leaf_margin_constants_mirror_their_source_of_truth():
     "single source, two importers" property itself against a future
     regression (e.g. one side re-acquiring its own literal).
 
-    _ROUND_UNREAPED_RC (0.2.19) is the same shape one importer earlier: hoisted
-    out of cli/_serve_round.py into this leaf so a soon-to-be-carved sibling
-    module can import it too without cycling back through _serve_round. Pin
-    its current sole importer the same way, not a vacuous self-compare."""
+    _ROUND_UNREAPED_RC (0.2.19) is the same shape as _ROUND_TERM_GRACE_S:
+    hoisted out of cli/_serve_round.py into this leaf so its sibling module
+    cli/_serve_cgroup.py (carved out in the same release) can import it too
+    without cycling back through _serve_round. Pin both real importers the
+    same way, not a vacuous self-compare."""
     assert _serve_policy._REAP_GRACE_S == REAP_GRACE_S
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
     assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S
-    assert _SERVE_ROUND_UNREAPED_RC == _serve_policy._ROUND_UNREAPED_RC
+    assert _SERVE_ROUND_UNREAPED_RC == _SERVE_CGROUP_UNREAPED_RC == _serve_policy._ROUND_UNREAPED_RC

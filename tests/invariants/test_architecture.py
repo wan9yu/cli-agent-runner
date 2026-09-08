@@ -29,11 +29,11 @@ ALLOWED_SERVE_FROM = [
             "_maybe_emit_recovered",
             "_maybe_pause_for_memory_pressure",
             "_pause_poll",
-            "_probe_and_emit_cgroup_defer",
             "_spawn_round",
             "post_round_verdicts",
         },
     ),
+    ("agent_runner.cli._serve_cgroup", {"_probe_and_emit_cgroup_defer"}),
     (
         "agent_runner.api",
         {
@@ -87,7 +87,6 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
     "os",
     "signal",
     "subprocess",
-    "sys",
     "pathlib",
 }
 ALLOWED_SERVE_ROUND_FROM = [
@@ -118,22 +117,39 @@ ALLOWED_SERVE_ROUND_FROM = [
         {
             "emit_config_broken",
             "emit_crash_loop",
-            "emit_host_cgroup_memory_limit",
             "emit_mem_loop",
             "emit_mem_loop_persistent",
             "emit_mem_pressure_deferred_to_cgroup",
-            "emit_round_cgroup_memory",
             "emit_round_deferred",
             "emit_round_mem_critical_sample",
             "emit_round_mem_terminated",
-            "emit_round_oom_killed",
             "emit_round_resumed",
             "emit_round_supervisor_wedged",
             "emit_stalled_no_progress",
             "emit_transient_error_recovered",
         },
     ),
+    (
+        "agent_runner.cli._serve_cgroup",
+        {"_emit_round_cgroup_memory", "_maybe_emit_oom_killed", "_stash_round_cgroup_state"},
+    ),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
+]
+
+# _serve_cgroup.py (0.2.19: carved out of _serve_round.py to lift the
+# cgroup-pressure spine into its own module) gets the same "no unsanctioned
+# imports" scan -- see ALLOWED_SERVE_ROUND_* above for the same treatment on
+# its sibling. Importing zero agent_runner.cli.* modules here is the
+# structural half of the one-way-import proof (the other half is the clean-
+# interpreter import check in the carve commit).
+ALLOWED_SERVE_CGROUP_IMPORTS = {"sys"}
+ALLOWED_SERVE_CGROUP_FROM = [
+    ("agent_runner", {"metrics"}),
+    ("agent_runner._serve_policy", {"_ROUND_UNREAPED_RC"}),
+    (
+        "agent_runner.api",
+        {"emit_host_cgroup_memory_limit", "emit_round_cgroup_memory", "emit_round_oom_killed"},
+    ),
 ]
 
 
@@ -186,6 +202,15 @@ def test_given_serve_round_when_imports_scanned_then_within_allowlist() -> None:
         label="_serve_round",
         allowed_plain=ALLOWED_SERVE_ROUND_IMPORTS,
         allowed_from=ALLOWED_SERVE_ROUND_FROM,
+    )
+
+
+def test_given_serve_cgroup_when_imports_scanned_then_within_allowlist() -> None:
+    _assert_imports_within_allowlist(
+        PKG / "cli/_serve_cgroup.py",
+        label="_serve_cgroup",
+        allowed_plain=ALLOWED_SERVE_CGROUP_IMPORTS,
+        allowed_from=ALLOWED_SERVE_CGROUP_FROM,
     )
 
 

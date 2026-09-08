@@ -44,11 +44,11 @@ from agent_runner.api import (
     emit_stop_file_detected,
     outer_round_ceiling_s,
 )
+from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 from agent_runner.cli._serve_round import (
     _maybe_emit_recovered,
     _maybe_pause_for_memory_pressure,
     _pause_poll,
-    _probe_and_emit_cgroup_defer,
     _spawn_round,
     post_round_verdicts,
 )

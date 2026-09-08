@@ -283,10 +283,9 @@ _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-requ
 # A round-child that even killpg can't reap in time (D-state leader): a defined,
 # classifiable returncode instead of a TimeoutExpired escaping cmd() as exit 1.
 # Single source (0.2.19): cli._serve_round returns this from its own terminate
-# path AND reads it back to attribute a cgroup OOM kill to the round that died
-# -- two readers in the same module today, soon to split across a carve, so
-# hoisting here (a dependency-free leaf) lets both sides import it without
-# needing to import each other.
+# path AND cli._serve_cgroup reads it back to attribute a cgroup OOM kill to
+# the round that died -- hoisting here (a dependency-free leaf) lets both
+# modules import it without importing each other.
 _ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
 
 

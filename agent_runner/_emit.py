@@ -392,7 +392,7 @@ def emit_round_cgroup_memory(
     bounding ancestor. Deltas, never absolutes -- an operator sees pressure BUILDING
     without SSH. Peak is the max over the existing ~10s mid-round tick (NOT
     ``memory.peak``, which is cumulative since cgroup creation). No-op when this
-    host has no finite cgroup bound (``_serve_round._emit_round_cgroup_memory``
+    host has no finite cgroup bound (``_serve_cgroup._emit_round_cgroup_memory``
     never calls this in that case).
 
     ``bounding_cgroup_path`` is deliberately NOT named ``cgroup_path`` --
@@ -427,7 +427,7 @@ def emit_round_oom_killed(
     partial_log: bool,
 ) -> None:
     """Emit when the kernel cgroup-OOM-killed a round (``memory.events.oom_kill``
-    rose over the round, per ``_serve_round._maybe_emit_oom_killed`` -- folded
+    rose over the round, per ``_serve_cgroup._maybe_emit_oom_killed`` -- folded
     from the SAME ``cgroup_memory_usage()`` read ``round_cgroup_memory`` already
     took, no second sysfs read). Symmetric with ``round_mem_terminated``
     (supervisor-killed) -- this is the kernel-killed sibling.

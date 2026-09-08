@@ -7,7 +7,7 @@ lines to serve_cmd.cmd's loop body -- see test_layer_2_loop_size.py) and mirrors
 _maybe_pause_for_schedule's paired-event shape (round_deferred/round_resumed
 instead of schedule_paused/schedule_resumed).
 
-The previous-sample state persists per log_dir (serve_cmd._PRE_ROUND_MEM_STATE_BY_LOG_DIR),
+The previous-sample state persists per log_dir (_serve_round._PRE_ROUND_MEM_STATE_BY_LOG_DIR),
 not behind an explicit test parameter -- every test here uses its own unique
 tmp_path as log_dir, so tests stay hermetic from each other automatically;
 a test that deliberately wants two calls to share a baseline (see the

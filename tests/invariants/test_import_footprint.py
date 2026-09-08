@@ -95,6 +95,7 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner.builtin_plugins.kimi",
         "agent_runner.builtin_plugins.pi",
         "agent_runner.cli",
+        "agent_runner.cli._serve_cgroup",
         "agent_runner.cli._serve_round",
         "agent_runner.cli.common",
         "agent_runner.cli.events_cmd",

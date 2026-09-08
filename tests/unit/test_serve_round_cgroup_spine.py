@@ -5,7 +5,7 @@ the peak memory.current/swap over the round (not the cumulative memory.peak)."""
 import json
 import sys
 
-from agent_runner.cli import _serve_round
+from agent_runner.cli import _serve_cgroup, _serve_round
 from agent_runner.config import MonitorHostHealthConfig
 
 
@@ -70,21 +70,21 @@ def test_spawn_round_peak_is_max_over_ticks_not_the_last_reading(tmp_path, monke
     )
     assert rc == 0  # clean exit -- healthy host_health sample, not floor-terminated
 
-    state = _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir]
+    state = _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir]
     assert state["peak_current"] == 500  # the tick-3 peak, not the tick-4 reading (200)
     assert state["peak_swap"] == 50
 
 
 def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
     log_dir = tmp_path
-    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
         "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
         "peak_current": 300_000_000,
         "peak_swap": 100_000_000,
         "bounding_cgroup_path": "/user.slice",
     }
     monkeypatch.setattr(
-        _serve_round.metrics,
+        _serve_cgroup.metrics,
         "cgroup_memory_usage",
         lambda **k: {
             "memory_events": {"high": 25, "max": 0, "oom": 0, "oom_kill": 0},
@@ -93,7 +93,7 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
             "cgroup_path": "/user.slice",
         },
     )
-    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
+    _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
     ev = [e for e in _events(log_dir) if e["event"] == "round_cgroup_memory"][0]
     assert ev["events_high_delta"] == 15  # 25 - 10, a DELTA not an absolute
     assert ev["events_max_delta"] == 0
@@ -110,7 +110,7 @@ def test_post_round_emits_cgroup_memory_delta(tmp_path, monkeypatch):
 def test_emit_round_cgroup_memory_noop_without_finite_bound(tmp_path):
     """No stashed state (host has no finite cgroup bound) -> no emit, no error."""
     log_dir = tmp_path
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    result = _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
     assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
 
@@ -122,18 +122,18 @@ def test_emit_round_cgroup_memory_skips_when_bounding_cgroup_vanished(tmp_path, 
     would misreport "no pressure" when the truth is "can no longer tell" --
     skip the emit entirely instead."""
     log_dir = tmp_path
-    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
         "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
         "peak_current": 300_000_000,
         "peak_swap": 100_000_000,
         "bounding_cgroup_path": "/user.slice",
     }
-    monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: {})
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    monkeypatch.setattr(_serve_cgroup.metrics, "cgroup_memory_usage", lambda **k: {})
+    result = _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
     assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
     # Still consumed the stashed state -- no leak into a later round's call.
-    assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
+    assert log_dir not in _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR
 
 
 def test_emit_round_cgroup_memory_skips_when_baseline_events_empty(tmp_path, monkeypatch):
@@ -143,14 +143,14 @@ def test_emit_round_cgroup_memory_skips_when_baseline_events_empty(tmp_path, mon
     this round's delta. Skip the emit entirely instead of shipping a bogus
     absolute-as-delta payload."""
     log_dir = tmp_path
-    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
         "baseline_events": {},
         "peak_current": 300_000_000,
         "peak_swap": 100_000_000,
         "bounding_cgroup_path": "/user.slice",
     }
     monkeypatch.setattr(
-        _serve_round.metrics,
+        _serve_cgroup.metrics,
         "cgroup_memory_usage",
         lambda **k: {
             "memory_events": {"high": 500, "max": 0, "oom": 0, "oom_kill": 0},
@@ -159,29 +159,29 @@ def test_emit_round_cgroup_memory_skips_when_baseline_events_empty(tmp_path, mon
             "cgroup_path": "/user.slice",
         },
     )
-    result = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    result = _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
     assert result == ({}, None)
     assert not list(log_dir.glob("events-*.jsonl"))
     # Still consumed the stashed state -- no leak into a later round's call.
-    assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
+    assert log_dir not in _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR
 
 
 def test_emit_round_cgroup_memory_pops_state(tmp_path, monkeypatch):
     """State is consumed once -- a second call for the same log_dir (e.g. a stray
     double-call) must not re-emit from stale state."""
     log_dir = tmp_path
-    _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
         "baseline_events": {},
         "peak_current": 1,
         "peak_swap": 0,
         "bounding_cgroup_path": "/x",
     }
     monkeypatch.setattr(
-        _serve_round.metrics,
+        _serve_cgroup.metrics,
         "cgroup_memory_usage",
         lambda **k: {"memory_events": {}, "memory_current": 1, "memory_swap_current": 0},
     )
-    _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
-    assert log_dir not in _serve_round._ROUND_CGROUP_STATE_BY_LOG_DIR
-    second = _serve_round._emit_round_cgroup_memory(log_dir, log_dir / "round-2.log", 2)
+    _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-1.log", 1)
+    assert log_dir not in _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR
+    second = _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-2.log", 2)
     assert second == ({}, None)

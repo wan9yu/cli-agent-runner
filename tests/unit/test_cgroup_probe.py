@@ -281,7 +281,7 @@ def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
     shape) but memory_max >= host MemTotal (e.g. a copy-pasted MemoryMax=1G
     on a 462MB host) -- cgroup-OOM can never fire before host-wide coma, so
     the floor must NOT defer."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
@@ -306,7 +306,7 @@ def test_probe_and_emit_cgroup_defer_plausible_limit_defers(
     field host's own shape is exactly "both finite, swap cap within host
     swap" -- the guard only disarms a swap cap ABOVE host swap (see
     test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed below)."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
@@ -339,7 +339,7 @@ def test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed(
     """A huge MemorySwapMax (>> host swap) can't bind before host-swap
     exhaustion, so the floor must stay ARMED (defer=False), matching the
     memory.max guard."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
@@ -360,7 +360,7 @@ def test_advisory_field_when_swap_cap_far_below_host(
     """swap.max at 12.5% of host swap (well under the 25% advisory floor)
     rides as fields on the EXISTING host_cgroup_memory_limit event -- not a
     new kind -- plus one stderr line. Never changes the cgroup/unit."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
@@ -397,7 +397,7 @@ def test_memory_high_field_carries_real_value_when_set(
     whether MemoryHigh is set). Fails against a hardcoded `memory_high=None`
     in _probe_and_emit_cgroup_defer even though metrics.cgroup_memory_high
     itself reports a finite value."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
@@ -425,7 +425,7 @@ def test_advisory_absent_when_swap_cap_within_host_swap(
 ) -> None:
     """swap.max at 80% of host swap is a plausible operator choice -- no
     advisory, no stderr line."""
-    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
