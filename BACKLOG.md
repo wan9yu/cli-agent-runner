@@ -104,21 +104,6 @@ change which failures warn vs which propagate, nor the specific fallback
 each site takes on failure (sleep-and-retry after a poll failure,
 `verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
-## `kill()`'s SYSTEMD_USER SIGKILL escalation hand-rolls a sleep-then-recheck instead of `wait_until`
-
-`api.kill()`'s SYSTEMD_USER branch escalates to SIGKILL with a single
-`SYSTEM_CLOCK.sleep(_PID_SIGNAL_GRACE_S)` followed by one re-check of
-`_systemctl_is_active`, rather than the shared bounded-poll helper
-`clock.wait_until` that the PID_FILE branch's `_await_pid_exit` (and
-`lifecycle.py`) already use. A single sleep-then-check is coarser than a
-poll loop and duplicates, by hand, the one "wait up to N seconds, checking
-periodically" implementation the rest of the codebase standardizes on.
-
-Replacing it must reproduce the same grace window and escalation decision —
-the 0.2.18 grace-kill work showed how easily a wall-clock flake creeps back
-into code like this, so the replacement needs the same clock-injection
-discipline as `_await_pid_exit`. Slated for 0.2.19.
-
 ## cgroup ancestor is re-resolved every tick instead of cached per round
 
 `_resolve_cgroup` (introduced in 0.2.18) walks the cgroup hierarchy to find

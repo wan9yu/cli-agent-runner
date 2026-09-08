@@ -402,11 +402,15 @@ def kill(project: str | Path) -> ServiceStatus:
         # Match the PID_FILE branch's escalation (and the docs' "grace then
         # SIGKILL"): `systemctl kill` queues no stop job, so TimeoutStopSec
         # never applies -- a unit still active after the grace window needs
-        # an explicit SIGKILL.
-        if _systemctl_is_active(unit) not in _SYSTEMD_INACTIVE_STATES:
-            SYSTEM_CLOCK.sleep(_PID_SIGNAL_GRACE_S)
-            if _systemctl_is_active(unit) not in _SYSTEMD_INACTIVE_STATES:
-                _systemctl_user("kill", "--signal=SIGKILL", unit)
+        # an explicit SIGKILL. Bounded-poll via wait_until, same shape as
+        # _await_pid_exit / stop_unit_draining, clock-injected.
+        inactive = wait_until(
+            SYSTEM_CLOCK,
+            lambda: _systemctl_is_active(unit) in _SYSTEMD_INACTIVE_STATES,
+            timeout_s=_PID_SIGNAL_GRACE_S,
+        )
+        if not inactive:
+            _systemctl_user("kill", "--signal=SIGKILL", unit)
         return status(project)
     pid = PIDFile(log_dir / "serve.pid").read()
     if pid is None:
