@@ -13,6 +13,8 @@ DOCS = Path(__file__).resolve().parent.parent.parent / "docs"
 
 def test_given_docs_when_rendered_in_memory_then_matches_on_disk() -> None:
     rendered = render(docs_dir=DOCS, write=False)
+    # vacuity-guard
+    assert rendered and (DOCS / "architecture.md") in rendered, "docgen rendered nothing"
     diffs: list[str] = []
     for path, want in rendered.items():
         got = path.read_text(encoding="utf-8")

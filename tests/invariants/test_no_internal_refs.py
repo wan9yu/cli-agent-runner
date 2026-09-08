@@ -17,7 +17,11 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[2]
 _THIS = Path(__file__).relative_to(_REPO).as_posix()
 # "inception" is an ordinary English word but is a deliberate internal codename here — forbid it.
-_FORBIDDEN = re.compile(r"argus|inception|\bplan[-_ ]b\b", re.IGNORECASE)
+# uspi / eye.service / claude-helped are 0-hit today: a gap to close, not a leak.
+# dietpi is an allowed distro name — do NOT add it here.
+_FORBIDDEN = re.compile(
+    r"argus|inception|\bplan[-_ ]b\b|\buspi\b|eye\.service|claude[- ]helped", re.IGNORECASE
+)
 _SKIP = {_THIS, ".vulture-whitelist.py"}  # self-exclude: this file's own regex text matches
 _SCAN_SUFFIXES = (".py", ".md", ".toml", ".cfg", ".txt", ".yml", ".sh", ".jsonl")
 
@@ -30,8 +34,11 @@ def _tracked_files() -> list[str]:
 
 
 def test_given_tracked_files_when_scanned_then_no_internal_codenames() -> None:
+    files = _tracked_files()
+    # vacuity-guard
+    assert len(files) > 50, "tracked-file scan found too few files — scan is vacuous"
     hits = []
-    for rel in _tracked_files():
+    for rel in files:
         text = (_REPO / rel).read_text(encoding="utf-8", errors="replace")
         for i, line in enumerate(text.splitlines(), 1):
             if _FORBIDDEN.search(line):
