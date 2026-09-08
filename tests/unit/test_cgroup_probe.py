@@ -45,25 +45,38 @@ class _FakeCgroup:
         return d
 
     def set_limit(
-        self, cgroup_path: str, *, memory_max: str | None = None, memory_swap_max: str | None = None
+        self,
+        cgroup_path: str,
+        *,
+        memory_max: str | None = None,
+        memory_swap_max: str | None = None,
+        memory_high: str | None = None,
     ) -> None:
         d = self._dir_for(cgroup_path)
         if memory_max is not None:
             (d / "memory.max").write_text(memory_max)
         if memory_swap_max is not None:
             (d / "memory.swap.max").write_text(memory_swap_max)
+        if memory_high is not None:
+            (d / "memory.high").write_text(memory_high)
 
     def __call__(
         self,
         *,
         memory_max: str | None = None,
         memory_swap_max: str | None = None,
+        memory_high: str | None = None,
         v2: bool = True,
     ) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         if v2:
             (self.root / "cgroup.controllers").write_text("memory\n")
-        self.set_limit(self.self_cgroup, memory_max=memory_max, memory_swap_max=memory_swap_max)
+        self.set_limit(
+            self.self_cgroup,
+            memory_max=memory_max,
+            memory_swap_max=memory_swap_max,
+            memory_high=memory_high,
+        )
 
 
 @pytest.fixture
@@ -168,6 +181,64 @@ def test_probe_proc_self_cgroup_missing_is_unlimited(tmp_path: Path) -> None:
     assert lim == {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
 
 
+# --- 0.2.18 T1c fix round 1: cgroup_memory_high, a REAL memory.high read ---
+#
+# memory_high shipped in fix round 1 as a hardcoded None on every
+# host_cgroup_memory_limit emit -- a permanently-dead field. These exercise
+# the actual bounding-ancestor read against a fake cgroup tree, the same way
+# the memory_max/memory_swap_max tests above do.
+
+
+def test_cgroup_memory_high_reads_finite_value(fake_cgroup: _FakeCgroup) -> None:
+    """A finite memory.high (MemoryHigh= set in the unit) reads as the real
+    int value -- this is the field team's whole ask: can they see it's set."""
+    fake_cgroup(memory_max="335544320", memory_swap_max="167772160", memory_high="268435456")
+
+    high = metrics.cgroup_memory_high(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert high == 268435456
+
+
+def test_cgroup_memory_high_unset_is_none(fake_cgroup: _FakeCgroup) -> None:
+    """The literal `"max"` (MemoryHigh unset, systemd's default) means
+    unset -- None, never the raw "max" token."""
+    fake_cgroup(memory_max="335544320", memory_swap_max="167772160", memory_high="max")
+
+    high = metrics.cgroup_memory_high(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert high is None
+
+
+def test_cgroup_memory_high_missing_file_is_none(fake_cgroup: _FakeCgroup) -> None:
+    """No memory.high file at all (older kernel, or just never written by
+    this fixture) -- also None, not an error."""
+    fake_cgroup(memory_max="335544320", memory_swap_max="167772160")
+
+    high = metrics.cgroup_memory_high(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert high is None
+
+
+def test_cgroup_memory_high_ancestor_min(fake_cgroup: _FakeCgroup) -> None:
+    """Same bounding-ancestor MIN-FINITE walk as memory.max: a tighter
+    memory.high on an ancestor slice wins over the leaf's own looser value."""
+    fake_cgroup(memory_high="536870912")  # leaf: 512M
+    fake_cgroup.set_limit("/system.slice", memory_high="268435456")  # parent: 256M (tighter)
+
+    high = metrics.cgroup_memory_high(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert high == 268435456
+
+
+def test_cgroup_memory_high_v1_or_missing_is_none(fake_cgroup: _FakeCgroup) -> None:
+    """No cgroup v2 at all -- None, same as the other probes."""
+    fake_cgroup(v2=False)
+
+    high = metrics.cgroup_memory_high(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert high is None
+
+
 def test_mem_total_bytes_matches_psutil() -> None:
     import psutil
 
@@ -191,6 +262,7 @@ def _patch_probe(
     memory_swap_max: int,
     mem_total: int,
     swap_total: int,
+    memory_high: int | None = None,
 ):
     monkeypatch.setattr(
         metrics,
@@ -199,6 +271,7 @@ def _patch_probe(
     )
     monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
     monkeypatch.setattr(metrics, "swap_total_bytes", lambda: swap_total)
+    monkeypatch.setattr(metrics, "cgroup_memory_high", lambda: memory_high)
 
 
 def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
@@ -314,6 +387,37 @@ def test_advisory_field_when_swap_cap_far_below_host(
 
     captured = capsys.readouterr()
     assert "swap.max is far below host swap" in captured.err
+
+
+def test_memory_high_field_carries_real_value_when_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """memory_high on the emitted event is the REAL memory.high read, not a
+    hardcoded None -- this is the field team's whole ask (can they see
+    whether MemoryHigh is set). Fails against a hardcoded `memory_high=None`
+    in _probe_and_emit_cgroup_defer even though metrics.cgroup_memory_high
+    itself reports a finite value."""
+    from agent_runner.cli._serve_round import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    _probe_and_emit_cgroup_defer(log_dir)
+
+    [ev] = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert ev["memory_high"] == 192_000_000
 
 
 def test_advisory_absent_when_swap_cap_within_host_swap(

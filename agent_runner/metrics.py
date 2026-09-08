@@ -300,6 +300,38 @@ def cgroup_memory_limits(
     }
 
 
+def cgroup_memory_high(
+    *,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> int | None:
+    """Probe this process's cgroup v2 ``memory.high`` (the soft throttle
+    threshold, distinct from the hard ``memory.max`` kill ceiling): the MIN
+    FINITE value across this cgroup and every ancestor up to ``root`` --
+    same bounding-ancestor walk as :func:`cgroup_memory_limits` uses for
+    ``memory.max``/``memory.swap.max`` (:func:`_min_ancestor_limit` over
+    :func:`_min_ancestor_candidate`), just for a different filename.
+
+    ``None`` means unset: every ancestor read the literal ``"max"``, the
+    file was missing, cgroup v2 is unavailable, or the cgroup path could not
+    be resolved -- deliberately collapsed to ``None`` rather than passing
+    the raw ``"max"`` token through, so a caller can never mistake "unset"
+    for a real ceiling. Kept separate from :func:`cgroup_memory_limits`'s
+    return dict so that function's existing exact-dict-equality tests need
+    no change for an unrelated field.
+
+    Same params/defaults as :func:`cgroup_memory_limits` (injectable for
+    tests); one-shot pure file I/O, no clock."""
+    if not (root / "cgroup.controllers").exists():
+        return None
+    cgroup_path = self_cgroup if self_cgroup is not None else _self_cgroup_path(proc_self_cgroup)
+    if cgroup_path is None:
+        return None
+    ancestors = _cgroup_ancestors(cgroup_path)
+    return _min_ancestor_limit(root, ancestors, "memory.high")
+
+
 def cgroup_memory_usage(
     *,
     root: Path = _CGROUP_ROOT,

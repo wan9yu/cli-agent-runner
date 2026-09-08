@@ -338,7 +338,7 @@ def emit_host_cgroup_memory_limit(
     cgroup_path: str | None,
     swap_total_bytes: int | None = None,
     swap_cap_pct: float | None = None,
-    memory_high: str | None = None,
+    memory_high: int | None = None,
     advisory: str | None = None,
 ) -> None:
     """Emit once at serve startup: this process's cgroup v2 memory budget
@@ -353,10 +353,12 @@ def emit_host_cgroup_memory_limit(
     auto-change to the operator's cgroup or unit. ``swap_total_bytes`` is the
     host's total swap (``metrics.swap_total_bytes``); ``swap_cap_pct`` is
     ``memory_swap_max`` as a percentage of it (``None`` when either side is
-    unknown); ``memory_high`` is reserved for a future ``memory.high`` read
-    (``None``/unset today -- a bare ``"max"`` there would misleadingly read
-    as a real ceiling); ``advisory`` is the human-readable warning text when
-    the cap looks implausibly tight, else ``None``."""
+    unknown); ``memory_high`` is the bounding ancestor's ``memory.high`` in
+    bytes (``metrics.cgroup_memory_high``) -- ``None`` means unset (the
+    cgroup read the literal ``"max"``, or no finite value at all), never the
+    raw ``"max"`` token, so a caller can't mistake "unset" for a real
+    ceiling; ``advisory`` is the human-readable warning text when the swap
+    cap looks implausibly tight, else ``None``."""
     from agent_runner.events import HOST_CGROUP_MEMORY_LIMIT, emit
 
     emit(

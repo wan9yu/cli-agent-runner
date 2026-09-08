@@ -528,16 +528,21 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     (``_SWAP_CAP_ADVISORY_PCT``): the operator capped the cgroup's swap well
     under what the host has, so the mid-round floor may terminate a round
     the kernel would have contained on a wider cap. One line is also printed
-    to stderr in that case. Advisory only -- this never changes the
-    operator's cgroup or systemd unit."""
+    to stderr in that case. The event also carries ``memory_high`` -- the
+    bounding ancestor's ``memory.high`` soft-throttle threshold
+    (``metrics.cgroup_memory_high``), ``None`` when unset -- for the same
+    reason: an operator asking "is MemoryHigh even set" is exactly this
+    release's field ask. Advisory only -- this never changes the operator's
+    cgroup or systemd unit."""
     limits = metrics.cgroup_memory_limits()
     swap_total = metrics.swap_total_bytes()
+    memory_high = metrics.cgroup_memory_high()
     swap_max = limits["memory_swap_max"]
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
     )
     advisory: str | None = None
-    if swap_max is not None and swap_cap_pct is not None and swap_cap_pct < _SWAP_CAP_ADVISORY_PCT:
+    if swap_cap_pct is not None and swap_cap_pct < _SWAP_CAP_ADVISORY_PCT:
         advisory = (
             "cgroup memory.swap.max is far below host swap; the mid-round floor may "
             "terminate rounds the kernel would have contained -- consider bounding "
@@ -551,7 +556,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         cgroup_path=limits["cgroup_path"],
         swap_total_bytes=swap_total,
         swap_cap_pct=swap_cap_pct,
-        memory_high=None,
+        memory_high=memory_high,
         advisory=advisory,
     )
     return (
