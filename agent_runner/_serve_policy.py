@@ -218,7 +218,7 @@ def _no_progress_decision(
 
 
 def classify_round_exit(exc: BaseException) -> int:
-    """The round-child exit-code CLASSIFIER (Group A) — permanence, not exception
+    """The round-child exit-code CLASSIFIER — permanence, not exception
     identity, decides serve's response. Replaces the old exception *whitelist*
     (``cli/__init__.py`` mapped only ``ConfigError``->78, ``round_cmd.py`` only
     ``KeyboardInterrupt``->130; ~10 other classes fell through to Python's own

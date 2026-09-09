@@ -130,8 +130,8 @@ _GIT_KILL_GRACE_S = 3  # git dies fast on TERM; grace before we killpg the sessi
 
 class GitTimeout(RuntimeError, EnvironmentalError):  # noqa: N818 — brief-specified name
     """A git invocation exceeded its timeout and was force-killed. Self-heals
-    (a hung git process, not a broken config) — Group A: classify_round_exit
-    -> ENV_BATTERY_EXIT, 76 — serve retries at a flat back-off instead of
+    (a hung git process, not a broken config) — classify_round_exit maps this
+    to ENV_BATTERY_EXIT, 76 — serve retries at a flat back-off instead of
     counting it as a crash."""
 
 

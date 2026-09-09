@@ -54,7 +54,7 @@ def _primary_prompt_file(cfg: Config) -> Path | None:
 
 class LockHeldError(RuntimeError, EnvironmentalError):
     """Another agent-runner already holds the round lock. Self-heals once that
-    holder finishes or dies (Group A: classify_round_exit -> ENV_BATTERY_EXIT,
+    holder finishes or dies (classify_round_exit maps this to ENV_BATTERY_EXIT,
     76 — serve retries at a flat back-off instead of counting it as a crash)."""
 
 
@@ -141,7 +141,7 @@ def _phase_for(
     debug / multi-script orchestration). Override does NOT mutate the counter —
     subsequent default rounds resume normal rotation.
 
-    Raises ConfigError (not a bare ValueError — Group A: classify_round_exit
+    Raises ConfigError (not a bare ValueError — classify_round_exit
     matches the type, not a built-in) when override doesn't fit this round's
     freshly-loaded [phases]. This is PERMANENT from the round's perspective
     (78: every subsequent round fails identically), but the remedy is
@@ -393,7 +393,7 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
             try:
                 events.emit(log_dir, events.SMOKE_CHECK_FAILED, reason=f"{r.name}: {r.reason}")
             except OSError:
-                # Group A reachability fix: log_dir_writable is the flagship
+                # A reachability fix: log_dir_writable is the flagship
                 # ENV_BATTERY_EXIT case, and this emit's own append can raise on
                 # the EXACT unwritable-log_dir condition it is reporting (the
                 # STARTUP FAIL line above already told the operator). Don't let

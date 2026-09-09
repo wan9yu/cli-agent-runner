@@ -71,7 +71,7 @@ def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
     while it does its own bounded post-round cleanup.
 
     Derived from ``_serve_policy.timeout_budget``, the single source shared
-    with ``service_unit.py``'s ``TimeoutStopSec`` (Group C, seam 3) — kept as
+    with ``service_unit.py``'s ``TimeoutStopSec`` — kept as
     a local import so this stays out of api's re-exported public surface
     (internal-only, not a public contract).
     """

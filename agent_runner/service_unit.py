@@ -67,7 +67,7 @@ def render_serve_unit(
     value is legal and can point anywhere; only a *relative* one anchors to
     the toml's own directory — see ``config.load_config``), so the two can
     legitimately diverge; embedding the wrong one silently breaks the unit's
-    ``--config`` flag (Group C, seam 3).
+    ``--config`` flag.
 
     Rejects a control/non-printable character in ``work_dir`` or
     ``config_path`` (defense in depth — ``config.load_config`` already

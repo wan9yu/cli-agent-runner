@@ -572,7 +572,7 @@ def add_parser(sub, parent) -> None:
 def cmd(args) -> int:
     # A missing/unparseable config at boot raises ConfigError (not the raw
     # FileNotFoundError/tomllib.TOMLDecodeError config.py itself uses) so
-    # main()'s ConfigError catch gives 78 -- Group A: a single bad load is
+    # main()'s ConfigError catch gives 78 -- a single bad load is
     # fatal to serve, not a 5-consecutive-restart crash loop before systemd's
     # StartLimit trips. See cfg_from_args_or_config_error's own docstring.
     cfg = cfg_from_args_or_config_error(args)
@@ -588,7 +588,7 @@ def cmd(args) -> int:
         # A hook is a plugin contract; its failure is deterministic (same hook,
         # same failure, every restart) — give up loudly (78) rather than burn
         # through StartLimitBurst restarts before systemd's own StartLimit
-        # window catches it (Group A).
+        # window catches it.
         _release_serve_lock(serve_lock_fd)
         return PERMANENT_CONFIG_EXIT
 

@@ -38,8 +38,8 @@ def _install_term_handler() -> None:
 
 
 def cmd(args) -> int:
-    """Run one round. Exit code is classify_round_exit's permanence verdict
-    (Group A): 78 permanent-config, 76 environmental (serve retries), 130
+    """Run one round. Exit code is classify_round_exit's permanence verdict:
+    78 permanent-config, 76 environmental (serve retries), 130
     SIGTERM/SIGINT, 1 for a real agent crash or any OTHER exception — including
     an unclassified supervisor bug, so the crash-loop breaker still bounds it.
     Never returns the serve-reserved 75 (that verdict is serve's own, from
