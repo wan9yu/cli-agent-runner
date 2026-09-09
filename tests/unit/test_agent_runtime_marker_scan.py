@@ -28,15 +28,19 @@ def test_marker_split_across_chunks_is_detected(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=20,
+        timeout_s=30,  # widened from 20 (0.2.19): real margin under >=2 concurrent gates
         log_path=tmp_path / "round.log",
         env_extra={},
         max_grace_after_result_s=1,
     )
+    # killed_for_grace=True already proves the marker-split reap fired via
+    # grace (not the wall) -- the wall path returns killed_for_grace=False,
+    # so no separate duration_s bound is needed to distinguish the two.
+    # (0.2.19: a `duration_s < 16` bound used to sit here; it was purely
+    # load-sensitive -- observed 16.4-17.5s under >=2 concurrent gates even
+    # though grace correctly reaped the child every time -- and dropped as
+    # redundant rather than widened.)
     assert result.killed_for_grace is True
-    # Widened for contention headroom, but strictly below the 20s round
-    # timeout_s so this still proves grace (not the wall) reaped it.
-    assert result.duration_s < 16  # reaped via grace, not the 20s wall
 
 
 def test_delta_scan_does_not_reread_prefix(tmp_path, monkeypatch):

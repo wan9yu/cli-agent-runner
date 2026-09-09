@@ -252,8 +252,8 @@ def test_given_emit_facade_rule_when_scanned_then_no_direct_submodule_imports() 
     """``_emit/__init__.py``'s docstring says every consumer imports from the
     FACADE (``agent_runner._emit``), never a submodule
     (``agent_runner._emit.<name>``) directly -- until now that rule was prose
-    only (0.2.19 whole-branch review, seam-note M-4). A direct submodule
-    import would silently defang a `patch("agent_runner._emit.emit_...")`
+    only. A direct submodule import would silently defang a
+    `patch("agent_runner._emit.emit_...")`
     test target aimed at the facade: the patch rewrites the facade module's
     attribute, but a name already bound from the submodule directly never
     sees it -- the exact failure shape the 0.2.18 ``round_outcome`` seam hit

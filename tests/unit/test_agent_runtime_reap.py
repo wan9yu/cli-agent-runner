@@ -66,6 +66,7 @@ def test_callback_raise_reaps_agent_pgroup(tmp_path):
     assert not _alive(pid), "agent child was orphaned when the callback raised"
 
 
+@pytest.mark.timeout(120)  # see the sender wait-budget comment below for the arithmetic
 @pytest.mark.serial
 def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
     """The real SIGTERM path (not a raised-callback stand-in): round_cmd
@@ -81,7 +82,17 @@ def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
     every worker is its own process, so this is safe in isolation, but a
     signal handler that stays installed for the process lifetime (or a
     poorly-timed self-signal) risks corrupting whichever OTHER test that
-    worker happens to run next -- not worth the risk for one test."""
+    worker happens to run next -- not worth the risk for one test.
+
+    0.2.19 race fix: the sender thread used to wait a fixed 8s for
+    child.pid then send SIGTERM UNCONDITIONALLY, even if the child never
+    recorded it under load -- a premature SIGTERM killed bash before it
+    wrote the pidfile, and the reap assertion below then blew up with a
+    bare FileNotFoundError instead of testing anything. Now the sender only
+    signals once ``pid_confirmed`` is actually set, the wait budget is
+    widened generously for >=2 concurrent gates, and a genuine expiry (a
+    real hang) fails loudly with an explicit message instead of racing a
+    blind signal."""
     childpid = tmp_path / "child.pid"
     script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
 
@@ -90,30 +101,61 @@ def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
 
     old_handler = signal.signal(signal.SIGTERM, _raise_term)
 
+    pid_confirmed = threading.Event()
+
     def _term_self_once_child_recorded():
-        for _ in range(80):
+        # 45s budget (widened from a fixed 8s, 0.2.19): under >=2 concurrent
+        # gates bash's own fork+exec of the backgrounded child (and the
+        # `echo $! > child.pid` write) can be starved for many real seconds.
+        # Only send SIGTERM once the pid is CONFIRMED on disk -- sending
+        # unconditionally after the budget (the old behavior) races bash's
+        # own write and can kill it before the pidfile ever lands.
+        for _ in range(450):
             if childpid.exists() and childpid.read_text().strip():
+                pid_confirmed.set()
                 break
             time.sleep(0.1)
-        os.kill(os.getpid(), signal.SIGTERM)
+        if pid_confirmed.is_set():
+            os.kill(os.getpid(), signal.SIGTERM)
+        # else: budget genuinely expired -- do NOT send a blind SIGTERM;
+        # the explicit assert below fails loudly instead.
 
     sender = threading.Thread(target=_term_self_once_child_recorded, daemon=True)
     sender.start()
     try:
-        with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
+        raised: KeyboardInterrupt | None = None
+        try:
             run(
                 work_dir=tmp_path,
                 command=[str(script)],
                 prompt_arg_template=[],
                 prompt="x",
-                timeout_s=30,
+                # 90s (well above the sender's 45s wait budget, with margin
+                # for the interrupt to land and be processed): the round
+                # must still be in flight when SIGTERM arrives, however late
+                # confirmation lands under contention.
+                timeout_s=90,
                 log_path=tmp_path / "round.log",
                 env_extra={},
             )
+        except KeyboardInterrupt as exc:
+            raised = exc
+        sender.join(timeout=5)
+        assert pid_confirmed.is_set(), (
+            "child never recorded its pid within the 45s wait budget -- "
+            "treating this as a genuine hang rather than racing a blind SIGTERM"
+        )
+        assert raised is not None and "received SIGTERM" in str(raised), (
+            f"expected a KeyboardInterrupt from the SIGTERM, got {raised!r}"
+        )
     finally:
         signal.signal(signal.SIGTERM, old_handler)
         sender.join(timeout=5)
 
+    assert childpid.exists() and childpid.read_text().strip(), (
+        "child.pid missing/empty after the round returned -- SIGTERM raced ahead"
+        " of the pidfile write despite pid_confirmed being set"
+    )
     pid = int(childpid.read_text())
     for _ in range(80):
         if not _alive(pid):

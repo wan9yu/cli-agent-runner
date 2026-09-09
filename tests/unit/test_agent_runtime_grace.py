@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from agent_runner import agent_runtime
 from agent_runner.agent_runtime import run
 from tests._test_helpers import poll_until, wait_for
@@ -53,7 +55,9 @@ def test_grace_kill_fires_when_result_then_idle(tmp_path, monkeypatch):
     logic) -- a short finite sleep would let the child exit ON ITS OWN before
     the grace kill fires, silently turning this into a no-op that never
     proves escalation happened. timeout_s/the duration bound are widened to
-    match that same measured contention headroom."""
+    match that same measured contention headroom -- reproduced under >=2
+    concurrent gates (~2-3x CPU oversubscription), 25/20 was occasionally
+    breached, so both are widened further (45/40) for real margin."""
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
@@ -65,13 +69,13 @@ def test_grace_kill_fires_when_result_then_idle(tmp_path, monkeypatch):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=25,
+        timeout_s=45,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
     )
     assert result.killed_for_grace is True
-    assert result.duration_s < 20
+    assert result.duration_s < 40
 
 
 def test_no_grace_kill_when_disabled(tmp_path):
@@ -96,7 +100,14 @@ def test_no_grace_kill_when_disabled(tmp_path):
 
 
 def test_no_grace_kill_when_result_not_emitted(tmp_path, monkeypatch):
-    """No result event -> grace countdown never starts."""
+    """No result event -> grace countdown never starts.
+
+    timeout_s=40 (widened from 15, 0.2.19): a trivial "echo; exit 0" child
+    can be starved past a tight wall under >=2 concurrent gates and get
+    SIGTERMed before it ever runs -- see
+    test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv
+    in test_agent_runtime.py for the same mechanism, reproduced.
+    """
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(tmp_path, 'echo "no result here"\nexit 0\n')
     log_path = tmp_path / "round.log"
@@ -105,7 +116,7 @@ def test_no_grace_kill_when_result_not_emitted(tmp_path, monkeypatch):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=15,
+        timeout_s=40,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -190,6 +201,7 @@ def test_grace_extended_when_result_but_child_running(tmp_path, monkeypatch):
     assert any(c["name"] == "sleep" for c in live)
 
 
+@pytest.mark.serial
 def test_grace_kill_after_child_exits_then_idle(tmp_path, monkeypatch):
     """Live child first (extend), child exits, agent becomes childless (exec)
     -> next tick reaps via grace (well before wall timeout).
@@ -202,7 +214,16 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path, monkeypatch):
     occasionally starved of CPU for several seconds by 8-10 competing
     workers) -- a shorter child lifetime (e.g. 2s) let the child exit before
     the (contention-delayed) extend check ever ran, dropping `extended` to
-    empty."""
+    empty.
+
+    Marked serial (0.2.19): reproduced under >=2 concurrent gates, the
+    scan+grace check was starved badly enough that the 25s wall won outright
+    (timed_out=True, killed_for_grace=False at 25.1s) or the duration bound
+    was breached (21.7s). This is the one genuinely CPU/time-heavy test in
+    this file (a real 10s child, not an immediate exec) -- serializing it
+    removes it from self-competing against the rest of the real-subprocess
+    timing family within the same gate, and the wall/bound below are also
+    widened for real margin on top of that."""
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
@@ -215,14 +236,14 @@ def test_grace_kill_after_child_exits_then_idle(tmp_path, monkeypatch):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=25,
+        timeout_s=45,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
         on_grace_extended=lambda live, ignored: extended.append((live, ignored)),
     )
     assert result.killed_for_grace is True  # reaped after child exited
-    assert result.duration_s < 20  # ~10s child + reap, well under the 25s wall timeout
+    assert result.duration_s < 40  # ~10s child + reap, well under the 45s wall timeout
     assert len(extended) == 1
 
 
@@ -289,7 +310,8 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path, monkeypatch):
     timeout_s/the duration bound are widened for measured `-n auto`
     contention headroom (see test_grace_kill_fires_when_result_then_idle);
     the exec'd sleep is already 30s (non-finite), so only the wall-clock
-    ceiling needed adjusting."""
+    ceiling needed adjusting. Widened further (45/40) under >=2 concurrent
+    gates, matching test_grace_kill_fires_when_result_then_idle."""
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     # Fake agent: emit type=result, then exec into a 'helper' (no children remain).
     # The exec replaces the agent process itself (not a child); psutil.children()
@@ -305,7 +327,7 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path, monkeypatch):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=25,
+        timeout_s=45,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -313,7 +335,7 @@ def test_grace_kill_fires_when_only_ignored_helper_alive(tmp_path, monkeypatch):
         grace_kill_ignore_patterns=[re.compile(r"snapshot-bash-")],
     )
     assert result.killed_for_grace is True
-    assert result.duration_s < 20
+    assert result.duration_s < 40
     assert extended == []  # no extension emitted; reaped directly
 
 
@@ -420,10 +442,12 @@ def test_kill_pgroup_reentrant_sigterm_during_grace_still_sigkills(tmp_path):
     script = _write_fake_script(tmp_path, f'trap "" TERM\ntouch "{ready}"\nsleep 30\n')
     proc = subprocess.Popen([str(script)], start_new_session=True)
     try:
-        # 15s (not the original 5s): measured under `-n auto` contention on a
-        # busy host, bash's own fork+exec occasionally starved for several
-        # real seconds before it got scheduled to run the trap+touch line.
-        assert wait_for(tmp_path, ready.exists, timeout_s=15), (
+        # 40s (widened from 15s, then from the original 5s): measured under
+        # `-n auto` contention on a busy host, bash's own fork+exec
+        # occasionally starved for several real seconds before it got
+        # scheduled to run the trap+touch line; reproduced failing at 15s
+        # under >=2 concurrent gates (~2-3x CPU oversubscription).
+        assert wait_for(tmp_path, ready.exists, timeout_s=40), (
             "child never installed its SIGTERM trap"
         )
         clock = FakeClock()

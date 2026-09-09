@@ -319,11 +319,11 @@ def test_given_mode_events_with_host_when_main_then_dispatches_relay(
         return 0
 
     monkeypatch.setattr(api, "relay_remote_events", fake_relay)
-    # monitor_cmd installs the relay's real SIGTERM handler on this path
-    # (see FIX I-1); this test drives the real CLI in-process, so neutralize
-    # it -- signal.signal is a raw OS call monkeypatch cannot auto-revert,
-    # and leaving the real handler armed would permanently rewire this
-    # pytest worker's SIGTERM disposition for the rest of the session.
+    # monitor_cmd installs the relay's real SIGTERM handler on this path;
+    # this test drives the real CLI in-process, so neutralize it --
+    # signal.signal is a raw OS call monkeypatch cannot auto-revert, and
+    # leaving the real handler armed would permanently rewire this pytest
+    # worker's SIGTERM disposition for the rest of the session.
     monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: None)
 
     rc = main(

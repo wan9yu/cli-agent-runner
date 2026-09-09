@@ -27,18 +27,18 @@ def test_given_subprocess_within_timeout_when_run_then_returns_exit_code_zero(
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
     assert isinstance(result, RunResult)
     assert result.exit_code == 0
-    # Headroom over the configured timeout_s=15 -- the original bound was
+    # Headroom over the configured timeout_s=40 -- the original bound was
     # exactly equal to it, leaving zero slack for scheduling jitter under a
     # busy parallel run (an "echo hello" that legitimately took right up to
     # timeout_s under contention would fail this assert even though it never
     # got killed -- exit_code == 0 above is what actually proves no escalation).
-    assert result.duration_s < 20
+    assert result.duration_s < 45
     assert "hello" in log.read_text()
 
 
@@ -51,7 +51,7 @@ def test_given_subprocess_returning_nonzero_when_run_then_exit_code_propagated(
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=tmp_path / "out.log",
         env_extra={},
     )
@@ -105,17 +105,21 @@ def test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv(
 ) -> None:
     script = _bash_script(tmp_path, 'echo "prompt-was=$2"; exit 0')
     log = tmp_path / "out.log"
-    # timeout_s=15 (not 5): a trivial "echo; exit 0" is expected to finish in
-    # milliseconds, but under `-n auto` contention on a busy host, fork/exec
-    # scheduling was occasionally delayed several real seconds -- a too-tight
-    # timeout_s can kill the pgroup before the echo ever runs, leaving the log
-    # empty for a reason unrelated to the argv-substitution property tested.
+    # timeout_s=40 (widened from 15, then from 5): a trivial "echo; exit 0" is
+    # expected to finish in milliseconds, but under `-n auto` contention on a
+    # busy host, fork/exec scheduling was occasionally delayed several real
+    # seconds -- a too-tight timeout_s can kill the pgroup before the echo
+    # ever runs, leaving the log empty for a reason unrelated to the
+    # argv-substitution property tested. Reproduced under >=2 CONCURRENT
+    # gates (this test's own gate plus another full gate running at once,
+    # ~2-3x CPU oversubscription): 15s was hit and the child was SIGTERMed
+    # (exit_code -15) before ever writing the log -- 40s gives real margin.
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=["-p", "{prompt}"],
         prompt="HELLO",
-        timeout_s=15,
+        timeout_s=40,
         log_path=log,
         env_extra={},
     )
@@ -130,7 +134,7 @@ def test_given_env_extra_when_run_then_envs_propagated_to_subprocess(tmp_path: P
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={"CLAUDE_CODE_EFFORT_LEVEL": "xhigh"},
     )
@@ -154,19 +158,23 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         tmp_path,
         f"sleep 30 & echo $! > {pid_file} ; wait",
     )
-    # timeout_s=15 (not 2, and not the 10 this was for a while): under
+    # timeout_s=30 (widened from 15, then from 10, then from 2): under
     # `-n auto` contention on a busy host, a too-tight timeout_s can fire
     # before bash even gets scheduled to fork the grandchild and write its
     # pidfile, killing the pgroup before the thing under test ever ran -- the
     # assertion below then fails for a reason unrelated to the
     # descendants-terminate property it checks (observed: a 10s bound missed
-    # this exact class of contention stall and flaked).
+    # this exact class of contention stall and flaked). This script always
+    # blocks on `wait` until the timeout fires, so the bound directly sets
+    # this test's run time -- 30s (not the 40s used for the trivial-echo
+    # siblings in this file) balances >=2-concurrent-gate headroom against
+    # not needlessly inflating the parallel pass.
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=15,
+        timeout_s=30,
         log_path=tmp_path / "out.log",
         env_extra={},
     )
@@ -204,7 +212,7 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
@@ -224,7 +232,7 @@ def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path)
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
@@ -242,7 +250,7 @@ def test_given_stderr_output_when_run_then_merged_into_round_log(tmp_path: Path)
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=15,  # see test_given_prompt_arg_template_...: contention headroom
+        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
         log_path=log,
         env_extra={},
     )
