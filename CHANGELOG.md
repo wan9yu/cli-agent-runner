@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20] - 2026-09-09
+
+### Fixed
+- A supervised CLI's `setsid()`-detached descendant — outside the round leader's process group — is now killed at the hard-kill fallthrough instead of being left running, orphaned, after the round is torn down.
+- A configured `docker run`/`podman run` command (including `sudo`/`env`-wrapped and global-flag forms) escapes killpg-based termination and could previously outlive the round silently. It's now detected, agent-runner warns loudly and emits a `round_container_orphan_risk` event that the hard-wall can't guarantee stopping it, and best-effort-stops the container via an injected `--cidfile` for the plain (unwrapped, unflagged) form. Full container lifecycle management remains a later-release item.
+
+### Notes
+- Not breaking: no `agent-runner migrate` step, no systemd unit change.
+- `peek --json` gains the new `round_container_orphan_risk` event kind; existing kinds unchanged.
+
 ## [0.2.19] - 2026-09-09
 
 ### Changed
