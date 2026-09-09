@@ -237,43 +237,182 @@ def resolve_exec_target(command0: str, work_dir: Path, env_path: str | None = No
 # conmon/containerd process double-fork-detaches out of the pgroup
 # `_kill_pgroup` signals, so a killpg-based SIGKILL can silently leave the
 # CONTAINER itself running -- defeating the R1128 hard-wall with no visible
-# failure. Detection below is intentionally literal (command[0]'s basename +
-# the very next token, not a general docker-global-flag parser) -- this is
-# proportionate scope: surface the risk loudly and make one best-effort
-# `stop` attempt, not full container lifecycle management (cgroup delegation,
-# a containment ladder -- left for a future release).
+# failure. Detection below is deliberately BROAD / safety-biased (unwraps a
+# leading `sudo`/`env` wrapper, skips recognized docker/podman global flags
+# before `run`) -- a false positive there just prints an extra warning for a
+# coincidentally similar command, which is far cheaper than a silent orphan.
+# The separate `--cidfile` injection + best-effort `stop` stays CONSERVATIVE
+# (only the unwrapped, unflagged `docker run ...` / `podman run ...` shape)
+# since that path actually touches the spawned argv -- see run()'s own note.
+# Full container lifecycle management (cgroup delegation, a containment
+# ladder) is out of scope here -- left for a future release.
 _CONTAINER_RUNTIMES = frozenset({"docker", "podman"})
 
+# docker/podman GLOBAL flags (before the subcommand) that take a separate
+# value token -- skipped in pairs so `docker -H unix:///var/run/docker.sock
+# run ...` / `docker --context foo run ...` still resolve to `run`. Not
+# exhaustive of every global flag either CLI supports; an unrecognized
+# `--foo value` global flag would mis-consume only the flag itself (its value
+# token then fails the "run" check on the next iteration, same as an
+# unrecognized subcommand -- detection just returns None, never a false
+# "run"). Safety-biased detection tolerates that; the conservative injection
+# path never uses this table at all (see _detect_container_run's docstring).
+_DOCKER_GLOBAL_FLAGS_WITH_VALUE = frozenset(
+    {
+        "-H",
+        "--host",
+        "--context",
+        "-c",
+        "--config",
+        "-l",
+        "--log-level",
+        "--tlscacert",
+        "--tlscert",
+        "--tlskey",
+    }
+)
 
-def _is_container_run_command(command: list[str]) -> bool:
-    """True when `command` looks like `docker run ...` / `podman run ...` --
-    an absolute path like /usr/bin/docker also matches, via basename. A form
-    with global flags before the subcommand (`docker -H ... run ...`) is NOT
-    detected; that's outside this proportionate check's scope."""
-    return (
-        len(command) >= 2 and Path(command[0]).name in _CONTAINER_RUNTIMES and command[1] == "run"
-    )
+
+def _unwrap_command_prefix(command: list[str]) -> list[str]:
+    """Strip a leading `sudo` (its own flags, including `-u`/`--user <who>`)
+    and/or `env` (its own flags + leading `VAR=val` assignments), returning
+    the remainder starting at the REAL binary token. Best-effort, not a shell
+    parser -- covers the realistic wrapper shapes this defense targets
+    (`sudo docker run ...`, `env X=1 docker run ...`, `sudo env X=1 docker
+    run ...`), not arbitrary wrapper chains. Returns `command` unchanged when
+    neither wrapper is present."""
+    i = 0
+    n = len(command)
+    if i < n and Path(command[i]).name == "sudo":
+        i += 1
+        while i < n and command[i].startswith("-"):
+            if command[i] in ("-u", "--user") and i + 1 < n:
+                i += 2
+            else:
+                i += 1
+    if i < n and Path(command[i]).name == "env":
+        i += 1
+        while i < n and (command[i].startswith("-") or "=" in command[i]):
+            i += 1
+    return command[i:]
 
 
-def _cidfile_flag_value(command: list[str]) -> str | None:
-    """Value of an already-present `--cidfile <path>` / `--cidfile=path` in
-    `command`, else None."""
-    for i, tok in enumerate(command):
-        if tok == "--cidfile" and i + 1 < len(command):
-            return command[i + 1]
-        if tok.startswith("--cidfile="):
-            return tok.split("=", 1)[1]
+def _detect_container_run(command: list[str]) -> tuple[str, int] | None:
+    """``(runtime_basename, run_index)`` when `command` -- after unwrapping a
+    leading `sudo`/`env` wrapper and skipping recognized docker/podman global
+    flags -- resolves to a docker/podman `run` invocation; else None.
+    `run_index` is the index of the `run` token WITHIN THE ORIGINAL
+    `command` (not the unwrapped slice), so callers can address `command`
+    directly. Deliberately broad -- drives only the loud warn +
+    `round_container_orphan_risk` event; see the module note above for why
+    the separate injection path stays conservative instead of reusing this."""
+    real = _unwrap_command_prefix(command)
+    if not real or Path(real[0]).name not in _CONTAINER_RUNTIMES:
+        return None
+    offset = len(command) - len(real)
+    runtime = Path(real[0]).name
+    i = 1
+    while i < len(real):
+        tok = real[i]
+        if tok == "run":
+            return runtime, offset + i
+        if not tok.startswith("-"):
+            return None  # a non-flag, non-`run` subcommand (build/ps/... )
+        if tok in _DOCKER_GLOBAL_FLAGS_WITH_VALUE and i + 1 < len(real):
+            i += 2
+        else:
+            i += 1
     return None
 
 
-def _inject_cidfile(command: list[str], cidfile_path: Path) -> list[str]:
-    """Insert `--cidfile <cidfile_path>` right after the `run` subcommand
-    (index 1) -- ahead of any IMAGE argument, which must always follow the
+# `docker run`/`podman run` OPTIONS known to take a separate value token --
+# used only to walk PAST them without mistaking their value for IMAGE (e.g.
+# `--name foo`: without this, a naive scan would stop at "foo" thinking it's
+# IMAGE). Deliberately NOT the inverse (assume-value-unless-next-looks-like-
+# a-flag): that heuristic mis-consumed a bare boolean flag's OWN following
+# token (e.g. `--rm image` -- `--rm` takes no value, but "eats" "image" as if
+# it did) and walked straight past the real IMAGE boundary into the
+# container's own trailing args. An unrecognized value-taking flag not in
+# this table degrades safely: the scan just stops one token early (treating
+# its value as IMAGE), at worst missing an operator's --cidfile that comes
+# after it -- not a full docker-run option parser, an advisory best-effort
+# walk.
+_DOCKER_RUN_FLAGS_WITH_VALUE = frozenset(
+    {
+        "-e", "--env", "--env-file",
+        "-v", "--volume", "--volumes-from", "--mount",
+        "-p", "--publish",
+        "--name",
+        "-w", "--workdir",
+        "-u", "--user",
+        "-m", "--memory", "--memory-swap", "--memory-reservation",
+        "--cpus", "--cpu-shares", "--cpuset-cpus", "--cpuset-mems",
+        "--network", "--net", "--ip", "--ip6", "--mac-address", "--add-host",
+        "-l", "--label", "--label-file",
+        "--restart",
+        "--entrypoint",
+        "-h", "--hostname",
+        "--dns", "--dns-search", "--dns-option",
+        "--link",
+        "--log-driver", "--log-opt",
+        "--pid", "--ipc", "--uts", "--userns",
+        "--security-opt",
+        "--stop-signal", "--stop-timeout",
+        "--device", "--device-cgroup-rule",
+        "--cap-add", "--cap-drop",
+        "--tmpfs",
+        "--ulimit",
+        "--shm-size",
+        "--health-cmd", "--health-interval", "--health-retries", "--health-timeout",
+        "--health-start-period",
+        "--platform",
+        "--pull",
+        "--pids-limit",
+        "--blkio-weight",
+        "--group-add",
+        "--isolation",
+        "--runtime",
+        "--gpus",
+        "-a", "--attach",
+        "--expose",
+        "--cidfile",
+    }
+)  # fmt: skip
+
+
+def _cidfile_flag_value(command: list[str], run_idx: int) -> str | None:
+    """Value of an operator-supplied `--cidfile <path>` / `--cidfile=path`
+    within the docker/podman OPTIONS block -- `command[run_idx + 1 :]`, up to
+    (not including) the first bare token, which is the IMAGE argument where
+    docker's own options end. Never scans past IMAGE into the container's
+    OWN args, which may coincidentally carry a `--cidfile`-looking token
+    meant for the containerized program, not docker/podman itself."""
+    i = run_idx + 1
+    n = len(command)
+    while i < n:
+        tok = command[i]
+        if tok == "--cidfile" and i + 1 < n:
+            return command[i + 1]
+        if tok.startswith("--cidfile="):
+            return tok.split("=", 1)[1]
+        if not tok.startswith("-"):
+            break  # IMAGE reached -- the OPTIONS block ends here
+        flag = tok.split("=", 1)[0]
+        if flag in _DOCKER_RUN_FLAGS_WITH_VALUE and "=" not in tok and i + 1 < n:
+            i += 2
+        else:
+            i += 1
+    return None
+
+
+def _inject_cidfile(command: list[str], run_idx: int, cidfile_path: Path) -> list[str]:
+    """Insert `--cidfile <cidfile_path>` right after the `run` subcommand at
+    `run_idx` -- ahead of any IMAGE argument, which must always follow the
     docker/podman OPTIONS block -- so the container's own id is recoverable
-    for a best-effort `stop` at kill time. Only called when
-    ``_is_container_run_command`` is True and `command` carries no
-    `--cidfile` of its own."""
-    return command[:2] + ["--cidfile", str(cidfile_path)] + command[2:]
+    for a best-effort `stop` at kill time. Only called on the CONSERVATIVE
+    injection path (`run_idx == 1`: no wrapper, no global flags before
+    `run`) when `command` carries no `--cidfile` of its own."""
+    return command[: run_idx + 1] + ["--cidfile", str(cidfile_path)] + command[run_idx + 1 :]
 
 
 def _best_effort_container_stop(
@@ -371,33 +510,48 @@ def run(
     matching any pattern (re.search) are excluded from the liveness count
     (persistent helpers that aren't real workers). None = no filtering.
 
-    on_container_orphan_risk: when `command` is a `docker run` / `podman run`
-    invocation (see ``_is_container_run_command``), called exactly once IF
-    this round is actually terminated by ``run()`` (R1128 timeout, grace-kill,
-    or the BaseException reap) -- never on a round that exits on its own.
-    Args are ``(runtime, container_id_or_None, stop_ok_or_None)``: killpg-based
-    termination reaches the launcher process, not the container itself, so
-    this is the caller's signal to warn loudly + record the reduced
-    guarantee. None = no callback (container orphan risk still gets a
-    best-effort ``stop`` attempt; it just isn't reported).
+    on_container_orphan_risk: when `command` is recognized as a `docker run` /
+    `podman run` invocation -- including `sudo`/`env`-wrapped and
+    global-flagged forms; see ``_detect_container_run`` -- called exactly
+    once IF this round is actually terminated by ``run()`` (R1128 timeout,
+    grace-kill, or the BaseException reap) -- never on a round that exits on
+    its own. Args are ``(runtime, container_id_or_None, stop_ok_or_None)``:
+    killpg-based termination reaches the launcher process, not the container
+    itself, so this is the caller's signal to warn loudly + record the
+    reduced guarantee. `container_id`/`stop_ok` stay None for a detected
+    form the CONSERVATIVE `--cidfile` injection doesn't cover (see
+    ``_detect_container_run``'s note) -- the warn/event still fires. None =
+    no callback (container orphan risk still gets a best-effort ``stop``
+    attempt where covered; it just isn't reported).
     """
     stdin_mode = prompt_delivery == "stdin"
     # Container-orphan defense: detect BEFORE building argv (spawn_command may
-    # gain an injected --cidfile) -- see _is_container_run_command's
-    # module-level note. A non-container command's argv is byte-identical to
-    # before: spawn_command stays `command` and nothing else here changes.
+    # gain an injected --cidfile) -- see _detect_container_run's module-level
+    # note. A non-container command's argv is byte-identical to before:
+    # spawn_command stays `command` and nothing else here changes.
     spawn_command = command
     container_runtime: str | None = None
     container_cidfile: Path | None = None
-    if _is_container_run_command(command):
-        container_runtime = Path(command[0]).name
-        existing_cidfile = _cidfile_flag_value(command)
-        if existing_cidfile is not None:
-            container_cidfile = Path(existing_cidfile)
-        else:
-            container_cidfile = log_path.with_name(log_path.name + ".cid")
-            container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing cidfile
-            spawn_command = _inject_cidfile(command, container_cidfile)
+    container_cidfile_is_ours = False
+    detected = _detect_container_run(command)
+    if detected is not None:
+        container_runtime, run_idx = detected
+        # CONSERVATIVE injection: only the unwrapped, unflagged shape
+        # (command[1] == "run" literally -- no sudo/env wrapper, no global
+        # flags before `run`) gets a --cidfile touched. A wrapped or
+        # global-flagged form still gets the loud warn + event above (broad
+        # detection fired), it just never gets an injected cidfile or a
+        # stop attempt -- on_container_orphan_risk reports (runtime, None,
+        # None) for those, same as "id not recoverable".
+        if run_idx == 1:
+            existing_cidfile = _cidfile_flag_value(command, run_idx)
+            if existing_cidfile is not None:
+                container_cidfile = Path(existing_cidfile)
+            else:
+                container_cidfile = log_path.with_name(log_path.name + ".cid")
+                container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing one
+                container_cidfile_is_ours = True
+                spawn_command = _inject_cidfile(command, run_idx, container_cidfile)
     # Defense-in-depth: config validation already rejects {prompt} in the
     # template for stdin mode, but run() must be safe even if called
     # directly with a mismatched template. In stdin mode, never substitute
@@ -546,3 +700,10 @@ def run(
     finally:
         if log_file is not None:
             log_file.close()
+        # Cleanup, not correctness: our own injected cidfile is a tiny,
+        # round-scoped tmp file -- delete it once the round is fully done
+        # (read-back for the best-effort stop, if any, already happened
+        # above). Only ours: an operator-supplied --cidfile is never ours to
+        # delete.
+        if container_cidfile_is_ours and container_cidfile is not None:
+            container_cidfile.unlink(missing_ok=True)

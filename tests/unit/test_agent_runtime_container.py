@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.agent_runtime import _is_container_run_command, run
+from agent_runner.agent_runtime import _cidfile_flag_value, _detect_container_run, run
 
 
 def _alive(pid: int) -> bool:
@@ -40,10 +40,58 @@ def _alive(pid: int) -> bool:
         (["claude"], False),
         (["not-docker-but-similar", "run"], False),
         (["dockerized-thing", "run"], False),  # basename must be exactly docker/podman
+        # The 4 bypass forms a too-literal detector would miss (review fix 1):
+        (["docker", "-H", "unix:///var/run/docker.sock", "run", "image"], True),
+        (["docker", "--context", "foo", "run", "image"], True),
+        (["sudo", "docker", "run", "image"], True),
+        (["env", "X=1", "docker", "run", "image"], True),
+        # A couple of realistic variations on the same wrapper/global-flag shapes.
+        (["sudo", "-u", "root", "docker", "run", "image"], True),
+        (["sudo", "-E", "podman", "run", "image"], True),
+        (["env", "-i", "X=1", "Y=2", "docker", "run", "image"], True),
+        (["docker", "--context=foo", "run", "image"], True),
+        # A non-run subcommand behind a wrapper/global flag must still say False.
+        (["sudo", "docker", "ps"], False),
+        (["docker", "-H", "unix:///var/run/docker.sock", "ps"], False),
     ],
 )
 def test_is_container_run_command(command: list[str], expected: bool) -> None:
-    assert _is_container_run_command(command) is expected
+    assert (_detect_container_run(command) is not None) is expected
+
+
+@pytest.mark.parametrize(
+    ("command", "run_idx"),
+    [
+        (["docker", "run", "image"], 1),
+        (["docker", "-H", "unix:///var/run/docker.sock", "run", "image"], 3),
+        (["docker", "--context", "foo", "run", "image"], 3),
+        (["sudo", "docker", "run", "image"], 2),
+        (["env", "X=1", "docker", "run", "image"], 3),
+    ],
+)
+def test_detect_container_run_index_only_true_for_unwrapped_unflagged_form(
+    command: list[str], run_idx: int
+) -> None:
+    """run()'s --cidfile injection only fires when run_idx == 1 (the simple,
+    unwrapped `docker run ...` shape) -- this pins the index _detect_container_run
+    reports for each bypass form so that conservative gate stays provably correct
+    as the detector above grows broader."""
+    detected = _detect_container_run(command)
+    assert detected is not None
+    assert detected[1] == run_idx
+    assert (run_idx == 1) == (command[0] in ("docker", "podman") and command[1] == "run")
+
+
+def test_cidfile_flag_value_scans_only_the_options_block_not_container_args() -> None:
+    """Review fix 3: the scan must stay inside docker's own OPTIONS block
+    (between `run` and IMAGE) -- an operator-supplied --cidfile IS found
+    there, but a `--cidfile`-looking token belonging to the CONTAINERIZED
+    PROGRAM's own args (after IMAGE) must never be mistaken for it."""
+    real_docker_flag = ["docker", "run", "--cidfile", "/host/real.cid", "--rm", "image"]
+    assert _cidfile_flag_value(real_docker_flag, 1) == "/host/real.cid"
+
+    containers_own_arg = ["docker", "run", "--rm", "image", "--cidfile", "/container/internal/path"]
+    assert _cidfile_flag_value(containers_own_arg, 1) is None
 
 
 def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
@@ -86,7 +134,8 @@ def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path,
     the timeout-kill path: the injected --cidfile is read back, `docker stop
     <id>` is actually invoked (proven via the fake stub's own STOP_LOG), and
     the caller's on_container_orphan_risk callback fires with the recovered
-    id + a successful stop."""
+    id + a successful stop. Review fix 2: our OWN injected cidfile is cleaned
+    up once the round is done -- it must not linger as a leaked tmp file."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_fake_runtime(bin_dir, "docker")
@@ -94,6 +143,7 @@ def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path,
     monkeypatch.setenv("WRITE_CID", "1")
     stop_log = tmp_path / "stop.log"
     monkeypatch.setenv("STOP_LOG", str(stop_log))
+    log_path = tmp_path / "round.log"
 
     calls: list[tuple[str, str | None, bool | None]] = []
     result = run(
@@ -106,7 +156,7 @@ def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path,
         # to land before the R1128 kill fires (also serial-marked above).
         timeout_s=5,
         work_dir=tmp_path,
-        log_path=tmp_path / "round.log",
+        log_path=log_path,
         env_extra={},
         on_container_orphan_risk=lambda *a: calls.append(a),
     )
@@ -115,6 +165,44 @@ def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path,
     assert not _alive(result.pid), "docker run launcher must be reaped like any other agent"
     assert calls == [("docker", "fakecid123", True)]
     assert stop_log.read_text(encoding="utf-8").strip() == "fakecid123"
+    assert not (tmp_path / (log_path.name + ".cid")).exists(), (
+        "our own injected cidfile must be cleaned up once the round is done"
+    )
+
+
+@pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): see the other
+# serial-marked tests in this file for the full rationale.
+@pytest.mark.timeout(60)
+def test_operator_provided_cidfile_is_read_but_never_deleted(tmp_path, monkeypatch):
+    """Review fix 2's other half: run() only ever deletes a cidfile IT
+    injected. An operator who already passes their own --cidfile gets it
+    read back for the best-effort stop, same as any injected one -- but it
+    must never be deleted by run()'s cleanup; that file is the operator's."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "docker")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("WRITE_CID", "1")
+    stop_log = tmp_path / "stop.log"
+    monkeypatch.setenv("STOP_LOG", str(stop_log))
+    operator_cidfile = tmp_path / "operator.cid"
+
+    calls: list[tuple[str, str | None, bool | None]] = []
+    result = run(
+        command=["docker", "run", "--cidfile", str(operator_cidfile), "--rm", "some-agent-image"],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        work_dir=tmp_path,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+        on_container_orphan_risk=lambda *a: calls.append(a),
+    )
+
+    assert result.timed_out is True
+    assert calls == [("docker", "fakecid123", True)]
+    assert operator_cidfile.exists(), "an operator-supplied --cidfile must survive run()'s cleanup"
+    assert operator_cidfile.read_text(encoding="utf-8").strip() == "fakecid123"
 
 
 @pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto
@@ -153,6 +241,62 @@ def test_container_run_command_with_no_recoverable_id_only_warns(tmp_path, monke
     assert result.timed_out is True
     assert calls == [("docker", None, None)]
     assert not stop_log.exists(), "no id recoverable -> stop must never be attempted"
+
+
+@pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto
+# gate's own CPU contention can stretch the fake runtime's fork+exec past a
+# tight window, racing the R1128 kill against the assertions below — run
+# this pass with no competing xdist workers instead of over-widening timeout_s.
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize(
+    "build_command",
+    [
+        lambda docker_path: [docker_path, "-H", "unix:///var/run/docker.sock", "run", "image"],
+        lambda docker_path: ["env", "X=1", docker_path, "run", "image"],
+    ],
+    ids=["global-flag-form", "env-wrapped-form"],
+)
+def test_bypass_forms_still_warn_on_terminate_without_a_stop_attempt(
+    tmp_path, monkeypatch, build_command
+):
+    """Review fix 1 — the global-flag and `env`-wrapped bypass forms (2 of
+    the 4 named forms; `sudo docker run ...`/`sudo -u ... docker run ...`
+    are covered at the pure-detector level in test_is_container_run_command
+    and test_detect_container_run_index_only_true_for_unwrapped_unflagged_form
+    -- spawning a real `sudo` here would need passwordless sudo, which isn't
+    a safe test-environment assumption): DETECTED (broad check), so the loud
+    warn + round_container_orphan_risk event still fires on termination --
+    but being outside the CONSERVATIVE injection gate (run_idx != 1), no
+    --cidfile is ever touched and no stop is attempted: the callback reports
+    (runtime, None, None), same shape as "id not recoverable"."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_script = bin_dir / "docker"
+    docker_script.write_text(
+        '#!/bin/bash\nif [ "$1" = "stop" ]; then exit 0; fi\nsleep 60\n',
+        encoding="utf-8",
+    )
+    docker_script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    calls: list[tuple[str, str | None, bool | None]] = []
+    log_path = tmp_path / "round.log"
+    result = run(
+        command=build_command(str(docker_script)),
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        work_dir=tmp_path,
+        log_path=log_path,
+        env_extra={},
+        on_container_orphan_risk=lambda *a: calls.append(a),
+    )
+
+    assert result.timed_out is True
+    assert calls == [("docker", None, None)]
+    assert not (tmp_path / (log_path.name + ".cid")).exists(), (
+        "bypass forms are outside the conservative gate -- no cidfile is ever created"
+    )
 
 
 def test_non_container_command_argv_and_callback_unchanged(tmp_path, monkeypatch):
