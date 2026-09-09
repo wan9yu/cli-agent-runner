@@ -16,6 +16,7 @@ import typing
 from collections.abc import Callable
 from pathlib import Path
 
+from agent_runner import _serve_policy
 from agent_runner.cli.init_cmd import _preset_names
 from agent_runner.config import (
     AgentConfig,
@@ -30,7 +31,14 @@ from agent_runner.config import (
     VcsConfig,
 )
 from agent_runner.defenses import catalog
-from agent_runner.events import KNOWN_EVENT_KINDS
+from agent_runner.events import (
+    CONFIG_BROKEN,
+    CRASH_LOOP,
+    KNOWN_EVENT_KINDS,
+    MEM_LOOP,
+    MEM_LOOP_PERSISTENT,
+    STALLED_NO_PROGRESS,
+)
 from agent_runner.monitor import AUTO_STOP_ALERTS, KNOWN_ALERT_KINDS
 
 # (toml_section_name, dataclass, nested_sub_sections). Nesting is an EXPLICIT
@@ -156,6 +164,78 @@ def render_event_kinds_list() -> str:
     return "\n".join(f"- `{k}`" for k in sorted(KNOWN_EVENT_KINDS))
 
 
+def _giveup_verdict_rows() -> list[tuple[str, int, bool]]:
+    """``(verdict, exit_code, in_restart_prevent)`` rows for serve's five
+    give-up verdicts, in the order the runbook's Symptom section lists them.
+
+    The verdict->code mapping itself is CONTROL FLOW in
+    ``cli/_serve_round.post_round_verdicts`` (a chain of ``if``/``return``,
+    not a dict), so it is mirrored here by hand rather than imported — the
+    four exit-code integers and the ``RestartPreventExitStatus`` membership
+    (mirroring ``service_unit.py``'s rendered line) ARE imported from
+    ``_serve_policy``, the actual code SSOT, so a constant change here is
+    caught by ``./build.sh docs`` producing a diff.
+    """
+    return [
+        (CONFIG_BROKEN, _serve_policy.PERMANENT_CONFIG_EXIT, True),
+        (CRASH_LOOP, _serve_policy.CRASH_LOOP_EXIT, True),
+        (STALLED_NO_PROGRESS, _serve_policy.CRASH_LOOP_EXIT, True),
+        (MEM_LOOP_PERSISTENT, _serve_policy.MEM_LOOP_PERSISTENT_EXIT, True),
+        (MEM_LOOP, _serve_policy.MEM_LOOP_EXIT, False),
+    ]
+
+
+def render_giveup_exit_codes_table() -> str:
+    """Verdict -> exit-code -> ``RestartPreventExitStatus`` membership table
+    for serve's give-up breakers. 5 verdicts map to only 4 distinct codes:
+    ``stalled_no_progress`` reuses ``crash_loop``'s 75 rather than minting its
+    own (same give-up verdict — "an unknown failure kept recurring, stop for
+    real" — reached via a different signal)."""
+    lines = ["| Verdict | Exit code | `RestartPreventExitStatus`? |", "|---|---|---|"]
+    seen_codes: dict[int, str] = {}
+    for verdict, code, stays_stopped in _giveup_verdict_rows():
+        shares = f" (shares `{seen_codes[code]}`'s exit code)" if code in seen_codes else ""
+        seen_codes.setdefault(code, verdict)
+        behavior = "yes — stays stopped" if stays_stopped else "no — restarts (break-then-restart)"
+        lines.append(f"| `{verdict}` | `{code}`{shares} | {behavior} |")
+    return "\n".join(lines)
+
+
+def render_giveup_systemd_example() -> str:
+    """The ``systemd unit pattern recommendations`` fenced example.
+
+    ``RestartPreventExitStatus`` lists the three DELIBERATE give-up codes
+    (config_broken/crash_loop/mem_loop_persistent); ``mem_loop``'s 71 is
+    deliberately excluded so systemd respawns to retry (see
+    ``service_unit.py``, which renders this same triple from the same
+    constants)."""
+    prevent = (
+        f"{_serve_policy.PERMANENT_CONFIG_EXIT} {_serve_policy.CRASH_LOOP_EXIT} "
+        f"{_serve_policy.MEM_LOOP_PERSISTENT_EXIT}"
+    )
+    return (
+        "```ini\n"
+        "# Prod (infinite supervisor) — current default (0.2.11+)\n"
+        "[Service]\n"
+        "ExecStart=... serve --config /etc/agent-runner.toml\n"
+        "Restart=on-failure\n"
+        f"RestartPreventExitStatus={prevent}   "
+        f"# config_broken ({_serve_policy.PERMANENT_CONFIG_EXIT}) / "
+        f"crash_loop ({_serve_policy.CRASH_LOOP_EXIT}) / "
+        f"mem_loop_persistent ({_serve_policy.MEM_LOOP_PERSISTENT_EXIT}) stay stopped\n"
+        "                                     "
+        f"# mem_loop ({_serve_policy.MEM_LOOP_EXIT}) is NOT listed here — it restarts\n"
+        "RestartSec=3\n"
+        "\n"
+        "# Bounded job\n"
+        "[Service]\n"
+        "ExecStart=... serve --config /etc/test.toml --max-rounds 10\n"
+        "Restart=on-failure\n"
+        "RestartSec=5\n"
+        "```"
+    )
+
+
 def _render_migrate_transforms() -> str:
     """Bullet list of the transforms `agent-runner migrate` applies, from the registry.
     A few entries carry a `parsed -> str` describe (so the manual report can name the
@@ -264,6 +344,16 @@ RENDERERS: dict[str, Renderer] = {
     "verb-table": Renderer(render_verb_table, "agent_runner/cli argparse subparsers"),
     "migrate-transforms": Renderer(
         _render_migrate_transforms, "agent_runner/migrations.py MIGRATIONS"
+    ),
+    "giveup-exit-codes": Renderer(
+        render_giveup_exit_codes_table,
+        "agent_runner/_serve_policy.py exit-code constants + "
+        "cli/_serve_round.py post_round_verdicts's verdict->code map",
+    ),
+    "giveup-systemd-example": Renderer(
+        render_giveup_systemd_example,
+        "agent_runner/_serve_policy.py exit-code constants "
+        "(service_unit.py's RestartPreventExitStatus mirrors these same three)",
     ),
 }
 RENDERERS.update(

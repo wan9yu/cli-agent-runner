@@ -238,6 +238,51 @@ def test_given_monitor_section_when_rendered_then_host_health_subsection_lists_f
     assert "| `disk_critical_pct` | `float` | 95.0 |" in md
 
 
+def test_given_render_giveup_exit_codes_table_when_called_then_five_verdicts_four_codes() -> None:
+    from agent_runner import _serve_policy
+    from agent_runner._docgen import render_giveup_exit_codes_table
+
+    md = render_giveup_exit_codes_table()
+    rows = [line for line in md.splitlines() if line.startswith("| `")]
+    assert len(rows) == 5  # 5 verdicts
+    codes = {
+        "config_broken": _serve_policy.PERMANENT_CONFIG_EXIT,
+        "crash_loop": _serve_policy.CRASH_LOOP_EXIT,
+        "stalled_no_progress": _serve_policy.CRASH_LOOP_EXIT,
+        "mem_loop_persistent": _serve_policy.MEM_LOOP_PERSISTENT_EXIT,
+        "mem_loop": _serve_policy.MEM_LOOP_EXIT,
+    }
+    assert len(set(codes.values())) == 4  # only 4 distinct codes
+    for verdict, code in codes.items():
+        assert f"`{verdict}` | `{code}`" in md
+    # stalled_no_progress shares crash_loop's code — called out inline
+    assert "stalled_no_progress` | `75` (shares `crash_loop`'s exit code)" in md
+    # mem_loop is the one restartable verdict; the other four stay stopped
+    assert "`mem_loop` | `71` | no — restarts" in md
+    for verdict in ("config_broken", "crash_loop", "mem_loop_persistent"):
+        assert f"`{verdict}` | `{codes[verdict]}` | yes — stays stopped" in md
+    assert "(shares `crash_loop`'s exit code) | yes — stays stopped" in md
+
+
+def test_given_render_giveup_systemd_example_when_called_then_matches_serve_policy() -> None:
+    from agent_runner import _serve_policy
+    from agent_runner._docgen import render_giveup_systemd_example
+
+    md = render_giveup_systemd_example()
+    assert md.startswith("```ini\n")
+    assert md.endswith("```")
+    prevent_line = next(ln for ln in md.splitlines() if ln.startswith("RestartPreventExitStatus="))
+    values = prevent_line.split("=", 1)[1].split("#", 1)[0].split()
+    assert " ".join(values) == (
+        f"{_serve_policy.PERMANENT_CONFIG_EXIT} {_serve_policy.CRASH_LOOP_EXIT} "
+        f"{_serve_policy.MEM_LOOP_PERSISTENT_EXIT}"
+    )
+    # mem_loop's exit code is deliberately absent from the RestartPreventExitStatus line
+    prevent_codes = {int(v) for v in values}
+    assert _serve_policy.MEM_LOOP_EXIT not in prevent_codes
+    assert str(_serve_policy.MEM_LOOP_EXIT) in md  # still mentioned, in the trailing comment
+
+
 def test_given_generated_rows_when_rendered_then_pipes_are_escaped() -> None:
     """`X | None` types and the auth_fail_patterns default both contain `|`."""
     from agent_runner._docgen import render_config_schema_table

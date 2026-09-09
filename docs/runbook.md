@@ -136,6 +136,8 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 
 ### systemd unit pattern recommendations
 
+<!-- gen:giveup-systemd-example -->
+<!-- source: agent_runner/_serve_policy.py exit-code constants (service_unit.py's RestartPreventExitStatus mirrors these same three) -->
 ```ini
 # Prod (infinite supervisor) — current default (0.2.11+)
 [Service]
@@ -151,6 +153,7 @@ ExecStart=... serve --config /etc/test.toml --max-rounds 10
 Restart=on-failure
 RestartSec=5
 ```
+<!-- /gen:giveup-systemd-example -->
 
 ## Off-peak scheduling (0.2.7+)
 
@@ -822,18 +825,29 @@ readily instead of holding pages in RAM until real pressure hits.
 
 ### Serve stopped on its own (`crash_loop` / `config_broken` / `mem_loop` / `mem_loop_persistent` / `stalled_no_progress`)
 
-**Symptom:** `serve` exited with a give-up code (`config_broken` → 78,
-`crash_loop` → 75, `stalled_no_progress` → 75, `mem_loop_persistent` → 70,
-`mem_loop` → 71) but did little or no work. Give-up defenses stop the round
-loop rather than respawn a doomed or ballooning round forever.
-`config_broken`, `crash_loop`/`stalled_no_progress` (same exit code, `75`),
-and `mem_loop_persistent` are in the unit's `RestartPreventExitStatus`, so
-systemd `Restart=on-failure` does **not** bring the service back (the unit
-shows *failed*) — intervention is needed. `mem_loop` alone is deliberately
-NOT in that list: systemd **does** restart it (break-then-restart — a fresh
-serve process may find the host memory pressure has cleared), so usually no
-action is needed unless it keeps recurring — if it does, it escalates on its
-own to `mem_loop_persistent` (see below).
+**Symptom:** `serve` exited with a give-up code but did little or no work.
+Give-up defenses stop the round loop rather than respawn a doomed or
+ballooning round forever.
+
+<!-- gen:giveup-exit-codes -->
+<!-- source: agent_runner/_serve_policy.py exit-code constants + cli/_serve_round.py post_round_verdicts's verdict->code map -->
+| Verdict | Exit code | `RestartPreventExitStatus`? |
+|---|---|---|
+| `config_broken` | `78` | yes — stays stopped |
+| `crash_loop` | `75` | yes — stays stopped |
+| `stalled_no_progress` | `75` (shares `crash_loop`'s exit code) | yes — stays stopped |
+| `mem_loop_persistent` | `70` | yes — stays stopped |
+| `mem_loop` | `71` | no — restarts (break-then-restart) |
+<!-- /gen:giveup-exit-codes -->
+
+`config_broken`, `crash_loop`/`stalled_no_progress`, and `mem_loop_persistent`
+being in the unit's `RestartPreventExitStatus` means systemd
+`Restart=on-failure` does **not** bring the service back (the unit shows
+*failed*) — intervention is needed. `mem_loop` alone is deliberately NOT in
+that list: systemd **does** restart it (break-then-restart — a fresh serve
+process may find the host memory pressure has cleared), so usually no action
+is needed unless it keeps recurring — if it does, it escalates on its own to
+`mem_loop_persistent` (see below).
 
 | Event | Trigger | Fix |
 |---|---|---|
