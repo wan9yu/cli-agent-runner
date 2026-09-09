@@ -100,13 +100,18 @@ subprocess env-contract table; proven by
 
 ### 5. `agent_usage_recorded` (0.1.24+) — per-round token + cost data
 
-Each round (claude or gemini) emits an `agent_usage_recorded` event with
-token breakdown + cost (where the underlying CLI exposes it).
+Each round run under claude, gemini, codewhale, or pi emits an
+`agent_usage_recorded` event with token breakdown + cost (where the
+underlying CLI exposes it). kimi's built-in plugin does not emit it: its
+stream-json output carries no token counters at all (see `docs/plugins.md`
+§ `kimi_error_detector`).
 
 ```toml
 # No config needed — events emit automatically when a built-in plugin
-# (claude_error_detector / gemini_error_detector) is registered.
-# To suppress: [plugins] disable = ["claude_error_detector", "gemini_error_detector"]
+# (claude_error_detector / gemini_error_detector / codewhale_error_detector /
+# pi_error_detector) is registered.
+# To suppress: [plugins] disable = ["claude_error_detector", "gemini_error_detector",
+#   "codewhale_error_detector", "pi_error_detector"]
 ```
 
 Use as input to a cost-tracking detector or external billing reconciler.
