@@ -214,6 +214,82 @@ def test_given_serve_cgroup_when_imports_scanned_then_within_allowlist() -> None
     )
 
 
+_EMIT_SUBMODULE_RE = re.compile(r"agent_runner\._emit\.\w+")
+
+
+def _direct_emit_submodule_imports(base: Path) -> list[str]:
+    """Every ``*.py`` file under ``base`` that imports a real
+    ``agent_runner._emit.<submodule>`` module (``from ... import`` or plain
+    ``import``), as ``"<path>: <offending source line>"`` strings. AST-based,
+    not text/regex over the raw source, so a `patch("agent_runner._emit.emit_
+    foo")` STRING (a legitimate, common test pattern) is never mistaken for a
+    real import -- only nodes the parser itself classifies as Import/ImportFrom
+    are considered."""
+    offenders: list[str] = []
+    for f in sorted(base.rglob("*.py")):
+        if "__pycache__" in f.parts:
+            continue
+        if f.parts[-2:] == ("_emit", "__init__.py"):
+            # The facade itself: importing each submodule to re-export it IS
+            # the one sanctioned crossing point (see its own docstring).
+            continue
+        tree = ast.parse(f.read_text(), filename=str(f))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and _EMIT_SUBMODULE_RE.fullmatch(node.module)
+            ):
+                offenders.append(f"{f}: from {node.module} import ...")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _EMIT_SUBMODULE_RE.fullmatch(alias.name):
+                        offenders.append(f"{f}: import {alias.name}")
+    return offenders
+
+
+def test_given_emit_facade_rule_when_scanned_then_no_direct_submodule_imports() -> None:
+    """``_emit/__init__.py``'s docstring says every consumer imports from the
+    FACADE (``agent_runner._emit``), never a submodule
+    (``agent_runner._emit.<name>``) directly -- until now that rule was prose
+    only (0.2.19 whole-branch review, seam-note M-4). A direct submodule
+    import would silently defang a `patch("agent_runner._emit.emit_...")`
+    test target aimed at the facade: the patch rewrites the facade module's
+    attribute, but a name already bound from the submodule directly never
+    sees it -- the exact failure shape the 0.2.18 ``round_outcome`` seam hit
+    in a different module. Scans both ``agent_runner/`` (production) and
+    ``tests/`` (so a test file introducing the bad pattern trips this too)."""
+    repo_root = PKG.parent
+    offenders = _direct_emit_submodule_imports(PKG) + _direct_emit_submodule_imports(
+        repo_root / "tests"
+    )
+    assert offenders == [], "direct agent_runner._emit.<submodule> import(s) found:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_given_direct_emit_submodule_import_when_scanned_then_flagged(tmp_path: Path) -> None:
+    """Non-vacuity proof for the scan above: a real submodule import must be
+    caught, a facade import and a same-looking STRING must not be."""
+    (tmp_path / "bad_from.py").write_text("from agent_runner._emit.rounds import emit_round_end\n")
+    (tmp_path / "bad_plain.py").write_text("import agent_runner._emit.serve\n")
+    (tmp_path / "good_facade.py").write_text("from agent_runner._emit import emit_round_end\n")
+    (tmp_path / "good_string.py").write_text(
+        "from unittest.mock import patch\n"
+        "def f():\n"
+        '    with patch("agent_runner._emit.emit_round_end"):\n'
+        "        pass\n"
+    )
+
+    offenders = _direct_emit_submodule_imports(tmp_path)
+
+    assert any("bad_from.py" in o and "agent_runner._emit.rounds" in o for o in offenders)
+    assert any("bad_plain.py" in o and "agent_runner._emit.serve" in o for o in offenders)
+    assert not any("good_facade.py" in o for o in offenders)
+    assert not any("good_string.py" in o for o in offenders)
+    assert len(offenders) == 2
+
+
 def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() -> None:
     """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
     offenders: list[str] = []

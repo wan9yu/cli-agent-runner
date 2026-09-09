@@ -264,6 +264,48 @@ def test_given_render_giveup_exit_codes_table_when_called_then_five_verdicts_fou
     assert "(shares `crash_loop`'s exit code) | yes — stays stopped" in md
 
 
+def test_given_restart_prevent_mirrored_in_three_places_then_all_agree_as_a_set(
+    tmp_path: Path,
+) -> None:
+    """``RestartPreventExitStatus`` membership is hand-mirrored in three
+    places: ``service_unit.render_serve_unit``'s rendered line (what systemd
+    actually enforces), ``_docgen.render_giveup_systemd_example``'s rendered
+    line (the runbook's copy of that same line), and
+    ``_docgen._giveup_verdict_rows``'s ``stays_stopped`` flags (the runbook's
+    exit-code table). Each existing test above/elsewhere checks one site
+    against the ``_serve_policy`` constants; none checks that the three sites
+    agree with EACH OTHER as a set -- so a future exit code added to one but
+    not the others would keep every existing test green while the runbook
+    silently omits it."""
+    from agent_runner._docgen import _giveup_verdict_rows, render_giveup_systemd_example
+    from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig, VcsConfig
+    from agent_runner.service_unit import render_serve_unit
+
+    def _restart_prevent_codes(unit_text: str) -> set[int]:
+        line = next(
+            ln for ln in unit_text.splitlines() if ln.startswith("RestartPreventExitStatus=")
+        )
+        return {int(v) for v in line.split("=", 1)[1].split("#", 1)[0].split()}
+
+    cfg = Config(
+        agent=AgentConfig(command=["agent"], prompt_arg_template=[]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
+        prompt=PromptConfig(file=tmp_path / "p.md"),
+        vcs=VcsConfig(),
+    )
+    unit = render_serve_unit(
+        cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
+    )
+    unit_codes = _restart_prevent_codes(unit)
+    doc_example_codes = _restart_prevent_codes(render_giveup_systemd_example())
+    table_codes = {
+        code for _verdict, code, stays_stopped in _giveup_verdict_rows() if stays_stopped
+    }
+
+    assert unit_codes, "sanity: the unit must render a non-empty RestartPreventExitStatus"
+    assert unit_codes == doc_example_codes == table_codes
+
+
 def test_given_render_giveup_systemd_example_when_called_then_matches_serve_policy() -> None:
     from agent_runner import _serve_policy
     from agent_runner._docgen import render_giveup_systemd_example

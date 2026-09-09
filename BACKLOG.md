@@ -123,3 +123,24 @@ swap. Tagged NEEDS_DESIGN. Deferred to 0.3's event-model canonicalization
 0.3 is already renaming/unifying event fields wholesale, and settling this
 name now risks a double-rename (once here, again when 0.3's canonical model
 lands). No field name changes in code until that decision is made.
+
+## Real-subprocess grace/timeout tests flake under concurrent-gate oversubscription
+
+A family of real-subprocess timing tests — `test_agent_runtime_reap.py`,
+`test_agent_runtime_marker_scan.py`, `test_agent_runtime_grace.py`,
+`test_agent_runtime_progress.py`, `test_dirty_handler_seam.py` — send real
+signals or race a real child against a wall-clock bound with fixed poll
+counts/deadlines. Under normal load (a single `build.sh check` gate) they are
+clean; under CPU oversubscription (e.g. two or more full gates, or several
+full-suite runs, competing for the same cores) some of them flake — a
+scheduler stall breaches a bound that has no headroom for one, not a logic
+bug in the test or the code it exercises.
+
+Confirmed pre-existing at the 0.2.18 baseline too (not a 0.2.19 regression),
+and confirmed clean under the real single-gate `build.sh check`. Test-infra
+follow-up, not a per-test fix: widening one test's bound at a time is
+whack-a-mole across a whole family with the same root cause. The right fix is
+structural — put these tests in their own `xdist_group` (so they never share
+a worker's CPU slot with each other) or otherwise bound how much parallelism
+they can be exposed to — tracked alongside the 0.2.18 test-speed-optimization
+thread.
