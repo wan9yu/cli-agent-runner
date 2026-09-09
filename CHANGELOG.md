@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-09-09
+
+### Changed
+- `monitor --host` relay now drains cleanly on SIGTERM — tears down its ssh child group and exits 0 — instead of dying immediately, matching `serve`'s stop-signal behavior.
+- Internal structure, behavior-identical: `_emit.py` split into an `_emit/` package (domain submodules behind a facade); the cgroup-pressure spine carved out of `cli/_serve_round.py` into `cli/_serve_cgroup.py`.
+- The give-up exit-code table in the runbook is now generated from code instead of hand-copied; detector/defense counts and the `peek` schema version are now invariant-pinned against the same source.
+- Internal hardening: the monitor's fail-open guards are unified into one implementation; `kill`'s systemd-user SIGKILL escalation shares the same bounded poll `serve` uses; the cgroup pressure spine resolves its bounding ancestor once per round instead of on every tick; a single-implementation `Protocol` was collapsed to its concrete type; a process's stored child-name no longer passes an attacker-rewritable `argv[0]` through unbounded; plugin discovery now scans legacy egg-info installs and handles entry points with an extras suffix.
+
+### Fixed
+- Docs: the `agent_usage_recorded` plugin list corrected to claude/gemini/codewhale/pi (kimi's built-in plugin emits no token counters).
+
+### Notes
+- Not breaking: no `agent-runner migrate` step, no systemd unit change. The relay's SIGTERM-drain above is the one behavior change in this release — anyone relying on the relay's old immediate-exit-on-SIGTERM will now see it drain instead.
+- `oom_kill_delta`'s two-different-field-names inconsistency is deferred to 0.3's event-model work rather than reconciled here, to avoid a double-rename.
+
 ## [0.2.18] - 2026-09-08
 
 ### Added
