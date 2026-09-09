@@ -22,8 +22,12 @@ things a hand-rolled ``while true; ssh …; sleep 30; done`` loop gets wrong:
 3. **Process hygiene.** ssh is spawned in its own session, and the whole process
    GROUP is torn down (SIGTERM → grace → SIGKILL) on interrupt, give-up and each
    reconnect — so no orphaned ssh/sleep tree survives a dropped link. The relay
-   itself drains the same way on SIGTERM or SIGINT — like ``serve``, a stop
-   signal tears its child group down and exits clean rather than dying immediately.
+   drains the same way on SIGINT for free (Python's default KeyboardInterrupt
+   handler); a caller that wants the same clean drain on SIGTERM — like the
+   CLI's ``monitor --host --mode events`` — installs ``_install_term_handler()``
+   itself before calling in (see that function's docstring: this module does
+   not touch process signal state on its own, so it stays safe to call from a
+   worker thread).
 
 Detection is NOT relayed: the detectors run on the supervised host by design
 (``auto_stop_on`` acts there with zero client involvement). This module moves
@@ -197,8 +201,15 @@ def relay_remote_events(
 
     ``log_dir`` is the CLIENT's log dir — blip/give-up events describe this
     machine's link to ``host``, not the supervised project's health.
+
+    Thread-agnostic and side-effect-free on process signal state: this
+    function does NOT install a SIGTERM handler itself (``signal.signal``
+    only works on the main thread, and a library caller may run this beside
+    its own event loop on a worker thread). A caller that wants SIGTERM to
+    drain the relay the way ``monitor --host --mode events`` does must call
+    ``_install_term_handler()`` itself from its own main thread before
+    invoking this function — see ``cli/monitor_cmd.py``.
     """
-    _install_term_handler()
     # ssh reads a leading '-' as an option (-oProxyCommand=… runs a local
     # command), so an attacker-supplied "host" must never reach the argv.
     if host.startswith("-"):

@@ -131,8 +131,19 @@ def _cmd_events(args) -> int:
 
     host = getattr(args, "host", None)
     if host is not None:
+        # Late import: remote_relay pulls agent_runtime (psutil, threading) --
+        # keep it out of every CLI invocation's startup footprint, matching
+        # api.relay_remote_events's own late import of the same module.
+        from agent_runner import remote_relay
+
         raw_kinds = getattr(args, "kind", None)
         kinds = [k.strip() for k in raw_kinds.split(",") if k.strip()] if raw_kinds else None
+        # relay_remote_events itself is thread-agnostic and does not touch
+        # process signal state (it's pinned public API). The CLI is always on
+        # the main thread and wants the same drain-on-SIGTERM behavior serve
+        # and round get, so it installs the handler here — same precedent as
+        # round_cmd._install_term_handler.
+        remote_relay._install_term_handler()
         return api.relay_remote_events(
             host,
             log_dir=log_dir,

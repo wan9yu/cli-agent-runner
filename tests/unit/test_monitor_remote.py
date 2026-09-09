@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from io import StringIO
 from pathlib import Path
@@ -36,17 +37,6 @@ def _write_stub(path: Path, body: str) -> Path:
 @pytest.fixture
 def fast_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(remote_relay, "_RECONNECT_BACKOFF_S", (0.01,))
-
-
-@pytest.fixture
-def no_term_handler(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neutralize the SIGTERM handler ``relay_remote_events`` installs on
-    every call. Behavioral tests below call it in THIS process (no
-    subprocess), and ``signal.signal`` is a raw OS call monkeypatch cannot
-    auto-revert — leaving the real handler armed would permanently rewire
-    this pytest worker's SIGTERM disposition for the rest of the session.
-    Only the dedicated SIGTERM tests want the real handler installed."""
-    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: None)
 
 
 def _events(log_dir: Path) -> list[dict]:
@@ -86,9 +76,7 @@ def test_given_explicit_kinds_and_remote_config_when_argv_built_then_passed_thro
     assert argv[argv.index("--config") + 1] == "/srv/proj/agent-runner.toml"
 
 
-def test_given_host_starting_with_dash_when_relay_then_value_error(
-    tmp_path: Path, no_term_handler: None
-) -> None:
+def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Path) -> None:
     """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
     with pytest.raises(ValueError, match="starts with '-'"):
         remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
@@ -100,7 +88,7 @@ def test_given_host_starting_with_dash_when_relay_then_value_error(
 
 
 def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, no_term_handler: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
 ) -> None:
     """Lines pass through byte-identically; every RE-connect carries --since <max ts>."""
     argv_log = tmp_path / "argv.log"
@@ -141,7 +129,7 @@ def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
 
 
 def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None, no_term_handler: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
 ) -> None:
     """Garbage is relayed verbatim but never becomes the resume point."""
     argv_log = tmp_path / "argv.log"
@@ -173,7 +161,6 @@ def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fast_backoff: None,
-    no_term_handler: None,
     capsys,
 ) -> None:
     stub = _write_stub(
@@ -198,7 +185,7 @@ def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
 
 
 def test_given_zero_tolerance_when_ssh_exits_then_gives_up_without_reconnecting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_term_handler: None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """tolerance 0 disables reconnection: one shot, no blip."""
     argv_log = tmp_path / "argv.log"
@@ -245,6 +232,44 @@ def test_install_term_handler_raises_keyboardinterrupt(monkeypatch: pytest.Monke
         captured[signal.SIGTERM](signal.SIGTERM, None)
 
 
+def test_relay_remote_events_callable_from_worker_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``relay_remote_events`` is pinned public API (``api.relay_remote_events``)
+    and must stay usable the way an embedder would use it: running beside its
+    own main-thread loop, on a worker thread. ``signal.signal`` only works on
+    the main thread, so this function must NOT install a SIGTERM handler
+    itself -- that was the 0.2.18 contract, regressed by a later change that
+    called ``_install_term_handler()`` from inside it (moved out to
+    ``cli/monitor_cmd.py``, which is always on the main thread) and restored
+    here. Also confirms no SIGTERM disposition is left behind for the caller's
+    process."""
+    stub = _write_stub(tmp_path / "fake-ssh", "exit 1\n")
+    monkeypatch.setattr(remote_relay, "_SSH", str(stub))
+    log_dir = tmp_path / "logs"
+    before = signal.getsignal(signal.SIGTERM)
+
+    result: dict[str, object] = {}
+
+    def _run() -> None:
+        try:
+            result["rc"] = remote_relay.relay_remote_events(
+                "pi", log_dir=log_dir, kinds=["round_end"], failure_tolerance_s=0, out=StringIO()
+            )
+        except BaseException as exc:  # pragma: no cover -- surfaced via result on failure
+            result["exc"] = exc
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+    thread.join(timeout=10)
+
+    assert not thread.is_alive(), "relay must finish promptly on a worker thread (not hang)"
+    assert "exc" not in result, f"must not raise off the main thread: {result.get('exc')!r}"
+    assert result["rc"] == 1
+    after = signal.getsignal(signal.SIGTERM)
+    assert after is before, "must not leave a handler installed behind it"
+
+
 @pytest.mark.timeout(90)  # see the wait(timeout=45) comment below for the arithmetic
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
 def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
@@ -253,10 +278,15 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
     """The orphan-tree scar: both stop signals must take out ssh AND its
     children via the relay's normal drain (tear down the ssh group, then exit
     0), not Python's own default disposition for that signal. SIGINT got this
-    for free from Python's built-in KeyboardInterrupt default; SIGTERM needed
-    this task's explicit handler -- without it, SIGTERM kills the driver
-    immediately (rc -15, not 0) and orphans the stub plus its backgrounded
-    sleep, which is exactly what this parametrization would catch."""
+    for free from Python's built-in KeyboardInterrupt default; SIGTERM needs
+    the driver to install the relay's handler -- without it, SIGTERM kills the
+    driver immediately (rc -15, not 0) and orphans the stub plus its
+    backgrounded sleep, which is exactly what this parametrization would
+    catch. ``relay_remote_events`` itself no longer installs this handler (it
+    is pinned public API, safe to call off the main thread -- see
+    ``test_relay_remote_events_callable_from_worker_thread``); the driver
+    installs it explicitly, the same way ``cli/monitor_cmd.py`` does for the
+    real CLI path."""
     stub = _write_stub(
         tmp_path / "fake-ssh",
         "sleep 300 &\n"
@@ -278,6 +308,7 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
         "from pathlib import Path\n"
         "from agent_runner import remote_relay\n"
         "remote_relay._SSH = sys.argv[1]\n"
+        "remote_relay._install_term_handler()\n"
         "sys.exit(remote_relay.relay_remote_events('pi', log_dir=Path(sys.argv[2])))\n"
     )
     proc = subprocess.Popen(
@@ -334,6 +365,43 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
                 os.killpg(stub_pid, signal.SIGKILL)
             except OSError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# the CLI, not relay_remote_events, owns SIGTERM disposition for this path
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_events_installs_term_handler_before_relaying(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``relay_remote_events`` no longer installs its own SIGTERM handler (it
+    is pinned public API and must stay callable off the main thread -- see
+    ``test_relay_remote_events_callable_from_worker_thread``). The CLI path
+    (``monitor --host --mode events``) must still drain on SIGTERM, so
+    ``monitor_cmd`` installs the handler itself, before invoking the relay --
+    same precedent as ``round_cmd``."""
+    from types import SimpleNamespace
+
+    from agent_runner.cli import monitor_cmd
+
+    calls: list[str] = []
+    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: calls.append("install"))
+
+    def fake_relay(*_args, **_kwargs) -> int:
+        calls.append("relay")
+        return 0
+
+    monkeypatch.setattr(monitor_cmd.api, "relay_remote_events", fake_relay)
+    fake_cfg = SimpleNamespace(
+        runtime=SimpleNamespace(log_dir=Path("/tmp/does-not-matter")),
+        monitor=SimpleNamespace(remote_failure_tolerance_s=90.0),
+    )
+    monkeypatch.setattr("agent_runner.cli.common.cfg_from_args", lambda args: fake_cfg)
+
+    args = SimpleNamespace(host="pi", kind=None, remote_config=None, config=None, work_dir=None)
+    rc = monitor_cmd._cmd_events(args)
+
+    assert rc == 0
+    assert calls == ["install", "relay"], "handler must be armed before the relay is interruptible"
 
 
 # ---------------------------------------------------------------------------

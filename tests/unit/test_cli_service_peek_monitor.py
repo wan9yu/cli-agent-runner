@@ -307,7 +307,7 @@ def test_given_mode_events_with_host_when_main_then_dispatches_relay(
     monkeypatch, tmp_path: Path
 ) -> None:
     """`monitor --mode events --host pi` is the supported remote combination."""
-    from agent_runner import api
+    from agent_runner import api, remote_relay
     from agent_runner.cli import main
 
     cfg_path = make_toml(tmp_path)
@@ -319,6 +319,12 @@ def test_given_mode_events_with_host_when_main_then_dispatches_relay(
         return 0
 
     monkeypatch.setattr(api, "relay_remote_events", fake_relay)
+    # monitor_cmd installs the relay's real SIGTERM handler on this path
+    # (see FIX I-1); this test drives the real CLI in-process, so neutralize
+    # it -- signal.signal is a raw OS call monkeypatch cannot auto-revert,
+    # and leaving the real handler armed would permanently rewire this
+    # pytest worker's SIGTERM disposition for the rest of the session.
+    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: None)
 
     rc = main(
         [
@@ -347,13 +353,14 @@ def test_given_mode_events_with_host_and_no_kind_when_main_then_relay_defaults(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Omitting --kind hands the relay None, which resolves to every known kind."""
-    from agent_runner import api
+    from agent_runner import api, remote_relay
     from agent_runner.cli import main
 
     cfg_path = make_toml(tmp_path)
     seen: dict = {}
 
     monkeypatch.setattr(api, "relay_remote_events", lambda host, **kw: seen.update(kw) or 0)
+    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: None)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "events", "--host", "pi"])
     assert rc == 0
