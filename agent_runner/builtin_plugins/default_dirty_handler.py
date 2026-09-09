@@ -1,4 +1,4 @@
-"""Bundled default dirty-tree handler — reproduces the pre-0.2.0 built-in
+"""Bundled default dirty-tree handler — reproduces the original built-in
 behavior (stash / ignore / auto_commit per [vcs] dirty_action) as a plugin.
 Ships enabled; disable via [plugins] disable = ["default_dirty_handler"]."""
 

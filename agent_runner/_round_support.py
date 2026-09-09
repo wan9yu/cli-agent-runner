@@ -1,4 +1,4 @@
-"""Round-input assembly + sentinel helpers (0.2.14 Group 4 size-hygiene split).
+"""Round-input assembly + sentinel helpers, split out for size hygiene.
 
 A distinct axis parked in api.py: prompt assembly, per-phase runtime
 resolution, and the self-terminated-sentinel round/status readers. Extracted

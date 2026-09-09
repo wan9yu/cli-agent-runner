@@ -5,7 +5,7 @@ Fourth built-in plugin (after claude, gemini, codewhale). Parses the tail of a
 transient_error_detected so the supervisor can back off instead of hot-looping
 through a provider outage.
 
-Scope (verified against Kimi Code CLI 0.29.1, not documentation): the CLI's
+Scope (verified against the installed Kimi Code CLI, not documentation): the CLI's
 stream-json writer emits exactly three record kinds during a prompt run --
 `{"role":"assistant",...}`, `{"role":"tool",...}`, and `{"role":"meta",...}`
 with type `session.resume_hint` (terminal) or `turn.step.retrying`. Only the

@@ -144,7 +144,7 @@ def _iter_events(path: Path):
 def _tail_events(log_dir: Path) -> Iterator[dict[str, Any]]:
     """The ONE events-tail scan every per-round / per-agent / global-latest
     reader below builds on: the newest TWO monthly ``events-*.jsonl`` files
-    (oldest-first), each read forward. 0.2.17 Task 1 consolidated 5 copies of
+    (oldest-first), each read forward. This consolidates 5 copies of
     this exact ``sorted(log_dir.glob(...))[-2:]`` loop into this single
     generator so a refactor of the tail-selection logic (e.g. widening the
     window) touches one place, not five.
@@ -205,7 +205,7 @@ def _latest_transient_per_agent(log_dir: Path) -> dict[str, Any]:
         kind = ev.get("event")
         # INVARIANT 2: keyed by str(agent), forward old->new merge (_tail_events
         # yields the newest-two-files tail oldest-first) — newest event per agent
-        # wins, matching every other latest_transient_per_agent copy pre-0.2.17.
+        # wins, matching every other latest_transient_per_agent copy.
         if kind == TRANSIENT_ERROR_DETECTED:
             latest[str(ev.get("agent", "unknown"))] = ev
         elif kind == TRANSIENT_ERROR_RECOVERED:
@@ -310,7 +310,7 @@ def _active_throttles(
     ``_latest``, when given, is an already-computed :func:`_latest_transient_per_agent`
     map (e.g. :attr:`RoundOutcome.latest_transient_per_agent`) — skips a fresh
     events-tail scan here, the same memoization idea as ``_exponent_cache``. Omitted,
-    it is computed fresh (unchanged pre-0.2.17 behavior)."""
+    it is computed fresh (unchanged behavior)."""
     now = clock.epoch()
     active: dict[str, TransientErrorState] = {}
     latest = _latest if _latest is not None else _latest_transient_per_agent(log_dir)
@@ -342,15 +342,15 @@ def mem_loop_events_in_window(log_dir: Path, clock: Clock, window_s: int) -> int
     ``window_s`` seconds of ``clock.epoch()`` — events-derived, no state file,
     same tail-reconstruction shape as :func:`round_was_mem_terminated` above.
 
-    Feeds ``_serve_round.post_round_verdicts``'s cross-restart escalation
-    (0.2.16 Task 5): ``MEM_LOOP_EXIT`` (71) alone resets on every serve
+    Feeds ``_serve_round.post_round_verdicts``'s cross-restart escalation:
+    ``MEM_LOOP_EXIT`` (71) alone resets on every serve
     process restart, so a host stuck in sustained pressure respawns into the
     identical loop forever (field-confirmed: NRestarts climbs, never
     converges). Counting PRIOR occurrences in a bounded window — rather than
     an all-time total, or a restart-local counter — gives "ages out on its
     own after a sustained-healthy stretch" for free: an old mem_loop episode
     outside the window simply stops counting, no explicit reset needed."""
-    # Kept OUT of RoundOutcome/round_outcome (0.2.17 Task 1): give-up-only, and its
+    # Kept OUT of RoundOutcome/round_outcome: give-up-only, and its
     # window cutoff needs its OWN clock read, unlike anything folded into that struct.
     cutoff = clock.epoch() - window_s
     count = 0
@@ -731,7 +731,7 @@ def _apply_back_off(
     return False
 
 
-# Carved to _round_outcome (0.2.18) for size headroom; re-exported so
+# Carved to _round_outcome for size headroom; re-exported so
 # `from agent_runner._throttle import round_outcome` etc. keep working. Bottom
 # import: _tail_events (above) is bound before _round_outcome's lazy import runs.
 from agent_runner._round_outcome import (  # noqa: E402,F401 — intentional bottom re-export

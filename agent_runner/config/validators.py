@@ -128,7 +128,7 @@ def _require_str_list(value: Any, *, field: str) -> list[str]:
     its elements as strings. The bare-string case is the footgun this rejects:
     ``command = "claude"`` would otherwise ``list()``-explode into
     ``['c','l','a','u','d','e']``. Message names ``agent-runner migrate`` so a
-    rejected pre-0.2.12 config points straight at the fix."""
+    rejected config points straight at the fix."""
     if isinstance(value, str):
         raise ConfigError(
             f"{field}: must be a list, not a bare string {value!r}; run `agent-runner migrate`"

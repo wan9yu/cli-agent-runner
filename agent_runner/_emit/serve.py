@@ -63,7 +63,7 @@ def emit_crash_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path
 
 def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path) -> None:
     """Emit mem_loop (serve gave up after consecutive mid-round memory-pressure
-    terminations — the 0.2.15 coma-preventer's give-up cap). Distinct from
+    terminations — the coma-preventer's give-up cap). Distinct from
     crash_loop: this is a break-then-restart, not a deliberate stop, so it is
     deliberately absent from the unit's RestartPreventExitStatus.
 
@@ -78,7 +78,7 @@ def emit_mem_loop(log_dir: Path, *, consecutive: int, exit_code: int, log_path: 
 def emit_mem_loop_persistent(
     log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path
 ) -> None:
-    """Emit mem_loop_persistent (serve STOPS for real — 0.2.16 Task 5 cross-restart
+    """Emit mem_loop_persistent (serve STOPS for real — cross-restart
     convergence: mem_loop itself kept recurring across restarts within the
     escalation window, so systemd is told to stop rather than respawn into the
     identical loop forever). Distinct from mem_loop: this IS a deliberate stop,
@@ -105,7 +105,7 @@ def emit_stalled_no_progress(
     log_dir: Path, *, consecutive: int, exit_code: int, log_path: Path
 ) -> None:
     """Emit stalled_no_progress (serve gave up after consecutive clean-but-
-    no-progress rounds -- 0.2.16 Task 6). A round that exits 0 fast with no
+    no-progress rounds). A round that exits 0 fast with no
     ``agent_usage_recorded`` never reached the model (pi, and CLIs like it,
     exit 0 on a provider failure) -- ``_round_ok = exit_code == 0``
     (api_types.py) reads that as clean, so without this breaker it is a fast,
@@ -160,7 +160,7 @@ def emit_schedule_paused(
 
     ``phase`` is the phase the supervisor is waiting for on a phase-aware pause;
     it is omitted from the payload when empty so the legacy (non-phase) pause
-    stays byte-identical to 0.2.7."""
+    stays byte-identical to the legacy shape."""
     from agent_runner.events import SCHEDULE_PAUSED, emit
 
     fields = {"active_window": active_window, "resume_at": resume_at, "timezone": timezone}

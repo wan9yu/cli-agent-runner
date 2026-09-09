@@ -1,7 +1,7 @@
 """Per-round outcome fold — the ``RoundOutcome`` struct and the three per-round
 verdict readers (mem-terminated / no-progress) that the serve loop computes ONCE
-per round. Carved out of ``_throttle.py`` (0.2.18) to buy that module headroom
-under the 1000-line gate and to be the home for 0.3's per-agent capability.
+per round. Carved out of ``_throttle.py`` to buy that module headroom
+under the 1000-line gate and to be the home for future per-agent capability.
 
 ``_tail_events`` still lives in ``_throttle`` (many throttle readers share it);
 it is imported LAZILY inside :func:`round_outcome` so ``_throttle`` can re-export
@@ -27,7 +27,7 @@ from agent_runner.events import (
 class RoundOutcome:
     """Every PER-ROUND-scoped verdict :func:`round_was_mem_terminated` and
     :func:`round_had_no_progress` need, folded from ONE :func:`_tail_events`
-    scan (0.2.17 Task 1) instead of the pre-0.2.17 three separate ones (those
+    scan instead of the three separate ones it replaces (those
     two functions' own scans, plus the throttle check's
     :func:`_latest_transient_per_agent` scan serve_cmd ran back-to-back with
     them every round).
@@ -35,8 +35,8 @@ class RoundOutcome:
     Deliberately does NOT include :func:`mem_loop_events_in_window` (give-up-only,
     needs its own clock cutoff — a different axis than "this round") — that one
     stays on :func:`_tail_events` directly. :func:`_backoff_exponent` WAS such an
-    exclusion pre-0.2.18; its per-agent count-since-last-success is now folded into
-    this same scan as ``backoff_exponent_by_agent`` (0.2.18 agent axis, below) —
+    exclusion; its per-agent count-since-last-success is now folded into
+    this same scan as ``backoff_exponent_by_agent`` (the per-agent axis, below) —
     one scan instead of the two `_round_scan` used to run back-to-back."""
 
     mem_terminated: bool
@@ -44,7 +44,7 @@ class RoundOutcome:
     newest_usage_ts: str | None
     newest_substrate_before_ts: str | None
     latest_transient_per_agent: dict[str, Any]
-    # Per-agent verdict INPUTS (0.2.18 agent axis — the mixed-[phases] fix; see
+    # Per-agent verdict INPUTS (the per-agent axis — the mixed-[phases] fix; see
     # round_had_no_progress below). Streaks stay DEPLOYMENT-WIDE
     # (post_round_verdicts' consecutive counters are untouched); only these
     # per-round inputs are keyed by ev["agent"] (the binary basename — already
@@ -67,7 +67,7 @@ def round_outcome(log_dir: Path, *, ran_agent: str | None = None) -> RoundOutcom
     (INVARIANT 3) and reuses it for the mem-terminated / throttle / no-progress
     checks that used to scan separately.
 
-    ``ran_agent`` (0.2.18 agent axis), when given, is carried onto the returned
+    ``ran_agent`` (the per-agent axis), when given, is carried onto the returned
     ``RoundOutcome`` verbatim (see :func:`round_had_no_progress`) and does NOT
     change what this scan computes — every field is folded for every agent seen
     in the tail, ``ran_agent`` just tells the verdict reader which one to key
@@ -87,7 +87,7 @@ def round_outcome(log_dir: Path, *, ran_agent: str | None = None) -> RoundOutcom
         agent = str(ev.get("agent", "unknown"))
         # INVARIANT 2: latest_transient_per_agent keys by str(agent), no ts guard,
         # forward old->new merge (_tail_events yields oldest-file-first) — identical
-        # to the pre-0.2.17 _latest_transient_per_agent copy this replaces.
+        # to the _latest_transient_per_agent copy this replaces.
         if kind == TRANSIENT_ERROR_DETECTED:
             transient[agent] = ev
             detected_count[agent] = detected_count.get(agent, 0) + 1
@@ -161,7 +161,7 @@ def round_was_mem_terminated(log_dir: Path, *, outcome: RoundOutcome | None = No
     ``outcome``, when given (the serve post-round block's one-scan path — see
     :class:`RoundOutcome`), is used verbatim instead of triggering a fresh
     :func:`round_outcome` scan; every existing caller/test omits it and gets the
-    pre-0.2.17 from-scratch-scan behavior unchanged."""
+    from-scratch-scan behavior unchanged."""
     if outcome is None:
         outcome = round_outcome(log_dir)
     return outcome.mem_terminated
@@ -185,7 +185,7 @@ def round_had_no_progress(
     exactly parallel to :func:`round_was_mem_terminated`'s mem-terminated one.
 
     TWO gates guard the verdict against over-firing on healthy deployments
-    (0.2.16 fix-wave CRITICAL #1):
+    (a fix-wave CRITICAL #1):
 
     1. ``throttle_active`` (the SAME value ``cmd()`` already computed for
        ``post_round_decision`` -- caller threads it through, never
@@ -195,7 +195,7 @@ def round_had_no_progress(
        as "no progress" and stop the loop instead of riding the back-off.
     2. Usage-capability: armed ONLY when the agent that just ran this round
        (``outcome.ran_agent``) has EVER emitted ``agent_usage_recorded``
-       anywhere in the scanned tail (0.2.18 agent axis -- per-agent, not
+       anywhere in the scanned tail (per-agent, not
        deployment-wide; see the module-level contract note above
        ``round_outcome``). Some CLIs (kimi -- see builtin_plugins/kimi.py;
        aider; any custom ``[agent] command`` with no usage-emitting plugin)
@@ -210,13 +210,13 @@ def round_had_no_progress(
        no config descriptor. ``outcome.ran_agent is None`` (no ``[phases]`` /
        ``--ignore-schedule`` -- serve doesn't know which agent ran) falls back
        to the deployment-wide ``usage_capable``/``newest_usage_ts``, mirroring
-       ``_ran_agent_throttled``'s any-agent fallback -- today's pre-0.2.18
+       ``_ran_agent_throttled``'s any-agent fallback -- today's
        behavior unchanged for that shape.
 
     INVARIANT 4: short-circuits on ``returncode != 0`` or ``duration_s >=
     threshold_s`` (or ``throttle_active``) BEFORE touching ``outcome`` at all --
     still ahead of any events-tail scan / ``newest_usage_ts`` comparison, exactly
-    as the pre-0.2.17 single-scan version did: a non-zero exit already has its
+    as the single-scan version did: a non-zero exit already has its
     own crash-loop signal, and a slow round (even with no usage) is not a TIGHT
     loop -- a wedged/hung round already has its own signal
     (``round_supervisor_wedged``), so this floor is specifically the fast spin.

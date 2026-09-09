@@ -110,7 +110,7 @@ def render_serve_unit(
         # here — it must restart (break-then-restart, not a deliberate stop).
         # mem_loop_persistent (70) IS listed: once mem_loop itself keeps
         # recurring across restarts within the escalation window, that's a
-        # deliberate stop too (0.2.16 Task 5 cross-restart convergence).
+        # deliberate stop too (cross-restart convergence).
         f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT} "
         f"{MEM_LOOP_PERSISTENT_EXIT}\n"
         f"RestartSec=3\n"

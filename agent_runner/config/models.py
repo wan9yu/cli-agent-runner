@@ -62,7 +62,7 @@ class RuntimeConfig:
     cmdline. Matching children are excluded from the grace-kill liveness
     check — for persistent helper subprocesses (e.g. claude's shell-snapshot
     bash) that would otherwise defeat max_grace_after_result_s. Empty list
-    = no filtering (0.1.38 behavior preserved)."""
+    = no filtering (existing behavior preserved)."""
 
 
 @dataclass(frozen=True)
@@ -135,13 +135,13 @@ _DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
 class PluginsConfig:
     """Plugin-related TOML knobs.
 
-    Migrating from free-form ``dict[str, Any] | None`` (0.1.11 and earlier) to a
+    Migrating from an earlier free-form ``dict[str, Any] | None`` to a
     typed dataclass. Known keys are first-class fields; unknown keys land in
     ``.raw`` for forward-compatibility with plugin-author-defined `[plugins.*]`
     sub-keys (e.g. plugin packages may read their own config from `cfg.plugins.raw`).
 
     Neither field is read by core, so both will read as dead to a reader grepping
-    for uses. They are published contracts (CHANGELOG 0.1.12) and are deliberately
+    for uses. They are published contracts and are deliberately
     kept — guarded by tests/invariants/test_plugins_config_stable.py.
     """
 
@@ -162,12 +162,12 @@ class MonitorHostHealthConfig:
     disk_critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
     swap_sout_noise_floor_mb: int = 32  # tier-2 swap-out noise floor (MiB); compare uses *1024*1024
     mem_free_low_mb: int = 16  # tier-3 MemFree floor (MB)
-    # mid-round CRITICAL when PSI-full avg10 >= this (%). 1.0 in 0.2.15 was a
-    # hiccup, not a coma; 60 matches systemd-oomd's DefaultMemoryPressureLimit.
+    # mid-round CRITICAL when PSI-full avg10 >= this (%). An earlier default of
+    # 1.0 was a hiccup, not a coma; 60 matches systemd-oomd's DefaultMemoryPressureLimit.
     psi_full_avg10_critical: float = 60.0
     psi_some_avg10_warning: float = 5.0  # WARNING when PSI-some avg10 >= this (%)
     # Mid-round hard floor hysteresis: consecutive CRITICAL ticks (~10s apart)
-    # required before _spawn_round terminates the round. 1 (0.2.15's behavior)
+    # required before _spawn_round terminates the round. An earlier default of 1
     # let a single transient spike kill a round; 3 requires ~30s of sustained
     # critical pressure, matching the north star (prevent unresponsiveness,
     # not swapping).
@@ -280,7 +280,7 @@ _PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_timeout_s", "disable_pre_round
 
 # Field names of AgentConfig — the keys a [phases.<name>.agent] sub-table may
 # set (merged onto the base [agent] table before validation), and also the
-# base [agent] table's own allowed keys (0.2.13: unknown [agent] keys reject).
+# base [agent] table's own allowed keys (unknown [agent] keys reject).
 _AGENT_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(AgentConfig))
 
 # Field names of RuntimeConfig/VcsConfig/MonitorConfig — the keys their base
@@ -292,15 +292,15 @@ _RUNTIME_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(RuntimeCo
 _VCS_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(VcsConfig))
 _MONITOR_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(MonitorConfig))
 
-# Keys allowed under [monitor.host_health] — the 0.2.14 strictness completion
+# Keys allowed under [monitor.host_health] — the strictness completion
 # (the exact footgun class an operator's typo'd threshold silently dropped).
 _MONITOR_HOST_HEALTH_ALLOWED_FIELDS = frozenset(
     f.name for f in dataclasses.fields(MonitorHostHealthConfig)
 )
 
 # Keys allowed under a [phases.<name>.prompt] sub-table — `files` only
-# (docs/configuration.md's per-phase table already promised this; 0.2.13
-# makes the loader enforce it instead of silently ignoring the rest).
+# (docs/configuration.md's per-phase table already promised this; the loader
+# enforces it instead of silently ignoring the rest).
 _PHASE_PROMPT_ALLOWED_FIELDS = frozenset({"files"})
 
 # Keys allowed under the top-level [prompt] table.

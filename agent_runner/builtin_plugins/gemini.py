@@ -1,6 +1,6 @@
 """Built-in post_round_hook for gemini CLI: usage events + transient error classifier.
 
-Validates the 0.1.23 multi-CLI architecture: this is the second built-in
+Validates the multi-CLI architecture: this is the second built-in
 plugin (after claude) emitting the generic transient_error_detected and
 agent_usage_recorded event families without any agent-runner core changes.
 """

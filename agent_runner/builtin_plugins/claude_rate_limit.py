@@ -5,10 +5,10 @@ api_transient_5xx / api_timeout) and emits transient_error_detected events
 with computed reset_at_epoch. Supervisor consumes the event.
 
 Also emits agent_usage_recorded per-round with token/cost data from the
-claude result event (0.1.24+).
+claude result event.
 
-Module name is historical: the original 0.1.20 single-purpose
-rate-limit detector was generalized to multi-classification in 0.1.23
+Module name is historical: the original single-purpose
+rate-limit detector was generalized to multi-classification
 (class + entry-point renamed to `claude_error_detector`; module path kept).
 """
 
@@ -250,8 +250,8 @@ def _extract_usage(result_event: dict, *, model: str | None, tool_call_count: in
     Semantic note:
     - ``input_tokens`` is the NET fresh input — Anthropic's ``usage.input_tokens``
       already excludes ``cache_read_input_tokens`` and ``cache_creation_input_tokens``
-      (they're independent counts). Earlier 0.1.24 simplify pass incorrectly
-      subtracted cached from input; 0.1.26 reverts to the correct direct read.
+      (they're independent counts). An earlier simplify pass incorrectly
+      subtracted cached from input; this reverts to the correct direct read.
     - ``cached_tokens`` is cache reads only (``cache_read_input_tokens``).
     - ``cache_creation_tokens`` is ``cache_creation_input_tokens`` (write cost,
       priced differently from fresh input by the provider — this plugin records

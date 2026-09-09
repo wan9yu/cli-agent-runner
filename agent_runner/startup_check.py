@@ -202,7 +202,7 @@ def _phase_prompt_checks(cfg: Config) -> list[CheckResult]:
     — mirror of _agent_cli_checks onto prompts — so a broken phase prompt fails at
     boot instead of silent-burning the round it would run. Phases with no override
     (prompt_files is None) reuse the base prompt, already checked; an explicit
-    `prompt.files = []` (a documented distinct state since 0.2.9) is preserved and
+    `prompt.files = []` (a documented distinct state) is preserved and
     not treated as broken here."""
     phases = cfg.phases
     if phases is None:

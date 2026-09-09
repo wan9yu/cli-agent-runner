@@ -1,4 +1,4 @@
-"""agent-runner events — event-stream observation verb (0.1.34+).
+"""agent-runner events — event-stream observation verb.
 
 One-shot (--window N) or streaming (--tail) query against events.jsonl.
 JSON Lines output (one JSON object per line, no pretty-print).

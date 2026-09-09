@@ -203,7 +203,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     default) leaves swap unbounded -- the agent just swaps and cgroup-OOM
     never fires, so the floor must stay armed.
 
-    A THIRD plausibility guard on top of "both finite" (0.2.16 fix-wave
+    A THIRD plausibility guard on top of "both finite" (a fix-wave
     IMPORTANT #1): ``memory_max`` must also be strictly less than the HOST's
     own total RAM. A misconfigured/copy-pasted unit (e.g. ``MemoryMax=1G`` on
     a 462MB host) reports a finite-but-implausible limit that can never
@@ -212,15 +212,15 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     leave NOTHING armed to prevent coma. Only a limit tighter than the host
     itself can plausibly trigger before host-wide exhaustion.
 
-    0.2.18 adds a FOURTH plausibility guard, symmetric with the third:
+    A FOURTH plausibility guard, symmetric with the third:
     ``memory_swap_max`` must also be at most the HOST's own total swap
     (``metrics.swap_total_bytes``). A ``MemorySwapMax`` far above host swap
     can't bind before host-wide swap exhaustion either, so it must not
-    disarm the floor (post-0.2.17 audit low). The field host's plausible
+    disarm the floor (an audit-flagged gap). The field host's plausible
     both-finite shape (swap cap at or below host swap) is unaffected and
     still defers.
 
-    0.2.18 also computes a startup ADVISORY -- carried as fields on this
+    This also computes a startup ADVISORY -- carried as fields on this
     SAME host_cgroup_memory_limit event, never a new event kind -- when
     memory.swap.max is bounded but far below the host's own available swap
     (``_SWAP_CAP_ADVISORY_PCT``): the operator capped the cgroup's swap well

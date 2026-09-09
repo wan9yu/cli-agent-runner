@@ -111,7 +111,7 @@ def emit_agent_usage_recorded(
     """Emit per-round usage record from a CLI plugin.
 
     Raw data only — aggregation (totals, projections, budget warnings) is
-    deferred to consumers and the 0.1.25 capability layer.
+    deferred to consumers and the capability layer.
 
     Field semantics:
     - ``input_tokens``: net non-cached input (both claude and gemini emit net;
@@ -200,14 +200,14 @@ def emit_transient_error_backoff_capped(
     """Emit when supervisor adjusts the plugin-emitted transient back-off.
 
     Fires in two cases:
-    1. **Exp backoff applied** (0.1.33+): estimated-class transient errors
+    1. **Exp backoff applied**: estimated-class transient errors
        (`rate_limit_model` / `api_transient_5xx` / `api_timeout`) doubled
        on consecutive failures. ``consecutive_count`` > 1, multiplier > 1×.
-    2. **Defensive cap hit** (0.1.20+): malformed `reset_at_epoch` or the
+    2. **Defensive cap hit**: malformed `reset_at_epoch` or the
        30-min absolute cap clipped the wait. ``capped_by_absolute_max`` True.
 
     Fields ``original_reset_at_epoch`` / ``applied_reset_at_epoch`` /
-    ``consecutive_count`` / ``capped_by_absolute_max`` are 0.1.33+. Older
+    ``consecutive_count`` / ``capped_by_absolute_max`` are newer fields. Older
     callers that pass only the first 4 kwargs continue to work; the new
     fields are omitted from the payload when None.
     """

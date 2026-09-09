@@ -524,7 +524,7 @@ def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_no
 def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_event_recorded(
     tmp_log_dir: Path,
 ) -> None:
-    """The flake this closes, broadened (M-2/M-3): api.stop's PID_FILE confirm
+    """The flake this closes, broadened: api.stop's PID_FILE confirm
     window can legitimately elapse with active=True while serve is still
     alive and will exit once it next checks for the SIGTERM -- whether it is
     mid-round (the documented graceful-stop contract), still bootstrapping

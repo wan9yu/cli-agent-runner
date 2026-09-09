@@ -3,7 +3,7 @@ subprocess, pre-round + mid-round memory-pressure gating, and the post-round
 give-up decision (config_broken / mem_loop / mem_loop_persistent / crash_loop
 / stalled_no_progress -> exit code).
 
-Split out of ``serve_cmd.py`` (0.2.16 Task 5a) purely to buy LOC headroom
+Split out of ``serve_cmd.py`` purely to buy LOC headroom
 under the module-size gate (``test_module_sizes.py``) and ``cmd()``'s
 loop-size gate (``test_layer_2_loop_size.py``) -- no behavior changed.
 ``serve_cmd.py`` re-imports the names it calls directly
@@ -128,7 +128,7 @@ def _maybe_pause_for_memory_pressure(
     chunk_s: int = 30,
 ) -> bool:
     """Pre-round admission gate (Group 3 action half): defer the next round
-    while host_health reports CRITICAL pressure (0.2.16: narrowed from ANY --
+    while host_health reports CRITICAL pressure (narrowed from ANY --
     a mere warning, e.g. swap churn, is the north star's fine). Only HALF the
     coma-preventer — a single round that balloons mid-flight still needs
     :func:`_spawn_round`'s mid-round hard floor to stop it before unresponsiveness.
@@ -233,7 +233,7 @@ _MEM_CHECK_INTERVAL_S = 10
 def _mid_round_action(
     cfg, defer_to_cgroup: bool, critical_streak: int
 ) -> Literal["terminate", "defer", "count_only"]:
-    """Pure, subprocess-free verdict (0.2.17 Task 2) for a critical mid-round
+    """Pure, subprocess-free verdict for a critical mid-round
     tick, once the caller has already incremented ``critical_streak`` and
     (when the streak is within the emit cap) emitted
     ``round_mem_critical_sample`` for it. ``cfg`` is the round's
@@ -278,7 +278,7 @@ def _spawn_round(
     load-bearing: a bare killpg SIGKILLs before the round can reap its agent).
     Graceful serve stop is NOT handled here — the serve loop's existing top-of-loop
     `while not stop["requested"]` check + post-round break let the current round
-    finish (the documented stop contract: runbook.md, 0.2.11 CHANGELOG). Returns
+    finish (the documented stop contract: runbook.md). Returns
     the round returncode.
 
     ``host_health_cfg`` (None by default — existing callers get byte-identical
@@ -296,7 +296,7 @@ def _spawn_round(
     False the streak still counts (an operator may still want the signal
     surfaced) but ``_terminate_round`` is never called.
 
-    ``defer_to_cgroup`` (0.2.16 Task 3 -- from ``metrics.cgroup_memory_limits``;
+    ``defer_to_cgroup`` (from ``metrics.cgroup_memory_limits``;
     True only when memory.max AND memory.swap.max are BOTH finite) OVERRIDES
     ``in_round_mem_terminate=True`` at the same crossing: cgroup-OOM will
     contain the agent on its own, so the host-wide kill emits
@@ -305,14 +305,14 @@ def _spawn_round(
 
     Each tick's swap-out delta is measured against the PREVIOUS TICK's
     sample (``prev_tick_sample``), not the round-start sample -- a
-    per-interval rate. Pinning round-start as ``prev`` (0.2.15's choice)
+    per-interval rate. Pinning round-start as ``prev`` (an earlier choice)
     made the delta monotone (never fell back once crossed), so the streak
     could never reset for the swap leg and a long round died on it
     regardless of host recovery. PSI-full is an independent immediate
     critical path (current sample alone, no baseline needed).
 
-    0.2.16: every critical tick also emits ``round_mem_critical_sample`` for
-    near-miss calibration (0.2.17: capped -- see below); ``round_mem_terminated``
+    Every critical tick also emits ``round_mem_critical_sample`` for
+    near-miss calibration (capped -- see below); ``round_mem_terminated``
     now carries the streak + ``Pressure.context`` too. The cap:
     ``2 * host_health_cfg.mem_critical_consecutive_samples`` consecutive
     ticks (1..6 at the default 3) -- a sustained-critical don't-terminate
@@ -337,7 +337,7 @@ def _spawn_round(
             # prev_tick_sample trails one tick behind cur_sample (reassigned
             # after every check below), so the swap-out delta
             # host_health.memory_pressure computes is a PER-INTERVAL rate —
-            # see the docstring above for why this replaced the 0.2.15
+            # see the docstring above for why this replaced the earlier
             # round-start baseline. critical_streak is the hysteresis
             # counter: only sustained (not single-sample) critical pressure
             # terminates the round.
@@ -454,7 +454,7 @@ def post_round_verdicts(
     consecutive_no_progress: int,
     clock: Clock = SYSTEM_CLOCK,
 ) -> tuple[int | None, int, tuple[int, int, int]]:
-    """One round's full give-up orchestration (0.2.17 Task 2 — renamed from
+    """One round's full give-up orchestration (renamed from
     ``round_outcome_exit_code`` and widened to run the three independent
     breakers itself, absorbing the sequence that used to live inline in
     ``serve_cmd.cmd()``'s post-round block): ``post_round_decision``'s
@@ -479,7 +479,7 @@ def post_round_verdicts(
     explicit; crash_loop and stalled_no_progress are mutually exclusive by
     construction — one keys on ``returncode != 0``, the other on ``== 0``).
 
-    A ``mem_loop`` verdict escalates further (0.2.16 Task 5 — cross-restart
+    A ``mem_loop`` verdict escalates further (cross-restart
     convergence): ``MEM_LOOP_EXIT`` (71) alone resets on every serve process
     restart, so a host stuck in sustained pressure respawns into the
     identical break-then-restart loop forever. Counting prior ``mem_loop``
@@ -490,7 +490,7 @@ def post_round_verdicts(
     serve STOPS for real (``MEM_LOOP_PERSISTENT_EXIT``, a deliberate give-up
     like config_broken/crash_loop) instead of the usual restartable 71.
 
-    A ``stalled_no_progress`` verdict (0.2.16 Task 6 — the exit-0 no-progress
+    A ``stalled_no_progress`` verdict (the exit-0 no-progress
     breaker: some CLIs, e.g. pi, exit 0 on a provider failure that never
     reaches the model) deliberately returns ``CRASH_LOOP_EXIT`` — the SAME
     give-up code as crash_loop, not a new one — since it is the identical
@@ -506,7 +506,7 @@ def post_round_verdicts(
     mem_action, consecutive_mem_terminations = _mem_loop_decision(
         mem_terminated=outcome.mem_terminated, consecutive=consecutive_mem_terminations
     )
-    # Exit-0 no-progress breaker (0.2.16 Task 6): pi-class CLIs exit 0 on a
+    # Exit-0 no-progress breaker: pi-class CLIs exit 0 on a
     # provider failure that never reached the model, invisible to the crash
     # loop above (that one keys on a non-zero exit).
     no_progress = round_had_no_progress(

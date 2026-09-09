@@ -1,4 +1,4 @@
-"""Internal identity/location resolver (Group C, 0.2.13 "close the seams").
+"""Internal identity/location resolver.
 
 Project name, config path, unit filename and log_dir were each derived
 independently at several call sites and could disagree when ``work_dir`` and

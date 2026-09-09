@@ -110,7 +110,7 @@ def emit_round_grace_kill(
     worker was still running) and round_timeout_kill (wall-clock exceeded).
 
     live_children: list of ``{"name": <exe basename>, "pid": <int>}`` dicts
-        (0.1.40+; previously list of cmdline strings).
+        (previously a list of cmdline strings).
     """
     from agent_runner.events import ROUND_GRACE_KILL, emit
 
@@ -136,10 +136,10 @@ def emit_round_grace_extended(
     killed; it continues until it finishes or hits round_timeout_s.
 
     live_children: list of ``{"name": <exe basename>, "pid": <int>}`` dicts
-        (0.1.40+; previously list of cmdline strings).
+        (previously a list of cmdline strings).
     ignored_children: list of ``{"name": ..., "pid": ..., "matched": <pattern>}``
         dicts for children that matched a grace_kill_ignore_patterns entry
-        and were excluded from the liveness count (0.1.40+; previously cmdline strings).
+        and were excluded from the liveness count (previously cmdline strings).
     """
     from agent_runner.events import ROUND_GRACE_EXTENDED, emit
 

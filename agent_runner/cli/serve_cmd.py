@@ -183,7 +183,7 @@ def _phase_aware(cfg) -> bool:
     """True when per-phase scheduling governs this round selection.
 
     Both triggers (``phase_policy = "skip"``, any ``[phases.<name>.schedule]``)
-    are new 0.2.9 syntax, so no pre-0.2.9 config is phase-aware — those take the
+    are newer syntax, so no config predating it is phase-aware — those take the
     unmodified legacy pause path and stay byte-identical."""
     return bool(cfg.phases.list) and (
         cfg.phases.phase_policy == "skip"
@@ -258,7 +258,7 @@ def _skip_around(cfg, args) -> bool:
     This is the ONLY mode that both defers a throttle to phase rotation AND emits
     the events-derived recovered breadcrumb — so gating both on it keeps every
     legacy path (no ``[phases]``, ``wait``, ``--ignore-schedule``) byte-identical
-    to 0.2.9, which emitted a recovered only from the back-off sleep."""
+    to the earlier behavior, which emitted a recovered only from the back-off sleep."""
     return _phase_aware(cfg) and cfg.phases.phase_policy == "skip" and not args.ignore_schedule
 
 
@@ -277,7 +277,7 @@ def _gate_throttle(cfg, log_dir, throttle, stop) -> Literal["proceed", "break"]:
     landed mid-back-off) or ``"proceed"`` (no throttle, or back_off already applied and
     resumed). The skip-policy regime uses :func:`_throttle_skip_context` instead, so
     this never sees a skip-around config — it neither defers nor emits a skip
-    breadcrumb, keeping every pre-0.2.11 non-skip path byte-identical."""
+    breadcrumb, keeping every non-skip path byte-identical."""
     if throttle is None:
         return "proceed"
     action = cfg.runtime.transient_error_action
@@ -338,14 +338,14 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
     When serve chose the phase (``phase_arg`` set) we check that exact agent. When the
     round self-rotated (``phase_arg`` None: no ``[phases]``, or ``--ignore-schedule``),
     serve does NOT know which agent ran, so fall back to "any agent throttled" — the
-    pre-0.2.11 agent-agnostic check. Erring toward excusing keeps a real throttle from
+    agent-agnostic check. Erring toward excusing keeps a real throttle from
     being misread as a crash (a false ``crash_loop`` permanent stop).
 
     ``active``, when given, is an already-computed :func:`_active_throttles` map —
     :func:`_round_scan` below is the one production caller that passes it, built off
     that round's :func:`agent_runner._round_outcome.round_outcome` (see INVARIANT 3)
     — skips a fresh scan here. Every other caller (and most tests) omits it and gets
-    a freshly computed one: unchanged pre-0.2.17 behavior."""
+    a freshly computed one: unchanged behavior."""
     if active is None:
         active = _active_throttles(log_dir)
     if phase_arg is None:
@@ -355,14 +355,14 @@ def _ran_agent_throttled(cfg, phase_arg, log_dir, *, active=None) -> bool:
 
 def _round_scan(cfg, phase_arg, log_dir):
     """The round-that-just-ran's throttle-active verdict + ``outcome``, off ONE
-    events-tail scan (0.2.17 Task 1) — extracted out of ``cmd()`` to hold its
+    events-tail scan — extracted out of ``cmd()`` to hold its
     140-line budget (see the LOC invariant test), not because this is reused
     elsewhere.
 
     INVARIANT 3: ``round_outcome(log_dir)`` is computed exactly ONCE per round,
     called from ``cmd()`` right after this round's "after" substrate capture and
     before any give-up emit — that block is otherwise pure calls, so one scan here
-    sees the identical file state the pre-0.2.17 three separate scans each saw.
+    sees the identical file state the three separate scans it replaces each saw.
     The returned ``outcome`` is reused by ``cmd()`` for ``round_had_no_progress``
     too (and carries ``outcome.mem_terminated`` for ``post_round_verdicts``'s
     ``_mem_loop_decision`` — no need to thread it separately), and ``active``
@@ -381,7 +381,7 @@ def _round_scan(cfg, phase_arg, log_dir):
     entirely on this path -- restoring the ONE-scan-per-round goal INVARIANT 3
     exists for.
 
-    ``ran_agent`` (0.2.18 agent axis) mirrors ``_ran_agent_throttled``'s own
+    ``ran_agent`` (the per-agent axis) mirrors ``_ran_agent_throttled``'s own
     ``phase_arg is None`` fallback: when serve chose the phase we know the exact
     agent that ran, so ``outcome.usage_capable_by_agent``/``newest_usage_ts_by_agent``
     (fed to ``round_had_no_progress`` via ``outcome`` -- see INVARIANT 3) key on
@@ -614,8 +614,8 @@ def cmd(args) -> int:
     defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir)
     rounds_completed = 0
     # Three independent consecutive-failure counters, one per breaker: b12
-    # crash-loop (unknown short crashes), 0.2.15 mem-loop (mem-terminated
-    # rounds), 0.2.16 Task 6 no-progress (exit-0, no usage). LOC-neutral
+    # crash-loop (unknown short crashes), mem-loop (mem-terminated
+    # rounds), no-progress (exit-0, no usage). LOC-neutral
     # chained init -- freed for CRITICAL #1's throttle_active threading below
     # (cmd() sits at its 140-line budget; see round_throttle_active).
     consecutive_crashes = consecutive_mem_terminations = consecutive_no_progress = 0
@@ -699,7 +699,7 @@ def cmd(args) -> int:
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="after")
             rounds_completed += 1
             # round_throttle_active + outcome (which carries mem_terminated) come
-            # off the SAME single events-tail scan (0.2.17 Task 1 — see
+            # off the SAME single events-tail scan (see
             # _round_scan + INVARIANT 3). The full give-up orchestration
             # (crash-loop / mem-loop / no-progress breakers, precedence, and
             # matching emit) lives in post_round_verdicts so this loop stays

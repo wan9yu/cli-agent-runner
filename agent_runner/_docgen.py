@@ -215,7 +215,7 @@ def render_giveup_systemd_example() -> str:
     )
     return (
         "```ini\n"
-        "# Prod (infinite supervisor) — current default (0.2.11+)\n"
+        "# Prod (infinite supervisor) — current default\n"
         "[Service]\n"
         "ExecStart=... serve --config /etc/agent-runner.toml\n"
         "Restart=on-failure\n"

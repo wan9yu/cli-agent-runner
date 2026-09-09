@@ -228,11 +228,11 @@ def _latest_two(metrics: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str
     return cur, prev
 
 
-# The mem-sample keys 0.2.14's metrics.sample() added. A metrics entry carrying
-# NONE of them is pre-0.2.14 shape (only the old mem_available_mb) and has not
+# The mem-sample keys metrics.sample() added. A metrics entry carrying
+# NONE of them is the old shape (only the old mem_available_mb) and has not
 # yet been sampled by the new sampler -- treat it as "not yet sampled" grace so
 # the first poll after an upgrade does not fire a spurious mem_signal_unavailable
-# before the first 0.2.14-shaped sample lands.
+# before the first newly-shaped sample lands.
 _NEW_MEM_SAMPLE_KEYS = ("mem_free_mb", "swap_sout", "psi_some_avg10", "psi_full_avg10")
 
 
@@ -250,11 +250,11 @@ def detect_mem_pressure(
     cfg = cfg if cfg is not None else MonitorHostHealthConfig()
     cur, prev = _latest_two(metrics)
     if not cur or not any(k in cur for k in _NEW_MEM_SAMPLE_KEYS):
-        # Nothing sampled yet, OR the latest entry is pre-0.2.14 shape (no new
+        # Nothing sampled yet, OR the latest entry is the old shape (no new
         # mem-sample keys) -- a startup / post-upgrade grace period, not a bug.
         # Without this, the first poll after an upgrade would read that stale
-        # pre-0.2.14 entry, find no cache-poor-valid signal, and fire a spurious
-        # mem_signal_unavailable before the first 0.2.14-shaped sample lands.
+        # old-shaped entry, find no cache-poor-valid signal, and fire a spurious
+        # mem_signal_unavailable before the first newly-shaped sample lands.
         return None
     pressure = host_health.memory_pressure(cur, prev, cfg)
     if pressure is not None:
@@ -444,7 +444,7 @@ def detect_anomaly_repetitive_active(
 ) -> Alert | None:
     """Notify-severity alert when anomaly_repetitive_tool events appear in recent rounds.
 
-    Activates 0.1.31's anomaly_repetitive_tool event in monitor's alert flow,
+    Activates the anomaly_repetitive_tool event in monitor's alert flow,
     mirroring the rate_limit_active pattern (event consumer → alert).
 
     Default: any anomaly event in last 5 rounds triggers a warning. Operators can
@@ -493,7 +493,7 @@ def _latest_schedule_event(events: list[dict[str, Any]]) -> dict[str, Any] | Non
 
 # Event kinds that, like schedule_paused/resumed, mark a live pause/defer window
 # for detect_supervisor_stale's suppression check below. round_deferred (the
-# memory-pressure admission gate, 0.2.14) joins schedule_paused here so a long
+# memory-pressure admission gate) joins schedule_paused here so a long
 # defer is not mistaken for a dead supervisor. Kept separate from
 # _latest_schedule_event/latest_schedule_state above, which peek's schedule
 # display reads and must stay schedule-only.

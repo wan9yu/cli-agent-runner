@@ -89,7 +89,7 @@ class HookContext:
     Distinct from ``agent_name`` (the user-cosmetic ``[agent] name`` field).
     Plugins should guard on ``agent_binary``, not ``agent_name``, so a custom
     ``[agent] name = "acme_dev"`` does not suppress events.
-    Populated from 0.1.30+; defaults to ``None`` for manually-constructed
+    Populated by the supervisor; defaults to ``None`` for manually-constructed
     HookContext instances (rare; tests set it via ``make_hook_context``).
     """
     agent_log_path: Path | None = None
@@ -100,26 +100,25 @@ class HookContext:
     detection regex-scans stderr text out of it), so JSONL consumers must
     skip non-JSON lines (per-line ``json.loads`` in try/except).
     Default ``None`` for backward compatibility with manually-constructed
-    HookContext instances (rare; the supervisor always populates this
-    from 0.1.25+).
+    HookContext instances (rare; the supervisor always populates this).
     """
     dry_run: bool = False
     """When True, plugins should skip side-effect actions (e.g. git ops,
     network calls, external state mutations). Built-in plugins ignore this
     flag (no side effects). Plugin authors read ``ctx.dry_run`` before any
-    irreversible action. Populated from ``[runtime] dry_run`` (0.1.31+).
+    irreversible action. Populated from ``[runtime] dry_run``.
     """
     anomaly_repetitive_window: int = 0
     """Sliding-window size for repetitive-tool detection (0 = disabled).
-    Populated from ``[monitor] anomaly_repetitive_window`` (0.1.31+).
+    Populated from ``[monitor] anomaly_repetitive_window``.
     """
     anomaly_repetitive_threshold: int = 0
     """Count threshold for repetitive-tool anomaly (0 = disabled).
-    Populated from ``[monitor] anomaly_repetitive_threshold`` (0.1.31+).
+    Populated from ``[monitor] anomaly_repetitive_threshold``.
     """
     vcs: VcsHookView | None = None
     """Narrowed vcs config slice populated by the runner for all per-round hooks
-    (pre-round, enrichers, post-round, dirty-handler) (0.2.0+).
+    (pre-round, enrichers, post-round, dirty-handler).
     May be None only when a HookContext is constructed without it (e.g. tests).
     """
 

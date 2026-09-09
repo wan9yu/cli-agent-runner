@@ -81,7 +81,7 @@ _TOP_LEVEL_TABLES = (
 
 def _scalar_tables(p: dict) -> list[str]:
     """Top-level tables given as a scalar (e.g. `agent = 1` instead of
-    `[agent]`) — the table-as-scalar footgun 0.2.13 hard-rejects at load. No
+    `[agent]`) — the table-as-scalar footgun hard-rejects at load. No
     auto-fix is possible; real table content is needed."""
     return [t for t in _TOP_LEVEL_TABLES if t in p and not isinstance(p[t], dict)]
 
@@ -496,7 +496,7 @@ MIGRATIONS: list[Migration] = [
             "lower the threshold or raise the window so the detector can fire"
         ),
     ),
-    # --- 0.2.13 strictness completion: table-as-scalar, base-table unknown
+    # --- Strictness completion: table-as-scalar, base-table unknown
     # keys, [phases] scalar keys, per-phase prompt unknown keys, argv {prompt}
     # placeholder. Every rejection below has a config.py counterpart; see
     # config.py's docstring cross-references for the exact raise site. ---
@@ -571,7 +571,7 @@ MIGRATIONS: list[Migration] = [
             "add one, or set that phase's prompt.files = [] if it truly sends no prompt"
         ),
     ),
-    # --- 0.2.14 strictness completion: [monitor.host_health] unknown keys.
+    # --- Strictness completion: [monitor.host_health] unknown keys.
     # MANUAL like every sibling above — auto-deleting an unknown threshold key
     # would silently discard the operator's intended value, the exact harm
     # this rejection exists to prevent. ---

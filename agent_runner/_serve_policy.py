@@ -1,6 +1,6 @@
 """Pure serve restart policy — no I/O, no clock, no events read.
 
-Extracted from api.py (0.2.12 Group G): serve_cmd imports the decision + exit
+Extracted from api.py: serve_cmd imports the decision + exit
 codes from here directly (see the architecture allowlist); api.py re-exports
 them for external back-compat. Kept dependency-free so the serve loop stays a
 thin dispatcher and the policy is unit-testable in isolation.
@@ -43,7 +43,7 @@ CRASH_LOOP_THRESHOLD = 5
 CRASH_LOOP_SHORT_EXIT_S = 60  # mirrors monitor.SHORT_EXIT_THRESHOLD_S
 CRASH_LOOP_MAX_DELAY_S = 1800  # cap the escalating restart delay (30 min)
 
-# Exit code for the mem-loop give-up cap (0.2.15 coma-preventer, Task 4): serve
+# Exit code for the mem-loop give-up cap (the coma-preventer): serve
 # gives up after MEM_LOOP_THRESHOLD consecutive mid-round memory-terminated
 # rounds rather than retrying forever. Distinct from CRASH_LOOP_EXIT (75) on
 # purpose: this is a "break-then-restart", NOT a deliberate stop — the host
@@ -54,8 +54,8 @@ MEM_LOOP_EXIT = 71
 # Consecutive mem-terminated rounds before serve gives up (break-then-restart).
 MEM_LOOP_THRESHOLD = 5
 
-# Exit code for mem_loop's cross-restart escalation (0.2.16 Task 5 — field
-# confirmed: NRestarts climbs, never converges). MEM_LOOP_EXIT (71) alone
+# Exit code for mem_loop's cross-restart escalation (field-confirmed:
+# NRestarts climbs, never converges). MEM_LOOP_EXIT (71) alone
 # resets on every process restart, so a host stuck in sustained pressure
 # respawns into the identical break-then-restart loop forever. Once mem_loop
 # itself keeps recurring across restarts (see _MEM_LOOP_PERSIST_THRESHOLD),
@@ -77,7 +77,7 @@ _MEM_LOOP_PERSIST_WINDOW_S = 7200
 _MEM_LOOP_PERSIST_THRESHOLD = 3
 
 
-# Exit-0 no-progress breaker (0.2.16 Task 6). Some CLIs (pi -- see
+# Exit-0 no-progress breaker. Some CLIs (pi -- see
 # builtin_plugins/pi.py's "pi exits 0 on provider failure") exit 0 on a
 # provider failure that never reaches the model: `_round_ok = exit_code == 0`
 # (api_types.py) reads that as a clean round, so without this breaker an
@@ -161,7 +161,7 @@ def _consecutive_streak_decision(
     *, triggered: bool, consecutive: int, threshold: int, verdict: str
 ) -> tuple[str, int]:
     """The generic give-up-cap shape both :func:`_mem_loop_decision` and
-    :func:`_no_progress_decision` delegate to (0.2.17 Task 2 — de-duplicated
+    :func:`_no_progress_decision` delegate to (de-duplicated
     out of the two, which were byte-identical apart from their reset
     condition, threshold constant, and verdict string). A NEW, SEPARATE,
     private counter from ``post_round_decision``'s crash-loop breaker, not a
@@ -179,7 +179,7 @@ def _consecutive_streak_decision(
 def _mem_loop_decision(
     *, mem_terminated: bool, consecutive: int
 ) -> tuple[Literal["mem_loop", "continue"], int]:
-    """Mem-loop give-up cap (0.2.15 Task 4) — a NEW, SEPARATE, private counter
+    """Mem-loop give-up cap — a NEW, SEPARATE, private counter
     from ``post_round_decision``'s crash-loop breaker, not a widening of its
     3-tuple contract. A mem-terminated round already sets ``throttle_active``
     for ``post_round_decision`` (never counted as a crash), so without this
@@ -198,7 +198,7 @@ def _mem_loop_decision(
 def _no_progress_decision(
     *, no_progress: bool, consecutive: int
 ) -> tuple[Literal["stalled_no_progress", "continue"], int]:
-    """Exit-0 no-progress give-up cap (0.2.16 Task 6) -- a NEW, SEPARATE,
+    """Exit-0 no-progress give-up cap -- a NEW, SEPARATE,
     private counter from ``post_round_decision``'s crash-loop breaker (that one
     keys on ``returncode != 0``; here returncode IS 0, so a round that never
     reached the model would otherwise sail through with no breaker at all).
@@ -254,7 +254,7 @@ def classify_round_exit(exc: BaseException) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Round-timeout budget (Group C, seam 3 — 0.2.13). TimeoutStopSec
+# Round-timeout budget. TimeoutStopSec
 # (service_unit.py, systemd's SIGKILL deadline after `systemctl stop`) and the
 # outer round-wall ceiling (api.outer_round_ceiling_s, the in-process watchdog
 # around the round subprocess) were derived independently and could drift —
@@ -282,7 +282,7 @@ _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-requ
 
 # A round-child that even killpg can't reap in time (D-state leader): a defined,
 # classifiable returncode instead of a TimeoutExpired escaping cmd() as exit 1.
-# Single source (0.2.19): cli._serve_round returns this from its own terminate
+# Single source: cli._serve_round returns this from its own terminate
 # path AND cli._serve_cgroup reads it back to attribute a cgroup OOM kill to
 # the round that died -- hoisting here (a dependency-free leaf) lets both
 # modules import it without importing each other.

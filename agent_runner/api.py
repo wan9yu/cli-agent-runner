@@ -73,7 +73,7 @@ def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
     Derived from ``_serve_policy.timeout_budget``, the single source shared
     with ``service_unit.py``'s ``TimeoutStopSec`` (Group C, seam 3) — kept as
     a local import so this stays out of api's re-exported public surface
-    (internal-only, not a 0.2.13 public contract).
+    (internal-only, not a public contract).
     """
     from agent_runner._serve_policy import timeout_budget
 
@@ -842,7 +842,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
 )
 
 # Round-input assembly + sentinel helpers live in _round_support (extracted
-# for size hygiene, 0.2.14 Group 4). Re-exported here so `from agent_runner.api
+# for size hygiene). Re-exported here so `from agent_runner.api
 # import assemble_prompt` etc. continue to work -- RuntimeConfig travels along
 # with resolve_runtime_for_phase since it's the return type plugin authors
 # need to annotate against, and it's itself pinned in EXPECTED_API_SURFACE.

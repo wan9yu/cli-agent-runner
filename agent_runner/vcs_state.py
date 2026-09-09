@@ -279,7 +279,7 @@ def _owned_exclude_specs(repo: Path) -> list[str]:
     of collapsed entries, not something this scan introduced.
 
     Ignore-matched paths are skipped: naming one in a stash pathspec makes
-    ``git stash push -u`` return rc=1 (the 0.1.42 lesson). ``--no-index`` so a
+    ``git stash push -u`` return rc=1 (a hard-learned lesson). ``--no-index`` so a
     tracked file under an ignored directory is caught too -- plain ``check-ignore``
     reports rc=1 (not ignored) for that shape yet the push still trips. ``--`` so a
     leading-dash path (``-out/memo.md``) is read as a pathname, not a switch: git

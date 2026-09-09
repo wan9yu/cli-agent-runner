@@ -139,7 +139,7 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 <!-- gen:giveup-systemd-example -->
 <!-- source: agent_runner/_serve_policy.py exit-code constants (service_unit.py's RestartPreventExitStatus mirrors these same three) -->
 ```ini
-# Prod (infinite supervisor) — current default (0.2.11+)
+# Prod (infinite supervisor) — current default
 [Service]
 ExecStart=... serve --config /etc/agent-runner.toml
 Restart=on-failure

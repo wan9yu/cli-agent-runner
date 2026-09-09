@@ -5,7 +5,7 @@ of a `pi -p -na --mode json ...` round log and emits agent_usage_recorded (pi's
 stream carries token counters), transient_error_detected, and
 agent_auth_error_detected.
 
-Scope (verified against Pi Coding Agent 0.80.10, not documentation):
+Scope (verified against the installed Pi Coding Agent CLI, not documentation):
 
 **pi exits 0 on provider failure.** An invalid API key, and three exhausted
 retries against 429/503, all produced exit code 0 with an empty stderr. The
@@ -49,7 +49,7 @@ A 401 gets no transient bucket (back-off cannot fix a rejected credential) and
 instead emits ``agent_auth_error_detected``: because pi exits 0, the monitor's
 text heuristic — which requires a nonzero exit — can never see a pi auth loop,
 whereas that event is certain evidence the detector counts directly. 401 is the
-only auth status observed from pi 0.80.10; 403 would qualify on the same
+only auth status observed from pi; 403 would qualify on the same
 reasoning but has not been seen, and this parser stays on observed shapes.
 """
 
@@ -271,7 +271,7 @@ def _is_auth_error(text: str | None) -> bool:
     """True when pi's ``errorMessage`` carries an HTTP 401.
 
     Read from the same status prefix the transient classifier uses. 401 is the
-    only auth status observed from pi 0.80.10 (invalid key against a Moonshot
+    only auth status observed from pi (invalid key against a Moonshot
     provider); 403 would qualify on the same reasoning but has not been seen,
     and this parser stays on shapes captured from a real run.
     """

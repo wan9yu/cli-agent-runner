@@ -9,7 +9,7 @@ continue importing from agent_runner.api (e.g.
 ``from agent_runner.api import emit_transient_error_detected``).
 
 Each wrapper exists to keep cli/serve_cmd.py from importing agent_runner.events
-directly — preserves the 0.1.21 architecture invariant. Local-import pattern
+directly — preserves the module-boundary architecture invariant. Local-import pattern
 inside each wrapper body keeps agent_runner.api import-cheap.
 
 Submodules are organised by domain: ``serve`` (supervisor control plane +

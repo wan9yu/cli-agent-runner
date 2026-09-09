@@ -42,7 +42,7 @@ def emit_round_mem_terminated(
     pre-round-only gate can't stop a single round mid-flight). Distinct from
     round_supervisor_wedged (a wall-clock ceiling breach, unrelated cause).
 
-    0.2.16: ``consecutive`` (the critical_streak that crossed the threshold)
+    ``consecutive`` (the critical_streak that crossed the threshold)
     and ``context`` (Pressure.context -- the actual psi/mem numbers, e.g.
     psi_full_avg10) make the kill legible from the event stream alone, so an
     operator can retune host_health thresholds without SSH."""
@@ -64,7 +64,7 @@ def emit_round_mem_critical_sample(
     log_dir: Path, *, round_num: int, consecutive: int, context: dict
 ) -> None:
     """Emit on each critical host_health sample inside _spawn_round's mid-round
-    hard floor, up to the per-episode cap (0.2.17, below) -- unlike
+    hard floor, up to the per-episode cap (below) -- unlike
     round_mem_terminated (deduped to once-per-episode), this fires on every
     critical tick within that cap: the point is calibration visibility into
     near-misses, so an operator watching the event stream sees the
@@ -78,7 +78,7 @@ def emit_round_mem_critical_sample(
     sample-level signal, distinct from mem_pressure_deferred_to_cgroup's
     once-per-episode terminate-vs-defer notice).
 
-    0.2.17: the caller caps this at ``2 * mem_critical_consecutive_samples``
+    The caller caps this at ``2 * mem_critical_consecutive_samples``
     consecutive ticks (1..6 at the default 3) -- a sustained-critical
     don't-terminate run (cgroup-defer, or the off switch) would otherwise
     write one event per ~10s tick for up to a whole ``round_timeout_s`` on a
@@ -113,7 +113,7 @@ def emit_host_cgroup_memory_limit(
     mid-round hard floor can defer to kernel cgroup-OOM -- see
     ``emit_mem_pressure_deferred_to_cgroup`` below.
 
-    0.2.18 adds an optional startup swap-cap advisory
+    This also carries an optional startup swap-cap advisory
     (``swap_total_bytes`` / ``swap_cap_pct`` / ``memory_high`` / ``advisory``)
     as FIELDS on this SAME event -- never a separate event kind, and never an
     auto-change to the operator's cgroup or unit. ``swap_total_bytes`` is the
