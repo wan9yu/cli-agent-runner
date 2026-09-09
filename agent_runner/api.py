@@ -818,6 +818,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_mem_pressure_deferred_to_cgroup,
     emit_rate_limit_stop,
     emit_round_cgroup_memory,
+    emit_round_container_orphan_risk,
     emit_round_deferred,
     emit_round_grace_extended,
     emit_round_grace_kill,

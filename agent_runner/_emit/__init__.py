@@ -40,6 +40,7 @@ from agent_runner._emit.memory import (  # noqa: F401 — public re-export
 )
 from agent_runner._emit.rounds import (  # noqa: F401 — public re-export
     emit_fresh_eyes_round_triggered,
+    emit_round_container_orphan_risk,
     emit_round_grace_extended,
     emit_round_grace_kill,
     emit_round_logs_prune_deferred,
@@ -79,6 +80,7 @@ __all__ = [
     "emit_mem_pressure_deferred_to_cgroup",
     "emit_rate_limit_stop",
     "emit_round_cgroup_memory",
+    "emit_round_container_orphan_risk",
     "emit_round_deferred",
     "emit_round_grace_extended",
     "emit_round_grace_kill",

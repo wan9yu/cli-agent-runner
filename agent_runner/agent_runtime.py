@@ -233,6 +233,102 @@ def resolve_exec_target(command0: str, work_dir: Path, env_path: str | None = No
     return shutil.which(command0, path=env_path)
 
 
+# Container-orphan defense: a configured `docker run` / `podman run` command's
+# conmon/containerd process double-fork-detaches out of the pgroup
+# `_kill_pgroup` signals, so a killpg-based SIGKILL can silently leave the
+# CONTAINER itself running -- defeating the R1128 hard-wall with no visible
+# failure. Detection below is intentionally literal (command[0]'s basename +
+# the very next token, not a general docker-global-flag parser) -- this is
+# proportionate scope: surface the risk loudly and make one best-effort
+# `stop` attempt, not full container lifecycle management (cgroup delegation,
+# a containment ladder -- left for a future release).
+_CONTAINER_RUNTIMES = frozenset({"docker", "podman"})
+
+
+def _is_container_run_command(command: list[str]) -> bool:
+    """True when `command` looks like `docker run ...` / `podman run ...` --
+    an absolute path like /usr/bin/docker also matches, via basename. A form
+    with global flags before the subcommand (`docker -H ... run ...`) is NOT
+    detected; that's outside this proportionate check's scope."""
+    return (
+        len(command) >= 2 and Path(command[0]).name in _CONTAINER_RUNTIMES and command[1] == "run"
+    )
+
+
+def _cidfile_flag_value(command: list[str]) -> str | None:
+    """Value of an already-present `--cidfile <path>` / `--cidfile=path` in
+    `command`, else None."""
+    for i, tok in enumerate(command):
+        if tok == "--cidfile" and i + 1 < len(command):
+            return command[i + 1]
+        if tok.startswith("--cidfile="):
+            return tok.split("=", 1)[1]
+    return None
+
+
+def _inject_cidfile(command: list[str], cidfile_path: Path) -> list[str]:
+    """Insert `--cidfile <cidfile_path>` right after the `run` subcommand
+    (index 1) -- ahead of any IMAGE argument, which must always follow the
+    docker/podman OPTIONS block -- so the container's own id is recoverable
+    for a best-effort `stop` at kill time. Only called when
+    ``_is_container_run_command`` is True and `command` carries no
+    `--cidfile` of its own."""
+    return command[:2] + ["--cidfile", str(cidfile_path)] + command[2:]
+
+
+def _best_effort_container_stop(
+    runtime: str, cidfile: Path | None
+) -> tuple[str | None, bool | None]:
+    """Best-effort ``<runtime> stop <id>`` using the container id the runtime
+    itself wrote into `cidfile` at spawn time. Returns
+    ``(container_id, stop_ok)``: `container_id` is None when no id could be
+    recovered (the container never actually started, or the cidfile is still
+    empty) -- `stop_ok` is then also None, meaning no stop was attempted.
+    Otherwise `stop_ok` is whether the `stop` subprocess exited zero. Every
+    failure here is swallowed -- this is advisory best-effort, never a
+    guarantee; the caller's loud warning + event is the actual floor when
+    this doesn't land."""
+    if cidfile is None:
+        return None, None
+    try:
+        cid = cidfile.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None, None
+    if not cid:
+        return None, None
+    try:
+        result = subprocess.run(
+            [runtime, "stop", cid],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return cid, result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return cid, False
+
+
+def _terminate_agent(
+    proc: subprocess.Popen,
+    clock: Clock,
+    *,
+    container_runtime: str | None,
+    container_cidfile: Path | None,
+    on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None,
+) -> None:
+    """Reap the agent pgroup (``_kill_pgroup``), then -- for a
+    container-launching command only -- make a best-effort container `stop`
+    and report the outcome via `on_container_orphan_risk`. The single
+    hard-kill entry point ``run()`` uses for all three of its termination
+    paths (R1128 wall-clock, grace-kill, and the BaseException reap), so the
+    container handling isn't duplicated three times."""
+    _kill_pgroup(proc, clock)
+    if container_runtime is not None:
+        cid, stop_ok = _best_effort_container_stop(container_runtime, container_cidfile)
+        if on_container_orphan_risk is not None:
+            on_container_orphan_risk(container_runtime, cid, stop_ok)
+
+
 def run(
     *,
     command: list[str],
@@ -248,6 +344,7 @@ def run(
     progress_interval_s: int = 0,
     on_grace_extended: Callable[[list[dict], list[dict]], None] | None = None,
     grace_kill_ignore_patterns: list[re.Pattern[str]] | None = None,
+    on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None = None,
     clock: Clock = SYSTEM_CLOCK,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
@@ -273,16 +370,42 @@ def run(
     grace_kill_ignore_patterns: pre-compiled regex patterns; child cmdlines
     matching any pattern (re.search) are excluded from the liveness count
     (persistent helpers that aren't real workers). None = no filtering.
+
+    on_container_orphan_risk: when `command` is a `docker run` / `podman run`
+    invocation (see ``_is_container_run_command``), called exactly once IF
+    this round is actually terminated by ``run()`` (R1128 timeout, grace-kill,
+    or the BaseException reap) -- never on a round that exits on its own.
+    Args are ``(runtime, container_id_or_None, stop_ok_or_None)``: killpg-based
+    termination reaches the launcher process, not the container itself, so
+    this is the caller's signal to warn loudly + record the reduced
+    guarantee. None = no callback (container orphan risk still gets a
+    best-effort ``stop`` attempt; it just isn't reported).
     """
     stdin_mode = prompt_delivery == "stdin"
+    # Container-orphan defense: detect BEFORE building argv (spawn_command may
+    # gain an injected --cidfile) -- see _is_container_run_command's
+    # module-level note. A non-container command's argv is byte-identical to
+    # before: spawn_command stays `command` and nothing else here changes.
+    spawn_command = command
+    container_runtime: str | None = None
+    container_cidfile: Path | None = None
+    if _is_container_run_command(command):
+        container_runtime = Path(command[0]).name
+        existing_cidfile = _cidfile_flag_value(command)
+        if existing_cidfile is not None:
+            container_cidfile = Path(existing_cidfile)
+        else:
+            container_cidfile = log_path.with_name(log_path.name + ".cid")
+            container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing cidfile
+            spawn_command = _inject_cidfile(command, container_cidfile)
     # Defense-in-depth: config validation already rejects {prompt} in the
     # template for stdin mode, but run() must be safe even if called
     # directly with a mismatched template. In stdin mode, never substitute
     # {prompt} into argv — build it verbatim so the prompt cannot reach argv.
     argv = (
-        list(command) + list(prompt_arg_template)
+        list(spawn_command) + list(prompt_arg_template)
         if stdin_mode
-        else _build_argv(command, prompt_arg_template, prompt)
+        else _build_argv(spawn_command, prompt_arg_template, prompt)
     )
     # PWD pinned last — it mirrors cwd= (a correctness pin, not a knob), so
     # an [agent.env] PWD cannot silently diverge from where the child runs.
@@ -332,7 +455,13 @@ def run(
                 duration = now - start
                 return RunResult(exit_code=ret, duration_s=duration, timed_out=False, pid=proc.pid)
             if now - start > timeout_s:
-                _kill_pgroup(proc, clock)
+                _terminate_agent(
+                    proc,
+                    clock,
+                    container_runtime=container_runtime,
+                    container_cidfile=container_cidfile,
+                    on_container_orphan_risk=on_container_orphan_risk,
+                )
                 duration = clock.monotonic() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
                 return RunResult(
@@ -366,7 +495,13 @@ def run(
                                 on_grace_extended(live, ignored)
                             grace_extended_emitted = True
                     else:
-                        _kill_pgroup(proc, clock)
+                        _terminate_agent(
+                            proc,
+                            clock,
+                            container_runtime=container_runtime,
+                            container_cidfile=container_cidfile,
+                            on_container_orphan_risk=on_container_orphan_risk,
+                        )
                         duration = clock.monotonic() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
                         return RunResult(
@@ -400,7 +535,13 @@ def run(
         # the round CLI) must not leave the agent pgroup orphaned. Reap, then re-raise
         # fail-loud — we never swallow the cause.
         if proc is not None:
-            _kill_pgroup(proc, clock)
+            _terminate_agent(
+                proc,
+                clock,
+                container_runtime=container_runtime,
+                container_cidfile=container_cidfile,
+                on_container_orphan_risk=on_container_orphan_risk,
+            )
         raise
     finally:
         if log_file is not None:

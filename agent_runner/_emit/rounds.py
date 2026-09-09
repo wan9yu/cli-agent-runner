@@ -47,6 +47,42 @@ def emit_round_substrate_after(
     )
 
 
+def emit_round_container_orphan_risk(
+    log_dir: Path,
+    *,
+    round_num: int,
+    runtime: str,
+    container_id: str | None,
+    stop_ok: bool | None,
+) -> None:
+    """Emit when a round's configured command launches a container (`docker run`
+    / `podman run`) and the round had to be terminated: killpg-based
+    termination reaches the launcher process, not conmon/containerd's
+    double-fork-detached container itself, so the R1128 hard-wall cannot
+    guarantee the container stops. This event is the actual floor -- it must
+    never fire silently, regardless of whether the best-effort stop below
+    lands.
+
+    `container_id`/`stop_ok` describe the best-effort `<runtime> stop`
+    attempt made when an id was recoverable (an injected or pre-existing
+    `--cidfile`): `container_id` is None when no id could be recovered (no
+    stop was attempted, so `stop_ok` is also None); otherwise `stop_ok` is
+    whether that `stop` call exited zero. Full container lifecycle
+    management (cgroup delegation, a containment ladder) is out of scope
+    here -- left for a future release.
+    """
+    from agent_runner.events import ROUND_CONTAINER_ORPHAN_RISK, emit
+
+    emit(
+        log_dir,
+        ROUND_CONTAINER_ORPHAN_RISK,
+        round_num=round_num,
+        runtime=runtime,
+        container_id=container_id,
+        stop_ok=stop_ok,
+    )
+
+
 def emit_round_supervisor_wedged(
     log_dir: Path, *, pid: int, timeout_s: int, log_path: Path
 ) -> None:

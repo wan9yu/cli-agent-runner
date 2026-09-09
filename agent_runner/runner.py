@@ -528,6 +528,31 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             ignored_children=ignored,
         )
 
+    def _container_orphan_risk_emit(
+        runtime: str, container_id: str | None, stop_ok: bool | None
+    ) -> None:
+        # Loud: an operator relying on the R1128 hard-wall must see this on the
+        # terminal, not only in the event log a monitor might not be watching.
+        if container_id is None:
+            stop_note = "no container id was recoverable -- no stop attempted"
+        else:
+            verdict = "succeeded" if stop_ok else "failed"
+            stop_note = f"best-effort `{runtime} stop {container_id}` {verdict}"
+        print(
+            f"agent-runner: WARNING round {round_num}: command launches a container "
+            f"({runtime} run) -- killpg-based termination cannot guarantee the "
+            f"container itself stops; {stop_note}. Full container lifecycle "
+            "management is out of scope here.",
+            file=sys.stderr,
+        )
+        api.emit_round_container_orphan_risk(
+            log_dir,
+            round_num=round_num,
+            runtime=runtime,
+            container_id=container_id,
+            stop_ok=stop_ok,
+        )
+
     result = agent_runtime.run(
         command=profile.agent.command,
         prompt_arg_template=profile.agent.prompt_arg_template,
@@ -542,6 +567,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         progress_interval_s=cfg.monitor.round_progress_interval_s,
         on_grace_extended=_grace_extended_emit,
         grace_kill_ignore_patterns=grace_kill_ignore_patterns,
+        on_container_orphan_risk=_container_orphan_risk_emit,
     )
     events.emit(
         log_dir,
