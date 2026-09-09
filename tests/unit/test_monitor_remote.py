@@ -265,7 +265,13 @@ def test_relay_remote_events_callable_from_worker_thread(
 
     thread = threading.Thread(target=_run)
     thread.start()
-    thread.join(timeout=10)
+    # 45s (widened from 10s): matches the sibling SIGINT/SIGTERM drain test's
+    # proc.wait(timeout=45) headroom below -- the stub itself is trivial
+    # (`exit 1`, no reconnection since failure_tolerance_s=0), but under >=2
+    # concurrent gates (~2-3x CPU oversubscription) the real subprocess
+    # spawn+teardown this drives can be starved well past a tight 10s bound
+    # even though the work itself is milliseconds long.
+    thread.join(timeout=45)
 
     assert not thread.is_alive(), "relay must finish promptly on a worker thread (not hang)"
     assert "exc" not in result, f"must not raise off the main thread: {result.get('exc')!r}"
