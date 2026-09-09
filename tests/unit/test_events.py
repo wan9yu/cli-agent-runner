@@ -18,50 +18,50 @@ def _read_jsonl(p: Path) -> list[dict]:
     return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
 
 
-def test_given_known_event_kind_when_emit_then_writes_json_line(
-    tmp_log_dir: Path,
-) -> None:
+def test_emit_should_write_json_line_when_kind_is_known(tmp_log_dir: Path) -> None:
     emit(tmp_log_dir, "round_start", round_num=1)
+
     files = list(tmp_log_dir.glob("events-*.jsonl"))
-    assert len(files) == 1
     rows = _read_jsonl(files[0])
+
+    assert len(files) == 1
     assert len(rows) == 1
     assert rows[0]["event"] == "round_start"
     assert rows[0]["round_num"] == 1
     assert rows[0]["ts"].endswith("Z")
 
 
-def test_given_unknown_event_kind_when_emit_then_raises_value_error(
-    tmp_log_dir: Path,
-) -> None:
+def test_emit_should_raise_value_error_when_kind_is_unknown(tmp_log_dir: Path) -> None:
     with pytest.raises(ValueError, match="unknown event kind"):
         emit(tmp_log_dir, "made_up_event_xyz", round_num=1)
 
 
-def test_given_two_emits_in_same_month_when_called_then_appends_to_one_file(
-    tmp_log_dir: Path,
-) -> None:
+def test_emit_should_append_to_one_file_when_two_emits_in_same_month(tmp_log_dir: Path) -> None:
     emit(tmp_log_dir, "round_start", round_num=1)
     emit(tmp_log_dir, "round_end", round_num=1)
+
     files = list(tmp_log_dir.glob("events-*.jsonl"))
+
     assert len(files) == 1
     assert len(_read_jsonl(files[0])) == 2
 
 
-def test_given_two_emits_in_different_months_when_called_then_writes_to_separate_files(
+def test_emit_should_write_separate_files_when_emits_span_different_months(
     tmp_log_dir: Path,
 ) -> None:
     april = datetime(2026, 4, 30, 23, 0, tzinfo=UTC)
     may = datetime(2026, 5, 1, 1, 0, tzinfo=UTC)
+
     with patch("agent_runner.clock.SYSTEM_CLOCK.now_utc", return_value=april):
         emit(tmp_log_dir, "round_start", round_num=1)
     with patch("agent_runner.clock.SYSTEM_CLOCK.now_utc", return_value=may):
         emit(tmp_log_dir, "round_start", round_num=2)
+
     assert (tmp_log_dir / "events-2026-04.jsonl").exists()
     assert (tmp_log_dir / "events-2026-05.jsonl").exists()
 
 
-def test_given_event_kinds_set_when_inspected_then_contains_all_lifecycle_events() -> None:
+def test_known_event_kinds_should_contain_all_lifecycle_events() -> None:
     expected = {
         "round_start",
         "agent_spawn",
@@ -77,83 +77,87 @@ def test_given_event_kinds_set_when_inspected_then_contains_all_lifecycle_events
         "monitor_alert_emitted",
         "monitor_auto_stop_triggered",
     }
+
     assert expected.issubset(KNOWN_EVENT_KINDS)
 
 
-def test_given_new_plugin_kind_when_registered_then_present_in_known_kinds() -> None:
+def test_registered_plugin_kind_should_appear_in_known_kinds() -> None:
     events.register_event_kind("custom_test_kind", source="test-plugin")
+
     assert "custom_test_kind" in events.KNOWN_EVENT_KINDS
 
 
-def test_given_builtin_kind_when_re_registered_then_raises_value_error() -> None:
+def test_register_event_kind_should_raise_when_re_registering_a_builtin() -> None:
     with pytest.raises(ValueError, match="built-in"):
         events.register_event_kind("round_start", source="some-plugin")
 
 
-def test_given_same_plugin_kind_same_source_when_re_registered_then_idempotent() -> None:
+def test_register_event_kind_should_be_idempotent_when_same_kind_same_source() -> None:
     events.register_event_kind("dup_kind", source="plug-a")
     events.register_event_kind("dup_kind", source="plug-a")  # no raise
+
     assert "dup_kind" in events.KNOWN_EVENT_KINDS
 
 
-def test_given_same_plugin_kind_different_source_when_registered_then_raises() -> None:
+def test_register_event_kind_should_raise_when_same_kind_different_source() -> None:
     events.register_event_kind("conflict_kind", source="plug-a")
+
     with pytest.raises(ValueError, match="already registered"):
         events.register_event_kind("conflict_kind", source="plug-b")
 
 
-def test_given_plugin_registered_kind_when_emitted_then_no_validation_error(tmp_path) -> None:
+def test_emit_should_not_raise_when_kind_is_plugin_registered(tmp_path) -> None:
     events.register_event_kind("plugin_emit_test", source="test")
+
     events.emit(tmp_path, "plugin_emit_test", note="hello")
+
     assert any(tmp_path.glob("events-*.jsonl"))
 
 
-def test_given_plugin_kinds_when_plugin_event_kinds_called_then_sorted_list() -> None:
+def test_plugin_event_kinds_should_return_a_sorted_list() -> None:
     events.register_event_kind("z_late_kind", source="t")
     events.register_event_kind("a_early_kind", source="t")
+
     assert events.plugin_event_kinds() == ["a_early_kind", "z_late_kind"]
 
 
-def test_given_no_plugin_kinds_when_plugin_event_kinds_called_then_empty_list() -> None:
+def test_plugin_event_kinds_should_return_empty_list_when_none_registered() -> None:
     assert events.plugin_event_kinds() == []
 
 
-def test_given_known_event_kinds_view_when_iterated_then_yields_builtin_plus_plugins() -> None:
+def test_known_event_kinds_should_yield_builtins_and_plugins_when_iterated() -> None:
     events.register_event_kind("plug_x", source="t")
+
     out = set(events.KNOWN_EVENT_KINDS)
+
     assert "round_start" in out  # built-in
     assert "plug_x" in out  # plugin
 
 
-def test_given_known_event_kinds_view_when_contains_checked_then_works_for_both() -> None:
+def test_known_event_kinds_should_support_contains_for_builtins_and_plugins() -> None:
     events.register_event_kind("plug_y", source="t")
+
     assert "round_start" in events.KNOWN_EVENT_KINDS
     assert "plug_y" in events.KNOWN_EVENT_KINDS
     assert "nonexistent" not in events.KNOWN_EVENT_KINDS
 
 
-def test_given_hook_failed_when_checked_then_in_builtin_kinds() -> None:
-    """hook_failed is a built-in event kind in 0.1.4+.
-
-    Used by runner to surface plugin hook exceptions without crashing.
-    """
+def test_builtin_kinds_should_include_hook_failed() -> None:
+    """Used by runner to surface plugin hook exceptions without crashing."""
     assert "hook_failed" in events._BUILTIN_KINDS
 
 
-def test_given_monitor_started_kind_when_imported_then_in_known_event_kinds() -> None:
-    """monitor_started is the built-in startup-confirmation event."""
+def test_builtin_kinds_should_include_monitor_started() -> None:
     from agent_runner.events import _BUILTIN_KINDS, KNOWN_EVENT_KINDS
 
     assert "monitor_started" in _BUILTIN_KINDS
     assert "monitor_started" in KNOWN_EVENT_KINDS
 
 
-def test_emit_agent_auth_error_detected_writes_structured_payload(tmp_path):
+def test_emit_agent_auth_error_detected_should_write_structured_payload(tmp_path):
     """The agent's own output reported an auth failure — certain evidence, so the
     monitor's oauth_fail detector counts the round without an exit-code shield.
     """
-    import json
-
     from agent_runner._emit import emit_agent_auth_error_detected
     from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
 
@@ -163,6 +167,7 @@ def test_emit_agent_auth_error_detected_writes_structured_payload(tmp_path):
         agent="pi",
         raw='401: {"message":"Invalid Authentication"}',
     )
+
     line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
     payload = json.loads(line)
     assert payload["event"] == AGENT_AUTH_ERROR_DETECTED
@@ -171,10 +176,8 @@ def test_emit_agent_auth_error_detected_writes_structured_payload(tmp_path):
     assert "401" in payload["raw"]
 
 
-def test_emit_agent_auth_error_detected_redacts_secrets_in_raw(tmp_path):
+def test_emit_agent_auth_error_detected_should_redact_secrets_in_raw(tmp_path):
     """raw is a provider error body — the same redaction the transient sibling applies."""
-    import json
-
     from agent_runner._emit import emit_agent_auth_error_detected
 
     emit_agent_auth_error_detected(
@@ -183,17 +186,16 @@ def test_emit_agent_auth_error_detected_redacts_secrets_in_raw(tmp_path):
         agent="pi",
         raw='401: {"key":"sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"}',
     )
+
     line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
     assert "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789" not in json.loads(line)["raw"]
 
 
-def test_emit_round_logs_prune_deferred_writes_actionable_payload(tmp_path):
+def test_emit_round_logs_prune_deferred_should_write_actionable_payload(tmp_path):
     """The deferral must be actionable from the event alone: which directory,
     how many files exist, what retention is set to, how many were spared, and
     the knob to turn.
     """
-    import json
-
     from agent_runner._emit import emit_round_logs_prune_deferred
     from agent_runner.events import ROUND_LOGS_PRUNE_DEFERRED
 
@@ -204,6 +206,7 @@ def test_emit_round_logs_prune_deferred_writes_actionable_payload(tmp_path):
         keep=100,
         would_delete=12193,
     )
+
     line = sorted(tmp_path.glob("events-*.jsonl"))[-1].read_text(encoding="utf-8").strip()
     payload = json.loads(line)
     assert payload["event"] == ROUND_LOGS_PRUNE_DEFERRED
@@ -215,12 +218,10 @@ def test_emit_round_logs_prune_deferred_writes_actionable_payload(tmp_path):
     assert "12293" in payload["hint"]
 
 
-def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
+def test_emit_transient_error_backoff_capped_should_include_extended_payload(tmp_path):
     """0.1.33+ payload includes original_reset_at_epoch, applied_reset_at_epoch,
     consecutive_count, capped_by_absolute_max for backoff-curve observability.
     """
-    import json
-
     from agent_runner._emit import emit_transient_error_backoff_capped
 
     emit_transient_error_backoff_capped(
@@ -234,6 +235,7 @@ def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
         consecutive_count=2,
         capped_by_absolute_max=False,
     )
+
     events_files = sorted(tmp_path.glob("events-*.jsonl"))
     assert events_files, "no events file emitted"
     line = events_files[-1].read_text(encoding="utf-8").strip().splitlines()[-1]
@@ -249,12 +251,10 @@ def test_emit_transient_error_backoff_capped_with_extended_payload(tmp_path):
     assert payload["capped_by_absolute_max"] is False
 
 
-def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path):
+def test_emit_transient_error_backoff_capped_should_omit_new_fields_with_old_signature(tmp_path):
     """Old call sites (only 4 kwargs) still work; new fields absent in payload.
     Guards against breaking existing _throttle.py:_apply_back_off behavior.
     """
-    import json
-
     from agent_runner._emit import emit_transient_error_backoff_capped
 
     emit_transient_error_backoff_capped(
@@ -264,6 +264,7 @@ def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path)
         requested_sleep_s=120,
         applied_sleep_s=60,
     )
+
     events_files = sorted(tmp_path.glob("events-*.jsonl"))
     line = events_files[-1].read_text(encoding="utf-8").strip().splitlines()[-1]
     payload = json.loads(line)
@@ -276,38 +277,57 @@ def test_emit_transient_error_backoff_capped_back_compat_old_signature(tmp_path)
     assert "consecutive_count" not in payload
 
 
-def test_read_new_handles_rotation_and_truncation_reset(tmp_path: Path) -> None:
-    """The two edge cases every tail reader composing ``read_new`` needs:
-
-    - rotation: a newly-appeared path is read from byte 0 the first time it's
-      passed in (nothing special to do -- ``offsets.get(path, 0)`` defaults it).
-    - truncation reset: a path whose current size is smaller than its recorded
-      offset was truncated/replaced beneath us and must be re-read from 0,
-      not skipped forever.
-    """
+def test_read_new_should_return_all_rows_when_first_read(tmp_path: Path) -> None:
     old = tmp_path / "events-2026-08.jsonl"
     old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
 
-    first_events, offsets = read_new([old], {})
-    assert [e["n"] for e in first_events] == [1]
-    assert offsets[old] == old.stat().st_size
+    events_read, offsets = read_new([old], {})
+
+    assert [e["n"] for e in events_read] == [1]
+    assert offsets[old] == old.stat().st_size  # offset recorded at EOF
+
+
+def test_read_new_should_return_only_appended_rows_when_file_grows(tmp_path: Path) -> None:
+    old = tmp_path / "events-2026-08.jsonl"
+    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
+    _, offsets = read_new([old], {})
 
     with old.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"event": "round_end", "n": 2}) + "\n")
-    second_events, offsets = read_new([old], offsets)
-    assert [e["n"] for e in second_events] == [2]
+    appended_events, offsets = read_new([old], offsets)
 
-    # Rotation: a new file appears alongside the old one -- its offset
-    # defaults to 0, so its whole content reads as new the first time.
+    assert [e["n"] for e in appended_events] == [2]
+    assert offsets[old] == old.stat().st_size
+
+
+def test_read_new_should_read_new_file_from_start_when_rotated_in(tmp_path: Path) -> None:
+    old = tmp_path / "events-2026-08.jsonl"
+    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
+    _, offsets = read_new([old], {})
+
     new = tmp_path / "events-2026-09.jsonl"
     new.write_text(json.dumps({"event": "round_start", "n": 3}) + "\n")
     rotated_events, offsets = read_new([old, new], offsets)
-    assert [e["n"] for e in rotated_events] == [3]
-    assert offsets[old] == old.stat().st_size  # untouched: no new bytes in the old file
 
-    # Truncation reset: the old file shrinks below its recorded offset (e.g.
-    # replaced/rotated-in-place beneath us) -- re-read from byte 0, not skipped.
+    assert [e["n"] for e in rotated_events] == [3]  # new file read from byte 0
+    assert offsets[old] == old.stat().st_size  # old untouched: no new bytes
+
+
+def test_read_new_should_reread_from_start_when_truncated_below_offset(tmp_path: Path) -> None:
+    # A 2-line file read once records its offset at the larger size; the state
+    # dependency is load-bearing -- the truncation is only "below offset"
+    # because the recorded offset is for the taller file.
+    old = tmp_path / "events-2026-08.jsonl"
+    old.write_text(
+        json.dumps({"event": "round_start", "n": 1})
+        + "\n"
+        + json.dumps({"event": "round_end", "n": 2})
+        + "\n"
+    )
+    _, offsets = read_new([old], {})
+
     old.write_text(json.dumps({"event": "round_start", "n": 4}) + "\n")
-    reset_events, offsets = read_new([old, new], offsets)
-    assert [e["n"] for e in reset_events] == [4]
+    reset_events, offsets = read_new([old], offsets)
+
+    assert [e["n"] for e in reset_events] == [4]  # re-read from 0, not skipped
     assert offsets[old] == old.stat().st_size
