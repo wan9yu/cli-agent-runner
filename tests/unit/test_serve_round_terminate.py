@@ -34,6 +34,11 @@ def test_terminate_round_returns_sentinel_on_dstate_leader(monkeypatch):
     of _terminate_round (which would escape cmd() unclassified as exit 1)."""
     killpg_calls = []
     monkeypatch.setattr(_serve_round.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    # The fake pid 4242 must never reach a real psutil.Process() lookup: on a host
+    # where 4242 is a live daemon (CI, the Pi hosts), _live_children could return
+    # actual descendants and _kill_stray_descendants would fire a stray killpg,
+    # breaking the killpg_calls assertion below. Stub the descendant snapshot empty.
+    monkeypatch.setattr(_serve_round, "_live_children", lambda proc: ([], []))
     rc = _serve_round._terminate_round(_WedgedProc())
     assert rc == _serve_round._ROUND_UNREAPED_RC  # a defined sentinel, not a raise
     assert killpg_calls == [(4242, _serve_round.signal.SIGKILL)]  # escalation still fired

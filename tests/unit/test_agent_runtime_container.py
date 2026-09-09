@@ -13,7 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.agent_runtime import _cidfile_flag_value, _detect_container_run, run
+from agent_runner.agent_runtime import (
+    _cidfile_flag_value,
+    _command_has_cidfile_flag,
+    _detect_container_run,
+    run,
+)
 
 
 def _alive(pid: int) -> bool:
@@ -55,7 +60,7 @@ def _alive(pid: int) -> bool:
         (["docker", "-H", "unix:///var/run/docker.sock", "ps"], False),
     ],
 )
-def test_is_container_run_command(command: list[str], expected: bool) -> None:
+def test_detect_container_run_recognizes_run_commands(command: list[str], expected: bool) -> None:
     assert (_detect_container_run(command) is not None) is expected
 
 
@@ -92,6 +97,26 @@ def test_cidfile_flag_value_scans_only_the_options_block_not_container_args() ->
 
     containers_own_arg = ["docker", "run", "--rm", "image", "--cidfile", "/container/internal/path"]
     assert _cidfile_flag_value(containers_own_arg, 1) is None
+
+
+def test_command_has_cidfile_flag_catches_operator_cidfile_past_untabled_flag() -> None:
+    """The injection guard's blind spot + its fix. ``_cidfile_flag_value``'s
+    walk stops one token early at a value-flag NOT in
+    ``_DOCKER_RUN_FLAGS_WITH_VALUE`` (e.g. ``--cpu-quota``), mistaking its value
+    for IMAGE, so it MISSES an operator ``--cidfile`` that follows -- returning
+    None. Left there, run() would inject a SECOND ``--cidfile``.
+    ``_command_has_cidfile_flag`` scans position-independently and finds it, so
+    injection is suppressed instead of emitting a duplicate."""
+    past_untabled = ["docker", "run", "--cpu-quota", "50000", "--cidfile", "/op.cid", "image"]
+    assert _cidfile_flag_value(past_untabled, 1) is None  # the blind spot
+    assert _command_has_cidfile_flag(past_untabled, 1) is True  # closed by the guard
+
+    tabled = ["docker", "run", "--cidfile", "/op.cid", "--rm", "image"]
+    assert _cidfile_flag_value(tabled, 1) == "/op.cid"
+    assert _command_has_cidfile_flag(tabled, 1) is True
+
+    none_present = ["docker", "run", "--rm", "image"]
+    assert _command_has_cidfile_flag(none_present, 1) is False
 
 
 def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
@@ -261,7 +286,7 @@ def test_bypass_forms_still_warn_on_terminate_without_a_stop_attempt(
 ):
     """Review fix 1 — the global-flag and `env`-wrapped bypass forms (2 of
     the 4 named forms; `sudo docker run ...`/`sudo -u ... docker run ...`
-    are covered at the pure-detector level in test_is_container_run_command
+    are covered at the pure-detector level in test_detect_container_run_recognizes_run_commands
     and test_detect_container_run_index_only_true_for_unwrapped_unflagged_form
     -- spawning a real `sudo` here would need passwordless sudo, which isn't
     a safe test-environment assumption): DETECTED (broad check), so the loud

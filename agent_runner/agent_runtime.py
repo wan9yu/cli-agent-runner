@@ -405,6 +405,25 @@ def _cidfile_flag_value(command: list[str], run_idx: int) -> str | None:
     return None
 
 
+def _command_has_cidfile_flag(command: list[str], run_idx: int) -> bool:
+    """Whether ANY `--cidfile` / `--cidfile=…` token appears after the `run`
+    subcommand, scanned POSITION-INDEPENDENTLY (every token in
+    ``command[run_idx + 1 :]``, not stopping at the IMAGE boundary that
+    ``_cidfile_flag_value`` guesses from ``_DOCKER_RUN_FLAGS_WITH_VALUE``).
+
+    ``_cidfile_flag_value`` can MISS an operator's `--cidfile` when it sits past
+    a value-taking flag NOT in that table -- its walk stops one token early,
+    mistaking the untabled flag's value for IMAGE. Gating injection on this
+    blind-spot-free presence check means a second `--cidfile` is never appended
+    when one is already present, so ``run()`` can't emit a malformed
+    ``docker run --cidfile OURS … --cidfile OPERATOR image``. (A `--cidfile`
+    belonging to the CONTAINERIZED program, past IMAGE, would also suppress
+    injection: acceptable -- the only cost is losing the best-effort stop for
+    that contrived config, and detection's warn + ``round_container_orphan_risk``
+    event already guarantee no silent orphan.)"""
+    return any(tok == "--cidfile" or tok.startswith("--cidfile=") for tok in command[run_idx + 1 :])
+
+
 def _inject_cidfile(command: list[str], run_idx: int, cidfile_path: Path) -> list[str]:
     """Insert `--cidfile <cidfile_path>` right after the `run` subcommand at
     `run_idx` -- ahead of any IMAGE argument, which must always follow the
@@ -547,6 +566,15 @@ def run(
             existing_cidfile = _cidfile_flag_value(command, run_idx)
             if existing_cidfile is not None:
                 container_cidfile = Path(existing_cidfile)
+            elif _command_has_cidfile_flag(command, run_idx):
+                # An operator --cidfile is present but sits past an untabled
+                # value-flag, so its value isn't reliably recoverable. Do NOT
+                # inject a second one -- a duplicate --cidfile is malformed
+                # (last-wins on docker, rejected on some podman versions). No
+                # best-effort stop for this config, but detection already fired,
+                # so the warn + round_container_orphan_risk event still holds the
+                # no-silent-orphan floor.
+                pass
             else:
                 container_cidfile = log_path.with_name(log_path.name + ".cid")
                 container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing one
