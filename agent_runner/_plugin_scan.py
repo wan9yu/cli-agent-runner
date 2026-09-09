@@ -79,7 +79,18 @@ def _parse_entry_points_files(sys_path: list[str], group: str) -> list[tuple[str
         base = Path(entry) if entry else Path.cwd()
         if not base.is_dir():
             continue
-        for dist_info in (*base.glob("*.dist-info"), *base.glob("*.egg-info")):
+        # One scandir pass (iterdir), bucketed by suffix, instead of two
+        # separate glob() calls over the same directory -- dist-info entries
+        # are still processed entirely before egg-info entries (dist-info
+        # must win the dedup below), just gathered from a single listing.
+        dist_infos: list[Path] = []
+        egg_infos: list[Path] = []
+        for child in base.iterdir():
+            if child.suffix == ".dist-info":
+                dist_infos.append(child)
+            elif child.suffix == ".egg-info":
+                egg_infos.append(child)
+        for dist_info in (*dist_infos, *egg_infos):
             ep_file = dist_info / "entry_points.txt"
             if not ep_file.is_file():
                 continue

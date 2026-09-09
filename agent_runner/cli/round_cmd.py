@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import signal
 import sys
 import traceback
 
 from agent_runner._serve_policy import classify_round_exit
-from agent_runner.cli.common import cfg_from_args_or_config_error
+from agent_runner.cli.common import cfg_from_args_or_config_error, install_term_handler
 from agent_runner.config import ConfigError
 from agent_runner.runner import run_one_round
 
@@ -29,12 +28,10 @@ def _install_term_handler() -> None:
     """Convert SIGTERM into KeyboardInterrupt so agent_runtime.run's BaseException
     reap path fires and the agent pgroup is killed before the round exits. SIGINT
     already raises KeyboardInterrupt by default; SIGTERM (serve's stop signal) does
-    not, so we install it explicitly."""
-
-    def _raise_term(_sig, _frame):
-        raise KeyboardInterrupt("round received SIGTERM")
-
-    signal.signal(signal.SIGTERM, _raise_term)
+    not, so we install it explicitly. Thin wrapper around the shared
+    ``cli.common.install_term_handler`` (also used by ``monitor_cmd``) so this
+    name stays a stable, zero-arg monkeypatch point for tests."""
+    install_term_handler("round received SIGTERM")
 
 
 def cmd(args) -> int:

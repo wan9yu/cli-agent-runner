@@ -171,17 +171,22 @@ def _giveup_verdict_rows() -> list[tuple[str, int, bool]]:
     The verdict->code mapping itself is CONTROL FLOW in
     ``cli/_serve_round.post_round_verdicts`` (a chain of ``if``/``return``,
     not a dict), so it is mirrored here by hand rather than imported — the
-    four exit-code integers and the ``RestartPreventExitStatus`` membership
-    (mirroring ``service_unit.py``'s rendered line) ARE imported from
-    ``_serve_policy``, the actual code SSOT, so a constant change here is
-    caught by ``./build.sh docs`` producing a diff.
+    four exit-code integers are imported from ``_serve_policy``, the actual
+    code SSOT, so a constant change here is caught by ``./build.sh docs``
+    producing a diff. The third column is DERIVED from
+    ``_serve_policy.RESTART_PREVENT_EXIT_CODES`` (the same single source
+    ``service_unit.py`` renders from) rather than hand-typed per row.
     """
+    verdict_codes = [
+        (CONFIG_BROKEN, _serve_policy.PERMANENT_CONFIG_EXIT),
+        (CRASH_LOOP, _serve_policy.CRASH_LOOP_EXIT),
+        (STALLED_NO_PROGRESS, _serve_policy.CRASH_LOOP_EXIT),
+        (MEM_LOOP_PERSISTENT, _serve_policy.MEM_LOOP_PERSISTENT_EXIT),
+        (MEM_LOOP, _serve_policy.MEM_LOOP_EXIT),
+    ]
     return [
-        (CONFIG_BROKEN, _serve_policy.PERMANENT_CONFIG_EXIT, True),
-        (CRASH_LOOP, _serve_policy.CRASH_LOOP_EXIT, True),
-        (STALLED_NO_PROGRESS, _serve_policy.CRASH_LOOP_EXIT, True),
-        (MEM_LOOP_PERSISTENT, _serve_policy.MEM_LOOP_PERSISTENT_EXIT, True),
-        (MEM_LOOP, _serve_policy.MEM_LOOP_EXIT, False),
+        (verdict, code, code in _serve_policy.RESTART_PREVENT_EXIT_CODES)
+        for verdict, code in verdict_codes
     ]
 
 
@@ -205,25 +210,26 @@ def render_giveup_systemd_example() -> str:
     """The ``systemd unit pattern recommendations`` fenced example.
 
     ``RestartPreventExitStatus`` lists the three DELIBERATE give-up codes
-    (config_broken/crash_loop/mem_loop_persistent); ``mem_loop``'s 71 is
-    deliberately excluded so systemd respawns to retry (see
-    ``service_unit.py``, which renders this same triple from the same
-    constants)."""
-    prevent = (
-        f"{_serve_policy.PERMANENT_CONFIG_EXIT} {_serve_policy.CRASH_LOOP_EXIT} "
-        f"{_serve_policy.MEM_LOOP_PERSISTENT_EXIT}"
-    )
+    (config_broken/crash_loop/mem_loop_persistent), derived from
+    ``_serve_policy.RESTART_PREVENT_EXIT_CODES`` — the same single source
+    ``service_unit.py`` renders from; ``mem_loop``'s 71 is deliberately
+    excluded so systemd respawns to retry. The second comment line's
+    leading padding is derived from the first line's own length (not
+    hand-counted) so the two ``#`` columns always line up even if a future
+    exit code changes ``prevent``'s width."""
+    prevent = " ".join(str(c) for c in _serve_policy.RESTART_PREVENT_EXIT_CODES)
+    header = f"RestartPreventExitStatus={prevent}   "
     return (
         "```ini\n"
         "# Prod (infinite supervisor) — current default\n"
         "[Service]\n"
         "ExecStart=... serve --config /etc/agent-runner.toml\n"
         "Restart=on-failure\n"
-        f"RestartPreventExitStatus={prevent}   "
+        f"{header}"
         f"# config_broken ({_serve_policy.PERMANENT_CONFIG_EXIT}) / "
         f"crash_loop ({_serve_policy.CRASH_LOOP_EXIT}) / "
         f"mem_loop_persistent ({_serve_policy.MEM_LOOP_PERSISTENT_EXIT}) stay stopped\n"
-        "                                     "
+        f"{' ' * len(header)}"
         f"# mem_loop ({_serve_policy.MEM_LOOP_EXIT}) is NOT listed here — it restarts\n"
         "RestartSec=3\n"
         "\n"

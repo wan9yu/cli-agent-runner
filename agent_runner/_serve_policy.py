@@ -64,6 +64,20 @@ MEM_LOOP_THRESHOLD = 5
 # EX_SOFTWARE (sysexits); verified free (grep -rnE "= 70\b|code=70\b").
 MEM_LOOP_PERSISTENT_EXIT = 70
 
+# Single source for "which give-up codes stay stopped" — service_unit.py's
+# rendered RestartPreventExitStatus line and _docgen.py's two runbook mirrors
+# (the systemd example line and the exit-code table's stays_stopped column)
+# all derive from this ORDERED tuple instead of each hand-typing the same
+# three constants (previously pinned agreeing only via a set-equality test).
+# Order is significant: it is rendered verbatim, so this must stay
+# (PERMANENT_CONFIG_EXIT, CRASH_LOOP_EXIT, MEM_LOOP_PERSISTENT_EXIT) —
+# "78 75 70" — not a frozenset, which has no stable rendering order.
+RESTART_PREVENT_EXIT_CODES: tuple[int, ...] = (
+    PERMANENT_CONFIG_EXIT,
+    CRASH_LOOP_EXIT,
+    MEM_LOOP_PERSISTENT_EXIT,
+)
+
 # Escalation window/threshold for the cross-restart convergence above: prior
 # mem_loop events are counted only within the last _MEM_LOOP_PERSIST_WINDOW_S
 # seconds (2h) of "now" — old episodes age out on their own, so a host that

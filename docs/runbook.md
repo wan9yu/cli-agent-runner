@@ -144,7 +144,7 @@ Deletion does NOT auto-resume. Explicit `systemctl start` required.
 ExecStart=... serve --config /etc/agent-runner.toml
 Restart=on-failure
 RestartPreventExitStatus=78 75 70   # config_broken (78) / crash_loop (75) / mem_loop_persistent (70) stay stopped
-                                     # mem_loop (71) is NOT listed here — it restarts
+                                    # mem_loop (71) is NOT listed here — it restarts
 RestartSec=3
 
 # Bounded job

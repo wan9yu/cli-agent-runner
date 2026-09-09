@@ -24,10 +24,10 @@ things a hand-rolled ``while true; ssh …; sleep 30; done`` loop gets wrong:
    reconnect — so no orphaned ssh/sleep tree survives a dropped link. The relay
    drains the same way on SIGINT for free (Python's default KeyboardInterrupt
    handler); a caller that wants the same clean drain on SIGTERM — like the
-   CLI's ``monitor --host --mode events`` — installs ``_install_term_handler()``
-   itself before calling in (see that function's docstring: this module does
-   not touch process signal state on its own, so it stays safe to call from a
-   worker thread).
+   CLI's ``monitor --host --mode events`` — installs
+   ``agent_runner.cli.common.install_term_handler()`` itself before calling in
+   (this module does not touch process signal state on its own, so it stays
+   safe to call from a worker thread).
 
 Detection is NOT relayed: the detectors run on the supervised host by design
 (``auto_stop_on`` acts there with zero client involvement). This module moves
@@ -39,7 +39,6 @@ client's ``log_dir``.
 from __future__ import annotations
 
 import json
-import signal
 import subprocess  # noqa: TID251 — the relay is the ssh spawner
 import sys
 import threading
@@ -165,22 +164,6 @@ def _line_ts(line: str) -> tuple[str, datetime] | None:
         return None
 
 
-def _install_term_handler() -> None:
-    """Convert SIGTERM into KeyboardInterrupt so it drains through this
-    module's OWN existing shutdown path — the ``except KeyboardInterrupt:
-    return 0`` / ``finally: _kill_pgroup(proc)`` below — instead of Python's
-    default disposition (immediate termination, which never runs that
-    ``finally`` and orphans ssh). SIGINT already raises KeyboardInterrupt by
-    default; SIGTERM (how a process manager or `systemctl stop` normally asks
-    a process to shut down) does not, so it is installed explicitly here —
-    same technique ``round_cmd`` uses for the same reason."""
-
-    def _raise_term(_sig, _frame):
-        raise KeyboardInterrupt("relay received SIGTERM")
-
-    signal.signal(signal.SIGTERM, _raise_term)
-
-
 def relay_remote_events(
     host: str,
     *,
@@ -207,8 +190,8 @@ def relay_remote_events(
     only works on the main thread, and a library caller may run this beside
     its own event loop on a worker thread). A caller that wants SIGTERM to
     drain the relay the way ``monitor --host --mode events`` does must call
-    ``_install_term_handler()`` itself from its own main thread before
-    invoking this function — see ``cli/monitor_cmd.py``.
+    ``agent_runner.cli.common.install_term_handler()`` itself from its own
+    main thread before invoking this function — see ``cli/monitor_cmd.py``.
     """
     # ssh reads a leading '-' as an option (-oProxyCommand=… runs a local
     # command), so an attacker-supplied "host" must never reach the argv.

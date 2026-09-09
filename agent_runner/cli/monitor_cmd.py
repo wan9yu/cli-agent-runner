@@ -6,9 +6,18 @@ import json
 import sys
 
 from agent_runner import api, monitor
-from agent_runner.cli.common import _to_jsonable, fail, work_dir_from_args
+from agent_runner.cli.common import _to_jsonable, fail, install_term_handler, work_dir_from_args
 
 _SEVERITY_TAGS = {"info": "[OK]", "warning": "[WARN]", "critical": "[CRIT]"}
+
+
+def _install_term_handler() -> None:
+    """Convert SIGTERM into KeyboardInterrupt so the relay drains through its
+    own ``except KeyboardInterrupt`` path instead of Python's default SIGTERM
+    disposition — same technique ``round_cmd`` uses for the same reason. Thin
+    wrapper around the shared ``cli.common.install_term_handler`` so this name
+    stays a stable, zero-arg monkeypatch point for tests."""
+    install_term_handler("relay received SIGTERM")
 
 
 def add_parser(sub, parent) -> None:
@@ -131,11 +140,6 @@ def _cmd_events(args) -> int:
 
     host = getattr(args, "host", None)
     if host is not None:
-        # Late import: remote_relay pulls agent_runtime (psutil, threading) --
-        # keep it out of every CLI invocation's startup footprint, matching
-        # api.relay_remote_events's own late import of the same module.
-        from agent_runner import remote_relay
-
         raw_kinds = getattr(args, "kind", None)
         kinds = [k.strip() for k in raw_kinds.split(",") if k.strip()] if raw_kinds else None
         # relay_remote_events itself is thread-agnostic and does not touch
@@ -143,7 +147,7 @@ def _cmd_events(args) -> int:
         # the main thread and wants the same drain-on-SIGTERM behavior serve
         # and round get, so it installs the handler here — same precedent as
         # round_cmd._install_term_handler.
-        remote_relay._install_term_handler()
+        _install_term_handler()
         return api.relay_remote_events(
             host,
             log_dir=log_dir,

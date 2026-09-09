@@ -222,12 +222,16 @@ def test_install_term_handler_raises_keyboardinterrupt(monkeypatch: pytest.Monke
     """Unit-level check of the handler itself: SIGTERM must convert to
     KeyboardInterrupt so it drains through the SAME path SIGINT already gets
     from Python's own default handler -- not Python's default SIGTERM
-    disposition (immediate termination). Same technique as
-    ``round_cmd._install_term_handler``; see the subprocess test below for
+    disposition (immediate termination). ``monitor_cmd`` owns installing this
+    for the relay (``relay_remote_events`` itself stays thread-agnostic --
+    see below); same shared ``cli.common.install_term_handler`` technique as
+    ``round_cmd._install_term_handler``. See the subprocess test below for
     proof the whole relay actually drains when really sent SIGTERM."""
+    from agent_runner.cli import monitor_cmd
+
     captured = {}
     monkeypatch.setattr(signal, "signal", lambda s, h: captured.__setitem__(s, h))
-    remote_relay._install_term_handler()
+    monitor_cmd._install_term_handler()
     with pytest.raises(KeyboardInterrupt):
         captured[signal.SIGTERM](signal.SIGTERM, None)
 
@@ -307,8 +311,9 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
         "import sys\n"
         "from pathlib import Path\n"
         "from agent_runner import remote_relay\n"
+        "from agent_runner.cli.common import install_term_handler\n"
         "remote_relay._SSH = sys.argv[1]\n"
-        "remote_relay._install_term_handler()\n"
+        "install_term_handler('relay received SIGTERM')\n"
         "sys.exit(remote_relay.relay_remote_events('pi', log_dir=Path(sys.argv[2])))\n"
     )
     proc = subprocess.Popen(
@@ -384,7 +389,7 @@ def test_cmd_events_installs_term_handler_before_relaying(monkeypatch: pytest.Mo
     from agent_runner.cli import monitor_cmd
 
     calls: list[str] = []
-    monkeypatch.setattr(remote_relay, "_install_term_handler", lambda: calls.append("install"))
+    monkeypatch.setattr(monitor_cmd, "_install_term_handler", lambda: calls.append("install"))
 
     def fake_relay(*_args, **_kwargs) -> int:
         calls.append("relay")

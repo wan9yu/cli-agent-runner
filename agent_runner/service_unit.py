@@ -19,12 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_runner._serve_policy import (
-    CRASH_LOOP_EXIT,
-    MEM_LOOP_PERSISTENT_EXIT,
-    PERMANENT_CONFIG_EXIT,
-    timeout_budget,
-)
+from agent_runner._serve_policy import RESTART_PREVENT_EXIT_CODES, timeout_budget
 from agent_runner.config import Config, _reject_control_chars
 
 
@@ -111,8 +106,8 @@ def render_serve_unit(
         # mem_loop_persistent (70) IS listed: once mem_loop itself keeps
         # recurring across restarts within the escalation window, that's a
         # deliberate stop too (cross-restart convergence).
-        f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT} "
-        f"{MEM_LOOP_PERSISTENT_EXIT}\n"
+        f"RestartPreventExitStatus="
+        f"{' '.join(str(c) for c in RESTART_PREVENT_EXIT_CODES)}\n"
         f"RestartSec=3\n"
         f"KillMode=mixed\n"
         f"KillSignal=SIGTERM\n"

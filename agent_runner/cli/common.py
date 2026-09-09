@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import signal
 import sys
 import tomllib
 from enum import Enum
@@ -69,6 +70,28 @@ def work_dir_from_args(args) -> Path:
             f"--config must point at a file named 'agent-runner.toml', got {cfg_path.name!r}"
         )
     return cfg_path.parent
+
+
+def install_term_handler(message: str) -> None:
+    """Convert SIGTERM into ``KeyboardInterrupt(message)`` so a CLI entry
+    point's own drain-on-interrupt path (already there for SIGINT, which
+    Python raises by default) also fires on SIGTERM — how a process manager
+    or ``systemctl stop`` normally asks a process to shut down.
+
+    ``signal.signal`` only works on the main thread, so this must be called
+    from the CLI's own main thread before starting whatever it wants to
+    drain — never from library code a caller might run on a worker thread
+    (see ``remote_relay.relay_remote_events``'s docstring, which stays
+    thread-agnostic on purpose and leaves installing this to its CLI
+    caller). Shared by ``round_cmd`` and ``monitor_cmd``, which each wrap
+    this with their own fixed message so the wrapper stays a stable,
+    zero-arg monkeypatch point for tests.
+    """
+
+    def _raise_term(_sig, _frame):
+        raise KeyboardInterrupt(message)
+
+    signal.signal(signal.SIGTERM, _raise_term)
 
 
 def emit(value: Any, *, json_mode: bool) -> None:
