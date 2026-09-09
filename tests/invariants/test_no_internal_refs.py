@@ -37,10 +37,11 @@ def _tracked_files() -> list[str]:
     return [p for p in out.splitlines() if p.endswith(_SCAN_SUFFIXES) and p not in _SKIP]
 
 
-def test_given_tracked_files_when_scanned_then_no_internal_codenames() -> None:
+def test_tracked_files_should_have_no_internal_codenames_when_scanned() -> None:
     files = _tracked_files()
     # vacuity-guard
     assert len(files) > 50, "tracked-file scan found too few files — scan is vacuous"
+
     hits = []
     for rel in files:
         text = (_REPO / rel).read_text(encoding="utf-8", errors="replace")

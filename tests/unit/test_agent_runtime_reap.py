@@ -32,7 +32,7 @@ def _script(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_callback_raise_reaps_agent_pgroup(tmp_path):
+def test_agent_pgroup_should_be_reaped_when_progress_callback_raises(tmp_path):
     childpid = tmp_path / "child.pid"
     script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
 
@@ -69,7 +69,7 @@ def test_callback_raise_reaps_agent_pgroup(tmp_path):
 
 @pytest.mark.timeout(120)  # see the sender wait-budget comment below for the arithmetic
 @pytest.mark.serial
-def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
+def test_agent_pgroup_should_be_reaped_when_sigterm_arrives_during_round(tmp_path):
     """The real SIGTERM path (not a raised-callback stand-in): round_cmd
     installs a handler that converts every SIGTERM into a fresh
     KeyboardInterrupt (round_cmd.py:24-33) so `run`'s BaseException reap path
@@ -123,6 +123,7 @@ def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
 
     sender = threading.Thread(target=_term_self_once_child_recorded, daemon=True)
     sender.start()
+
     try:
         raised: KeyboardInterrupt | None = None
         try:
@@ -183,7 +184,7 @@ def _write_detach_script(path: Path, pid_file: Path, sleep_s: int = 60) -> None:
 
 
 @pytest.mark.timeout(90)
-def test_kill_pgroup_reaps_detached_descendant(tmp_path):
+def test_detached_descendant_should_be_reaped_when_pgroup_is_killed(tmp_path):
     """B(orphan): a round leader whose child setsid()s off the leader's own
     process group (POSIX setsid() changes pgid+sid but NOT ppid) sits outside
     the pgroup `run`'s timeout path killpg's -- before this fix, that

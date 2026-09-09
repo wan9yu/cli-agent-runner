@@ -21,38 +21,49 @@ def _ctx(tmp_git_repo, action):
     )
 
 
-def test_stash_action_returns_stashed(tmp_git_repo):
+def test_handle_dirty_should_return_stashed_when_action_is_stash(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
+
     out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+
     assert out.kind == "stashed" and out.ref
 
 
-def test_ignore_action_returns_ignored(tmp_git_repo):
+def test_handle_dirty_should_return_ignored_when_action_is_ignore(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
+
     out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "ignore"), ["w.py"])
+
     assert out.kind == "ignored"
 
 
-def test_auto_commit_action_returns_committed(tmp_git_repo):
+def test_handle_dirty_should_return_committed_when_action_is_auto_commit(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
+
     out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), ["w.py"])
+
     assert out.kind == "committed" and out.ref
 
 
-def test_auto_commit_nothing_staged_returns_ignored(tmp_git_repo, monkeypatch):
-    """When try_auto_commit returns '' (nothing staged), outcome is ignored."""
+def test_handle_dirty_should_return_ignored_when_auto_commit_stages_nothing(
+    tmp_git_repo, monkeypatch
+):
     (tmp_git_repo / "logs").mkdir()
     import agent_runner.api as _api
 
     monkeypatch.setattr(_api, "try_auto_commit", lambda *a, **kw: "")
+
     out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), [])
+
     assert out.kind == "ignored"
 
 
-def test_auto_commit_error_emits_failure_and_leaves_tree_dirty(tmp_git_repo, monkeypatch):
+def test_handle_dirty_should_emit_failure_and_leave_tree_dirty_when_auto_commit_raises(
+    tmp_git_repo, monkeypatch
+):
     """Parity with runner.py: AutoCommitError emits DIRTY_COMMIT_FAILED and
     leaves the tree dirty (no stash, no orphan_stashed)."""
     (tmp_git_repo / "logs").mkdir()
@@ -64,6 +75,7 @@ def test_auto_commit_error_emits_failure_and_leaves_tree_dirty(tmp_git_repo, mon
         raise AutoCommitError("git fail")
 
     monkeypatch.setattr(_api, "try_auto_commit", _raise)
+
     out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), ["w.py"])
 
     assert out.kind == "ignored"
@@ -74,11 +86,12 @@ def test_auto_commit_error_emits_failure_and_leaves_tree_dirty(tmp_git_repo, mon
     assert (tmp_git_repo / "w.py").read_text() == "x=1\n"
 
 
-def test_stash_writes_orphan_state(tmp_git_repo):
-    """Stash action writes orphan state file to log_dir."""
+def test_handle_dirty_should_write_orphan_state_file_when_action_is_stash(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
+
     DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+
     orphan_files = list((tmp_git_repo / "logs").glob("orphan*.json"))
     assert orphan_files, "orphan state file should be written to log_dir"
 
@@ -92,17 +105,19 @@ def _intent_to_add_dirty(repo: Path) -> None:
     subprocess.run(["git", "add", "-N", "."], cwd=repo, check=True)
 
 
-def test_given_intent_to_add_when_stash_orphan_then_raises_stash_error(
+def test_stash_orphan_should_raise_stash_error_when_intent_to_add_dirties_tree(
     tmp_git_repo: Path,
 ) -> None:
     """A failed push must not be reported as a clean tree — the WIP is still on disk."""
     _intent_to_add_dirty(tmp_git_repo)
+
     with pytest.raises(StashError) as exc:
         stash_orphan(tmp_git_repo, round_num=1, phase=None)
+
     assert "not uptodate" in str(exc.value)
 
 
-def test_given_push_failure_when_handler_stashes_then_emits_orphan_stash_failed(
+def test_handle_dirty_should_emit_orphan_stash_failed_when_stash_push_fails(
     tmp_git_repo: Path,
 ) -> None:
     """The flagship defense failing silently is what made this kind dead."""
@@ -121,14 +136,14 @@ def test_given_push_failure_when_handler_stashes_then_emits_orphan_stash_failed(
     assert "not uptodate" in failed[0]["reason"]
 
 
-def test_given_same_round_double_call_when_handler_stashes_then_emits_idempotent_skip(
+def test_handle_dirty_should_emit_idempotent_skip_when_stashed_twice_in_same_round(
     tmp_git_repo: Path,
 ) -> None:
     """Reuse inside the idempotency window must not re-emit orphan_stashed."""
     (tmp_git_repo / "logs").mkdir()
     handler = DefaultDirtyHandler()
-
     (tmp_git_repo / "w.py").write_text("x=1\n")
+
     first = handler.handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
     (tmp_git_repo / "w.py").write_text("x=2\n")
     second = handler.handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
@@ -139,7 +154,7 @@ def test_given_same_round_double_call_when_handler_stashes_then_emits_idempotent
     assert kinds.count("orphan_idempotent_skip") == 1
 
 
-def test_given_foreign_stash_and_only_excluded_churn_when_stash_orphan_then_returns_none(
+def test_stash_orphan_should_return_none_when_foreign_stash_and_churn_is_only_excluded_paths(
     tmp_git_repo: Path,
 ) -> None:
     """The ``msg not in raw_subj`` guard is reachable and load-bearing.

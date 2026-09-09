@@ -37,36 +37,42 @@ def _seed(tmp_log_dir: Path) -> None:
     (rounds / "R1-20260512T100000.log").write_text("agent ran fine\n")
 
 
-def test_given_local_source_when_parsed_then_returns_event_list(tmp_log_dir: Path) -> None:
+def test_local_source_should_return_event_list_when_parsed(tmp_log_dir: Path) -> None:
     _seed(tmp_log_dir)
     src = LocalSource(log_dir=tmp_log_dir)
+
     events = parse_events_from_jsonl_files(src.events_files())
+
     assert len(events) == 3
     assert events[0]["event"] == "round_start"
 
 
-def test_given_round_logs_when_loaded_then_returns_dict_keyed_by_round_num(
+def test_round_logs_should_return_dict_keyed_by_round_num_when_loaded(
     tmp_log_dir: Path,
 ) -> None:
     _seed(tmp_log_dir)
     src = LocalSource(log_dir=tmp_log_dir)
+
     tails = load_round_log_tails(src.rounds_dir(), tail_lines=10)
+
     assert 1 in tails
     assert "agent ran fine" in tails[1]
 
 
-def test_given_seeded_state_when_assembled_then_returns_project_state(
+def test_seeded_state_should_return_project_state_when_assembled(
     tmp_log_dir: Path,
 ) -> None:
     _seed(tmp_log_dir)
     src = LocalSource(log_dir=tmp_log_dir)
+
     state = assemble_project_state(src, project="myproj")
+
     assert state.project == "myproj"
     assert state.status["round_num"] == 1
     assert state.system.disk_used_pct == 50.0
 
 
-def test_given_clean_history_when_run_all_detectors_then_no_alerts(
+def test_clean_history_should_have_no_alerts_when_run_all_detectors(
     tmp_log_dir: Path,
 ) -> None:
     _seed(tmp_log_dir)
@@ -74,6 +80,7 @@ def test_given_clean_history_when_run_all_detectors_then_no_alerts(
     events = parse_events_from_jsonl_files(src.events_files())
     metrics = parse_events_from_jsonl_files(src.metrics_files())
     log_tails = load_round_log_tails(src.rounds_dir(), tail_lines=50)
+
     alerts = run_all_detectors(
         events=events,
         metrics=metrics,
@@ -81,10 +88,11 @@ def test_given_clean_history_when_run_all_detectors_then_no_alerts(
         round_timeout_s=1800,
         supervisor_stale_threshold_s=0,  # disable: seeded events use a fixed old timestamp
     )
+
     assert alerts == []
 
 
-def test_given_disk_98_pct_when_run_all_detectors_then_critical_with_auto_stop(
+def test_disk_at_98_pct_should_be_critical_with_auto_stop_when_run_all_detectors(
     tmp_log_dir: Path,
 ) -> None:
     _seed(tmp_log_dir)
@@ -94,12 +102,14 @@ def test_given_disk_98_pct_when_run_all_detectors_then_critical_with_auto_stop(
     )
     src = LocalSource(log_dir=tmp_log_dir)
     metrics = parse_events_from_jsonl_files(src.metrics_files())
+
     alerts = run_all_detectors(
         events=[],
         metrics=metrics,
         log_tails={},
         round_timeout_s=1800,
     )
+
     crit = [a for a in alerts if a.detector == "disk_critical"]
     assert len(crit) == 1
     assert crit[0].auto_action == "stop_service"

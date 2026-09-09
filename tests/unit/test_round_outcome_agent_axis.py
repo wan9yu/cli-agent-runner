@@ -21,7 +21,7 @@ def _emit(log_dir, kind, clock, **f):
     clock.advance(1)
 
 
-def test_usageless_kimi_round_after_pi_usage_is_not_no_progress(tmp_path, _fake_clock):
+def test_kimi_round_should_not_be_no_progress_when_usageless_after_pi_usage(tmp_path, _fake_clock):
     """Mixed [phases]: pi emitted usage; kimi (never emits usage BY DESIGN) then
     runs a fast clean round. The deployment-wide usage_capable would wrongly arm
     stalled_no_progress on kimi; the per-agent axis must NOT."""
@@ -56,9 +56,8 @@ def test_usageless_kimi_round_after_pi_usage_is_not_no_progress(tmp_path, _fake_
         paths_hash=None,
     )
     # kimi round 2: no usage event at all
+
     outcome = _round_outcome.round_outcome(tmp_path, ran_agent="kimi")
-    assert outcome.usage_capable is True  # deployment-wide: pi armed it
-    assert outcome.usage_capable_by_agent.get("kimi", False) is False  # kimi never did
     no_prog = _round_outcome.round_had_no_progress(
         tmp_path,
         returncode=0,
@@ -67,10 +66,13 @@ def test_usageless_kimi_round_after_pi_usage_is_not_no_progress(tmp_path, _fake_
         throttle_active=False,
         outcome=outcome,
     )
+
+    assert outcome.usage_capable is True  # deployment-wide: pi armed it
+    assert outcome.usage_capable_by_agent.get("kimi", False) is False  # kimi never did
     assert no_prog is False  # per-agent: kimi is not usage-capable → not armed
 
 
-def test_usageless_pi_round_is_no_progress(tmp_path, _fake_clock):
+def test_pi_round_should_be_no_progress_when_usageless(tmp_path, _fake_clock):
     """A usage-capable agent (pi) with NO usage this round IS no-progress."""
     _emit(
         tmp_path,
@@ -102,7 +104,9 @@ def test_usageless_pi_round_is_no_progress(tmp_path, _fake_clock):
         git_head="b",
         paths_hash=None,
     )
+
     outcome = _round_outcome.round_outcome(tmp_path, ran_agent="pi")
+
     assert (
         _round_outcome.round_had_no_progress(
             tmp_path,

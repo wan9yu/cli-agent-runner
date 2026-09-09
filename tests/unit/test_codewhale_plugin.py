@@ -14,7 +14,7 @@ from tests._test_helpers import (
 _MOD = "agent_runner.builtin_plugins.codewhale"
 
 
-def test_given_success_round_when_after_round_then_usage_emitted_from_metadata(tmp_path):
+def test_after_round_should_emit_usage_from_metadata_when_round_succeeds(tmp_path):
     from agent_runner.builtin_plugins.codewhale import CodewhaleErrorDetector
 
     # Real captured codewhale exec stream-json terminal records.
@@ -38,11 +38,13 @@ def test_given_success_round_when_after_round_then_usage_emitted_from_metadata(t
         ],
     )
     result = make_run_result()
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             CodewhaleErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="codewhale"), result=result
             )
+
     usage_emit.assert_called_once()
     kw = usage_emit.call_args.kwargs
     assert kw["agent"] == "codewhale"
@@ -54,7 +56,7 @@ def test_given_success_round_when_after_round_then_usage_emitted_from_metadata(t
     err_emit.assert_not_called()
 
 
-def test_given_non_codewhale_binary_when_after_round_then_no_emit(tmp_path):
+def test_after_round_should_not_emit_usage_when_binary_is_not_codewhale(tmp_path):
     from agent_runner.builtin_plugins.codewhale import CodewhaleErrorDetector
 
     write_round_log(
@@ -73,14 +75,16 @@ def test_given_non_codewhale_binary_when_after_round_then_no_emit(tmp_path):
         ],
     )
     result = make_run_result()
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         CodewhaleErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="claude"), result=result
         )
+
     usage_emit.assert_not_called()
 
 
-def test_given_auth_error_round_when_after_round_then_no_transient_error(tmp_path):
+def test_after_round_should_skip_transient_error_and_still_emit_usage_when_auth_fails(tmp_path):
     """Auth failure is NOT a transient bucket (it's oauth_fail territory) -> usage only."""
     from agent_runner.builtin_plugins.codewhale import CodewhaleErrorDetector
 
@@ -102,16 +106,18 @@ def test_given_auth_error_round_when_after_round_then_no_transient_error(tmp_pat
         ],
     )
     result = make_run_result(1)
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             CodewhaleErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="codewhale"), result=result
             )
+
     err_emit.assert_not_called()  # auth error does not map to a transient bucket
     usage_emit.assert_called_once()  # usage still emitted (status:failed round)
 
 
-def test_given_non_json_lines_when_after_round_then_tolerated(tmp_path):
+def test_after_round_should_tolerate_non_json_lines_when_parsing_stream(tmp_path):
     """Real codewhale stdout has terminal-escape non-JSON lines; parser must skip them."""
     from agent_runner.builtin_plugins.codewhale import CodewhaleErrorDetector
 
@@ -129,15 +135,17 @@ def test_given_non_json_lines_when_after_round_then_tolerated(tmp_path):
         '{"type":"done"}\n',
     )
     result = make_run_result()
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         CodewhaleErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="codewhale"), result=result
         )
+
     usage_emit.assert_called_once()
     assert usage_emit.call_args.kwargs["input_tokens"] == 5
 
 
-def test_classify_codewhale_error_maps_only_known_buckets():
+def test_classify_codewhale_error_should_map_only_known_buckets():
     """Lock the dormant forward-path: numeric status codes map to existing
     buckets; everything else (incl. the captured free-text auth error) → None.
     Guards against silent regression when a real rate-limit sample is wired in.

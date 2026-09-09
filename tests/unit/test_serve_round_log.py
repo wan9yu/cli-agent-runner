@@ -43,10 +43,9 @@ def _toml_with_retention(tmp_path: Path, log_dir: Path, *, retention: int) -> Pa
     return cfg_path
 
 
-def test_given_round_runs_when_serve_then_round_log_file_created(
+def test_serve_cmd_should_create_round_log_file_when_round_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Round subprocess output goes to log_dir/round-<N>.log."""
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -65,10 +64,9 @@ def test_given_round_runs_when_serve_then_round_log_file_created(
     assert "round 1 output" in round_log.read_text()
 
 
-def test_given_round_runs_when_serve_then_current_symlink_points_to_active(
+def test_serve_cmd_should_point_current_symlink_to_latest_round_log_when_round_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """round-current.log symlink points to the latest round-<N>.log."""
     from agent_runner.cli import serve_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -83,7 +81,7 @@ def test_given_round_runs_when_serve_then_current_symlink_points_to_active(
     assert symlink.resolve() == (log_dir / "round-1.log").resolve()
 
 
-def test_given_existing_round_num_when_serve_then_log_filename_matches(
+def test_serve_cmd_should_continue_log_numbering_from_status_when_round_num_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """If status.json has round_num=5, next round's log is round-6.log (counter sync)."""
@@ -103,10 +101,9 @@ def test_given_existing_round_num_when_serve_then_log_filename_matches(
     assert not (log_dir / "round-1.log").exists()
 
 
-def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
+def test_serve_cmd_should_prune_old_round_logs_when_retention_exceeded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Old round-<N>.log files beyond round_log_retention pruned at serve start."""
     from agent_runner.cli import serve_cmd
 
     log_dir = tmp_path / "logs"
@@ -131,10 +128,9 @@ def test_given_retention_exceeded_when_serve_starts_then_old_logs_pruned(
     assert (log_dir / "round-6.log").exists()
 
 
-def test_given_retention_zero_when_serve_starts_then_no_prune_and_no_event(
+def test_serve_cmd_should_skip_pruning_when_retention_is_zero(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The default (0) leaves the serve-level family alone and stays silent."""
     from agent_runner.cli import serve_cmd
     from tests._test_helpers import read_events_for_current_month
 
@@ -156,7 +152,7 @@ def test_given_retention_zero_when_serve_starts_then_no_prune_and_no_event(
     ]
 
 
-def test_given_bulk_backlog_when_serve_starts_then_prune_deferred_and_emitted(
+def test_serve_cmd_should_defer_prune_and_emit_event_when_backlog_exceeds_retention(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Lowering retention far below the existing backlog defers the whole prune:
@@ -202,10 +198,9 @@ def _minimal_cfg(work_dir: Path, log_dir: Path):
     )
 
 
-def test_given_capture_substrate_when_before_and_after_then_both_events_emitted(
+def test_capture_substrate_should_emit_matching_before_and_after_events(
     tmp_path: Path,
 ) -> None:
-    """_capture_substrate emits round_substrate_before/after with matching fields."""
     from agent_runner.cli import serve_cmd
     from tests._test_helpers import read_events_for_current_month
 

@@ -60,7 +60,7 @@ def _make_grace_config(work_dir: Path, script_path: Path, grace_s: int) -> Confi
     )
 
 
-def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
+def test_round_grace_kill_should_fire_when_worker_hangs_after_result(tmp_path: Path) -> None:
     """Full runner flow: subprocess emits result then hangs; round_grace_kill event fires."""
     _init_git(tmp_path)
 
@@ -72,6 +72,7 @@ def test_grace_kill_emits_round_grace_kill_event(tmp_path: Path) -> None:
     script.chmod(0o755)
 
     cfg = _make_grace_config(tmp_path, script, grace_s=1)
+
     result = run_one_round(cfg)
 
     assert result.killed_for_grace is True
@@ -110,7 +111,7 @@ def _make_grace_config_with_patterns(
     )
 
 
-def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
+def test_round_grace_extended_should_fire_when_worker_still_alive(tmp_path: Path) -> None:
     """Full runner flow: subprocess emits result then backgrounds a long child;
     round_grace_extended event fires (not round_grace_kill); wall timeout reaps."""
     _init_git(tmp_path)
@@ -126,6 +127,7 @@ def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
     script.chmod(0o755)
 
     cfg = _make_grace_config(tmp_path, script, grace_s=1)
+
     result = run_one_round(cfg)
 
     assert result.killed_for_grace is False  # spared by liveness
@@ -145,7 +147,9 @@ def test_round_grace_extended_emitted_when_worker_alive(tmp_path: Path) -> None:
     assert len(grace_kill_events) == 0
 
 
-def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
+def test_round_grace_extended_should_carry_ignored_children_when_ignore_patterns_set(
+    tmp_path: Path,
+) -> None:
     """With grace_kill_ignore_patterns set, persistent helpers appear under
     ignored_children, not live_children — even when a real worker is also alive."""
     _init_git(tmp_path)
@@ -168,6 +172,7 @@ def test_round_grace_extended_carries_ignored_children(tmp_path: Path) -> None:
     cfg = _make_grace_config_with_patterns(
         tmp_path, script, grace_s=1, patterns=["snapshot-bash-test"]
     )
+
     result = run_one_round(cfg)
 
     assert result.killed_for_grace is False  # real worker kept it alive

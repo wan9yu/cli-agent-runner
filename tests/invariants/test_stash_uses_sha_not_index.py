@@ -33,7 +33,7 @@ def _docstring_constant_ids(tree: ast.Module) -> set[int]:
     return ids
 
 
-def test_given_vcs_state_stash_calls_when_scanned_then_no_stash_at_brace_index() -> None:
+def test_vcs_state_should_have_no_index_based_stash_ref_when_scanned() -> None:
     """§9 IMMUTABLE — forbid naming a stash by ``stash@{N}`` index (literal or the
     ``f"stash@{{{idx}}}"`` interpolated form) anywhere in real code."""
     tree = ast.parse((PKG / "vcs_state.py").read_text())
@@ -51,6 +51,7 @@ def test_given_vcs_state_stash_calls_when_scanned_then_no_stash_at_brace_index()
             scanned += 1
             if _INDEX_REF.search(ast.unparse(node)):
                 offenders.append(ast.unparse(node))
+
     assert scanned > 0, "no string literals scanned in vcs_state.py"  # vacuity-guard
     assert offenders == [], f"vcs_state.py names a stash by index: {offenders}"
 
@@ -62,7 +63,7 @@ _TEMPLATE_INDEX_VERB = re.compile(
 )
 
 
-def test_given_prompt_template_when_scanned_then_stash_named_by_sha_not_index() -> None:
+def test_prompt_template_should_name_stash_by_sha_not_index_when_scanned() -> None:
     """§9 IMMUTABLE — the shipped init prompt template must recover an orphan stash
     by its round-context SHA (`git stash apply <ref>`), never by index. This scan
     covered only vcs_state.py, which is why the template shipped with `stash pop`."""

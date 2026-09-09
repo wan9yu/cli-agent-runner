@@ -8,7 +8,7 @@ from agent_runner import api
 from agent_runner.service_unit import monitor_unit_filename, serve_unit_filename
 
 
-def test_given_install_dry_run_when_called_then_writes_unit_files(
+def test_install_should_write_both_unit_files_when_monitor_requested(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -22,7 +22,9 @@ def test_given_install_dry_run_when_called_then_writes_unit_files(
         "agent_runner.api._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
+
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
+
     assert result.unit_path.exists()
     assert result.monitor_unit_path is not None
     assert result.monitor_unit_path.exists()

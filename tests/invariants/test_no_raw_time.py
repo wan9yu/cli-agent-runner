@@ -104,7 +104,7 @@ def _raw_time_calls(path: Path) -> list[str]:
     return hits
 
 
-def test_no_raw_time_outside_clock() -> None:
+def test_raw_time_calls_should_be_absent_outside_clock() -> None:
     offenders = {}
     scanned = 0
     for path in _PKG.rglob("*.py"):
@@ -115,6 +115,7 @@ def test_no_raw_time_outside_clock() -> None:
         hits = _raw_time_calls(path)
         if hits:
             offenders[rel] = hits
+
     assert scanned > 0, "no agent_runner/*.py modules scanned"  # vacuity-guard
     assert not offenders, (
         f"current-time reads outside clock.py: {offenders}. Take a Clock (or "
@@ -122,13 +123,16 @@ def test_no_raw_time_outside_clock() -> None:
     )
 
 
-def test_allowlist_only_names_real_offenders() -> None:
+def test_allowlist_should_only_name_real_offenders() -> None:
     """Keep the allowlist honest: a clock-clean file must be REMOVED, not parked."""
     stale = {rel for rel in _ALLOWLIST if not _raw_time_calls(_PKG / rel)}
+
     assert not stale, f"allowlist names clock-clean files — remove them: {stale}"
 
 
-def test_scan_catches_aliased_and_from_import_dodges(tmp_path: Path) -> None:
+def test_raw_time_scan_should_catch_dodges_without_flagging_pure_conversions(
+    tmp_path: Path,
+) -> None:
     """Self-test: the two forms a real review found slipping past the naive match
     (aliased module, missing attr) MUST now be caught, and pure conversions/method
     formatting MUST NOT be."""

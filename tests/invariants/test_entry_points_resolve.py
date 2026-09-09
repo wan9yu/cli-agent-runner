@@ -20,14 +20,16 @@ def _read_post_round_hook_entries() -> dict[str, str]:
     return data["project"]["entry-points"]["agent_runner.post_round_hooks"]
 
 
-def test_post_round_hook_entry_points_declared():
+def test_post_round_hook_entries_should_be_declared():
     entries = _read_post_round_hook_entries()
+
     assert entries, "pyproject.toml declares no agent_runner.post_round_hooks entries"
     assert len(entries) >= 2, f"expected >=2 entries, got {len(entries)}"
 
 
-def test_each_entry_point_resolves_to_a_live_class():
+def test_entry_points_should_resolve_to_live_classes():
     entries = _read_post_round_hook_entries()
+
     for name, target in entries.items():
         module_path, _, attr = target.partition(":")
         assert attr, f"{name}: malformed target {target!r} (expected 'module:attr')"
@@ -40,9 +42,9 @@ def test_each_entry_point_resolves_to_a_live_class():
         )
 
 
-def test_canonical_entry_point_names_match_class_name_attribute():
-    """Every pyproject entry_point key must equal the bound class's ``name``."""
+def test_entry_point_names_should_match_class_name_attribute():
     entries = _read_post_round_hook_entries()
+
     for name, target in entries.items():
         module_path, _, attr = target.partition(":")
         cls = getattr(importlib.import_module(module_path), attr)
@@ -52,9 +54,10 @@ def test_canonical_entry_point_names_match_class_name_attribute():
         )
 
 
-def test_legacy_claude_rate_limit_detector_alias_removed():
+def test_legacy_claude_rate_limit_detector_alias_should_stay_removed():
     """`claude_rate_limit_detector` alias (0.1.20-0.1.34) hard-removed in 0.1.35.
     Consumers using the old name in `[plugins] disable/enable` must migrate.
     """
     entries = _read_post_round_hook_entries()
+
     assert "claude_rate_limit_detector" not in entries, "0.1.20-era alias should be gone"

@@ -9,7 +9,7 @@ from agent_runner._emit import emit_transient_error_detected
 from agent_runner._throttle import _check_throttle_state, compute_adjusted_reset_at
 
 
-def test_given_plugin_classification_when_computing_backoff_then_reset_honored_verbatim(
+def test_plugin_classification_should_honor_reset_verbatim_when_computing_backoff(
     tmp_log_dir: Path,
 ) -> None:
     """api_types.py types `classification` as str so plugins can supply their own.
@@ -26,7 +26,9 @@ def test_given_plugin_classification_when_computing_backoff_then_reset_honored_v
         agent="aider",
         raw="quota exceeded",
     )
+
     state = _check_throttle_state(tmp_log_dir)
+
     assert state is not None
     assert state.classification == "aider_quota"
 

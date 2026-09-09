@@ -88,17 +88,19 @@ def _real_cfg(tmp_path, mem_avail_min_mb: int | None = None):
     return cfg
 
 
-def test_no_pause_when_sample_reports_healthy(tmp_path):
+def test_pre_round_gate_should_not_pause_when_sample_reports_healthy(tmp_path):
     cfg = _real_cfg(tmp_path)
     stop = {"requested": False}
+
     paused = serve_cmd._maybe_pause_for_memory_pressure(
         cfg, tmp_path, stop, sample_fn=lambda: _HEALTHY_SAMPLE
     )
+
     assert paused is False
     assert _events(tmp_path) == []
 
 
-def test_pre_round_gate_does_not_defer_on_warning_severity(tmp_path):
+def test_pre_round_gate_should_not_defer_when_sample_reports_warning_severity(tmp_path):
     """0.2.16: the pre-round gate is about not STARTING a round on an
     already-critical host -- a mere warning (e.g. swap churn) is the north
     star's 'fine' and must not cost a >=30s defer at every round boundary.
@@ -106,14 +108,16 @@ def test_pre_round_gate_does_not_defer_on_warning_severity(tmp_path):
     exactly like a healthy sample."""
     cfg = _real_cfg(tmp_path)
     stop = {"requested": False}
+
     paused = serve_cmd._maybe_pause_for_memory_pressure(
         cfg, tmp_path, stop, sample_fn=lambda: _WARNING_SAMPLE
     )
+
     assert paused is False
     assert _events(tmp_path) == []
 
 
-def test_pressure_defers_then_resumes_and_emits_paired_events(tmp_path):
+def test_pre_round_gate_should_defer_then_resume_with_paired_events_when_pressure_clears(tmp_path):
     """A stub host_health reporting critical pressure defers the round
     (round_deferred), then resumes (round_resumed) once a later sample clears --
     the paired-event shape that keeps detect_supervisor_stale quiet."""
@@ -126,9 +130,11 @@ def test_pressure_defers_then_resumes_and_emits_paired_events(tmp_path):
         return _CRITICAL_SAMPLE if calls["n"] == 1 else _HEALTHY_SAMPLE
 
     clock = FakeClock()
+
     paused = serve_cmd._maybe_pause_for_memory_pressure(
         cfg, tmp_path, stop, sample_fn=fake_sample, clock=clock, chunk_s=5
     )
+
     assert paused is True
     evs = _events(tmp_path)
     assert [e["event"] for e in evs] == ["round_deferred", "round_resumed"]
@@ -140,7 +146,7 @@ def test_pressure_defers_then_resumes_and_emits_paired_events(tmp_path):
     assert resumed["deferred_for_s"] >= 0
 
 
-def test_pressure_defer_interrupted_by_stop(tmp_path):
+def test_pre_round_gate_should_defer_without_resume_when_stop_requested_during_defer(tmp_path):
     """A SIGTERM (stop["requested"]) during a defer breaks the poll without a
     resume -- an interrupted defer is a termination, not a clearance, mirroring
     _maybe_pause_for_schedule's stop semantics."""
@@ -152,11 +158,12 @@ def test_pressure_defer_interrupted_by_stop(tmp_path):
         return _CRITICAL_SAMPLE
 
     paused = serve_cmd._maybe_pause_for_memory_pressure(cfg, tmp_path, stop, sample_fn=fake_sample)
+
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["round_deferred"]
 
 
-def test_select_and_gate_defers_on_pressure_before_ignore_schedule_check(tmp_path):
+def test_select_and_gate_should_defer_on_memory_pressure_when_ignore_schedule_is_set(tmp_path):
     """Wiring: _select_and_gate itself consults the memory gate first -- even
     --ignore-schedule (a scheduling-only override) must not bypass a safety
     gate on a different axis."""
@@ -170,18 +177,20 @@ def test_select_and_gate_defers_on_pressure_before_ignore_schedule_check(tmp_pat
         return _CRITICAL_SAMPLE if calls["n"] == 1 else _HEALTHY_SAMPLE
 
     out = serve_cmd._select_and_gate(cfg, args, tmp_path, stop, 1, sample_fn=fake_sample)
+
     assert out is serve_cmd._PAUSED_CONTINUE
     assert [e["event"] for e in _events(tmp_path)] == ["round_deferred", "round_resumed"]
 
 
-def test_memory_pressure_cfg_duck_type_is_monitor_host_health_config(tmp_path):
+def test_config_host_health_should_be_monitor_host_health_config_type(tmp_path):
     """Sanity: the real Config's cfg.monitor.host_health is exactly the type
     host_health.memory_pressure expects (mem_avail_min_mb)."""
     cfg = _real_cfg(tmp_path)
+
     assert isinstance(cfg.monitor.host_health, MonitorHostHealthConfig)
 
 
-def test_given_cache_poor_psi_off_host_when_pre_round_checked_twice_then_defers(tmp_path):
+def test_cache_poor_psi_off_host_should_defer_when_pre_round_checked_twice(tmp_path):
     """The real field-bug shape: PSI unreadable, MemFree critically low (~5MB),
     MemAvailable inflated at 82MB (comfortably above mem_avail_min_mb=40 --
     combined-low genuinely cannot fire), swap_out climbing by a realistic
@@ -233,7 +242,7 @@ def test_given_cache_poor_psi_off_host_when_pre_round_checked_twice_then_defers(
     assert [e["event"] for e in evs] == ["round_deferred"]  # interrupted, not resumed
 
 
-def test_pre_round_gate_isolated_per_log_dir(tmp_path):
+def test_pre_round_gate_should_isolate_baseline_per_log_dir(tmp_path):
     """Two distinct log_dirs (as two different serve invocations, or two
     different tests, would have) never share a persisted previous sample --
     the isolation finding: a shared module-level dict would let one test's

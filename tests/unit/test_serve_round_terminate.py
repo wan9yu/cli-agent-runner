@@ -29,7 +29,7 @@ class _WedgedProc:
         raise subprocess.TimeoutExpired(cmd="round", timeout=timeout)
 
 
-def test_terminate_round_returns_sentinel_on_dstate_leader(monkeypatch):
+def test_terminate_round_should_return_sentinel_when_leader_is_dstate(monkeypatch):
     """A killpg'd-but-unreapable D-state leader must not raise TimeoutExpired out
     of _terminate_round (which would escape cmd() unclassified as exit 1)."""
     killpg_calls = []
@@ -39,7 +39,9 @@ def test_terminate_round_returns_sentinel_on_dstate_leader(monkeypatch):
     # actual descendants and _kill_stray_descendants would fire a stray killpg,
     # breaking the killpg_calls assertion below. Stub the descendant snapshot empty.
     monkeypatch.setattr(_serve_round, "_live_children", lambda proc: ([], []))
+
     rc = _serve_round._terminate_round(_WedgedProc())
+
     assert rc == _serve_round._ROUND_UNREAPED_RC  # a defined sentinel, not a raise
     assert killpg_calls == [(4242, _serve_round.signal.SIGKILL)]  # escalation still fired
 
@@ -55,10 +57,12 @@ def _alive(pid: int) -> bool:
 
 
 @pytest.mark.timeout(90)
-def test_terminate_round_reaps_detached_descendant(tmp_path: Path, monkeypatch):
+def test_terminate_round_should_reap_detached_descendant_when_leader_ignores_sigterm(
+    tmp_path: Path, monkeypatch
+):
     """The killpg(SIGKILL) escalation branch (leader ignores `.terminate()`,
     forcing the grace-timeout fallthrough -- mirrors
-    test_spawn_round_wedged_escalates_to_killpg_when_term_ignored) must ALSO
+    test_wedged_round_should_escalate_to_killpg_when_term_is_ignored) must ALSO
     reap a descendant that setsid()'d off the leader's own process group
     (POSIX setsid() changes pgid+sid but NOT ppid): `os.killpg(leader.pid,
     ...)` alone never reaches it, so before this fix it survived the round's

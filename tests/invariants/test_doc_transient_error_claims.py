@@ -28,26 +28,29 @@ def _doc_hits(needle: str) -> list[str]:
     return out
 
 
-def test_given_reference_docs_when_scanned_then_no_removed_event_kinds() -> None:
+def test_reference_docs_should_have_no_removed_event_kinds_when_scanned() -> None:
     """rate_limit_rejected was removed in 0.1.29 — emit() raises on it now."""
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     assert "rate_limit_rejected" not in KNOWN_EVENT_KINDS, (
         "premise changed: rate_limit_rejected is registered again"
     )
+
     failures = _doc_hits("rate_limit_rejected")
+
     assert not failures, (
         "reference docs name an event kind that can never be emitted:\n" + "\n".join(failures)
     )
 
 
-def test_given_reference_docs_when_scanned_then_removed_config_alias_not_offered(
+def test_reference_docs_should_not_offer_removed_config_alias_when_scanned(
     tmp_path: Path,
 ) -> None:
     """runtime.rate_limit_action raises ConfigError — no doc may offer it."""
     from agent_runner.config import ConfigError, load_config
 
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra='rate_limit_action = "stop"\n')
+
     with pytest.raises(ConfigError):
         load_config(cfg_path)
 

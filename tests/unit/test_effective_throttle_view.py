@@ -7,7 +7,9 @@ from agent_runner._throttle import effective_throttle_view
 from tests._clock import FakeClock
 
 
-def test_scalar_falls_back_to_last_clearing_active_agent(tmp_path: Path) -> None:
+def test_scalar_should_fall_back_to_last_active_agent_when_latest_agent_recovers(
+    tmp_path: Path,
+) -> None:
     clock = FakeClock(epoch=1_000_000.0)
     now = int(clock.epoch())
     # Agent A still throttled; agent B recovered LAST (so global-latest scalar is None).
@@ -31,17 +33,22 @@ def test_scalar_falls_back_to_last_clearing_active_agent(tmp_path: Path) -> None
         {"event": "transient_error_recovered", "ts": "2026-08-30T00:00:02Z", "agent": "gemini"},
     ]
     (tmp_path / "events-2026-08.jsonl").write_text("\n".join(json.dumps(e) for e in evs) + "\n")
+
     scalar, active = effective_throttle_view(tmp_path, clock=clock)
+
     assert set(active) == {"claude"}
     assert scalar is not None and scalar.agent == "claude"  # not dropped to None
 
 
-def test_no_throttle_returns_none_and_empty(tmp_path: Path) -> None:
+def test_view_should_return_none_and_empty_when_no_throttle_events(tmp_path: Path) -> None:
     (tmp_path / "events-2026-08.jsonl").write_text("")
+
     assert effective_throttle_view(tmp_path, clock=FakeClock()) == (None, {})
 
 
-def test_scalar_reconciles_to_active_escalated_reset(tmp_path: Path) -> None:
+def test_scalar_should_reconcile_to_active_map_escalated_reset_when_same_agent(
+    tmp_path: Path,
+) -> None:
     """The scalar (`_check_throttle_state`, unextended) must be swapped for the
     active map's ESCALATED entry when the two refer to the same agent — not just in
     the None-fallback case above. Otherwise api.peek / http_progress display the raw
@@ -61,7 +68,9 @@ def test_scalar_reconciles_to_active_escalated_reset(tmp_path: Path) -> None:
         for i in range(1, 4)
     ]
     (tmp_path / "events-2026-08.jsonl").write_text("\n".join(json.dumps(e) for e in evs) + "\n")
+
     throttle, active = effective_throttle_view(tmp_path, clock=clock)
+
     assert throttle is not None
     assert throttle.reset_at_epoch > raw_reset  # not the verbatim emitter value
     assert throttle.reset_at_epoch == active["claude"].reset_at_epoch  # agrees with the map

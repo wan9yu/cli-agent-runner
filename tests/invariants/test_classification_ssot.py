@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def test_back_off_defaults_keys_are_subset_of_classifications():
+def test_back_off_defaults_keys_should_be_subset_of_classifications():
     from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS, _CLASSIFICATIONS
 
     assert set(_BACK_OFF_DEFAULTS.keys()) <= _CLASSIFICATIONS, (
@@ -12,7 +12,7 @@ def test_back_off_defaults_keys_are_subset_of_classifications():
     )
 
 
-def test_back_off_defaults_plus_account_equals_classifications():
+def test_back_off_defaults_plus_account_should_equal_classifications():
     """Every classification has either a default back-off OR server-provided reset
     (rate_limit_account uses Anthropic resetsAt, others use _BACK_OFF_DEFAULTS).
     """

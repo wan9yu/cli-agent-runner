@@ -24,9 +24,11 @@ def _default_cfg() -> Config:
     )
 
 
-def test_given_text_with_block_when_replaced_then_returns_new_content_between_markers() -> None:
+def test_replace_block_should_replace_content_between_markers_when_markers_exist() -> None:
     text = "intro line\n<!-- gen:foo -->\nOLD CONTENT\n<!-- /gen:foo -->\ntrailing line\n"
+
     got = replace_block(text, "foo", "NEW CONTENT")
+
     assert "OLD CONTENT" not in got
     assert "NEW CONTENT" in got
     assert "<!-- gen:foo -->" in got
@@ -35,19 +37,22 @@ def test_given_text_with_block_when_replaced_then_returns_new_content_between_ma
     assert got.endswith("trailing line\n")
 
 
-def test_given_text_without_block_when_replaced_then_returns_unchanged() -> None:
+def test_replace_block_should_return_text_unchanged_when_markers_missing() -> None:
     text = "some markdown without markers\n"
+
     assert replace_block(text, "missing", "X") == text
 
 
-def test_given_unclosed_block_when_replaced_then_raises_valueerror() -> None:
+def test_replace_block_should_raise_valueerror_when_block_unclosed() -> None:
     text = "<!-- gen:foo -->\nstuff\n(never closes)\n"
+
     with pytest.raises(ValueError, match="foo"):
         replace_block(text, "foo", "X")
 
 
-def test_given_default_cfg_when_render_defenses_table_then_returns_markdown_table() -> None:
+def test_render_defenses_table_should_list_one_row_per_catalog_entry() -> None:
     md = render_defenses_table()
+
     # Header
     assert "| Defense | Codifies | Guarded by |" in md
     assert "|---|---|---|" in md
@@ -62,14 +67,15 @@ def test_given_default_cfg_when_render_defenses_table_then_returns_markdown_tabl
     assert "round_timeout_s" in md
 
 
-def test_given_render_defenses_table_when_called_then_paths_render_relative() -> None:
+def test_render_defenses_table_should_render_paths_as_repo_relative() -> None:
     md = render_defenses_table()
+
     # No absolute paths should leak — guarded_by is rendered as repo-relative.
     assert "/Users/" not in md
     assert "tests/unit/test_agent_runtime.py" in md  # one known guarded_by
 
 
-def test_given_docs_dir_with_marker_when_render_then_writes_table(
+def test_render_should_write_table_when_docs_dir_has_marker(
     tmp_path: Path,
 ) -> None:
     from agent_runner._docgen import render
@@ -78,7 +84,9 @@ def test_given_docs_dir_with_marker_when_render_then_writes_table(
     arch.write_text(
         "intro\n<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\noutro\n"
     )
+
     out = render(docs_dir=tmp_path, write=True)
+
     assert arch in out
     rewritten = arch.read_text()
     assert "PLACEHOLDER" not in rewritten
@@ -87,7 +95,7 @@ def test_given_docs_dir_with_marker_when_render_then_writes_table(
     assert "<!-- /gen:defenses-table -->" in rewritten
 
 
-def test_given_render_with_write_false_when_called_then_does_not_touch_disk(
+def test_render_should_not_touch_disk_when_write_false(
     tmp_path: Path,
 ) -> None:
     from agent_runner._docgen import render
@@ -95,36 +103,40 @@ def test_given_render_with_write_false_when_called_then_does_not_touch_disk(
     arch = tmp_path / "architecture.md"
     original = "<!-- gen:defenses-table -->\nPLACEHOLDER\n<!-- /gen:defenses-table -->\n"
     arch.write_text(original)
+
     out = render(docs_dir=tmp_path, write=False)
+
     assert arch.read_text() == original  # disk unchanged
     assert "round_timeout_s" in out[arch]  # but rendered text returned
 
 
-def test_given_unknown_gen_name_when_render_then_raises(tmp_path: Path) -> None:
+def test_render_should_raise_when_gen_name_unknown(tmp_path: Path) -> None:
     from agent_runner._docgen import render
 
     arch = tmp_path / "x.md"
     arch.write_text("<!-- gen:does-not-exist -->\nfoo\n<!-- /gen:does-not-exist -->\n")
+
     with pytest.raises(ValueError, match="does-not-exist"):
         render(docs_dir=tmp_path, write=False)
 
 
-def test_given_unclosed_marker_in_file_when_render_then_error_names_the_file(
+def test_render_should_name_failing_file_in_error_when_marker_unclosed(
     tmp_path: Path,
 ) -> None:
-    """ValueError from replace_block must include the failing file's name."""
     from agent_runner._docgen import render
 
     bad = tmp_path / "bad.md"
     bad.write_text("<!-- gen:defenses-table -->\nstuff but no close\n")
+
     with pytest.raises(ValueError, match="bad.md"):
         render(docs_dir=tmp_path, write=False)
 
 
-def test_given_render_detector_list_when_called_then_marks_auto_stop_kinds() -> None:
+def test_render_detector_list_should_mark_auto_stop_kinds() -> None:
     from agent_runner._docgen import render_detector_list
 
     md = render_detector_list()
+
     # Flag the two auto-stop detectors with **auto-stop**
     assert "oauth_fail" in md
     assert "disk_critical" in md
@@ -133,10 +145,11 @@ def test_given_render_detector_list_when_called_then_marks_auto_stop_kinds() -> 
     assert "timeout_rate" in md
 
 
-def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() -> None:
+def test_render_event_kinds_list_should_return_bullet_list_of_known_events() -> None:
     from agent_runner._docgen import render_event_kinds_list
 
     md = render_event_kinds_list()
+
     bullets = [line for line in md.splitlines() if line.startswith("- ")]
     # >=12 known events (incl. 2 monitor events: alert_emitted, auto_stop_triggered)
     assert len(bullets) >= 12
@@ -144,10 +157,11 @@ def test_given_render_event_kinds_list_when_called_then_returns_bullet_list() ->
     assert any("monitor_alert_emitted" in line for line in bullets)
 
 
-def test_given_render_verb_table_when_called_then_lists_all_subcommands() -> None:
+def test_render_verb_table_should_list_all_subcommands() -> None:
     from agent_runner._docgen import render_verb_table
 
     md = render_verb_table()
+
     # Each verb appears
     for verb in (
         "init",
@@ -168,10 +182,11 @@ def test_given_render_verb_table_when_called_then_lists_all_subcommands() -> Non
     assert "| Verb | Description |" in md
 
 
-def test_given_render_config_schema_table_when_called_then_lists_sections() -> None:
+def test_render_config_schema_table_should_list_all_sections() -> None:
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
+
     # Each section name appears as a sub-heading
     assert "### `[agent]`" in md
     assert "### `[runtime]`" in md
@@ -186,7 +201,7 @@ def test_given_render_config_schema_table_when_called_then_lists_sections() -> N
     assert "stash" in md  # vcs.dirty_action default
 
 
-def test_given_content_with_regex_escapes_when_replaced_then_inserted_verbatim() -> None:
+def test_replace_block_should_insert_regex_special_chars_verbatim_when_body_contains_them() -> None:
     """re.sub's string replacement is a TEMPLATE — a callable repl inserts literally.
 
     Round-trips the three expansion classes at once: \\n (escape), \\\\b (backslash
@@ -198,15 +213,18 @@ def test_given_content_with_regex_escapes_when_replaced_then_inserted_verbatim()
     """
     body = r"a\n\\b\1c"
     text = "intro\n<!-- gen:x -->\nOLD\n<!-- /gen:x -->\noutro\n"
+
     got = replace_block(text, "x", body)
+
     assert got == f"intro\n<!-- gen:x -->\n{body}\n<!-- /gen:x -->\noutro\n"
 
 
-def test_given_config_when_schema_rendered_then_phases_and_plugins_sections_present() -> None:
+def test_render_config_schema_table_should_include_phases_and_plugins_sections() -> None:
     """_SECTIONS must cover all 7 Config fields — [plugins] disable was undocumented."""
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
+
     assert "### `[phases]`" in md
     assert "### `[plugins]`" in md
     assert "| `overrides` | `dict[str, PhaseOverride]` | {} |" in md
@@ -214,7 +232,7 @@ def test_given_config_when_schema_rendered_then_phases_and_plugins_sections_pres
     assert "| `raw` | `dict[str, Any]` | {} |" in md
 
 
-def test_given_prompt_section_when_rendered_then_concat_separator_row_is_one_line() -> None:
+def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line() -> None:
     """Pins the row shape through the _cell/_field_table refactor.
 
     render_config_schema_table() already emits this as one line today — the
@@ -224,25 +242,30 @@ def test_given_prompt_section_when_rendered_then_concat_separator_row_is_one_lin
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
+
     assert r"| `concat_separator` | `str` | '\n\n' |" in md.splitlines()
 
 
-def test_given_monitor_section_when_rendered_then_host_health_subsection_lists_fields() -> None:
+def test_render_config_schema_table_should_list_host_health_subsection_fields() -> None:
     """[monitor.host_health] is a real TOML sub-table; the parent row is an opaque repr."""
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
+
     assert "#### `[monitor.host_health]`" in md
     assert "| `mem_avail_min_mb` | `int` | 200 |" in md
     assert "| `disk_warning_pct` | `float` | 90.0 |" in md
     assert "| `disk_critical_pct` | `float` | 95.0 |" in md
 
 
-def test_given_render_giveup_exit_codes_table_when_called_then_five_verdicts_four_codes() -> None:
+def test_render_giveup_exit_codes_table_should_list_five_verdicts_with_four_distinct_codes() -> (
+    None
+):
     from agent_runner import _serve_policy
     from agent_runner._docgen import render_giveup_exit_codes_table
 
     md = render_giveup_exit_codes_table()
+
     rows = [line for line in md.splitlines() if line.startswith("| `")]
     assert len(rows) == 5  # 5 verdicts
     codes = {
@@ -264,7 +287,7 @@ def test_given_render_giveup_exit_codes_table_when_called_then_five_verdicts_fou
     assert "(shares `crash_loop`'s exit code) | yes — stays stopped" in md
 
 
-def test_given_restart_prevent_mirrored_in_three_places_then_all_agree_as_a_set(
+def test_restart_prevent_exit_status_should_agree_across_unit_docs_and_table(
     tmp_path: Path,
 ) -> None:
     """``RestartPreventExitStatus`` membership is hand-mirrored in three
@@ -296,6 +319,7 @@ def test_given_restart_prevent_mirrored_in_three_places_then_all_agree_as_a_set(
     unit = render_serve_unit(
         cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
     )
+
     unit_codes = _restart_prevent_codes(unit)
     doc_example_codes = _restart_prevent_codes(render_giveup_systemd_example())
     table_codes = {
@@ -306,11 +330,12 @@ def test_given_restart_prevent_mirrored_in_three_places_then_all_agree_as_a_set(
     assert unit_codes == doc_example_codes == table_codes
 
 
-def test_given_render_giveup_systemd_example_when_called_then_matches_serve_policy() -> None:
+def test_render_giveup_systemd_example_should_match_serve_policy_exit_codes() -> None:
     from agent_runner import _serve_policy
     from agent_runner._docgen import render_giveup_systemd_example
 
     md = render_giveup_systemd_example()
+
     assert md.startswith("```ini\n")
     assert md.endswith("```")
     prevent_line = next(ln for ln in md.splitlines() if ln.startswith("RestartPreventExitStatus="))
@@ -325,11 +350,12 @@ def test_given_render_giveup_systemd_example_when_called_then_matches_serve_poli
     assert str(_serve_policy.MEM_LOOP_EXIT) in md  # still mentioned, in the trailing comment
 
 
-def test_given_generated_rows_when_rendered_then_pipes_are_escaped() -> None:
+def test_render_config_schema_table_should_escape_pipes_in_generated_rows() -> None:
     """`X | None` types and the auth_fail_patterns default both contain `|`."""
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
+
     assert r"| `list` | `list[str] \| None` | None |" in md.splitlines()
     assert r"['\\b(oauth\|unauthorized\|401\|" in md
     for line in md.splitlines():

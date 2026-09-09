@@ -17,27 +17,31 @@ from agent_runner.events import open_events_jsonl
 from agent_runner.http_progress import _recent_events
 
 
-def test_given_non_utf8_bytes_when_open_events_jsonl_then_reads_without_raising(
+def test_open_events_jsonl_should_read_without_raising_when_bytes_are_non_utf8(
     tmp_path: Path,
 ) -> None:
     p = tmp_path / "events-2026-08.jsonl"
     p.write_bytes(b'{"event": "x"}\n\xff\xfe not valid utf-8\n')
+
     with open_events_jsonl(p) as f:
         lines = list(f)
+
     assert len(lines) == 2  # the bad byte degrades to a replacement char, not a crash
 
 
-def test_given_non_utf8_bytes_in_events_file_when_iter_events_then_survives(
+def test_iter_events_should_survive_when_events_file_has_non_utf8_bytes(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path
     p = log_dir / "events-2026-08.jsonl"
     p.write_bytes(b'{"event": "transient_error_detected", "agent": "claude"}\n\xff\xfe\n')
+
     parsed = list(_throttle._iter_events(p))
+
     assert any(e.get("event") == "transient_error_detected" for e in parsed)
 
 
-def test_given_non_dict_json_line_when_iter_events_then_skipped(tmp_path: Path) -> None:
+def test_non_dict_json_line_should_be_skipped_when_iter_events(tmp_path: Path) -> None:
     p = tmp_path / "events-2026-08.jsonl"
     p.write_text(
         "\n".join(
@@ -50,7 +54,9 @@ def test_given_non_dict_json_line_when_iter_events_then_skipped(tmp_path: Path) 
         + "\n",
         encoding="utf-8",
     )
+
     parsed = list(_throttle._iter_events(p))
+
     assert parsed == [{"event": "agent_usage_recorded", "agent": "claude", "success": True}]
 
 
@@ -58,17 +64,19 @@ def _write_lines(path: Path, lines: list) -> None:
     path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
 
 
-def test_given_non_dict_json_line_when_parse_events_from_jsonl_files_then_skipped(
+def test_non_dict_json_line_should_be_skipped_when_parse_events_from_jsonl_files(
     tmp_path: Path,
 ) -> None:
     """The reader ``agent-runner peek`` uses (via round_view.build_round_view)."""
     p = tmp_path / "events-2026-08.jsonl"
     _write_lines(p, [["not", "a", "dict"], 42, {"event": "round_end", "round_num": 1}])
+
     parsed = monitor.parse_events_from_jsonl_files([p])
+
     assert parsed == [{"event": "round_end", "round_num": 1}]
 
 
-def test_given_non_dict_line_when_peek_round_view_built_then_survives(tmp_path: Path) -> None:
+def test_build_round_view_should_survive_when_non_dict_line_present(tmp_path: Path) -> None:
     """End-to-end reproduction of the peek --round N crash: a non-dict line in
     events-*.jsonl must not raise AttributeError out of
     round_view.build_round_view when parse_events_from_jsonl_files feeds it."""
@@ -85,29 +93,35 @@ def test_given_non_dict_line_when_peek_round_view_built_then_survives(tmp_path: 
             {"ts": "2026-08-01T00:00:00Z", "event": "round_start", "round_num": 1},
         ],
     )
+
     parsed = monitor.parse_events_from_jsonl_files([p])
     rv = build_round_view(log_dir, 1, parsed, want_log=False)
+
     assert rv is not None
     assert rv.round_num == 1
 
 
-def test_given_non_dict_json_line_when_event_tail_read_then_skipped(tmp_path: Path) -> None:
+def test_non_dict_json_line_should_be_skipped_when_event_tail_read(tmp_path: Path) -> None:
     p = tmp_path / "events-2026-08.jsonl"
     _write_lines(p, [["not", "a", "dict"], {"event": "round_end", "round_num": 1}])
     tail = monitor._EventTail()
+
     result = tail.read([p])
+
     assert result == [{"event": "round_end", "round_num": 1}]
 
 
-def test_given_non_dict_json_line_when_recent_events_then_skipped(tmp_path: Path) -> None:
+def test_non_dict_json_line_should_be_skipped_when_recent_events(tmp_path: Path) -> None:
     """The HTTP progress page's events-*.jsonl reader."""
     p = tmp_path / "events-2026-08.jsonl"
     _write_lines(p, [["not", "a", "dict"], {"event": "round_end", "round_num": 1}])
+
     result = _recent_events(tmp_path, max_count=20)
+
     assert result == [{"event": "round_end", "round_num": 1}]
 
 
-def test_given_blank_and_malformed_lines_when_recent_events_then_skipped(
+def test_blank_and_malformed_lines_should_be_skipped_when_recent_events(
     tmp_path: Path,
 ) -> None:
     """Blank lines and undecodable JSON are skipped just like non-dict lines
@@ -122,11 +136,15 @@ def test_given_blank_and_malformed_lines_when_recent_events_then_skipped(
         + "\n",
         encoding="utf-8",
     )
+
     result = _recent_events(tmp_path, max_count=20)
+
     assert result == [{"event": "round_end", "round_num": 1}]
 
 
-def test_given_good_file_when_recent_events_then_output_unchanged(tmp_path: Path) -> None:
+def test_recent_events_should_leave_output_unchanged_when_file_is_well_formed(
+    tmp_path: Path,
+) -> None:
     """A well-formed file's events are returned in file order, unaffected by the dedup."""
     p = tmp_path / "events-2026-08.jsonl"
     _write_lines(
@@ -136,14 +154,16 @@ def test_given_good_file_when_recent_events_then_output_unchanged(tmp_path: Path
             {"event": "round_end", "round_num": 1},
         ],
     )
+
     result = _recent_events(tmp_path, max_count=20)
+
     assert result == [
         {"event": "round_start", "round_num": 1},
         {"event": "round_end", "round_num": 1},
     ]
 
 
-def test_given_non_dict_json_line_when_narrate_events_then_skipped(tmp_path: Path) -> None:
+def test_non_dict_json_line_should_be_skipped_when_narrate_events(tmp_path: Path) -> None:
     """monitor._tail_events_jsonl (narrate_events / stream_events_jsonl's shared
     reader) -- a non-dict line must not reach _format_narrate_line's .get(...)."""
     from agent_runner.api import narrate_events
@@ -158,5 +178,7 @@ def test_given_non_dict_json_line_when_narrate_events_then_skipped(tmp_path: Pat
             {"ts": "2026-08-01T00:00:00.000Z", "event": "round_start", "round_num": 1},
         ],
     )
+
     line = next(narrate_events(log_dir, poll_interval_s=0.01))
+
     assert "round_start" in line

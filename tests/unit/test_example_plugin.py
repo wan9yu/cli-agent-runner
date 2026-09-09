@@ -49,13 +49,12 @@ class RoundLogCounter:
         self.last_count = count
 
 
-def test_given_registered_example_hook_when_round_ends_then_it_parses_the_log(
+def test_registered_example_hook_should_parse_the_log_when_round_ends(
     tmp_path,
 ) -> None:
     hook = RoundLogCounter()
     hooks.register_post_round_hook(hook)
     assert [h.name for h in hooks.post_round_hooks()] == ["example_round_log_counter"]
-
     write_round_log(tmp_path, 1, [{"type": "a"}, {"type": "b"}, {"type": "c"}])
     ctx = make_hook_context(tmp_path, round_num=1)
 

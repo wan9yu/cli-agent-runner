@@ -21,13 +21,15 @@ import inspect
 SERVE_LOOP_BUDGET = 140  # current ~120 LOC + 20 headroom; tighten over time
 
 
-def test_serve_loop_stays_minimal():
+def test_serve_loop_should_stay_minimal():
     from agent_runner.cli import serve_cmd
 
     func = serve_cmd.cmd
     src = inspect.getsource(func)
     lines = src.splitlines()
+
     loc = sum(1 for line in lines if line.strip() and not line.strip().startswith("#"))
+
     assert loc <= SERVE_LOOP_BUDGET, (
         f"serve_cmd.cmd is {loc} LOC (non-blank, non-comment), budget {SERVE_LOOP_BUDGET}. "
         f"Extract new logic into defenses, hooks, or helpers. "

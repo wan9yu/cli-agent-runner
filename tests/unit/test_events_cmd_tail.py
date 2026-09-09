@@ -26,7 +26,7 @@ def _append(path: Path, kind: str, n: int, ts: str | None = None) -> None:
         f.write(json.dumps(payload) + "\n")
 
 
-def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_once(
+def test_event_appended_during_read_loop_should_be_emitted_once_when_tailing(
     tmp_log_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -79,7 +79,7 @@ def test_given_event_appended_during_read_loop_when_tailing_then_each_emitted_on
     assert emitted == [1, 2], f"expected each event once, got {emitted}"
 
 
-def test_given_non_dict_json_line_appended_when_tailing_then_skipped_not_crashed(
+def test_non_dict_json_line_appended_should_be_skipped_without_crashing_when_tailing(
     tmp_log_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -113,7 +113,7 @@ def test_given_non_dict_json_line_appended_when_tailing_then_skipped_not_crashed
     assert emitted == [1]
 
 
-def test_given_since_when_tailing_then_replay_then_live_lines_each_once(
+def test_since_should_replay_backlog_then_live_lines_each_once_when_tailing(
     tmp_log_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

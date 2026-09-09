@@ -43,8 +43,7 @@ def _seed_transient_error_event(log_dir: Path, classification: str, *, future_s:
     )
 
 
-def test_given_5xx_detected_event_when_serve_skip_then_no_sleep(tmp_path: Path):
-    """transient_error_action = skip -> supervisor proceeds past transient error immediately."""
+def test_5xx_detected_event_should_cause_no_sleep_when_serve_action_is_skip(tmp_path: Path):
     cfg_path = make_toml_with_sections(
         tmp_path,
         runtime_extra='transient_error_action = "skip"\nrestart_delay_s = 1\n',
@@ -70,6 +69,7 @@ def test_given_5xx_detected_event_when_serve_skip_then_no_sleep(tmp_path: Path):
         timeout=30,
     )
     duration = time.time() - start
+
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
     # skip means no sleep; completes quickly
     assert duration < 30, f"unexpected duration: {duration:.1f}s"
@@ -80,8 +80,7 @@ def test_given_5xx_detected_event_when_serve_skip_then_no_sleep(tmp_path: Path):
     assert detected[0]["classification"] == "api_transient_5xx"
 
 
-def test_given_transient_error_action_stop_when_5xx_detected_then_terminates_early(tmp_path: Path):
-    """transient_error_action = stop -> supervisor stops on first transient error detection."""
+def test_transient_error_action_stop_should_terminate_early_when_5xx_detected(tmp_path: Path):
     cfg_path = make_toml_with_sections(
         tmp_path,
         runtime_extra='transient_error_action = "stop"\nrestart_delay_s = 1\n',
@@ -105,6 +104,7 @@ def test_given_transient_error_action_stop_when_5xx_detected_then_terminates_ear
         env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
+
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
     events = read_events_for_current_month(log_dir)
     self_term = [e for e in events if e.get("event") == "agent_self_terminated"]

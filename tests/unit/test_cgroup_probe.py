@@ -84,7 +84,9 @@ def fake_cgroup(tmp_path: Path) -> _FakeCgroup:
     return _FakeCgroup(tmp_path / "cgroup")
 
 
-def test_probe_both_finite(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_limits_should_return_both_limits_when_both_finite(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """Exactly the field host: MemoryMax=320M + MemorySwapMax=160M -- both
     finite, so the (mem+swap) budget is bounded end to end."""
     fake_cgroup(memory_max="335544320", memory_swap_max="167772160")  # 320M / 160M
@@ -98,7 +100,9 @@ def test_probe_both_finite(fake_cgroup: _FakeCgroup) -> None:
     }
 
 
-def test_probe_swap_unlimited(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_limits_should_return_none_swap_max_when_swap_unlimited(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """`"max"` means unlimited -- systemd's MemoryMax-without-MemorySwapMax
     default shape, where the floor must stay armed."""
     fake_cgroup(memory_max="335544320", memory_swap_max="max")
@@ -109,7 +113,9 @@ def test_probe_swap_unlimited(fake_cgroup: _FakeCgroup) -> None:
     assert lim["memory_swap_max"] is None
 
 
-def test_probe_ancestor_min(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_limits_should_use_ancestor_limit_when_leaf_unlimited(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """A bounding systemd slice's memory.max constrains every scope nested
     beneath it -- the tightest ancestor wins, not just the leaf's own
     (unlimited) value."""
@@ -122,7 +128,9 @@ def test_probe_ancestor_min(fake_cgroup: _FakeCgroup) -> None:
     assert lim["memory_swap_max"] == 167772160
 
 
-def test_probe_ancestor_min_picks_lower_of_two_finite_values(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_limits_should_pick_lower_of_leaf_and_ancestor_when_both_finite(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """When BOTH leaf and ancestor are finite, the MIN (tighter) value wins,
     regardless of which level set it."""
     fake_cgroup(memory_max="536870912")  # leaf: 512M
@@ -133,7 +141,9 @@ def test_probe_ancestor_min_picks_lower_of_two_finite_values(fake_cgroup: _FakeC
     assert lim["memory_max"] == 335544320
 
 
-def test_probe_v1_or_missing_is_unlimited(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_or_missing(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """No `cgroup.controllers` (cgroup v1, or no unified hierarchy at all)
     means there's no reliable fixed-path budget file to read -- probe
     returns all-None rather than guessing."""
@@ -144,7 +154,7 @@ def test_probe_v1_or_missing_is_unlimited(fake_cgroup: _FakeCgroup) -> None:
     assert lim == {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
 
 
-def test_probe_self_cgroup_parsed_from_proc_file(tmp_path: Path) -> None:
+def test_cgroup_memory_limits_should_parse_self_cgroup_from_proc_file(tmp_path: Path) -> None:
     """`self_cgroup` is a test-only shortcut -- the real path is parsed from
     the cgroup v2 unified-hierarchy line (`0::<path>`) in `/proc/self/cgroup`."""
     root = tmp_path / "cgroup"
@@ -169,7 +179,9 @@ def test_probe_self_cgroup_parsed_from_proc_file(tmp_path: Path) -> None:
     }
 
 
-def test_probe_proc_self_cgroup_missing_is_unlimited(tmp_path: Path) -> None:
+def test_cgroup_memory_limits_should_return_all_none_when_proc_self_cgroup_missing(
+    tmp_path: Path,
+) -> None:
     """No `0::` line (a pure v1 /proc/self/cgroup, or the file is missing
     entirely) -- can't resolve the v2 path, so all-None."""
     root = tmp_path / "cgroup"
@@ -189,7 +201,7 @@ def test_probe_proc_self_cgroup_missing_is_unlimited(tmp_path: Path) -> None:
 # the memory_max/memory_swap_max tests above do.
 
 
-def test_cgroup_memory_high_reads_finite_value(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_high_should_return_finite_value_when_set(fake_cgroup: _FakeCgroup) -> None:
     """A finite memory.high (MemoryHigh= set in the unit) reads as the real
     int value -- this is the field team's whole ask: can they see it's set."""
     fake_cgroup(memory_max="335544320", memory_swap_max="167772160", memory_high="268435456")
@@ -199,7 +211,7 @@ def test_cgroup_memory_high_reads_finite_value(fake_cgroup: _FakeCgroup) -> None
     assert high == 268435456
 
 
-def test_cgroup_memory_high_unset_is_none(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_high_should_return_none_when_unset(fake_cgroup: _FakeCgroup) -> None:
     """The literal `"max"` (MemoryHigh unset, systemd's default) means
     unset -- None, never the raw "max" token."""
     fake_cgroup(memory_max="335544320", memory_swap_max="167772160", memory_high="max")
@@ -209,7 +221,9 @@ def test_cgroup_memory_high_unset_is_none(fake_cgroup: _FakeCgroup) -> None:
     assert high is None
 
 
-def test_cgroup_memory_high_missing_file_is_none(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_high_should_return_none_when_file_missing(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """No memory.high file at all (older kernel, or just never written by
     this fixture) -- also None, not an error."""
     fake_cgroup(memory_max="335544320", memory_swap_max="167772160")
@@ -219,7 +233,9 @@ def test_cgroup_memory_high_missing_file_is_none(fake_cgroup: _FakeCgroup) -> No
     assert high is None
 
 
-def test_cgroup_memory_high_ancestor_min(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_high_should_use_tighter_ancestor_value_when_leaf_looser(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """Same bounding-ancestor MIN-FINITE walk as memory.max: a tighter
     memory.high on an ancestor slice wins over the leaf's own looser value."""
     fake_cgroup(memory_high="536870912")  # leaf: 512M
@@ -230,7 +246,9 @@ def test_cgroup_memory_high_ancestor_min(fake_cgroup: _FakeCgroup) -> None:
     assert high == 268435456
 
 
-def test_cgroup_memory_high_v1_or_missing_is_none(fake_cgroup: _FakeCgroup) -> None:
+def test_cgroup_memory_high_should_return_none_when_cgroup_v1_or_missing(
+    fake_cgroup: _FakeCgroup,
+) -> None:
     """No cgroup v2 at all -- None, same as the other probes."""
     fake_cgroup(v2=False)
 
@@ -239,7 +257,7 @@ def test_cgroup_memory_high_v1_or_missing_is_none(fake_cgroup: _FakeCgroup) -> N
     assert high is None
 
 
-def test_mem_total_bytes_matches_psutil() -> None:
+def test_mem_total_bytes_should_match_psutil_virtual_memory_total() -> None:
     import psutil
 
     assert metrics.mem_total_bytes() == psutil.virtual_memory().total
@@ -274,51 +292,63 @@ def _patch_probe(
     monkeypatch.setattr(metrics, "cgroup_memory_high", lambda **_k: memory_high)
 
 
-def test_probe_and_emit_cgroup_defer_implausible_limit_stays_armed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    "memory_max, memory_swap_max, mem_total, swap_total, expected",
+    [
+        pytest.param(
+            1024 * 1024 * 1024,  # 1G "limit"
+            512 * 1024 * 1024,
+            462 * 1024 * 1024,  # 462MB host
+            1024 * 1024 * 1024,  # plausible swap cap -- memory_max is the implausible one
+            False,
+            id="memory_max_exceeds_host_total",
+        ),
+        pytest.param(
+            335544320,  # 320M
+            167772160,  # 160M
+            2 * 1024 * 1024 * 1024,  # 2G host RAM
+            2 * 1024 * 1024 * 1024,  # 2G host swap -- 160M cap is well within it
+            True,
+            id="both_limits_plausible",
+        ),
+        pytest.param(
+            300_000_000,
+            10**12,  # 1TB, absurd
+            462_000_000,
+            1_600_000_000,
+            False,
+            id="swap_cap_exceeds_host_swap",
+        ),
+    ],
+)
+def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    memory_max: int,
+    memory_swap_max: int,
+    mem_total: int,
+    swap_total: int,
+    expected: bool,
 ) -> None:
-    """Both memory.max and memory.swap.max finite (the normally-deferred
-    shape) but memory_max >= host MemTotal (e.g. a copy-pasted MemoryMax=1G
-    on a 462MB host) -- cgroup-OOM can never fire before host-wide coma, so
-    the floor must NOT defer."""
+    """The floor only defers to cgroup-OOM when BOTH memory.max and
+    memory.swap.max are finite AND each is plausible against its own host
+    total -- either one alone exceeding its host total (a copy-pasted
+    MemoryMax=1G on a 462MB host, or an absurd 1TB MemorySwapMax) keeps the
+    floor ARMED, the same way the field host's own both-finite-and-tighter
+    MemoryMax=320M + MemorySwapMax=160M shape defers."""
     from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
-        memory_max=1024 * 1024 * 1024,  # 1G "limit"
-        memory_swap_max=512 * 1024 * 1024,
-        mem_total=462 * 1024 * 1024,  # 462MB host
-        swap_total=1024 * 1024 * 1024,  # plausible swap cap -- memory_max is the implausible one
+        memory_max=memory_max,
+        memory_swap_max=memory_swap_max,
+        mem_total=mem_total,
+        swap_total=swap_total,
     )
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
-    assert _probe_and_emit_cgroup_defer(log_dir) is False
-
-
-def test_probe_and_emit_cgroup_defer_plausible_limit_defers(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Both finite AND tighter than host MemTotal/swap (the field host's
-    MemoryMax=320M + MemorySwapMax=160M shape on far more RAM/swap) --
-    cgroup-OOM can plausibly fire before host exhaustion, so the floor
-    defers. 0.2.18 T1c's swap-plausibility guard must NOT regress this: the
-    field host's own shape is exactly "both finite, swap cap within host
-    swap" -- the guard only disarms a swap cap ABOVE host swap (see
-    test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed below)."""
-    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
-
-    _patch_probe(
-        monkeypatch,
-        memory_max=335544320,  # 320M
-        memory_swap_max=167772160,  # 160M
-        mem_total=2 * 1024 * 1024 * 1024,  # 2G host RAM
-        swap_total=2 * 1024 * 1024 * 1024,  # 2G host swap -- 160M cap is well within it
-    )
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-
-    assert _probe_and_emit_cgroup_defer(log_dir) is True
+    assert _probe_and_emit_cgroup_defer(log_dir) is expected
 
 
 # --- 0.2.18 T1c: the swap-plausibility guard + startup swap-cap advisory ---
@@ -333,39 +363,34 @@ def test_probe_and_emit_cgroup_defer_plausible_limit_defers(
 # and NEVER auto-change the operator's cgroup/unit.
 
 
-def test_probe_and_emit_cgroup_defer_huge_swap_cap_stays_armed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    "memory_swap_max, expected_swap_cap_pct, expect_advisory, expected_stderr_substring",
+    [
+        pytest.param(
+            200_000_000, 12.5, True, "swap.max is far below host swap", id="far_below_host"
+        ),
+        pytest.param(1_280_000_000, 80.0, False, None, id="within_host"),
+    ],
+)
+def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    memory_swap_max: int,
+    expected_swap_cap_pct: float,
+    expect_advisory: bool,
+    expected_stderr_substring: str | None,
 ) -> None:
-    """A huge MemorySwapMax (>> host swap) can't bind before host-swap
-    exhaustion, so the floor must stay ARMED (defer=False), matching the
-    memory.max guard."""
-    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
-
-    _patch_probe(
-        monkeypatch,
-        memory_max=300_000_000,
-        memory_swap_max=10**12,  # 1TB, absurd
-        mem_total=462_000_000,
-        swap_total=1_600_000_000,
-    )
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-
-    assert _probe_and_emit_cgroup_defer(log_dir) is False
-
-
-def test_advisory_field_when_swap_cap_far_below_host(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """swap.max at 12.5% of host swap (well under the 25% advisory floor)
-    rides as fields on the EXISTING host_cgroup_memory_limit event -- not a
-    new kind -- plus one stderr line. Never changes the cgroup/unit."""
+    """swap.max below the 25% advisory floor (here 12.5% of host swap) rides
+    as fields on the EXISTING host_cgroup_memory_limit event -- not a new
+    kind -- plus one stderr line; a plausible cap (80%) gets neither. Never
+    changes the cgroup/unit either way."""
     from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
         monkeypatch,
         memory_max=256_000_000,
-        memory_swap_max=200_000_000,
+        memory_swap_max=memory_swap_max,
         mem_total=462_000_000,
         swap_total=1_600_000_000,
     )
@@ -381,15 +406,18 @@ def test_advisory_field_when_swap_cap_far_below_host(
     ]
     assert ev["event"] == "host_cgroup_memory_limit"
     assert ev["swap_total_bytes"] == 1_600_000_000
-    assert ev["swap_cap_pct"] == 12.5
+    assert ev["swap_cap_pct"] == expected_swap_cap_pct
     assert ev["memory_high"] is None
-    assert ev["advisory"] is not None  # advisory rides as a FIELD, not a new kind
+    assert (ev["advisory"] is not None) is expect_advisory
 
     captured = capsys.readouterr()
-    assert "swap.max is far below host swap" in captured.err
+    if expected_stderr_substring is None:
+        assert captured.err == ""
+    else:
+        assert expected_stderr_substring in captured.err
 
 
-def test_memory_high_field_carries_real_value_when_set(
+def test_probe_and_emit_cgroup_defer_should_emit_real_memory_high_when_set(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """memory_high on the emitted event is the REAL memory.high read, not a
@@ -418,34 +446,3 @@ def test_memory_high_field_carries_real_value_when_set(
         for line in f.read_text().splitlines()
     ]
     assert ev["memory_high"] == 192_000_000
-
-
-def test_advisory_absent_when_swap_cap_within_host_swap(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """swap.max at 80% of host swap is a plausible operator choice -- no
-    advisory, no stderr line."""
-    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
-
-    _patch_probe(
-        monkeypatch,
-        memory_max=256_000_000,
-        memory_swap_max=1_280_000_000,
-        mem_total=462_000_000,
-        swap_total=1_600_000_000,
-    )
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-
-    _probe_and_emit_cgroup_defer(log_dir)
-
-    [ev] = [
-        json.loads(line)
-        for f in sorted(log_dir.glob("events-*.jsonl"))
-        for line in f.read_text().splitlines()
-    ]
-    assert ev["swap_cap_pct"] == 80.0
-    assert ev["advisory"] is None
-
-    captured = capsys.readouterr()
-    assert captured.err == ""

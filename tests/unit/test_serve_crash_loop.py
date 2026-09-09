@@ -115,7 +115,7 @@ def _fake_spawn_clean_with_usage():
     return spawn
 
 
-def test_given_usage_then_no_progress_streak_when_serve_then_stalled_no_progress_and_stop(
+def test_serve_should_stop_with_stalled_no_progress_when_no_progress_streak_follows_initial_usage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """0.2.16 Task 6, confirmed under CRITICAL #1's two-gate design: pi (and
@@ -123,7 +123,7 @@ def test_given_usage_then_no_progress_streak_when_serve_then_stalled_no_progress
     _round_ok=exit_code==0 reads that as clean, so without this breaker the
     loop spins invisibly, itself a memory-pressure generator on a constrained
     host. Unlike a kimi-shaped CLI (never emits usage -- see
-    test_given_never_any_usage_when_serve_then_no_progress_breaker_never_arms),
+    test_serve_no_progress_breaker_should_stay_disarmed_when_usage_never_recorded),
     pi DOES emit usage on a healthy round, so one such round up front arms the
     breaker (gate 2); the subsequent CRASH_LOOP_THRESHOLD consecutive
     clean-but-no-progress rounds still trip the SAME give-up shape as the
@@ -159,7 +159,7 @@ def test_given_usage_then_no_progress_streak_when_serve_then_stalled_no_progress
     assert stalled[0]["exit_code"] == 0
 
 
-def test_given_never_any_usage_when_serve_then_no_progress_breaker_never_arms(
+def test_serve_no_progress_breaker_should_stay_disarmed_when_usage_never_recorded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """CRITICAL #1 gate 2 (usage-capability), full serve-loop confirmation: a
@@ -187,7 +187,7 @@ def test_given_never_any_usage_when_serve_then_no_progress_breaker_never_arms(
     assert rc == 0
 
 
-def test_given_exit0_rounds_with_usage_when_serve_then_no_stall_trip(
+def test_serve_should_not_trip_stall_when_exit0_rounds_record_usage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A round that reached the model (agent_usage_recorded) is real progress
@@ -209,10 +209,10 @@ def test_given_exit0_rounds_with_usage_when_serve_then_no_stall_trip(
     assert rc == 0
 
 
-def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
+def test_serve_no_progress_counter_should_reset_when_usage_round_occurs_between_no_progress_rounds(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Mirrors test_given_success_between_crashes_when_serve_then_counter_resets
+    """Mirrors test_serve_crash_loop_counter_should_reset_when_success_occurs_between_crashes
     for the no-progress streak: a round WITH usage between no-progress rounds
     resets the counter, so the trip fires at CRASH_LOOP_THRESHOLD POST-reset,
     not the total no-progress count across the whole run. The leading 3
@@ -250,7 +250,9 @@ def test_given_usage_between_no_progress_rounds_when_serve_then_counter_resets(
     assert stalled[0]["consecutive"] == CRASH_LOOP_THRESHOLD
 
 
-def test_round_had_no_progress_true_when_clean_fast_and_no_usage(tmp_path: Path) -> None:
+def test_round_had_no_progress_should_be_true_when_clean_fast_round_has_no_usage(
+    tmp_path: Path,
+) -> None:
     """The breaker is armed (CRITICAL #1 gate 2) once at least one
     agent_usage_recorded event exists ANYWHERE in the tail -- here from an
     earlier round -- so a later round with no usage of its own is genuine
@@ -271,7 +273,7 @@ def test_round_had_no_progress_true_when_clean_fast_and_no_usage(tmp_path: Path)
     assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is True
 
 
-def test_round_had_no_progress_false_when_never_any_usage_recorded(tmp_path: Path) -> None:
+def test_round_had_no_progress_should_be_false_when_usage_never_recorded(tmp_path: Path) -> None:
     """CRITICAL #1 gate 2 (usage-capability): a CLI/plugin stack that has
     NEVER emitted agent_usage_recorded (kimi -- builtin_plugins/kimi.py's
     stream-json format carries no usage record at all; same for aider, or
@@ -288,7 +290,7 @@ def test_round_had_no_progress_false_when_never_any_usage_recorded(tmp_path: Pat
     assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is False
 
 
-def test_round_had_no_progress_false_when_throttle_active(tmp_path: Path) -> None:
+def test_round_had_no_progress_should_be_false_when_throttle_active(tmp_path: Path) -> None:
     """CRITICAL #1 gate 1: a round excused as throttled (e.g. a 429/503
     exhausted-retries outage -- transient_error_detected, already excused
     from the crash-loop breaker) must not ALSO be counted as no-progress --
@@ -321,7 +323,7 @@ def test_round_had_no_progress_false_when_throttle_active(tmp_path: Path) -> Non
     )
 
 
-def test_round_had_no_progress_false_when_usage_recorded_after_round_start(
+def test_round_had_no_progress_should_be_false_when_usage_recorded_after_round_start(
     tmp_path: Path,
 ) -> None:
     from agent_runner._throttle import round_had_no_progress
@@ -345,7 +347,7 @@ def test_round_had_no_progress_false_when_usage_recorded_after_round_start(
     assert round_had_no_progress(log_dir, returncode=0, duration_s=3.0, threshold_s=30) is False
 
 
-def test_round_had_no_progress_false_when_round_is_slow(tmp_path: Path) -> None:
+def test_round_had_no_progress_should_be_false_when_round_is_slow(tmp_path: Path) -> None:
     """A slow round is not a TIGHT loop even with no usage -- a wedged/hung
     round already has its own signal (round_supervisor_wedged)."""
     from agent_runner._throttle import round_had_no_progress
@@ -358,7 +360,7 @@ def test_round_had_no_progress_false_when_round_is_slow(tmp_path: Path) -> None:
     assert round_had_no_progress(log_dir, returncode=0, duration_s=30.0, threshold_s=30) is False
 
 
-def test_round_had_no_progress_false_when_nonzero_exit(tmp_path: Path) -> None:
+def test_round_had_no_progress_should_be_false_when_exit_is_nonzero(tmp_path: Path) -> None:
     """A non-zero exit already has its own signal (the crash-loop breaker) --
     round_had_no_progress must stay false so the two never double-count."""
     from agent_runner._throttle import round_had_no_progress
@@ -371,7 +373,7 @@ def test_round_had_no_progress_false_when_nonzero_exit(tmp_path: Path) -> None:
     assert round_had_no_progress(log_dir, returncode=1, duration_s=3.0, threshold_s=30) is False
 
 
-def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
+def test_serve_should_trip_crash_loop_and_stop_when_crashes_are_consecutive_and_short(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from agent_runner.cli import serve_cmd
@@ -389,7 +391,7 @@ def test_given_consecutive_short_crashes_when_serve_then_crash_loop_and_stop(
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
 
 
-def test_given_clean_rounds_when_serve_then_no_crash_loop(
+def test_serve_should_not_trip_crash_loop_when_rounds_are_clean(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from agent_runner.cli import serve_cmd
@@ -406,7 +408,7 @@ def test_given_clean_rounds_when_serve_then_no_crash_loop(
     assert "max_rounds_reached" in kinds
 
 
-def test_given_consecutive_env_battery_exits_when_serve_then_no_crash_loop(
+def test_serve_should_not_trip_crash_loop_when_env_battery_exits_are_consecutive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A ~5-round environmental outage (76, mirrors an active throttle) must not
@@ -427,7 +429,7 @@ def test_given_consecutive_env_battery_exits_when_serve_then_no_crash_loop(
     assert rc == 0
 
 
-def test_given_success_between_crashes_when_serve_then_counter_resets(
+def test_serve_crash_loop_counter_should_reset_when_success_occurs_between_crashes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from agent_runner.cli import serve_cmd
@@ -446,7 +448,7 @@ def test_given_success_between_crashes_when_serve_then_counter_resets(
     assert crash[0]["consecutive"] == CRASH_LOOP_THRESHOLD
 
 
-def test_mem_terminations_under_threshold_no_crash_loop(
+def test_serve_should_not_give_up_when_mem_terminations_stay_under_threshold(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A round killed by the mid-round memory-pressure hard floor is a
@@ -475,7 +477,7 @@ def test_mem_terminations_under_threshold_no_crash_loop(
     assert rc == 0
 
 
-def test_mem_terminations_at_threshold_gives_up(
+def test_serve_should_give_up_via_mem_loop_when_mem_terminations_reach_threshold(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """MEM_LOOP_THRESHOLD consecutive mem-terminated rounds means the host is
@@ -522,7 +524,7 @@ def _seed_mem_loop_events(log_dir: Path, count: int, *, ago_s: float) -> None:
             f.write(json.dumps(line) + "\n")
 
 
-def test_mem_loop_escalates_to_persistent_after_window_threshold(
+def test_serve_mem_loop_should_escalate_to_persistent_when_window_threshold_is_reached(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """0.2.16 Task 5: mem_loop alone (71) resets on every serve restart, so a
@@ -547,7 +549,7 @@ def test_mem_loop_escalates_to_persistent_after_window_threshold(
     assert rc == MEM_LOOP_PERSISTENT_EXIT
 
 
-def test_mem_loop_still_71_when_prior_events_aged_out(
+def test_serve_mem_loop_should_stay_restartable_when_prior_mem_loop_events_aged_out(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Same 2 prior mem_loop episodes, but stamped OUTSIDE
@@ -572,7 +574,9 @@ def test_mem_loop_still_71_when_prior_events_aged_out(
     assert rc == MEM_LOOP_EXIT
 
 
-def test_mem_loop_events_in_window_counts_recent_excludes_old(tmp_path: Path) -> None:
+def test_mem_loop_events_in_window_should_count_recent_and_exclude_aged_out_events(
+    tmp_path: Path,
+) -> None:
     """Direct unit test of the events-tail helper feeding the escalation
     above: a FakeClock pins "now" so a prior event just inside the window
     counts and one just outside does not, with no dependency on real time."""
@@ -600,7 +604,7 @@ def _seed_mem_loop_events_at(log_dir: Path, *, epoch: float) -> None:
 # --- pure-function tests for the extracted restart policy ---
 
 
-def test_post_round_decision_config_broken_routes_to_stop() -> None:
+def test_post_round_decision_should_route_to_stop_when_config_broken() -> None:
     action, _, _ = post_round_decision(
         returncode=PERMANENT_CONFIG_EXIT,
         duration_s=0.1,
@@ -611,29 +615,37 @@ def test_post_round_decision_config_broken_routes_to_stop() -> None:
     assert action == "config_broken"
 
 
-def test_post_round_decision_clean_round_resets_and_continues() -> None:
+def test_post_round_decision_should_reset_and_continue_when_round_is_clean() -> None:
     action, delay, n = post_round_decision(
         returncode=0, duration_s=0.1, throttle_active=False, consecutive=4, restart_delay_s=3
     )
     assert (action, delay, n) == ("continue", 3, 0)
 
 
-def test_post_round_decision_short_crash_escalates_then_stops() -> None:
-    a4, d4, n4 = post_round_decision(
+def test_post_round_decision_should_escalate_delay_when_short_crash_below_threshold() -> None:
+    action, delay, n = post_round_decision(
         returncode=1, duration_s=0.1, throttle_active=False, consecutive=3, restart_delay_s=3
     )
-    assert (a4, d4, n4) == ("continue", 3 * 2**4, 4)
-    a5, _, n5 = post_round_decision(
+
+    assert (action, delay, n) == ("continue", 3 * 2**4, 4)
+
+
+def test_post_round_decision_should_trip_crash_loop_when_short_crash_reaches_threshold() -> None:
+    action, _, n = post_round_decision(
         returncode=1, duration_s=0.1, throttle_active=False, consecutive=4, restart_delay_s=3
     )
-    assert (a5, n5) == ("crash_loop", CRASH_LOOP_THRESHOLD)
+
+    assert (action, n) == ("crash_loop", CRASH_LOOP_THRESHOLD)
 
 
-def test_post_round_decision_transient_or_long_failure_is_not_a_crash() -> None:
+def test_post_round_decision_should_reset_when_failure_is_transient() -> None:
     # classified transient (throttle active): not a crash → reset
     assert post_round_decision(
         returncode=1, duration_s=0.1, throttle_active=True, consecutive=2, restart_delay_s=3
     ) == ("continue", 6, 0)
+
+
+def test_post_round_decision_should_reset_when_failure_is_long_running() -> None:
     # long-running failure: not a tight crash loop → reset, 2x delay
     assert post_round_decision(
         returncode=1, duration_s=999.0, throttle_active=False, consecutive=2, restart_delay_s=3

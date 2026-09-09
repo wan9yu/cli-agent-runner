@@ -40,9 +40,9 @@ def _git(*args: str) -> str:
     ).stdout
 
 
-def test_given_main_history_when_scanned_then_no_ai_attribution_in_commit_messages() -> None:
-    """Every commit's message body must be free of AI-tool attribution."""
+def test_main_history_should_have_no_ai_attribution_when_scanned() -> None:
     log = _git("log", "--format=%H%x1f%B%x1e", "HEAD")
+
     offenders: list[tuple[str, str]] = []
     for entry in log.split("\x1e"):
         entry = entry.strip()
@@ -58,9 +58,9 @@ def test_given_main_history_when_scanned_then_no_ai_attribution_in_commit_messag
     )
 
 
-def test_given_tag_annotations_when_scanned_then_no_ai_attribution() -> None:
-    """Every annotated tag's annotation body must be free of AI-tool attribution."""
+def test_tag_annotations_should_have_no_ai_attribution_when_scanned() -> None:
     tags = _git("tag", "--list").splitlines()
+
     # A checkout without tags fetched (e.g. a shallow clone, or CI configured
     # without fetch-tags) would make the loop below a silent no-op. No network
     # call here (tests must not touch the network) — fail loud instead, naming
@@ -85,8 +85,8 @@ def test_given_tag_annotations_when_scanned_then_no_ai_attribution() -> None:
     )
 
 
-def test_given_changelog_content_when_scanned_then_no_ai_attribution() -> None:
-    """CHANGELOG.md must not advertise AI-tool attribution."""
+def test_changelog_content_should_have_no_ai_attribution_when_scanned() -> None:
     changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+
     m = _FORBIDDEN.search(changelog)
     assert m is None, f"AI-tool attribution found in CHANGELOG.md: matched {m.group(0)!r}"

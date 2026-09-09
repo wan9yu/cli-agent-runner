@@ -6,6 +6,7 @@ same signal as "no state yet" -- rather than crash serve's loop-top / round
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from agent_runner.context_store import (
@@ -17,57 +18,62 @@ from agent_runner.context_store import (
 )
 
 
-def test_given_non_utf8_bytes_when_read_json_then_returns_none(tmp_path: Path) -> None:
+def test_read_json_should_return_none_when_bytes_are_not_utf8(tmp_path: Path) -> None:
     p = tmp_path / "x.json"
     p.write_bytes(b"\xff\xfe not valid utf-8 { ")
+
     assert read_json(p) is None
 
 
-def test_given_directory_when_read_json_then_returns_none(tmp_path: Path) -> None:
+def test_read_json_should_return_none_when_path_is_a_directory(tmp_path: Path) -> None:
     p = tmp_path / "x.json"
     p.mkdir()
+
     assert read_json(p) is None
 
 
-def test_given_non_utf8_status_when_read_status_then_returns_none(tmp_log_dir: Path) -> None:
+def test_read_status_should_return_none_when_status_file_is_not_utf8(tmp_log_dir: Path) -> None:
     (tmp_log_dir / STATUS_FILE).write_bytes(b"\xff\xfe\x00")
+
     assert read_status(tmp_log_dir) is None
 
 
-def test_given_status_dir_when_read_status_then_returns_none(tmp_log_dir: Path) -> None:
+def test_read_status_should_return_none_when_status_file_is_a_directory(
+    tmp_log_dir: Path,
+) -> None:
     (tmp_log_dir / STATUS_FILE).mkdir()
+
     assert read_status(tmp_log_dir) is None
 
 
-def test_given_string_round_num_when_read_status_then_returns_none(tmp_log_dir: Path) -> None:
+def test_read_status_should_return_none_when_round_num_is_a_string(tmp_log_dir: Path) -> None:
     """round_num must type-check -- a corrupt/foreign value must not silently
     become a wrongly-typed Status that later arithmetic (round_num + 1) trips
     on."""
-    import json
-
     (tmp_log_dir / STATUS_FILE).write_text(
         json.dumps({"round_num": "not-a-number", "running": False}), encoding="utf-8"
     )
+
     assert read_status(tmp_log_dir) is None
 
 
-def test_given_non_utf8_orphan_when_read_orphan_state_then_returns_none(
-    tmp_log_dir: Path,
-) -> None:
+def test_read_orphan_state_should_return_none_when_file_is_not_utf8(tmp_log_dir: Path) -> None:
     (tmp_log_dir / ORPHAN_FILE).write_bytes(b"\xff\xfe\x00")
+
     assert read_orphan_state(tmp_log_dir) is None
 
 
-def test_given_orphan_dir_when_read_orphan_state_then_returns_none(tmp_log_dir: Path) -> None:
-    (tmp_log_dir / ORPHAN_FILE).mkdir()
-    assert read_orphan_state(tmp_log_dir) is None
-
-
-def test_given_orphan_state_with_unknown_key_when_read_then_known_fields_survive(
+def test_read_orphan_state_should_return_none_when_path_is_a_directory(
     tmp_log_dir: Path,
 ) -> None:
-    import json
+    (tmp_log_dir / ORPHAN_FILE).mkdir()
 
+    assert read_orphan_state(tmp_log_dir) is None
+
+
+def test_read_orphan_state_should_keep_known_fields_when_unknown_key_present(
+    tmp_log_dir: Path,
+) -> None:
     (tmp_log_dir / ORPHAN_FILE).write_text(
         json.dumps(
             {
@@ -81,5 +87,7 @@ def test_given_orphan_state_with_unknown_key_when_read_then_known_fields_survive
         ),
         encoding="utf-8",
     )
+
     state = read_orphan_state(tmp_log_dir)
+
     assert state is not None and state.round_num == 7

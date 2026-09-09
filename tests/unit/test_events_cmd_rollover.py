@@ -13,7 +13,9 @@ def _append(p: Path, ev: dict) -> None:
         f.write(json.dumps(ev) + "\n")
 
 
-def test_rollover_drains_old_file_tail_then_starts_new_at_zero(tmp_path, monkeypatch, capsys):
+def test_tail_events_should_drain_old_file_tail_and_start_new_file_at_zero_when_month_rolls_over(
+    tmp_path, monkeypatch, capsys
+):
     aug = tmp_path / "events-2026-08.jsonl"
     sep = tmp_path / "events-2026-09.jsonl"
     _append(aug, {"event": "round_end", "round_num": 1, "ts": "2026-08-31T23:59:59Z"})
@@ -36,6 +38,7 @@ def test_rollover_drains_old_file_tail_then_starts_new_at_zero(tmp_path, monkeyp
 
     rc = events_cmd._tail_events(tmp_path, {"round_end"})
     out = capsys.readouterr().out
+
     assert rc == 0
     assert '"round_num": 2' in out  # late-August line drained, not lost on rollover
     assert '"round_num": 3' in out  # September line picked up from byte 0

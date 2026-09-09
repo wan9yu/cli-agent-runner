@@ -11,6 +11,7 @@ a precomputed `RoundOutcome` (the serve post-round block's one-scan path)."""
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,10 @@ from agent_runner._throttle import (
     round_outcome,
     round_was_mem_terminated,
 )
+from agent_runner.cli import serve_cmd
+from agent_runner.config import load_config
 from tests._clock import FakeClock
+from tests._test_helpers import make_toml
 
 
 def _write(log_dir: Path, *events: dict) -> None:
@@ -36,7 +40,7 @@ def _write(log_dir: Path, *events: dict) -> None:
 # --- (a) direct round_was_mem_terminated unit test (none existed pre-0.2.17) ----
 
 
-def test_round_was_mem_terminated_true_when_terminated_after_newest_before(
+def test_round_was_mem_terminated_should_return_true_when_terminated_after_newest_before(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -45,10 +49,11 @@ def test_round_was_mem_terminated_true_when_terminated_after_newest_before(
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
         {"ts": "2026-01-01T00:00:05.000Z", "event": "round_mem_terminated", "round_num": 1},
     )
+
     assert round_was_mem_terminated(log_dir) is True
 
 
-def test_round_was_mem_terminated_false_when_terminated_before_newest_before(
+def test_round_was_mem_terminated_should_return_false_when_terminated_before_newest_before(
     tmp_path: Path,
 ) -> None:
     """A stale round_mem_terminated from an EARLIER round, followed by a fresh
@@ -60,19 +65,25 @@ def test_round_was_mem_terminated_false_when_terminated_before_newest_before(
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_mem_terminated", "round_num": 1},
         {"ts": "2026-01-01T00:00:05.000Z", "event": "round_substrate_before", "round_num": 2},
     )
+
     assert round_was_mem_terminated(log_dir) is False
 
 
-def test_round_was_mem_terminated_false_when_no_terminated_event(tmp_path: Path) -> None:
+def test_round_was_mem_terminated_should_return_false_when_no_terminated_event_present(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
     )
+
     assert round_was_mem_terminated(log_dir) is False
 
 
-def test_round_was_mem_terminated_true_on_exact_ts_tie(tmp_path: Path) -> None:
+def test_round_was_mem_terminated_should_return_true_when_timestamps_tie_exactly(
+    tmp_path: Path,
+) -> None:
     """>=, not >: a fast loop (or ms-resolution ties) can legitimately stamp
     both events in the same millisecond -- erring toward "this round's" only
     risks over-excusing, never mistaking a genuine crash for a rescue."""
@@ -82,13 +93,14 @@ def test_round_was_mem_terminated_true_on_exact_ts_tie(tmp_path: Path) -> None:
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_mem_terminated", "round_num": 1},
     )
+
     assert round_was_mem_terminated(log_dir) is True
 
 
 # --- (b) round_outcome + wrappers give the same verdicts, fresh or precomputed --
 
 
-def test_round_outcome_folds_usage_transient_and_substrate_fields(tmp_path: Path) -> None:
+def test_round_outcome_should_fold_usage_transient_and_substrate_fields(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
@@ -103,7 +115,9 @@ def test_round_outcome_folds_usage_transient_and_substrate_fields(tmp_path: Path
             "round_num": 2,
         },
     )
+
     outcome = round_outcome(log_dir)
+
     assert isinstance(outcome, RoundOutcome)
     assert outcome.mem_terminated is False
     assert outcome.usage_capable is True
@@ -124,20 +138,26 @@ def test_round_outcome_folds_usage_transient_and_substrate_fields(tmp_path: Path
     assert reused_no_progress is True
 
 
-def test_round_outcome_mem_terminated_scenario(tmp_path: Path) -> None:
+def test_round_outcome_should_report_mem_terminated_true_when_terminated_event_recorded(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
         {"ts": "2026-01-01T00:00:01.000Z", "event": "round_mem_terminated", "round_num": 1},
     )
+
     outcome = round_outcome(log_dir)
+
     assert outcome.mem_terminated is True
     assert round_was_mem_terminated(log_dir, outcome=outcome) is True
     assert round_was_mem_terminated(log_dir, outcome=outcome) == round_was_mem_terminated(log_dir)
 
 
-def test_round_outcome_usage_present_means_progress(tmp_path: Path) -> None:
+def test_round_outcome_should_report_progress_when_usage_recorded_after_substrate_before(
+    tmp_path: Path,
+) -> None:
     """Usage stamped AT-OR-AFTER this round's round_substrate_before: progress
     was made, so round_had_no_progress must read False off the same outcome."""
     log_dir = tmp_path / "logs"
@@ -146,7 +166,9 @@ def test_round_outcome_usage_present_means_progress(tmp_path: Path) -> None:
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
         {"ts": "2026-01-01T00:00:01.000Z", "event": "agent_usage_recorded", "round_num": 1},
     )
+
     outcome = round_outcome(log_dir)
+
     assert outcome.usage_capable is True
     assert outcome.newest_usage_ts == "2026-01-01T00:00:01.000Z"
     no_progress = round_had_no_progress(
@@ -158,7 +180,7 @@ def test_round_outcome_usage_present_means_progress(tmp_path: Path) -> None:
     )
 
 
-def test_round_outcome_invariant_1_usage_capable_unconditional_on_missing_ts(
+def test_round_outcome_should_set_usage_capable_unconditionally_when_usage_event_has_no_timestamp(
     tmp_path: Path,
 ) -> None:
     """INVARIANT 1: usage_capable is set UNCONDITIONALLY on agent_usage_recorded,
@@ -170,7 +192,9 @@ def test_round_outcome_invariant_1_usage_capable_unconditional_on_missing_ts(
         {"event": "agent_usage_recorded", "round_num": 1},  # no ts at all
         {"ts": "2026-01-01T00:00:01.000Z", "event": "round_substrate_before", "round_num": 2},
     )
+
     outcome = round_outcome(log_dir)
+
     assert outcome.usage_capable is True
     assert outcome.newest_usage_ts is None  # never updated -- the one usage event had no ts
     # usage_capable but no usage ts at/after this round's start -> no progress.
@@ -182,7 +206,7 @@ def test_round_outcome_invariant_1_usage_capable_unconditional_on_missing_ts(
     )
 
 
-def test_round_had_no_progress_early_return_ahead_of_outcome_scan(
+def test_round_had_no_progress_should_skip_outcome_scan_when_early_return_gate_triggers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """INVARIANT 4: the early-return gates (non-zero exit / slow / throttled) must
@@ -201,6 +225,7 @@ def test_round_had_no_progress_early_return_ahead_of_outcome_scan(
     monkeypatch.setattr(_round_outcome, "round_outcome", _boom)
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
+
     assert round_had_no_progress(log_dir, returncode=1, duration_s=3.0, threshold_s=30) is False
     assert round_had_no_progress(log_dir, returncode=0, duration_s=60.0, threshold_s=30) is False
     assert (
@@ -211,13 +236,13 @@ def test_round_had_no_progress_early_return_ahead_of_outcome_scan(
     )
 
 
-def test_round_scan_mem_terminated_skips_second_events_tail_scan(
+def test_round_scan_should_skip_second_events_tail_scan_when_mem_terminated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Regression test for the Task 1 fix-round-1 Important finding: pre-refactor,
     `mem_terminated or _ran_agent_throttled(...)` short-circuited via Python's
     `or`, so a mem-terminated round never triggered the throttle scan at all.
-    `serve_cmd._round_scan` must preserve that -- exactly ONE `_tail_events` scan
+    `serve_cmd._round_scan` must preserve that -- exactly ONE `_tail_events`scan
     (via `round_outcome`) on the mem-terminated path, not a second one from an
     unconditionally-computed `_active_throttles` call.
 
@@ -228,12 +253,8 @@ def test_round_scan_mem_terminated_skips_second_events_tail_scan(
     no transient event at all would pass this assertion whether or not the
     mem-terminated short-circuit guard exists (a vacuous regression test caught
     in review round 2). With this event present, the pre-fix buggy
-    `_round_scan` (unconditional `_active_throttles` call) produces
+    ``_round_scan`` (unconditional ``_active_throttles`` call) produces
     ``calls == 2``; the fixed short-circuit produces ``calls == 1``."""
-    from agent_runner.cli import serve_cmd
-    from agent_runner.config import load_config
-    from tests._test_helpers import make_toml
-
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
@@ -268,7 +289,9 @@ def test_round_scan_mem_terminated_skips_second_events_tail_scan(
     assert calls == 1
 
 
-def test_active_throttles_reuses_precomputed_latest_transient_map(tmp_path: Path) -> None:
+def test_active_throttles_should_match_fresh_scan_when_given_precomputed_latest_transient_map(
+    tmp_path: Path,
+) -> None:
     """serve_cmd's post-round block passes outcome.latest_transient_per_agent as
     _active_throttles's `_latest` to avoid a second events-tail scan for the
     throttle check -- must give the identical active-throttle map the
@@ -286,25 +309,23 @@ def test_active_throttles_reuses_precomputed_latest_transient_map(tmp_path: Path
             "round_num": 1,
         },
     )
+
     outcome = round_outcome(log_dir)
     fresh = _throttle._active_throttles(log_dir, clock=clock)
     reused = _throttle._active_throttles(
         log_dir, clock=clock, _latest=outcome.latest_transient_per_agent
     )
+
     assert fresh.keys() == reused.keys() == {"claude"}
     assert fresh["claude"] == reused["claude"]
 
 
-def test_ran_agent_throttled_reuses_precomputed_active_map(tmp_path: Path) -> None:
+def test_ran_agent_throttled_should_match_fresh_scan_when_given_precomputed_active_map(
+    tmp_path: Path,
+) -> None:
     """serve_cmd's post-round block passes an already-computed `active` map into
     `_ran_agent_throttled` (via its new `active=` kwarg) instead of letting it
     scan again -- must agree with the from-scratch (`active=None`) call."""
-    import time
-
-    from agent_runner.cli import serve_cmd
-    from agent_runner.config import load_config
-    from tests._test_helpers import make_toml
-
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
@@ -319,6 +340,7 @@ def test_ran_agent_throttled_reuses_precomputed_active_map(tmp_path: Path) -> No
     )
     cfg = load_config(make_toml(tmp_path))
     active = _throttle._active_throttles(log_dir)
+
     assert serve_cmd._ran_agent_throttled(cfg, None, log_dir, active=active) is True
     assert serve_cmd._ran_agent_throttled(cfg, None, log_dir, active=active) == (
         serve_cmd._ran_agent_throttled(cfg, None, log_dir)

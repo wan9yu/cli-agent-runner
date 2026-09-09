@@ -15,17 +15,19 @@ def _events(log_dir):
     return out
 
 
-def test_kind_is_registered_builtin():
+def test_schedule_phase_skipped_kind_should_be_registered_builtin():
     assert events.SCHEDULE_PHASE_SKIPPED == "schedule_phase_skipped"
     assert "schedule_phase_skipped" in events.KNOWN_EVENT_KINDS
     assert "schedule_phase_skipped" in events._BUILTIN_KINDS
 
 
-def test_emit_writes_payload(tmp_path):
+def test_emit_schedule_phase_skipped_should_write_payload_fields(tmp_path):
     emit_schedule_phase_skipped(
         tmp_path, round_num=5, skipped=["a", "b"], chosen="c", active_window="09:00-12:00"
     )
+
     (evt,) = _events(tmp_path)
+
     assert evt["event"] == "schedule_phase_skipped"
     assert evt["round_num"] == 5
     assert evt["skipped"] == ["a", "b"]
@@ -33,7 +35,7 @@ def test_emit_writes_payload(tmp_path):
     assert evt["active_window"] == "09:00-12:00"
 
 
-def test_reexported_from_api():
+def test_emit_schedule_phase_skipped_should_be_reexported_from_api():
     from agent_runner import api
 
     assert api.emit_schedule_phase_skipped is emit_schedule_phase_skipped

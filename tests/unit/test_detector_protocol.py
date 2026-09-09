@@ -20,12 +20,12 @@ class _FakeDetector:
         return None
 
 
-def test_given_fake_detector_when_isinstance_checked_then_satisfies_protocol() -> None:
+def test_fake_detector_should_satisfy_protocol_when_isinstance_checked() -> None:
     """Detector is @runtime_checkable; structural typing should accept _FakeDetector."""
     assert isinstance(_FakeDetector(), Detector)
 
 
-def test_given_object_without_detect_method_when_isinstance_checked_then_does_not_satisfy() -> None:
+def test_object_without_detect_method_should_not_satisfy_protocol_when_isinstance_checked() -> None:
     class _NotADetector:
         name = "x"
         severity = "warning"
@@ -35,7 +35,7 @@ def test_given_object_without_detect_method_when_isinstance_checked_then_does_no
     assert not isinstance(_NotADetector(), Detector)
 
 
-def test_given_object_without_required_attrs_when_isinstance_checked_then_does_not_satisfy() -> (
+def test_object_without_required_attrs_should_not_satisfy_protocol_when_isinstance_checked() -> (
     None
 ):
     class _MissingAttrs:
@@ -47,16 +47,18 @@ def test_given_object_without_required_attrs_when_isinstance_checked_then_does_n
     assert not isinstance(_MissingAttrs(), Detector)
 
 
-def test_given_no_plugin_detectors_when_listed_then_empty() -> None:
+def test_plugin_detectors_should_return_empty_when_none_registered() -> None:
     assert monitor.plugin_detectors() == []
 
 
-def test_given_detector_when_registered_then_visible_in_listing() -> None:
+def test_detector_should_be_visible_in_listing_when_registered() -> None:
     monitor.register_detector(_FakeDetector())
+
     assert monitor.plugin_detectors() == ["fake_kind"]
 
 
-def test_given_duplicate_detector_name_when_registered_then_raises() -> None:
+def test_register_detector_should_raise_when_name_duplicate() -> None:
     monitor.register_detector(_FakeDetector())
+
     with pytest.raises(ValueError, match="already registered"):
         monitor.register_detector(_FakeDetector())

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def test_dirty_auto_committed_is_builtin_kind() -> None:
+def test_dirty_auto_committed_should_be_builtin_kind() -> None:
     from agent_runner import events
 
     assert events.DIRTY_AUTO_COMMITTED == "dirty_auto_committed"

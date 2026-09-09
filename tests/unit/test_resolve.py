@@ -21,35 +21,41 @@ from agent_runner.service_unit import serve_unit_filename
 # project_name — lenient/strict split
 
 
-def test_project_name_lenient_accepts_spaced_basename(tmp_path):
+def test_project_name_should_accept_spaced_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "my project"
+
     assert _resolve.project_name(work_dir, strict=False) == "my project"
 
 
-def test_project_name_lenient_accepts_cjk_basename(tmp_path):
+def test_project_name_should_accept_cjk_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "我的项目"
+
     assert _resolve.project_name(work_dir, strict=False) == "我的项目"
 
 
-def test_project_name_strict_rejects_spaced_basename(tmp_path):
+def test_project_name_should_reject_spaced_basename_when_strict(tmp_path):
     work_dir = tmp_path / "my project"
+
     with pytest.raises(ValueError, match="invalid project name"):
         _resolve.project_name(work_dir, strict=True)
 
 
-def test_project_name_strict_rejects_cjk_basename(tmp_path):
+def test_project_name_should_reject_cjk_basename_when_strict(tmp_path):
     work_dir = tmp_path / "我的项目"
+
     with pytest.raises(ValueError, match="invalid project name"):
         _resolve.project_name(work_dir, strict=True)
 
 
-def test_project_name_strict_accepts_plain_basename(tmp_path):
+def test_project_name_should_accept_plain_basename_when_strict(tmp_path):
     work_dir = tmp_path / "my-project_v1.2"
+
     assert _resolve.project_name(work_dir, strict=True) == "my-project_v1.2"
 
 
-def test_project_name_lenient_also_accepts_plain_basename(tmp_path):
+def test_project_name_should_accept_plain_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "my-project_v1.2"
+
     assert _resolve.project_name(work_dir, strict=False) == "my-project_v1.2"
 
 
@@ -57,20 +63,22 @@ def test_project_name_lenient_also_accepts_plain_basename(tmp_path):
 # config_path — single source for "given CLI args, which toml"
 
 
-def test_config_path_uses_explicit_config_arg(tmp_path):
+def test_config_path_should_return_explicit_config_when_args_config_is_set(tmp_path):
     cfg_file = tmp_path / "agent-runner.toml"
     cfg_file.write_text("")
     args = SimpleNamespace(config=cfg_file)
+
     assert _resolve.config_path(args) == cfg_file.resolve()
 
 
-def test_config_path_defaults_to_cwd_toml_when_absent(tmp_path, monkeypatch):
+def test_config_path_should_default_to_cwd_toml_when_config_arg_absent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     args = SimpleNamespace()
+
     assert _resolve.config_path(args) == tmp_path.resolve() / "agent-runner.toml"
 
 
-def test_config_path_returns_args_config_verbatim_when_work_dir_differs_from_toml_dir(
+def test_config_path_should_return_args_config_verbatim_when_work_dir_differs_from_toml_dir(
     tmp_path,
 ):
     """The seam this resolver closes: config_path must reflect the --config the
@@ -96,7 +104,7 @@ def test_config_path_returns_args_config_verbatim_when_work_dir_differs_from_tom
     assert resolved.parent != cfg.runtime.work_dir
 
 
-def test_config_path_symlinked_config_anchors_to_symlink_dir_not_target(tmp_path):
+def test_config_path_should_anchor_to_symlink_dir_not_target_when_config_is_symlinked(tmp_path):
     """A symlinked --config must resolve to a path anchored in the SYMLINK's own
     directory, not the resolved target's directory: config_path uses
     ``.absolute()`` (never dereferences symlinks), not ``.resolve()`` (which
@@ -124,7 +132,7 @@ def test_config_path_symlinked_config_anchors_to_symlink_dir_not_target(tmp_path
 # unit_filename — thin wrap of the existing serve_unit_filename
 
 
-def test_unit_filename_wraps_serve_unit_filename():
+def test_unit_filename_should_equal_serve_unit_filename_output():
     assert _resolve.unit_filename("myproj") == serve_unit_filename("myproj")
     assert _resolve.unit_filename("myproj") == "agent-runner@myproj.service"
 
@@ -133,19 +141,21 @@ def test_unit_filename_wraps_serve_unit_filename():
 # log_dir — reads from config when present, conventional fallback otherwise
 
 
-def test_log_dir_reads_from_config_when_present(tmp_path):
+def test_log_dir_should_read_from_config_when_toml_present(tmp_path):
     (tmp_path / "p.md").write_text("hi")
     (tmp_path / "agent-runner.toml").write_text(
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'custom-logs'\n[prompt]\nfile = 'p.md'\n"
     )
+
     assert _resolve.log_dir(tmp_path) == (tmp_path / "custom-logs").resolve()
 
 
-def test_log_dir_falls_back_to_conventional_path_when_config_missing(tmp_path, monkeypatch):
+def test_log_dir_should_fall_back_to_conventional_path_when_toml_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     work_dir = tmp_path / "noconfig"
     work_dir.mkdir()
+
     assert _resolve.log_dir(work_dir) == tmp_path / ".agent-runner" / "noconfig" / "logs"
 
 
@@ -155,13 +165,55 @@ def test_log_dir_falls_back_to_conventional_path_when_config_missing(tmp_path, m
 # bare-string branch (a project name, not a work_dir).
 
 
-def test_default_log_dir_builds_conventional_path(tmp_path, monkeypatch):
+def test_default_log_dir_should_build_conventional_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+
     assert _resolve.default_log_dir("myproj") == tmp_path / ".agent-runner" / "myproj" / "logs"
 
 
-def test_log_dir_missing_toml_fallback_matches_default_log_dir(tmp_path, monkeypatch):
+def test_log_dir_should_match_default_log_dir_when_toml_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     work_dir = tmp_path / "noconfig"
     work_dir.mkdir()
+
     assert _resolve.log_dir(work_dir) == _resolve.default_log_dir("noconfig")
+
+
+# ---------------------------------------------------------------------------
+# guard_against_clobber -- api.install's same-basename sibling-unit guard
+
+
+def test_guard_against_clobber_should_raise_when_existing_unit_owned_by_different_work_dir(
+    tmp_path,
+):
+    serve_path = tmp_path / "agent-runner@proj.service"
+    other_work_dir = tmp_path / "other-project"
+    serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
+    work_dir = tmp_path / "this-project"
+
+    with pytest.raises(FileExistsError, match=str(other_work_dir)):
+        _resolve.guard_against_clobber(serve_path, work_dir, force=False)
+
+
+def test_guard_against_clobber_should_no_op_when_existing_unit_owned_by_same_work_dir(tmp_path):
+    work_dir = tmp_path / "this-project"
+    serve_path = tmp_path / "agent-runner@proj.service"
+    serve_path.write_text(f"WorkingDirectory={work_dir}\n")
+
+    _resolve.guard_against_clobber(serve_path, work_dir, force=False)
+
+
+def test_guard_against_clobber_should_no_op_when_force_true_despite_different_owner(tmp_path):
+    serve_path = tmp_path / "agent-runner@proj.service"
+    other_work_dir = tmp_path / "other-project"
+    serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
+    work_dir = tmp_path / "this-project"
+
+    _resolve.guard_against_clobber(serve_path, work_dir, force=True)
+
+
+def test_guard_against_clobber_should_no_op_when_no_existing_unit_file(tmp_path):
+    serve_path = tmp_path / "agent-runner@proj.service"
+    work_dir = tmp_path / "this-project"
+
+    _resolve.guard_against_clobber(serve_path, work_dir, force=False)

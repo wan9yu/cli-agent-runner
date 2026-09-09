@@ -17,7 +17,7 @@ from pathlib import Path
 from tests._test_helpers import make_toml
 
 
-def test_given_auto_stop_defaults_when_compared_then_single_source() -> None:
+def test_auto_stop_defaults_should_match_when_compared() -> None:
     from agent_runner.config import _DEFAULT_AUTO_STOP_ON
     from agent_runner.monitor import AUTO_STOP_ALERTS
 
@@ -28,7 +28,7 @@ def test_given_auto_stop_defaults_when_compared_then_single_source() -> None:
     )
 
 
-def test_given_default_config_when_loaded_then_auto_stop_on_matches_docgen_source(
+def test_default_config_auto_stop_on_should_match_docgen_source_when_loaded(
     tmp_path: Path,
 ) -> None:
     """The end-to-end version: what a stock config gets == what the docs publish."""
@@ -36,4 +36,5 @@ def test_given_default_config_when_loaded_then_auto_stop_on_matches_docgen_sourc
     from agent_runner.monitor import AUTO_STOP_ALERTS
 
     cfg = load_config(make_toml(tmp_path))
+
     assert set(cfg.monitor.auto_stop_on) == set(AUTO_STOP_ALERTS)

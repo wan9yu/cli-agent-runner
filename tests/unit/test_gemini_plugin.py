@@ -10,7 +10,7 @@ from tests._test_helpers import make_hook_context, make_run_result, write_round_
 _MOD = "agent_runner.builtin_plugins.gemini"
 
 
-def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_with_primary_model(
+def test_after_round_should_emit_usage_with_primary_model_when_gemini_round_is_single_model(
     tmp_path,
 ):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
@@ -43,11 +43,13 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             GeminiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
             )
+
     usage_emit.assert_called_once()
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["agent"] == "gemini"
@@ -63,7 +65,7 @@ def test_given_single_model_gemini_round_when_after_round_then_usage_emitted_wit
     err_emit.assert_not_called()
 
 
-def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_populated(
+def test_after_round_should_populate_models_breakdown_when_gemini_round_is_multi_model(
     tmp_path,
 ):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
@@ -102,10 +104,12 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         GeminiErrorDetector().after_round(
             make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
         )
+
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["model"] == "gemini-3-flash-preview"  # primary by total_tokens
     assert kwargs["models_breakdown"] is not None
@@ -114,7 +118,7 @@ def test_given_multi_model_gemini_round_when_after_round_then_models_breakdown_p
     assert "gemini-3.1-flash-lite" in kwargs["models_breakdown"]
 
 
-def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
+def test_after_round_should_not_emit_when_agent_is_not_gemini(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
     write_round_log(
@@ -122,16 +126,18 @@ def test_given_non_gemini_preset_when_after_round_then_no_emit(tmp_path):
         1,
         [{"type": "result", "status": "success", "stats": {"total_tokens": 100}}],
     )
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             GeminiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="claude"), result=make_run_result()
             )
+
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
 
 
-def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(tmp_path):
+def test_after_round_should_detect_transient_error_when_gemini_returns_5xx(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
     write_round_log(
@@ -153,12 +159,14 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 GeminiErrorDetector().after_round(
                     make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
+
     err_emit.assert_called_once()
     kwargs = err_emit.call_args.kwargs
     assert kwargs["classification"] == "api_transient_5xx"
@@ -166,7 +174,7 @@ def test_given_gemini_5xx_error_when_after_round_then_transient_error_detected(t
     assert kwargs["reset_at_epoch"] == 1060  # now + 60s default
 
 
-def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_limit(tmp_path):
+def test_after_round_should_classify_as_model_rate_limit_when_gemini_returns_429(tmp_path):
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
     write_round_log(
@@ -188,17 +196,21 @@ def test_given_gemini_429_error_when_after_round_then_classified_as_model_rate_l
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded"):
             with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 GeminiErrorDetector().after_round(
                     make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
+
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "rate_limit_model"
 
 
-def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_error(tmp_path):
+def test_after_round_should_not_detect_transient_error_when_gemini_returns_unknown_error_code(
+    tmp_path,
+):
     """403/404/etc. not transient — no transient_error_detected emit; usage still emitted."""
     from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
 
@@ -221,16 +233,18 @@ def test_given_gemini_unknown_error_code_when_after_round_then_no_transient_erro
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
             GeminiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
             )
+
     err_emit.assert_not_called()
     usage_emit.assert_called_once()
 
 
-def test_given_gemini_multi_model_when_extracted_then_breakdown_entries_use_canonical_keys(
+def test_after_round_should_use_canonical_keys_in_breakdown_when_multi_model(
     tmp_path,
 ):
     """models_breakdown per-model entries must not duplicate raw input/cached keys.
@@ -276,8 +290,10 @@ def test_given_gemini_multi_model_when_extracted_then_breakdown_entries_use_cano
         ],
     )
     ctx = make_hook_context(tmp_path, agent_name="gemini")
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         GeminiErrorDetector().after_round(ctx, result=make_run_result())
+
     breakdown = usage_emit.call_args.kwargs["models_breakdown"]
     entry = breakdown["gemini-3-flash-preview"]
     assert "input" not in entry, f"raw 'input' key leaked: {entry}"
@@ -288,7 +304,7 @@ def test_given_gemini_multi_model_when_extracted_then_breakdown_entries_use_cano
     assert entry["total_tokens"] == 100
 
 
-def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_emitted(
+def test_after_round_should_emit_phase_and_success_fields_when_gemini_round_succeeds(
     tmp_path,
 ):
     """phase and success plumbed through from HookContext / RoundResult for gemini."""
@@ -315,14 +331,16 @@ def test_given_gemini_round_with_phase_and_success_when_after_round_then_fields_
         ],
     )
     ctx = make_hook_context(tmp_path, agent_name="gemini", phase="planning")
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         GeminiErrorDetector().after_round(ctx, result=make_run_result())
+
     kwargs = usage_emit.call_args.kwargs
     assert kwargs["phase"] == "planning"
     assert kwargs["success"] is True
 
 
-def test_given_custom_agent_name_with_gemini_binary_when_after_round_then_event_emitted(tmp_path):
+def test_after_round_should_emit_event_when_agent_binary_is_gemini_with_custom_name(tmp_path):
     """Regression: same 0.1.29 bug class for gemini detector — custom agent name
     suppresses events when guard uses agent_name instead of agent_binary.
     """
@@ -343,30 +361,14 @@ def test_given_custom_agent_name_with_gemini_binary_when_after_round_then_event_
         agent_log_path=round_log,
     )
     result = make_run_result()
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
         GeminiErrorDetector().after_round(ctx, result)
+
     emit.assert_called_once()
 
 
-def test_given_non_gemini_binary_when_after_round_then_no_event(tmp_path):
-    """GeminiErrorDetector must NOT fire for non-gemini binaries."""
-    from agent_runner.builtin_plugins.gemini import GeminiErrorDetector
-
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    ctx = make_hook_context(
-        tmp_path,
-        agent_name="claude",
-        agent_binary="claude",
-        agent_log_path=log_dir / "x.log",
-    )
-    result = make_run_result()
-    with patch(f"{_MOD}.emit_agent_usage_recorded") as emit:
-        GeminiErrorDetector().after_round(ctx, result)
-    emit.assert_not_called()
-
-
-def test_given_malformed_stats_field_when_after_round_then_transient_error_still_emitted(
+def test_after_round_should_still_detect_transient_error_when_stats_field_is_malformed(
     tmp_path,
 ):
     """0.2.13 Group D: gemini used to run usage extraction BEFORE error
@@ -396,12 +398,14 @@ def test_given_malformed_stats_field_when_after_round_then_transient_error_still
             }
         ],
     )
+
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
             with patch("agent_runner.clock.SYSTEM_CLOCK.epoch", return_value=1000):
                 GeminiErrorDetector().after_round(
                     make_hook_context(tmp_path, agent_name="gemini"), result=make_run_result()
                 )
+
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
     assert err_emit.call_args.kwargs["reset_at_epoch"] == 1060

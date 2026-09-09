@@ -13,8 +13,9 @@ from __future__ import annotations
 from agent_runner.migrations import MIGRATIONS, _describe
 
 
-def test_every_migration_describes_with_no_config_in_hand() -> None:
+def test_every_migration_should_describe_with_no_config_in_hand() -> None:
     assert MIGRATIONS, "MIGRATIONS registry emptied"  # vacuity-guard
+
     for m in MIGRATIONS:
         desc = _describe(m, {})
         assert isinstance(desc, str) and desc.strip(), (

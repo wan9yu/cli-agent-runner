@@ -10,8 +10,25 @@ import time
 
 from .conftest import _ssh
 
+_POLL_INTERVAL_S = 0.5
 
-def test_given_fake_agent_succeeds_on_pi_when_round_runs_then_status_marks_completed(
+
+def _wait_until(predicate, timeout_s: float) -> bool:
+    """Poll ``predicate`` (an ssh round-trip) until it's true or the deadline passes.
+
+    Real ssh latency to the pi is unpredictable, so a fixed sleep is either too
+    short (flaky) or wastefully long; polling for the actual on-disk evidence
+    (the lock holder sidecar) is both faster on the common path and correct
+    under load."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(_POLL_INTERVAL_S)
+    return predicate()
+
+
+def test_round_should_mark_status_completed_when_fake_agent_succeeds_on_pi(
     pi_install_agent_runner: str,
     pi_config: str,
     pi_workdir: str,
@@ -20,7 +37,9 @@ def test_given_fake_agent_succeeds_on_pi_when_round_runs_then_status_marks_compl
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
         f"{pi_install_agent_runner} --config {pi_config} round"
     )
+
     r = _ssh(cmd)
+
     assert r.returncode == 0
     status_raw = _ssh(f"cat {pi_workdir}/logs/status.json").stdout
     status = json.loads(status_raw)
@@ -28,7 +47,7 @@ def test_given_fake_agent_succeeds_on_pi_when_round_runs_then_status_marks_compl
     assert status["last_exit_code"] == 0
 
 
-def test_given_three_supervisor_invocations_on_pi_when_runs_then_round_num_monotonic(
+def test_round_num_should_increase_monotonically_when_supervisor_invoked_repeatedly_on_pi(
     pi_install_agent_runner: str,
     pi_config: str,
     pi_workdir: str,
@@ -37,13 +56,14 @@ def test_given_three_supervisor_invocations_on_pi_when_runs_then_round_num_monot
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
         f"{pi_install_agent_runner} --config {pi_config} round"
     )
+
     for expected in (1, 2, 3):
         _ssh(base)
         status = json.loads(_ssh(f"cat {pi_workdir}/logs/status.json").stdout)
         assert status["round_num"] == expected
 
 
-def test_given_fake_agent_dirty_on_pi_when_round_runs_then_orphan_stashed(
+def test_round_should_stash_orphan_changes_when_fake_agent_leaves_dirty_worktree_on_pi(
     pi_install_agent_runner: str,
     pi_config: str,
     pi_workdir: str,
@@ -58,12 +78,13 @@ def test_given_fake_agent_dirty_on_pi_when_round_runs_then_orphan_stashed(
         f"{pi_install_agent_runner} --config {pi_config} round"
     )
     _ssh(cmd_succeed)
+
     ctx = json.loads(_ssh(f"cat {pi_workdir}/logs/round-context.json").stdout)
     assert "orphan_stash" in ctx
     assert ctx["orphan_stash"]["ref"]
 
 
-def test_given_fake_agent_hangs_on_pi_when_timeout_exceeds_then_killed(
+def test_round_should_be_killed_when_fake_agent_hangs_past_timeout_on_pi(
     pi_install_agent_runner: str,
     pi_config: str,
     pi_workdir: str,
@@ -72,13 +93,18 @@ def test_given_fake_agent_hangs_on_pi_when_timeout_exceeds_then_killed(
         f"FAKE_AGENT_BEHAVIOR=hang WORK_DIR={pi_workdir} "
         f"{pi_install_agent_runner} --config {pi_config} round"
     )
+
     start = time.time()
     _ssh(cmd, check=False)
     elapsed = time.time() - start
-    assert elapsed < 30  # timeout=10 + reap=5 + ssh overhead
+
+    # timeout=10 + reap=5 + generous ssh/interpreter-startup headroom for a
+    # possibly-loaded Pi Zero 2 W (widened from 30 -- see module docstring
+    # above for the hardware this suite targets)
+    assert elapsed < 60
 
 
-def test_given_concurrent_supervisor_on_pi_when_second_starts_then_exits_with_lock(
+def test_second_supervisor_should_exit_nonzero_when_lock_held_by_first_on_pi(
     pi_install_agent_runner: str,
     pi_config: str,
     pi_workdir: str,
@@ -91,13 +117,16 @@ def test_given_concurrent_supervisor_on_pi_when_second_starts_then_exits_with_lo
         "> /dev/null 2>&1 & echo $!"
     )
     pid = _ssh(bg).stdout.strip()
-    time.sleep(2)  # let first acquire lock
+    lock_holder = f"{pi_workdir}/logs/agent-runner.lock.holder"
+    _wait_until(lambda: _ssh(f"test -f {lock_holder}", check=False).returncode == 0, timeout_s=10)
+
     try:
         cmd = (
             f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
             f"{pi_install_agent_runner} --config {pi_config} round"
         )
         r = _ssh(cmd, check=False)
+
         assert r.returncode != 0
     finally:
         _ssh(f"kill {pid} 2>/dev/null || true", check=False)

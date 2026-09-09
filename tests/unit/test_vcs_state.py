@@ -19,37 +19,40 @@ from tests._test_helpers import isolating
 _reset = isolating(_PLUGIN_OWNED_PATHS)
 
 
-def test_given_clean_tree_when_detect_dirty_then_returns_empty_list(tmp_git_repo: Path) -> None:
+def test_detect_dirty_files_should_return_empty_list_when_tree_clean(tmp_git_repo: Path) -> None:
     assert detect_dirty_files(tmp_git_repo) == []
 
 
-def test_given_modified_file_when_detect_dirty_then_returns_path(tmp_git_repo: Path) -> None:
+def test_detect_dirty_files_should_return_path_when_file_modified(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "README.md").write_text("changed\n")
+
     assert detect_dirty_files(tmp_git_repo) == ["README.md"]
 
 
-def test_given_untracked_file_when_detect_dirty_then_returns_path(tmp_git_repo: Path) -> None:
+def test_detect_dirty_files_should_return_path_when_file_untracked(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "new.txt").write_text("hi\n")
+
     assert "new.txt" in detect_dirty_files(tmp_git_repo)
 
 
-def test_given_non_git_dir_when_is_git_repo_then_returns_false(tmp_path: Path) -> None:
+def test_is_git_repo_should_return_false_when_dir_not_git(tmp_path: Path) -> None:
     assert is_git_repo(tmp_path) is False
 
 
-def test_given_git_repo_when_is_git_repo_then_returns_true(tmp_git_repo: Path) -> None:
+def test_is_git_repo_should_return_true_when_dir_is_git_repo(tmp_git_repo: Path) -> None:
     assert is_git_repo(tmp_git_repo) is True
 
 
-def test_given_renamed_file_when_detect_dirty_then_returns_new_path_only(
+def test_detect_dirty_files_should_return_new_path_only_when_file_renamed(
     tmp_git_repo: Path,
 ) -> None:
-    # Create + commit a file, then rename via git mv (staged rename)
     (tmp_git_repo / "a.txt").write_text("data\n")
     subprocess.run(["git", "add", "a.txt"], cwd=tmp_git_repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "add a.txt"], cwd=tmp_git_repo, check=True)
     subprocess.run(["git", "mv", "a.txt", "b.txt"], cwd=tmp_git_repo, check=True)
+
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "b.txt" in dirty
     assert "a.txt" not in dirty
     assert " -> " not in str(dirty)  # no malformed combined string
@@ -59,9 +62,11 @@ def _make_dirty(repo: Path) -> None:
     (repo / "dirty.txt").write_text("uncommitted change\n")
 
 
-def test_given_dirty_tree_when_stash_orphan_then_creates_marked_stash(tmp_git_repo: Path) -> None:
+def test_stash_orphan_should_create_marked_stash_when_tree_dirty(tmp_git_repo: Path) -> None:
     _make_dirty(tmp_git_repo)
+
     ref = stash_orphan(tmp_git_repo, round_num=42, phase=None)
+
     assert ref is not None
     assert isinstance(ref, StashRef)
     assert ref.sha != ""
@@ -69,59 +74,67 @@ def test_given_dirty_tree_when_stash_orphan_then_creates_marked_stash(tmp_git_re
     assert detect_dirty_files(tmp_git_repo) == []  # tree clean after stash
 
 
-def test_given_clean_tree_when_stash_orphan_then_returns_none(tmp_git_repo: Path) -> None:
+def test_stash_orphan_should_return_none_when_tree_clean(tmp_git_repo: Path) -> None:
     assert stash_orphan(tmp_git_repo, round_num=42, phase=None) is None
 
 
-def test_given_recent_orphan_stash_when_stash_again_within_window_then_returns_existing_ref(
+def test_stash_orphan_should_return_existing_ref_when_called_again_within_idempotency_window(
     tmp_git_repo: Path,
 ) -> None:
     _make_dirty(tmp_git_repo)
     first = stash_orphan(tmp_git_repo, round_num=42, phase=None, idempotency_s=5)
     assert first is not None
+
     _make_dirty(tmp_git_repo)
     second = stash_orphan(tmp_git_repo, round_num=42, phase=None, idempotency_s=5)
+
     assert second is not None
     assert second.sha == first.sha  # same ref returned, no new stash created
 
 
-def test_given_phase_when_stash_orphan_then_message_includes_phase(tmp_git_repo: Path) -> None:
+def test_stash_orphan_should_include_phase_in_message_when_phase_given(
+    tmp_git_repo: Path,
+) -> None:
     _make_dirty(tmp_git_repo)
+
     ref = stash_orphan(tmp_git_repo, round_num=7, phase="diverge")
+
     assert ref is not None
     assert "phase=diverge" in ref.message
 
 
-def test_given_no_registration_when_plugin_owned_paths_then_empty_list() -> None:
+def test_plugin_owned_paths_should_return_empty_list_when_no_registration() -> None:
     from agent_runner.vcs_state import plugin_owned_paths
 
     assert plugin_owned_paths() == []
 
 
-def test_given_paths_registered_when_plugin_owned_paths_then_snapshot_returned() -> None:
+def test_plugin_owned_paths_should_return_snapshot_when_paths_registered() -> None:
     from agent_runner.vcs_state import (
         plugin_owned_paths,
         register_plugin_owned_paths,
     )
 
     register_plugin_owned_paths(["proposals/", "reports/*.md"])
+
     assert plugin_owned_paths() == ["proposals/", "reports/*.md"]
 
 
-def test_given_non_string_entry_when_register_then_raises_value_error() -> None:
+def test_register_plugin_owned_paths_should_raise_value_error_when_entry_non_string() -> None:
     from agent_runner.vcs_state import register_plugin_owned_paths
 
     with pytest.raises(ValueError, match="non-string entry"):
         register_plugin_owned_paths(["ok.md", 42])  # type: ignore[list-item]
 
 
-def test_given_trailing_slash_pattern_when_match_then_prefix_match() -> None:
+def test_matches_owned_path_should_match_as_prefix_when_pattern_has_trailing_slash() -> None:
     from agent_runner.vcs_state import (
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
     register_plugin_owned_paths(["proposals/"])
+
     assert _matches_owned_path("proposals/foo.md")
     assert _matches_owned_path("proposals/sub/bar.md")
     assert _matches_owned_path("proposals")
@@ -129,37 +142,40 @@ def test_given_trailing_slash_pattern_when_match_then_prefix_match() -> None:
     assert not _matches_owned_path("other/foo.md")
 
 
-def test_given_glob_pattern_without_slash_when_match_then_purepath_semantics() -> None:
+def test_matches_owned_path_should_not_cross_slash_when_glob_pattern_has_no_slash() -> None:
     from agent_runner.vcs_state import (
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
     register_plugin_owned_paths(["reports/*.md"])
+
     assert _matches_owned_path("reports/dev.md")
     # PurePath.match: single * does NOT cross slashes
     assert not _matches_owned_path("reports/sub/qa.md")
 
 
-def test_given_recursive_glob_when_match_then_double_star_works() -> None:
+def test_matches_owned_path_should_match_recursively_when_pattern_has_double_star() -> None:
     from agent_runner.vcs_state import (
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
     register_plugin_owned_paths(["logs/plugins/**/*"])
+
     assert _matches_owned_path("logs/plugins/acme/state.json")
     assert _matches_owned_path("logs/plugins/acme/deep/very/deep.txt")
     assert not _matches_owned_path("logs/other/state.json")
 
 
-def test_given_multiple_patterns_when_match_then_any_matches() -> None:
+def test_matches_owned_path_should_match_when_any_pattern_matches() -> None:
     from agent_runner.vcs_state import (
         _matches_owned_path,
         register_plugin_owned_paths,
     )
 
     register_plugin_owned_paths(["proposals/", "reports/*.md"])
+
     assert _matches_owned_path("proposals/x.md")
     assert _matches_owned_path("reports/y.md")
     assert not _matches_owned_path("other/z.md")
@@ -171,7 +187,7 @@ def _head(repo: Path) -> str:
     ).stdout.strip()
 
 
-def test_given_only_log_dir_churn_when_auto_commit_then_git_head_unchanged(
+def test_try_auto_commit_should_leave_git_head_unchanged_when_only_log_dir_churned(
     tmp_git_repo: Path,
 ) -> None:
     # b9: a zero-work round that only churned the runner's own bookkeeping
@@ -180,12 +196,14 @@ def test_given_only_log_dir_churn_when_auto_commit_then_git_head_unchanged(
     log_dir.mkdir()
     (log_dir / "agent-runner.lock").write_text("holder: pid 123\n")
     before = _head(tmp_git_repo)
+
     result = try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir)
+
     assert result == ""  # no-op: nothing staged after log_dir exclusion
     assert _head(tmp_git_repo) == before
 
 
-def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
+def test_try_auto_commit_should_commit_excluding_log_dir_when_evolving_change_present(
     tmp_git_repo: Path,
 ) -> None:
     # b9: real work (.evolving, outside log_dir) still commits; the log_dir
@@ -197,7 +215,9 @@ def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
     ev.mkdir(parents=True)
     (ev / "abc123def456").write_text('{"decision":"x"}\n')
     before = _head(tmp_git_repo)
+
     sha = try_auto_commit(tmp_git_repo, 2, None, log_dir=log_dir)
+
     assert sha and len(sha) >= 7  # commit SHA returned on success
     assert _head(tmp_git_repo) != before
     tracked = subprocess.run(
@@ -207,7 +227,7 @@ def test_given_evolving_change_when_auto_commit_then_commits_but_not_log_dir(
     assert "logs/agent-runner.lock" not in tracked
 
 
-def test_given_log_dir_under_work_dir_when_stash_orphan_then_log_dir_preserved(
+def test_stash_orphan_should_exclude_log_dir_from_stash_when_log_dir_under_work_dir(
     tmp_git_repo: Path,
 ) -> None:
     # b9 (stash): git stash push -u must not sweep the runner's own log_dir.
@@ -215,13 +235,15 @@ def test_given_log_dir_under_work_dir_when_stash_orphan_then_log_dir_preserved(
     log_dir.mkdir()
     (log_dir / "agent-runner.lock").write_text("holder: pid 1\n")
     (tmp_git_repo / "work.py").write_text("x = 1\n")  # agent work (untracked)
+
     ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
+
     assert ref is not None  # the agent's work WAS stashed
     assert not (tmp_git_repo / "work.py").exists()  # stashed away
     assert (log_dir / "agent-runner.lock").exists()  # NOT swept by stash -u
 
 
-def test_given_dash_prefixed_gitignored_log_dir_when_stash_orphan_then_defense_runs(
+def test_stash_orphan_should_run_defense_when_log_dir_is_dash_prefixed_and_gitignored(
     tmp_git_repo: Path,
 ) -> None:
     # The ignore gate must read a leading-dash log_dir as a pathname, not a switch.
@@ -250,21 +272,25 @@ def test_given_dash_prefixed_gitignored_log_dir_when_stash_orphan_then_defense_r
     assert (log_dir / "agent-runner.lock").exists()  # bookkeeping NOT swept
 
 
-def test_given_only_log_dir_dirty_when_stash_orphan_then_noop_and_preserved(
+def test_stash_orphan_should_return_none_and_preserve_log_dir_when_only_log_dir_dirty(
     tmp_git_repo: Path,
 ) -> None:
     # A zero-work round that only churned log_dir: nothing to stash, logs survive.
     log_dir = tmp_git_repo / "logs"
     log_dir.mkdir()
     (log_dir / "events.jsonl").write_text("{}\n")
+
     ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
+
     assert ref is None
     assert (log_dir / "events.jsonl").exists()
 
 
-def test_try_auto_commit_returns_sha_on_success(tmp_git_repo: Path) -> None:
+def test_try_auto_commit_should_return_sha_when_commit_succeeds(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "work.py").write_text("x = 1\n")
+
     sha = try_auto_commit(tmp_git_repo, 1, None)
+
     assert sha and len(sha) >= 7
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tmp_git_repo, capture_output=True, text=True
@@ -272,13 +298,16 @@ def test_try_auto_commit_returns_sha_on_success(tmp_git_repo: Path) -> None:
     assert head.startswith(sha) or sha == head
 
 
-def test_try_auto_commit_returns_empty_when_nothing_staged(tmp_git_repo: Path) -> None:
+def test_try_auto_commit_should_return_empty_string_when_nothing_staged(
+    tmp_git_repo: Path,
+) -> None:
     log_dir = tmp_git_repo / "logs"
     log_dir.mkdir()
     (log_dir / "x.log").write_text("noise\n")  # only excluded bookkeeping
+
     assert try_auto_commit(tmp_git_repo, 1, None, log_dir=log_dir) == ""
 
 
-def test_try_auto_commit_raises_on_git_failure(tmp_path: Path) -> None:
+def test_try_auto_commit_should_raise_auto_commit_error_when_not_git_repo(tmp_path: Path) -> None:
     with pytest.raises(AutoCommitError):
         try_auto_commit(tmp_path, 1, None)  # not a git repo

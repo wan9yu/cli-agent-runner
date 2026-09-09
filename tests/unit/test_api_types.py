@@ -5,11 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import api_types as api_types_module
 from agent_runner.api_types import (
     Alert,
     DirtyOutcome,
-    InitResult,
-    InstallResult,
     ProjectState,
     RoundResult,
     RoundView,
@@ -20,27 +19,24 @@ from agent_runner.api_types import (
 )
 
 
-def test_given_all_api_types_when_inspected_then_are_frozen_dataclasses() -> None:
-    classes = (
-        Alert,
-        DirtyOutcome,
-        InitResult,
-        InstallResult,
-        ProjectState,
-        RoundView,
-        ServiceStatus,
-        SystemMetrics,
-    )
+def test_api_types_should_be_frozen_dataclasses() -> None:
+    classes = [
+        obj
+        for obj in vars(api_types_module).values()
+        if dataclasses.is_dataclass(obj)
+        and getattr(obj, "__module__", None) == api_types_module.__name__
+    ]
+
+    assert len(classes) >= 8, "dynamic scan should find every dataclass declared in api_types"
     for cls in classes:
-        assert dataclasses.is_dataclass(cls), f"{cls.__name__} not a dataclass"
         assert cls.__dataclass_params__.frozen, f"{cls.__name__} not frozen"
 
 
-def test_given_service_mode_enum_when_inspected_then_has_three_values() -> None:
+def test_service_mode_enum_should_have_three_values() -> None:
     assert {m.value for m in ServiceMode} == {"systemd_user", "pid_file", "none"}
 
 
-def test_given_alert_when_constructed_then_has_required_fields() -> None:
+def test_alert_should_have_required_fields_when_constructed() -> None:
     a = Alert(
         severity="warning",
         detector="timeout_rate",
@@ -49,16 +45,18 @@ def test_given_alert_when_constructed_then_has_required_fields() -> None:
         ts="2026-05-12T10:00:00.000Z",
         auto_action="none",
     )
+
     assert a.severity == "warning"
     assert a.auto_action == "none"
 
 
-def test_given_select_path_dot_notation_when_resolved_then_returns_subtree() -> None:
+def test_select_path_should_return_value_when_path_is_simple_key() -> None:
     state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
+
     assert select_path(state, "mem_available_mb") == 4000
 
 
-def test_given_select_path_with_list_index_when_resolved_then_returns_item() -> None:
+def test_select_path_should_return_item_when_path_has_list_index() -> None:
     rv = RoundView(
         round_num=1,
         phase=None,
@@ -71,22 +69,25 @@ def test_given_select_path_with_list_index_when_resolved_then_returns_item() -> 
         log_tail=None,
         recent_events=[{"event": "round_start"}, {"event": "round_end"}],
     )
+
     assert select_path(rv, "recent_events.0.event") == "round_start"
     assert select_path(rv, "recent_events.1.event") == "round_end"
 
 
-def test_given_select_path_with_missing_segment_when_resolved_then_raises_keyerror() -> None:
+def test_select_path_should_raise_keyerror_when_segment_missing() -> None:
     state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
+
     with pytest.raises(KeyError, match="nonexistent"):
         select_path(state, "nonexistent")
 
 
-def test_given_alert_auto_action_when_default_then_is_none_string() -> None:
+def test_alert_auto_action_should_be_none_string_when_default() -> None:
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
+
     assert a.auto_action == "none"
 
 
-def test_given_state_with_recent_hook_failures_when_select_path_then_returns_list() -> None:
+def test_select_path_should_return_hook_failures_list_when_present_on_state() -> None:
     """0.1.8: peek --select recent_hook_failures resolves through select_path."""
     failures = [{"event": "hook_failed", "hook_name": "X"}]
     state = ProjectState(
@@ -101,10 +102,11 @@ def test_given_state_with_recent_hook_failures_when_select_path_then_returns_lis
         recent_events=[],
         recent_hook_failures=failures,
     )
+
     assert select_path(state, "recent_hook_failures") == failures
 
 
-def test_given_state_default_when_constructed_then_recent_hook_failures_empty() -> None:
+def test_project_state_recent_hook_failures_should_default_to_empty_list() -> None:
     """0.1.8: recent_hook_failures has a default_factory so existing callers don't break."""
     state = ProjectState(
         project="t",
@@ -116,10 +118,11 @@ def test_given_state_default_when_constructed_then_recent_hook_failures_empty() 
         system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
+
     assert state.recent_hook_failures == []
 
 
-def test_throttle_state_removed() -> None:
+def test_throttle_state_import_should_raise_importerror() -> None:
     """ThrottleState alias was deprecated 0.1.23, removed 0.1.28.
 
     Consumers should switch to TransientErrorState.
@@ -128,8 +131,7 @@ def test_throttle_state_removed() -> None:
         from agent_runner.api_types import ThrottleState  # noqa: F401
 
 
-def test_metrics_collect_with_agent_binary_returns_pgrep_count(tmp_path, monkeypatch):
-    """When agent_binary is supplied, collect() runs pgrep -xc and includes count."""
+def test_metrics_collect_should_return_pgrep_count_when_agent_binary_given(tmp_path, monkeypatch):
     import agent_runner.metrics as _metrics_mod
 
     class _FakeCompleted:
@@ -142,19 +144,23 @@ def test_metrics_collect_with_agent_binary_returns_pgrep_count(tmp_path, monkeyp
         return _FakeCompleted(returncode=0, stdout="3\n")
 
     monkeypatch.setattr(_metrics_mod.subprocess, "run", fake_run)
+
     out = _metrics_mod.collect(tmp_path, agent_binary="claude")
+
     assert out["agent_process_count"] == 3
 
 
-def test_metrics_collect_without_agent_binary_omits_count(tmp_path):
-    """Backward compat: callers that don't pass agent_binary get no field."""
+def test_metrics_collect_should_omit_pgrep_count_when_agent_binary_not_given(tmp_path):
     from agent_runner import metrics
 
     out = metrics.collect(tmp_path)
+
     assert "agent_process_count" not in out
 
 
-def test_metrics_collect_handles_pgrep_subprocess_error_returns_zero(tmp_path, monkeypatch):
+def test_metrics_collect_should_return_zero_pgrep_count_when_subprocess_errors(
+    tmp_path, monkeypatch
+):
     """pgrep timeout / FileNotFoundError → agent_process_count = 0 (defensive)."""
     import agent_runner.metrics as _metrics_mod
 
@@ -162,17 +168,20 @@ def test_metrics_collect_handles_pgrep_subprocess_error_returns_zero(tmp_path, m
         raise FileNotFoundError("pgrep not installed")
 
     monkeypatch.setattr(_metrics_mod.subprocess, "run", fake_run)
+
     out = _metrics_mod.collect(tmp_path, agent_binary="claude")
+
     assert out["agent_process_count"] == 0
 
 
-def test_dirty_outcome_holds_kind_and_ref():
+def test_dirty_outcome_should_hold_kind_and_ref():
     o = DirtyOutcome(kind="committed", ref="abc123")
+
     assert o.kind == "committed"
     assert o.ref == "abc123"
 
 
-def test_round_result_dirty_outcome_defaults_none_and_is_settable():
+def test_round_result_dirty_outcome_should_default_to_none():
     base = {
         "round_num": 1,
         "phase": None,
@@ -185,14 +194,32 @@ def test_round_result_dirty_outcome_defaults_none_and_is_settable():
         "dirty_files": [],
         "stashed": False,
     }
+
     assert RoundResult(**base).dirty_outcome is None
+
+
+def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_flag():
+    base = {
+        "round_num": 1,
+        "phase": None,
+        "started_at": "t",
+        "ended_at": "t",
+        "exit_code": 0,
+        "duration_s": 1.0,
+        "timed_out": False,
+        "log_path": Path("x"),
+        "dirty_files": [],
+        "stashed": False,
+    }
+
     r = RoundResult(**base, dirty_outcome=DirtyOutcome(kind="stashed", ref="sha"))
+
     assert r.dirty_outcome.kind == "stashed" and r.stashed is False
 
 
-def test_run_result_and_round_result_ok_share_one_predicate() -> None:
+def test_run_result_and_round_result_ok_should_share_one_predicate() -> None:
     from agent_runner.agent_runtime import RunResult
-    from agent_runner.api_types import RoundResult, _round_ok
+    from agent_runner.api_types import _round_ok
 
     for exit_code, timed_out in [(0, False), (0, True), (1, False), (137, False)]:
         expected = _round_ok(exit_code, timed_out)
@@ -211,5 +238,6 @@ def test_run_result_and_round_result_ok_share_one_predicate() -> None:
             stashed=False,
         )
         assert round_res.ok is expected
+
     assert _round_ok(0, False) is True
     assert _round_ok(0, True) is False and _round_ok(1, False) is False

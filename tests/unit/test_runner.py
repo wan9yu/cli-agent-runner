@@ -55,34 +55,38 @@ def _make_config(
     )
 
 
-def test_given_first_round_when_run_then_status_round_num_is_one(
+def test_run_one_round_should_record_round_num_one_when_first_round(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
+
     result = run_one_round(cfg)
+
     assert result.exit_code == 0
     status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
     assert status["round_num"] == 1
     assert status["last_exit_code"] == 0
 
 
-def test_given_three_runs_when_invoked_sequentially_then_round_num_increments(
+def test_run_one_round_should_increment_round_num_when_invoked_sequentially(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
+
     for expected in (1, 2, 3):
         run_one_round(cfg)
         status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
         assert status["round_num"] == expected
 
 
-def test_given_phases_configured_when_run_then_phase_in_round_context(
+def test_run_one_round_should_set_phase_in_round_context_when_phases_configured(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script, phases=["a", "b"])
+
     run_one_round(cfg)
     ctx = json.loads((cfg.runtime.log_dir / "round-context.json").read_text())
     assert ctx["phase"] == "a"
@@ -91,33 +95,40 @@ def test_given_phases_configured_when_run_then_phase_in_round_context(
     assert ctx["phase"] == "b"
 
 
-def test_given_phases_unconfigured_when_run_then_phase_field_absent(
+def test_run_one_round_should_omit_phase_field_when_phases_unconfigured(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script, phases=None)
+
     run_one_round(cfg)
     ctx = json.loads((cfg.runtime.log_dir / "round-context.json").read_text())
+
     assert "phase" not in ctx
 
 
-def test_given_corrupt_status_when_run_then_recovers_and_emits_event(
+def test_run_one_round_should_recover_and_emit_event_when_status_json_corrupt(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     cfg.runtime.log_dir.mkdir(parents=True, exist_ok=True)
     (cfg.runtime.log_dir / "status.json").write_text("{ corrupt")
+
     run_one_round(cfg)
     events_files = list(cfg.runtime.log_dir.glob("events-*.jsonl"))
+
     assert events_files, "events.jsonl should have been written"
     events = [json.loads(line) for line in events_files[0].read_text().splitlines()]
     assert any(e["event"] == "status_recovered" for e in events)
 
 
-def test_given_lock_held_when_acquire_then_raises_lockheld(tmp_path: Path) -> None:
+def test_acquire_lock_or_raise_should_raise_lockheld_when_lock_already_held(
+    tmp_path: Path,
+) -> None:
     lock_path = tmp_path / "agent-runner.lock"
     fd = _acquire_lock_or_raise(lock_path)
+
     try:
         with pytest.raises(LockHeldError):
             _acquire_lock_or_raise(lock_path)
@@ -125,22 +136,25 @@ def test_given_lock_held_when_acquire_then_raises_lockheld(tmp_path: Path) -> No
         os.close(fd)
 
 
-def test_given_no_existing_lock_when_acquire_then_returns_fd(tmp_path: Path) -> None:
+def test_acquire_lock_or_raise_should_return_fd_when_no_existing_lock(tmp_path: Path) -> None:
     fd = _acquire_lock_or_raise(tmp_path / "agent-runner.lock")
+
     try:
         assert isinstance(fd, int)
     finally:
         os.close(fd)
 
 
-def test_given_smoke_check_fail_when_run_one_round_then_exits_without_spawning_agent(
+def test_run_one_round_should_exit_without_spawning_agent_when_smoke_check_fails(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     cfg.prompt.file.unlink()  # break prompt — startup smoke fails
+
     with pytest.raises(SystemExit) as exc:
         run_one_round(cfg)
+
     assert exc.value.code == PERMANENT_CONFIG_EXIT
 
 
@@ -164,22 +178,25 @@ def _unit_cfg(
     )
 
 
-def test_given_phase_none_when_lookup_then_returns_global(tmp_path: Path) -> None:
-    """phase=None → resolve_runtime_for_phase returns base timeout unchanged."""
+def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_is_none(
+    tmp_path: Path,
+) -> None:
     cfg = _unit_cfg(tmp_path)
+
     assert resolve_runtime_for_phase(cfg, None).round_timeout_s == 1800
 
 
-def test_given_phase_name_no_override_when_lookup_then_returns_global(tmp_path: Path) -> None:
-    """Phase with no [phases.<name>] sub-table → base timeout unchanged."""
+def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_has_no_override(
+    tmp_path: Path,
+) -> None:
     cfg = _unit_cfg(tmp_path, round_timeout_s=3600, phases=["dev"])
+
     assert resolve_runtime_for_phase(cfg, "dev").round_timeout_s == 3600
 
 
-def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_blip(
+def test_scan_round_log_for_network_blip_should_emit_blip_when_log_contains_connection_refused(
     tmp_path: Path,
 ) -> None:
-    """A round whose log mentions a network pattern emits agent_network_blip."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     rounds_dir = log_dir / "rounds"
@@ -188,8 +205,8 @@ def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_
     log_path.write_text(
         "doing some work\nERROR: connection refused at api.anthropic.com\nretrying...\n"
     )
-
     result = RunResult(exit_code=1, duration_s=12.5, timed_out=False, pid=0)
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -211,18 +228,21 @@ def test_given_round_log_contains_connection_refused_when_round_ends_then_emits_
     assert blips[0]["timed_out"] is False
 
 
-def test_given_round_log_clean_when_round_ends_then_no_blip_event(
+def test_scan_round_log_for_network_blip_should_emit_no_blip_when_round_log_is_clean(
     tmp_path: Path,
 ) -> None:
-    """A round with no network patterns emits no agent_network_blip."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir()
     log_path = rounds_dir / "R2-2026-05-13.log"
     log_path.write_text("everything went fine\nno errors here\n")
+    # Non-ok exit (not a signal) so the scan actually RUNS on the clean log and
+    # finds no pattern -- exercising the "scanned, no match, no blip" branch. An
+    # exit_code=0 result would short-circuit via result.ok before the scan (that
+    # skip path is the sibling test_..._should_skip_scan_when_round_is_ok's job).
+    result = RunResult(exit_code=1, duration_s=5.0, timed_out=False, pid=0)
 
-    result = RunResult(exit_code=0, duration_s=5.0, timed_out=False, pid=0)
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -239,18 +259,17 @@ def test_given_round_log_clean_when_round_ends_then_no_blip_event(
         assert blips == []
 
 
-def test_given_multiple_network_patterns_in_log_when_round_ends_then_emits_one_blip(
+def test_scan_round_log_for_network_blip_should_emit_one_blip_when_log_has_multiple_patterns(
     tmp_path: Path,
 ) -> None:
-    """Multiple distinct network patterns in one log → still one event (first match)."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     rounds_dir = log_dir / "rounds"
     rounds_dir.mkdir()
     log_path = rounds_dir / "R3-2026-05-13.log"
     log_path.write_text("dns lookup failed\nlater: connection reset\nand: 502 bad gateway\n")
-
     result = RunResult(exit_code=1, duration_s=30.0, timed_out=False, pid=0)
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -266,7 +285,7 @@ def test_given_multiple_network_patterns_in_log_when_round_ends_then_emits_one_b
     assert "dns" in blips[0]["matched"].lower()
 
 
-def test_given_clean_round_when_scan_called_then_no_blip_emitted(
+def test_scan_round_log_for_network_blip_should_skip_scan_when_round_is_ok(
     tmp_path: Path,
 ) -> None:
     """Clean rounds (exit 0, no timeout) skip log scan entirely."""
@@ -276,8 +295,8 @@ def test_given_clean_round_when_scan_called_then_no_blip_emitted(
     rounds_dir.mkdir()
     log_path = rounds_dir / "R4-2026-05-13.log"
     log_path.write_text("ERROR: connection refused\n")  # would match if scanned
-
     result = RunResult(exit_code=0, duration_s=5.0, timed_out=False, pid=0)
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -293,23 +312,13 @@ def test_given_clean_round_when_scan_called_then_no_blip_emitted(
         assert blips == []
 
 
-def test_given_holder_sidecar_present_when_lock_held_then_error_includes_pid_age_cmdline(
+def test_acquire_lock_or_raise_should_include_pid_age_cmdline_when_holder_sidecar_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LockHeldError message includes holder PID/age/cmdline when sidecar is fresh."""
-    import json
-    import os
-
-    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
-
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
-
-    # Acquire lock once
     fd1 = _acquire_lock_or_raise(lock_path)
-
-    # Sidecar should now exist
     sidecar = lock_path.parent / (lock_path.name + ".holder")
     assert sidecar.exists()
     data = json.loads(sidecar.read_text())
@@ -317,7 +326,6 @@ def test_given_holder_sidecar_present_when_lock_held_then_error_includes_pid_age
     assert "started_at" in data
     assert "cmdline" in data
 
-    # Try to acquire again → LockHeldError with holder info
     try:
         with pytest.raises(LockHeldError) as exc_info:
             _acquire_lock_or_raise(lock_path)
@@ -330,19 +338,13 @@ def test_given_holder_sidecar_present_when_lock_held_then_error_includes_pid_age
         sidecar.unlink(missing_ok=True)
 
 
-def test_given_holder_sidecar_stale_when_lock_held_then_error_notes_stale(tmp_path: Path) -> None:
-    """If sidecar references a non-existent PID, error notes 'stale sidecar'."""
-    import json
-    import os
-
-    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
-
+def test_acquire_lock_or_raise_should_note_stale_when_holder_sidecar_pid_stale(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
     sidecar = lock_path.parent / (lock_path.name + ".holder")
-
-    # Find a stale PID guaranteed not to exist
     fake_pid = 999999
     while True:
         try:
@@ -353,11 +355,7 @@ def test_given_holder_sidecar_stale_when_lock_held_then_error_notes_stale(tmp_pa
         if fake_pid < 100:
             pytest.skip("could not find a stale PID for test")
             return
-
-    # Acquire lock in this process — sidecar for THIS process is fresh
     fd1 = _acquire_lock_or_raise(lock_path)
-
-    # Overwrite sidecar with stale data, then try second acquire
     sidecar.write_text(
         json.dumps(
             {
@@ -378,21 +376,15 @@ def test_given_holder_sidecar_stale_when_lock_held_then_error_notes_stale(tmp_pa
         sidecar.unlink(missing_ok=True)
 
 
-def test_given_holder_sidecar_missing_when_lock_held_then_error_notes_missing(
+def test_acquire_lock_or_raise_should_note_missing_when_holder_sidecar_absent(
     tmp_path: Path,
 ) -> None:
-    """If sidecar is missing (race / older version), error says 'holder unknown'."""
-    import os
-
-    from agent_runner.runner import LockHeldError, _acquire_lock_or_raise
-
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
     sidecar = lock_path.parent / (lock_path.name + ".holder")
-
     fd1 = _acquire_lock_or_raise(lock_path)
-    sidecar.unlink(missing_ok=True)  # simulate missing sidecar
+    sidecar.unlink(missing_ok=True)
 
     try:
         with pytest.raises(LockHeldError) as exc_info:
@@ -403,52 +395,43 @@ def test_given_holder_sidecar_missing_when_lock_held_then_error_notes_missing(
         os.close(fd1)
 
 
-def test_given_explicit_phase_when_phase_for_called_then_uses_override() -> None:
-    """_phase_for honors explicit override over rotation counter."""
+def test_phase_for_should_use_override_when_explicit_phase_given() -> None:
     from agent_runner.runner import _phase_for
 
     phases = ["dev", "qa", "product"]
 
-    # Without override: rotation by round_num
-    assert _phase_for(1, phases) == ("dev", 0)
-    assert _phase_for(2, phases) == ("qa", 1)
-    assert _phase_for(3, phases) == ("product", 2)
-
-    # With override: explicit
     assert _phase_for(2, phases, override="product") == ("product", 2)
     assert _phase_for(7, phases, override="dev") == ("dev", 0)
 
 
-def test_given_invalid_phase_override_when_phase_for_called_then_raises() -> None:
-    """Override must match a name in phases list."""
+def test_phase_for_should_raise_when_override_not_in_phases() -> None:
     from agent_runner.runner import _phase_for
 
     with pytest.raises(ValueError, match="not in.*phases"):
         _phase_for(1, ["dev", "qa"], override="bogus")
 
 
-def test_given_phase_override_no_phases_configured_when_phase_for_called_then_raises() -> None:
-    """--phase requires [phases] to be configured."""
+def test_phase_for_should_raise_when_phases_not_configured() -> None:
     from agent_runner.runner import _phase_for
 
     with pytest.raises(ValueError, match=r"\[phases\]"):
         _phase_for(1, None, override="dev")
 
 
-def test_given_default_round_when_phase_for_called_then_rotation_unchanged() -> None:
-    """Default rotation behavior preserved when override is None."""
+def test_phase_for_should_rotate_by_round_num_when_no_override_given() -> None:
     from agent_runner.runner import _phase_for
 
     phases = ["dev", "qa", "product"]
+
+    assert _phase_for(1, phases) == ("dev", 0)
+    assert _phase_for(2, phases) == ("qa", 1)
+    assert _phase_for(3, phases) == ("product", 2)
     assert _phase_for(4, phases) == ("dev", 0)  # rotation continues at (4-1) % 3 = 0
 
 
-def test_given_hook_mutates_prompt_when_run_then_emits_prompt_overwritten(
+def test_run_pre_round_hooks_should_emit_prompt_overwritten_when_hook_mutates_prompt(
     tmp_path: Path,
 ) -> None:
-    """A PreRoundHook that mutates the prompt file triggers one event per mutation."""
-    import json
-
     from agent_runner import hooks
     from agent_runner.runner import _run_pre_round_hooks
 
@@ -464,6 +447,7 @@ def test_given_hook_mutates_prompt_when_run_then_emits_prompt_overwritten(
             prompt_file.write_text("new content from hook")
 
     hooks.register_pre_round_hook(_MutatingHook())
+
     try:
         ctx = hooks.HookContext(
             work_dir=tmp_path,
@@ -492,12 +476,9 @@ def test_given_hook_mutates_prompt_when_run_then_emits_prompt_overwritten(
     assert overwrites[0]["old_hash"] != overwrites[0]["new_hash"]
 
 
-def test_given_hook_no_op_when_run_then_no_prompt_overwritten(
+def test_run_pre_round_hooks_should_emit_nothing_when_hook_does_not_mutate_prompt(
     tmp_path: Path,
 ) -> None:
-    """A hook that doesn't mutate the prompt emits nothing."""
-    import json
-
     from agent_runner import hooks
     from agent_runner.runner import _run_pre_round_hooks
 
@@ -513,6 +494,7 @@ def test_given_hook_no_op_when_run_then_no_prompt_overwritten(
             pass
 
     hooks.register_pre_round_hook(_NoOpHook())
+
     try:
         ctx = hooks.HookContext(
             work_dir=tmp_path,
@@ -535,12 +517,9 @@ def test_given_hook_no_op_when_run_then_no_prompt_overwritten(
         assert overwrites == []
 
 
-def test_given_two_mutating_hooks_when_run_then_two_events_with_attribution(
+def test_run_pre_round_hooks_should_emit_one_event_per_hook_when_multiple_hooks_mutate_prompt(
     tmp_path: Path,
 ) -> None:
-    """Multiple mutating hooks each produce a prompt_overwritten event."""
-    import json
-
     from agent_runner import hooks
     from agent_runner.runner import _run_pre_round_hooks
 
@@ -563,6 +542,7 @@ def test_given_two_mutating_hooks_when_run_then_two_events_with_attribution(
 
     hooks.register_pre_round_hook(_HookA())
     hooks.register_pre_round_hook(_HookB())
+
     try:
         ctx = hooks.HookContext(
             work_dir=tmp_path,
@@ -588,10 +568,7 @@ def test_given_two_mutating_hooks_when_run_then_two_events_with_attribution(
     assert overwrites[0]["new_hash"] == overwrites[1]["old_hash"]
 
 
-def test_given_disable_pre_round_hooks_true_when_run_then_hooks_skipped(
-    tmp_path: Path,
-) -> None:
-    """disable_pre_round_hooks = True skips all PreRoundHook invocations."""
+def test_run_pre_round_hooks_should_skip_hook_when_disabled_true(tmp_path: Path) -> None:
     from agent_runner import hooks
     from agent_runner.runner import _run_pre_round_hooks
 
@@ -604,23 +581,52 @@ def test_given_disable_pre_round_hooks_true_when_run_then_hooks_skipped(
             hook_calls.append(ctx.round_num)
 
     hooks.register_pre_round_hook(_TestHook())
+    ctx = hooks.HookContext(
+        work_dir=tmp_path,
+        log_dir=tmp_path / "logs",
+        project="t",
+        round_num=1,
+        phase=None,
+        agent_name=None,
+    )
+    (tmp_path / "logs").mkdir()
+
     try:
-        ctx = hooks.HookContext(
-            work_dir=tmp_path,
-            log_dir=tmp_path / "logs",
-            project="t",
-            round_num=1,
-            phase=None,
-            agent_name=None,
-        )
-        (tmp_path / "logs").mkdir()
-
-        # disabled=True: hooks should NOT run
         _run_pre_round_hooks(ctx, tmp_path / "logs", disabled=True)
-        assert hook_calls == [], "hooks should not run when disabled"
 
-        # disabled=False: hooks SHOULD run
+        assert hook_calls == [], "hooks should not run when disabled"
+    finally:
+        hooks._PRE_ROUND_HOOKS[:] = [
+            h for h in hooks._PRE_ROUND_HOOKS if h.name != "test_skip_target"
+        ]
+
+
+def test_run_pre_round_hooks_should_run_hook_when_disabled_false(tmp_path: Path) -> None:
+    from agent_runner import hooks
+    from agent_runner.runner import _run_pre_round_hooks
+
+    hook_calls = []
+
+    class _TestHook:
+        name = "test_skip_target"
+
+        def before_round(self, ctx):
+            hook_calls.append(ctx.round_num)
+
+    hooks.register_pre_round_hook(_TestHook())
+    ctx = hooks.HookContext(
+        work_dir=tmp_path,
+        log_dir=tmp_path / "logs",
+        project="t",
+        round_num=1,
+        phase=None,
+        agent_name=None,
+    )
+    (tmp_path / "logs").mkdir()
+
+    try:
         _run_pre_round_hooks(ctx, tmp_path / "logs", disabled=False)
+
         assert hook_calls == [1], "hooks should run when not disabled"
     finally:
         hooks._PRE_ROUND_HOOKS[:] = [
@@ -635,34 +641,22 @@ def _make_mock_runtime(fake_run):  # type: ignore[no-untyped-def]
     return type("M", (), {"run": staticmethod(fake_run), "RunResult": _ar.RunResult})()
 
 
-def test_given_dirty_action_stash_when_dirty_post_round_then_stash_orphan_called(
+def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """dirty_action='stash' (default): stash_orphan called, orphan_stashed event."""
     from agent_runner import api, runner, vcs_state
-    from agent_runner.agent_runtime import RunResult
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
     prompt.write_text("hi")
 
-    # Mock agent_runtime.run to simulate clean exit + leave dirty file
     def fake_run(**_kwargs):
         (tmp_path / "scratch.md").write_text("from agent")
         return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
 
     monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
 
-    # Mock vcs_state to count stash invocations
     stash_calls = []
 
     def fake_stash(*args, **kwargs):
@@ -682,28 +676,15 @@ def test_given_dirty_action_stash_when_dirty_post_round_then_stash_orphan_called
         phases=PhasesConfig(),
     )
 
-    # Run the round inner (skip lock for simplicity)
     runner._run_one_round_inner(cfg)
 
     assert len(stash_calls) == 1, "stash_orphan should be called once for stash mode"
 
 
-def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
+def test_run_one_round_inner_should_skip_stash_when_dirty_action_is_ignore(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """dirty_action='ignore': stash NOT called, dirty_detected still fires."""
-    import json
-
     from agent_runner import api, runner, vcs_state
-    from agent_runner.agent_runtime import RunResult
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -731,7 +712,6 @@ def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
     runner._run_one_round_inner(cfg)
 
     assert stash_calls == [], "stash_orphan must NOT be called for ignore mode"
-    # dirty_detected event should still fire
     all_events = [
         json.loads(line)
         for f in sorted(log_dir.glob("events-*.jsonl"))
@@ -740,24 +720,13 @@ def test_given_dirty_action_ignore_when_dirty_post_round_then_no_stash(
     assert any(e["event"] == "dirty_detected" for e in all_events)
 
 
-def test_given_dirty_action_auto_commit_when_dirty_post_round_then_git_commit_invoked(
+def test_run_one_round_inner_should_create_git_commit_when_dirty_action_is_auto_commit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """dirty_action='auto_commit': git commit invoked with hardcoded subject."""
     import subprocess
 
     from agent_runner import runner
-    from agent_runner.agent_runtime import RunResult
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
-    # Init a real git repo in tmp_path so commit can succeed
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
@@ -765,7 +734,6 @@ def test_given_dirty_action_auto_commit_when_dirty_post_round_then_git_commit_in
     (tmp_path / ".gitkeep").write_text("")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
-
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
@@ -787,37 +755,24 @@ def test_given_dirty_action_auto_commit_when_dirty_post_round_then_git_commit_in
 
     runner._run_one_round_inner(cfg)
 
-    # Verify a commit was created with the expected subject
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"], cwd=tmp_path, capture_output=True, text=True
     )
     assert log.stdout.strip() == "agent-runner auto-commit: R1"
 
 
-def test_given_dirty_action_auto_commit_when_git_unconfigured_then_dirty_commit_failed_event(
+def test_run_one_round_inner_should_emit_dirty_commit_failed_when_git_identity_unconfigured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """auto_commit failure (empty identity) → dirty_commit_failed event."""
-    import json
     import subprocess
 
     from agent_runner import runner
-    from agent_runner.agent_runtime import RunResult
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     # Git repo with empty user.email + user.name → commit fails regardless of global config
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", ""], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", ""], cwd=tmp_path, check=True)
     (tmp_path / ".gitkeep").write_text("")
-
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
@@ -850,31 +805,19 @@ def test_given_dirty_action_auto_commit_when_git_unconfigured_then_dirty_commit_
     assert "reason" in failed[0]
 
 
-def test_given_round_subprocess_when_invoked_then_env_contains_round_num(
+def test_run_one_round_inner_should_pass_round_num_in_env_to_agent_subprocess(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """agent_runtime.run receives env_extra with AGENT_RUNNER_ROUND_NUM."""
     from agent_runner import runner
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
     prompt.write_text("hi")
-
     captured_env: dict[str, str] = {}
 
     def fake_run(*, env_extra, **_kwargs):
         captured_env.update(env_extra)
-        from agent_runner.agent_runtime import RunResult
-
         return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
 
     monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
@@ -894,31 +837,19 @@ def test_given_round_subprocess_when_invoked_then_env_contains_round_num(
     assert captured_env.get("AGENT_RUNNER_LOG_DIR") == str(log_dir)
 
 
-def test_given_no_phases_when_round_runs_then_env_phase_is_empty(
+def test_run_one_round_inner_should_set_env_phase_empty_when_phases_not_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Without [phases], AGENT_RUNNER_PHASE env var = ''."""
     from agent_runner import runner
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
     prompt.write_text("hi")
-
     captured_env: dict[str, str] = {}
 
     def fake_run(*, env_extra, **_kwargs):
         captured_env.update(env_extra)
-        from agent_runner.agent_runtime import RunResult
-
         return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
 
     monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
@@ -937,31 +868,19 @@ def test_given_no_phases_when_round_runs_then_env_phase_is_empty(
     assert captured_env.get("AGENT_RUNNER_PHASE") == ""
 
 
-def test_given_phases_when_round_runs_then_env_phase_matches_rotation(
+def test_run_one_round_inner_should_set_env_phase_to_rotation_result_when_phases_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """With [phases].list, AGENT_RUNNER_PHASE matches the rotation result for round_num."""
     from agent_runner import runner
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
     prompt.write_text("hi")
-
     captured_env: dict[str, str] = {}
 
     def fake_run(*, env_extra, **_kwargs):
         captured_env.update(env_extra)
-        from agent_runner.agent_runtime import RunResult
-
         return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
 
     monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
@@ -981,7 +900,7 @@ def test_given_phases_when_round_runs_then_env_phase_matches_rotation(
     assert captured_env.get("AGENT_RUNNER_PHASE") == "diverge"
 
 
-def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
+def test_run_one_round_inner_should_fire_post_round_hook_after_round_end_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """PostRoundHook runs AFTER round_end is emitted, not before.
@@ -990,21 +909,12 @@ def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
     the hook observes round_end already on disk.
     """
     from agent_runner import hooks, runner
-    from agent_runner.config import (
-        AgentConfig,
-        Config,
-        PhasesConfig,
-        PromptConfig,
-        RuntimeConfig,
-        VcsConfig,
-    )
     from tests._test_helpers import read_events_for_current_month
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     prompt = tmp_path / "p.md"
     prompt.write_text("hi")
-
     seen: list[list[str]] = []
 
     class _Probe:
@@ -1014,8 +924,6 @@ def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
             seen.append([e["event"] for e in read_events_for_current_month(log_dir)])
 
     def fake_run(**_kwargs):
-        from agent_runner.agent_runtime import RunResult
-
         return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
 
     monkeypatch.setattr(runner.agent_runtime, "run", fake_run)
@@ -1038,14 +946,11 @@ def test_given_post_round_hook_when_round_runs_then_fires_after_round_end_event(
     )
 
 
-def test_given_bulk_rounds_backlog_when_round_runs_then_defers_and_emits_once(
+def test_run_one_round_should_defer_and_emit_once_when_round_log_backlog_exceeds_retention(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
-    """A round meeting a bulk backlog spares every file, emits exactly one
-    round_logs_prune_deferred with an actionable payload, and still completes.
-    The guard defers a deletion — it must never block or fail the round.
-    """
+    """The guard defers a deletion — it must never block or fail the round."""
     import dataclasses
 
     from tests._test_helpers import read_events_for_current_month
@@ -1064,7 +969,6 @@ def test_given_bulk_rounds_backlog_when_round_runs_then_defers_and_emits_once(
     assert status["round_num"] == 1
     # 20 spared + this round's own freshly minted log
     assert len(list(rounds_dir.glob("R*.log"))) == 21
-
     deferrals = [
         e
         for e in read_events_for_current_month(cfg.runtime.log_dir)
@@ -1078,12 +982,12 @@ def test_given_bulk_rounds_backlog_when_round_runs_then_defers_and_emits_once(
     assert "runtime.round_log_retention" in deferrals[0]["hint"]
 
 
-def test_given_retention_zero_when_round_runs_then_no_prune_and_no_event(
+def test_run_one_round_should_skip_prune_and_emit_nothing_when_retention_is_zero(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
-    """The default (0) never prunes and stays silent — an event every round
-    would be noise, since 0 is the operator's expressed intent.
+    """The default (0) stays silent rather than emit noise every round, since
+    0 is the operator's expressed intent.
     """
     from tests._test_helpers import read_events_for_current_month
 
@@ -1105,7 +1009,7 @@ def test_given_retention_zero_when_round_runs_then_no_prune_and_no_event(
     ]
 
 
-def test_given_git_timeout_during_dirty_check_when_run_then_round_still_completes_bookkeeping(
+def test_run_one_round_should_complete_bookkeeping_when_dirty_check_times_out(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1113,7 +1017,8 @@ def test_given_git_timeout_during_dirty_check_when_run_then_round_still_complete
     """Lost-round bookkeeping (0.2.13 Group D): detect_dirty_files -> _git(status)
     precedes status.json / round_end / post-round hooks with no try. A GitTimeout
     there must not lose the round's own bookkeeping -- it degrades to "dirty
-    unknown" (skip dirty dispatch) and the round still completes."""
+    unknown" (skip dirty dispatch) and the round still completes.
+    """
     from agent_runner import vcs_state
     from tests._test_helpers import read_events_for_current_month
 
@@ -1134,7 +1039,7 @@ def test_given_git_timeout_during_dirty_check_when_run_then_round_still_complete
     assert any(e["event"] == "dirty_check_failed" for e in events)
 
 
-def test_given_git_timeout_during_dirty_check_when_run_then_orphan_state_preserved(
+def test_run_one_round_should_preserve_orphan_state_when_dirty_check_times_out(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1142,7 +1047,8 @@ def test_given_git_timeout_during_dirty_check_when_run_then_orphan_state_preserv
     """spec-review correction: the dirty_check_failed guard must not fall into
     the "not dirty" branch and wipe a pre-existing orphan-state.json -- a
     GitTimeout means we genuinely don't know the tree is clean, we just
-    failed to check it, so any existing stash bookkeeping must survive."""
+    failed to check it, so any existing stash bookkeeping must survive.
+    """
     from agent_runner import context_store, vcs_state
 
     cfg = _make_config(tmp_git_repo, fake_agent_script)

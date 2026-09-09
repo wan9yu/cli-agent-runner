@@ -22,16 +22,19 @@ def _cfg(mem_avail_min_mb: int = 40) -> MonitorHostHealthConfig:
 _50MB = 50 * 1024 * 1024
 
 
-def test_pressure_from_sout_delta_when_memavailable_high() -> None:
+def test_memory_pressure_should_detect_pressure_from_sout_delta_when_mem_available_is_high() -> (
+    None
+):
     """swap actively climbing is real pressure even while MemAvailable reads high
     (the cache-poor host's own defect — this is the signal that should NOT be
     fooled by it)."""
     prev = {"swap_sout": 0, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
     cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+
     assert host_health.memory_pressure(cur, prev, _cfg()) is not None
 
 
-def test_given_realistic_field_episode_when_sustained_swap_and_low_memfree_then_critical() -> None:
+def test_memory_pressure_should_be_critical_when_swap_and_memfree_match_field_episode() -> None:
     """The real field-bug shape: PSI unreadable, MemAvailable inflated at 82MB
     (well above mem_avail_min_mb=40 -- combined-low genuinely cannot fire),
     MemFree critically low (~5MB on a small host), and swap_out climbing by a
@@ -47,32 +50,39 @@ def test_given_realistic_field_episode_when_sustained_swap_and_low_memfree_then_
         "mem_available_mb": 82,
         "psi_some_avg10": None,
     }
+
     pressure = host_health.memory_pressure(cur, prev, _cfg(40))
+
     assert pressure is not None
     assert pressure.severity == "critical"
     assert pressure.signal == "swap_out_rate"
 
 
-def test_real_swap_delta_with_ample_memfree_stays_warning_not_critical() -> None:
+def test_memory_pressure_should_stay_warning_when_swap_delta_real_but_memfree_ample() -> None:
     """A real, above-floor swap-out delta with MemFree comfortably high (not
     the field host's dying state) stays a warning -- critical is gated on
     MemFree being critically low, not on the delta's magnitude alone."""
     prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 150, "psi_some_avg10": None}
     cur = {"swap_sout": _50MB, "mem_free_mb": 200, "mem_available_mb": 150, "psi_some_avg10": None}
+
     pressure = host_health.memory_pressure(cur, prev, _cfg())
+
     assert pressure is not None
     assert pressure.severity == "warning"
 
 
-def test_no_swap_delta_below_noise_floor_reports_no_pressure() -> None:
+def test_memory_pressure_should_report_no_pressure_when_swap_delta_below_noise_floor() -> None:
     """A trivial sout delta is a benign one-time idle-page swap, not active
     paging — must NOT be reported as pressure."""
     prev = {"swap_sout": 1000, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
     cur = {"swap_sout": 1500, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
+
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
 
 
-def test_moderate_few_mb_swap_churn_below_raised_floor_reports_no_pressure() -> None:
+def test_memory_pressure_should_report_no_pressure_when_swap_churn_below_raised_noise_floor() -> (
+    None
+):
     """A few MB of swap movement between successive samples (round-boundary
     startup/idle churn) is common and meaningless -- the noise floor was
     raised from one page to tens of MB precisely so a PSI-off host does not
@@ -84,90 +94,109 @@ def test_moderate_few_mb_swap_churn_below_raised_floor_reports_no_pressure() -> 
         "mem_available_mb": 6000,
         "psi_some_avg10": None,
     }
+
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
 
 
-def test_psi_readable_and_quiet_reports_no_pressure_even_with_swap_climbing() -> None:
+def test_memory_pressure_should_report_no_pressure_when_psi_quiet_even_if_swap_climbing() -> None:
     """PSI is the strongest signal — when it's readable and quiet, trust it and
     do not fall through to the swap tier."""
     prev = {"swap_sout": 1000, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": 0.0}
     cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": 0.0}
+
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
 
 
-def test_psi_real_pressure_detected_regardless_of_memavailable() -> None:
+def test_memory_pressure_should_detect_psi_pressure_regardless_of_mem_available() -> None:
     cur = {"swap_sout": 100, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": 12.0}
     prev = {"swap_sout": 100}
+
     pressure = host_health.memory_pressure(cur, prev, _cfg())
+
     assert pressure is not None
     assert pressure.signal == "psi"
 
 
-def test_combined_low_fires_when_memfree_and_memavailable_both_low() -> None:
+def test_memory_pressure_should_fire_combined_low_when_memfree_and_memavailable_both_low() -> None:
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
     prev = {"swap_sout": None}
+
     pressure = host_health.memory_pressure(cur, prev, _cfg(40))
+
     assert pressure is not None
     assert pressure.signal == "combined_low"
 
 
-def test_quiet_swap_delta_still_falls_through_to_combined_low() -> None:
+def test_memory_pressure_should_fall_through_to_combined_low_when_swap_delta_is_quiet() -> None:
     """A swapless/zram-less host's sout never moves (delta always ~0) -- that
     must NOT be read as "healthy, stop checking": it's simply no evidence
     from that tier, and combined-low must still catch real pressure."""
     prev = {"swap_sout": 100, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
     cur = {"swap_sout": 100, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
+
     pressure = host_health.memory_pressure(cur, prev, _cfg(40))
+
     assert pressure is not None
     assert pressure.signal == "combined_low"
 
 
-def test_memfree_low_alone_does_not_fire_combined_low_on_cache_heavy_host() -> None:
+def test_memory_pressure_should_not_fire_combined_low_when_only_memfree_is_low() -> None:
     """A cache-heavy healthy host's MemFree is always low -- never gate on it alone."""
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 6000, "psi_some_avg10": None}
     prev = {"swap_sout": None}
+
     assert host_health.memory_pressure(cur, prev, _cfg(40)) is None
 
 
-def test_no_signal_reports_unavailable_not_memavailable_gate() -> None:
+def test_memory_pressure_should_return_none_when_no_signal_available() -> None:
     s = {"swap_sout": None, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
+
     assert host_health.memory_pressure(s, s, _cfg()) is None
+
+
+def test_signal_available_should_be_false_when_no_tier_has_data() -> None:
+    s = {"swap_sout": None, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
+
     assert host_health.signal_available(s, s) is False
 
 
-def test_signal_available_true_when_any_tier_has_data() -> None:
+def test_signal_available_should_be_true_when_any_tier_has_data() -> None:
     cur = {"swap_sout": 100, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
     prev = {"swap_sout": 90}
+
     assert host_health.signal_available(cur, prev) is True
 
 
-def test_inert_gate_flagged_when_pressure_but_avail_above_threshold() -> None:
+def test_configured_gate_inert_should_be_true_when_pressure_present_but_avail_above_threshold() -> (
+    None
+):
     cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
+
     assert host_health.configured_gate_inert(cur, {"swap_sout": 0}, _cfg(40)) is True
 
 
-def test_inert_gate_not_flagged_on_healthy_warm_cache_host() -> None:
+def test_configured_gate_inert_should_be_false_on_healthy_warm_cache_host() -> None:
     """MemAvailable >> MemFree alone is true on every healthy warm-cache host --
     must NOT be flagged as inert."""
     cur = {"swap_sout": 100, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": 0.0}
+
     assert host_health.configured_gate_inert(cur, {"swap_sout": 100}, _cfg(40)) is False
 
 
-def test_inert_gate_not_flagged_when_gate_would_actually_fire() -> None:
+def test_configured_gate_inert_should_be_false_when_gate_would_actually_fire() -> None:
     """combined_low pressure always coincides with mem_available < threshold --
     the gate is reachable, not inert."""
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
+
     assert host_health.configured_gate_inert(cur, {"swap_sout": None}, _cfg(40)) is False
 
 
-def test_memory_pressure_uses_cfg_swap_floor() -> None:
+def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant() -> None:
     """swap_sout_noise_floor_mb must be read from cfg, not the deleted module
     constant -- a 9 MiB delta clears an 8 MiB floor but not a 32 MiB one.
     PSI is unreadable (None) here so the ladder falls through to tier 2 --
     a readable-and-quiet PSI (e.g. 0.0) would short-circuit at tier 1 and
     never reach the swap-out floor this test exercises."""
-    from agent_runner.config import MonitorHostHealthConfig
-
     cfg = MonitorHostHealthConfig(
         swap_sout_noise_floor_mb=8, mem_free_low_mb=16, mem_avail_min_mb=200
     )
@@ -185,7 +214,9 @@ def test_memory_pressure_uses_cfg_swap_floor() -> None:
         "psi_some_avg10": None,
         "psi_full_avg10": None,
     }
+
     p = host_health.memory_pressure(cur, prev, cfg)  # 9 MiB delta > 8 MiB floor
+
     assert p is not None and p.signal == "swap_out_rate"
 
     cfg2 = MonitorHostHealthConfig(
@@ -194,14 +225,14 @@ def test_memory_pressure_uses_cfg_swap_floor() -> None:
     assert host_health.memory_pressure(cur, prev, cfg2) is None  # 9 MiB < 32 MiB floor: no warning
 
 
-def test_psi_full_critical_uses_cfg() -> None:
+def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg() -> None:
     """psi_full_avg10_critical must be read from cfg, not the deleted module
     constant (0.2.15's hardcoded 1.0 killed every round on a 1% hiccup)."""
-    from agent_runner.config import MonitorHostHealthConfig
-
     cfg = MonitorHostHealthConfig(psi_full_avg10_critical=60.0)
     healthy = {"psi_some_avg10": 2.0, "psi_full_avg10": 40.0}  # 40 < 60 -- not critical
+
     assert host_health.memory_pressure(healthy, {}, cfg) is None
+
     comaing = {"psi_some_avg10": 90.0, "psi_full_avg10": 70.0}  # 70 >= 60 -- critical
     p = host_health.memory_pressure(comaing, {}, cfg)
     assert p is not None and p.severity == "critical" and p.signal == "psi"

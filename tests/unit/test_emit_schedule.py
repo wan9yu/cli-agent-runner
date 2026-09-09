@@ -11,7 +11,7 @@ def _events(log_dir):
     return out
 
 
-def test_emit_schedule_paused_and_resumed(tmp_path):
+def test_schedule_paused_then_resumed_should_write_ordered_events_with_fields(tmp_path):
     api.emit_schedule_paused(
         tmp_path,
         active_window="09:00-12:00",
@@ -19,7 +19,9 @@ def test_emit_schedule_paused_and_resumed(tmp_path):
         timezone="Asia/Shanghai",
     )
     api.emit_schedule_resumed(tmp_path, paused_for_s=7200)
+
     evs = _events(tmp_path)
+
     assert [e["event"] for e in evs] == [events.SCHEDULE_PAUSED, events.SCHEDULE_RESUMED]
     assert evs[0]["active_window"] == "09:00-12:00"
     assert evs[0]["resume_at"] == "2026-08-22T12:00:00+08:00"
@@ -27,6 +29,6 @@ def test_emit_schedule_paused_and_resumed(tmp_path):
     assert evs[1]["paused_for_s"] == 7200
 
 
-def test_schedule_kinds_are_builtin():
+def test_schedule_event_kinds_should_be_registered_as_builtin():
     assert events.SCHEDULE_PAUSED in events._BUILTIN_KINDS
     assert events.SCHEDULE_RESUMED in events._BUILTIN_KINDS

@@ -44,8 +44,7 @@ def _real_entry_point_groups() -> set[str]:
     return set(re.findall(r'"(agent_runner\.[a-z_]+)"', src))
 
 
-def test_given_doc_cli_examples_when_parsed_then_every_flag_exists() -> None:
-    """Every --flag a doc hands an operator must exist on that verb's parser."""
+def test_doc_cli_examples_should_reference_only_existing_flags_when_parsed() -> None:
     choices = _subparser_choices()
     # _CLI_DOCS itself can never be empty (3 hardcoded entries) — that would pass
     # even if the recipes glob silently found nothing (dir renamed/moved), which
@@ -64,11 +63,11 @@ def test_given_doc_cli_examples_when_parsed_then_every_flag_exists() -> None:
                 for flag in re.findall(r"--?[\w-]+", flags):
                     if flag not in known:
                         failures.append(f"{fname}:{lineno}: `{verb}` has no flag {flag}")
+
     assert not failures, "doc CLI flag drift:\n" + "\n".join(failures)
 
 
-def test_given_docs_when_scanned_then_no_notimplementederror_claim() -> None:
-    """No doc may claim a code path raises NotImplementedError: none does."""
+def test_docs_should_not_claim_notimplementederror_when_scanned() -> None:
     src_files = list((REPO / "agent_runner").rglob("*.py"))
     assert src_files, "no agent_runner/*.py files found"  # vacuity-guard
     src = "\n".join(p.read_text(encoding="utf-8") for p in src_files)
@@ -78,19 +77,21 @@ def test_given_docs_when_scanned_then_no_notimplementederror_claim() -> None:
     # Non-recursive: docs/internal is gitignored, docs/migrations is frozen history.
     doc_paths = sorted((REPO / "docs").glob("*.md"))
     assert doc_paths, "no docs/*.md files found"  # vacuity-guard
+
     failures: list[str] = []
     for path in doc_paths:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if "NotImplementedError" in line:
                 failures.append(f"docs/{path.name}:{lineno}: {line.strip()}")
+
     assert not failures, "docs claim NotImplementedError but no source raises it:\n" + "\n".join(
         failures
     )
 
 
-def test_given_doc_python_blocks_when_scanned_then_imported_symbols_exist() -> None:
-    """`from agent_runner.X import Y` in docs/plugins.md must resolve."""
+def test_doc_python_blocks_should_import_symbols_that_exist_when_scanned() -> None:
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
+
     failures: list[str] = []
     for mod_path, names in re.findall(
         r"^from (agent_runner[\w.]*) import ([^\n(]+)$", text, re.MULTILINE
@@ -105,24 +106,25 @@ def test_given_doc_python_blocks_when_scanned_then_imported_symbols_exist() -> N
         for name in (n.strip() for n in names.split(",")):
             if name and not hasattr(mod, name):
                 failures.append(f"docs/plugins.md: {mod_path} has no attribute {name!r}")
+
     assert not failures, "doc imports do not resolve:\n" + "\n".join(failures)
 
 
-def test_given_doc_entry_point_groups_when_scanned_then_loader_loads_them() -> None:
+def test_doc_entry_point_groups_should_be_loaded_by_loader_when_scanned() -> None:
     """An entry-point group a doc tells a plugin author to register under must be
     one the loader actually scans — otherwise the plugin silently never loads."""
     real = _real_entry_point_groups()
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
     documented = set(re.findall(r'\[project\.entry-points\."(agent_runner\.[\w.]+)"\]', text))
     unknown = documented - real
+
     assert not unknown, (
         f"docs/plugins.md documents entry-point groups the loader never scans: "
         f"{sorted(unknown)}; real groups: {sorted(real)}"
     )
 
 
-def test_given_documented_handle_dirty_when_compared_then_signature_matches() -> None:
-    """docs/plugins.md's DirtyHandler recipe must match the real Protocol."""
+def test_documented_handle_dirty_should_match_real_signature_when_compared() -> None:
     from agent_runner.hooks import DirtyHandler
 
     real = [p for p in inspect.signature(DirtyHandler.handle_dirty).parameters if p != "self"]
@@ -130,6 +132,7 @@ def test_given_documented_handle_dirty_when_compared_then_signature_matches() ->
     block = re.search(r"def handle_dirty\(\s*(.*?)\s*\) ->", text, re.DOTALL)
     assert block, "docs/plugins.md no longer shows a handle_dirty signature"
     documented = [m for m in re.findall(r"^\s*(\w+)", block.group(1), re.MULTILINE) if m != "self"]
+
     assert documented == real, (
         f"docs/plugins.md documents handle_dirty{tuple(documented)}; "
         f"hooks.DirtyHandler declares {tuple(real)}"

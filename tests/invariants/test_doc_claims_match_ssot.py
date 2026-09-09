@@ -14,6 +14,7 @@ from agent_runner import defenses
 from agent_runner.builtin_plugins._constants import _5XX_STATUSES, _TAIL_LINES
 from agent_runner.cli import _build_parser
 from agent_runner.cli.common import PEEK_SCHEMA_VERSION
+from agent_runner.cli.init_cmd import _preset_names
 from agent_runner.config import (
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
     _VALID_DIRTY_ACTIONS,
@@ -42,8 +43,7 @@ def _monitor_interval_default() -> int:
     return inspect.signature(monitor_loop).parameters["interval_s"].default
 
 
-def test_doc_counts_match_ssot(tmp_path) -> None:
-    from agent_runner.cli.init_cmd import _preset_names
+def test_doc_counts_should_match_ssot(tmp_path) -> None:
     from agent_runner.config.models import MonitorHostHealthConfig
 
     cfg = load_config(make_toml(tmp_path))
@@ -94,16 +94,19 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         for m in found:
             if int(m) != expected:
                 failures.append(f"{fname}: claim '{m}' for {pattern!r} should be {expected}")
+
     assert not failures, "doc count drift:\n" + "\n".join(failures)
 
 
-def test_plugins_md_schema_version_matches_ssot() -> None:
+def test_plugins_md_schema_version_should_match_ssot() -> None:
     """`docs/plugins.md` hand-copies the `peek --json` `schema_version` field into two
     illustrative JSON snippets (too abbreviated — they use `...` placeholders — to host
     a gen-block). Pin both copies to the real constant so a version bump doesn't leave a
     stale doc example, per CONTRIBUTING.md's "never hand-copy the value" rule."""
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
+
     found = re.findall(r'"schema_version":\s*"([\d.]+)"', text)
+
     assert len(found) >= 2, (
         f"docs/plugins.md: expected >= 2 schema_version examples, found {len(found)} "
         "(reworded? update this test)"
@@ -119,7 +122,7 @@ def _backtick_quoted_tokens(line: str) -> set[str]:
     return set(re.findall(r"`\"?(\w+)\"?`", line))
 
 
-def test_doc_value_sets_match_ssot() -> None:
+def test_doc_value_sets_should_match_ssot() -> None:
     failures: list[str] = []
 
     # dirty_action: configuration.md line "... one of `"stash"`, `"ignore"`, `"auto_commit"`"
@@ -160,8 +163,6 @@ def test_doc_value_sets_match_ssot() -> None:
 
     # --preset choices: commands.md "--preset {a,b,c}" must equal the derived SSOT.
     # init_cmd derives choices from presets/*.toml; the hand-written doc list must track it.
-    from agent_runner.cli.init_cmd import _preset_names
-
     preset_ssot = set(_preset_names())
     cmds_text = (REPO / "docs/commands.md").read_text(encoding="utf-8")
     pm = re.search(r"--preset \{([^}]+)\}", cmds_text)

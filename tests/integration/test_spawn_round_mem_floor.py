@@ -18,14 +18,14 @@ recovered (a prevent-swapping argument, against the unresponsiveness-only
 north star). The floor now passes the PREVIOUS TICK's sample as `prev`, so
 the swap delta is a per-interval rate that resets every ~10s tick and can
 fall back below the noise floor -- see
-`test_swap_leg_streak_resets_with_per_tick_prev`.
+`test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_tick_jump`.
 
-`test_given_cache_poor_psi_off_host_*` below covers the original field bug
-(a PSI-off host has no other path to critical) under the new per-tick
-semantics: a slow, sustained trickle no longer crosses the floor at all
-(that host now relies on Task 1's config-tunable PSI thresholds, or a
-lowered `swap_sout_noise_floor_mb`, instead of the reverted cumulative
-accounting).
+`test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor`
+below covers the original field bug (a PSI-off host has no other path to
+critical) under the new per-tick semantics: a slow, sustained trickle no
+longer crosses the floor at all (that host now relies on Task 1's
+config-tunable PSI thresholds, or a lowered `swap_sout_noise_floor_mb`,
+instead of the reverted cumulative accounting).
 
 Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
 but with an injected clock that fakes elapsed wall time so the test does not
@@ -139,10 +139,12 @@ class _TickingClock:
         return self._t
 
 
-def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
+def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure_sustained(
+    tmp_path,
+):
     """PSI-based critical pressure exercises the mechanism (sampling cadence,
     terminate-and-emit, distinctness from round_supervisor_wedged) -- see
-    test_given_cache_poor_psi_off_host_when_mid_round_pressure_checked_then_terminates
+    test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor
     below for the actual field-bug coverage (that host has no PSI at all)."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -158,6 +160,7 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
         clock=_TickingClock(),
         sample_fn=lambda: _CRITICAL_SAMPLE,
     )
+
     assert rc != 0  # terminated, not a clean exit
 
     events = read_events_for_current_month(log_dir)
@@ -185,7 +188,9 @@ def test_critical_mid_round_pressure_terminates_round_and_emits(tmp_path):
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
 
 
-def test_given_cache_poor_psi_off_host_slow_swap_per_tick_never_terminates(tmp_path):
+def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor(
+    tmp_path,
+):
     """The original field-bug shape under the 0.2.16 per-tick fix: PSI
     unreadable, MemAvailable inflated at 82MB well above mem_avail_min_mb=40
     (combined-low genuinely cannot fire), MemFree critically low (~5MB),
@@ -217,13 +222,14 @@ def test_given_cache_poor_psi_off_host_slow_swap_per_tick_never_terminates(tmp_p
         clock=_TickingClock(),
         sample_fn=_slow_swap_sample_fn(sentinel),
     )
+
     assert rc == 0  # never terminated -- the round completed on its own
 
     events = read_events_for_current_month(log_dir)
     assert [e for e in events if e.get("event") == "round_mem_terminated"] == []
 
 
-def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_terminate(tmp_path):
+def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(tmp_path):
     """The negative control for the cumulative-swap floor: a healthy host with
     ample MemFree (~4000MB) and near-zero cumulative swap-out (constant
     swap_sout) is sampled across several ~10s ticks and never reaches
@@ -251,6 +257,7 @@ def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_termina
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
+
     assert rc == 0  # clean exit, never terminated by the floor
 
     events = read_events_for_current_month(log_dir)
@@ -258,7 +265,9 @@ def test_given_healthy_host_ample_memfree_when_mid_round_checked_then_no_termina
     assert [e for e in events if e.get("event") == "round_supervisor_wedged"] == []
 
 
-def test_short_round_finishes_before_first_mem_check_interval(tmp_path):
+def test_spawn_round_should_skip_sampling_when_round_finishes_before_first_check_interval(
+    tmp_path,
+):
     """A round that finishes fast never reaches even one ~10s sample interval --
     the mem floor is a floor sampled on a cadence, not a per-tick poller, so a
     quick healthy round completes untouched even though the stub would report
@@ -278,13 +287,16 @@ def test_short_round_finishes_before_first_mem_check_interval(tmp_path):
         clock=_TickingClock(step=0.01),  # never crosses the 10s interval boundary
         sample_fn=lambda: calls.append(1) or _CRITICAL_SAMPLE,
     )
+
     assert rc == 0
     assert calls == []  # interval never elapsed -- sampler was never invoked
     events = read_events_for_current_month(log_dir)
     assert [e for e in events if e.get("event") == "round_mem_terminated"] == []
 
 
-def test_single_critical_sample_does_not_terminate(tmp_path):
+def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followed_by_healthy_ticks(
+    tmp_path,
+):
     """Hysteresis: one critical tick then healthy forever after must NOT
     terminate -- the default mem_critical_consecutive_samples=3 means a
     transient spike (the exact false-positive this floor must not produce)
@@ -314,6 +326,7 @@ def test_single_critical_sample_does_not_terminate(tmp_path):
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
+
     assert rc == 0  # never terminated -- the round completed on its own
 
     events = read_events_for_current_month(log_dir)
@@ -323,32 +336,9 @@ def test_single_critical_sample_does_not_terminate(tmp_path):
     assert [s["consecutive"] for s in samples] == [1]  # the near-miss, still visible
 
 
-def test_three_consecutive_critical_samples_terminate(tmp_path):
-    """Sustained critical (>= mem_critical_consecutive_samples=3 default in a
-    row) DOES terminate -- the hysteresis floor still catches the real
-    coma-onset case, just not on a single blip."""
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
-
-    rc = serve_cmd._spawn_round(
-        argv,
-        log_dir / "round-1.log",
-        {},
-        timeout_s=300,
-        round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
-        sample_fn=lambda: _CRITICAL_SAMPLE,
-    )
-    assert rc != 0
-
-    events = read_events_for_current_month(log_dir)
-    kinds = [e.get("event") for e in events]
-    assert kinds.count("round_mem_terminated") == 1
-
-
-def test_swap_leg_streak_resets_with_per_tick_prev(tmp_path):
+def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_tick_jump(
+    tmp_path,
+):
     """THE critical swap-leg fix: swap_sout jumps once (one tick's delta above
     the noise floor) then goes flat (per-tick delta back to 0) while mem_free
     stays low. With a CUMULATIVE round-start prev the delta would never fall
@@ -393,6 +383,7 @@ def test_swap_leg_streak_resets_with_per_tick_prev(tmp_path):
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
+
     assert rc == 0  # never terminated -- the round completed on its own
 
     events = read_events_for_current_month(log_dir)
@@ -400,7 +391,7 @@ def test_swap_leg_streak_resets_with_per_tick_prev(tmp_path):
     assert "round_mem_terminated" not in kinds
 
 
-def test_off_switch_never_terminates(tmp_path):
+def test_spawn_round_should_not_terminate_when_in_round_mem_terminate_is_disabled(tmp_path):
     """in_round_mem_terminate=False: sustained critical pressure must NEVER
     _terminate_round -- the loop keeps sampling (so a future re-enable or
     observability layer still sees the signal) but the kill switch is off."""
@@ -426,6 +417,7 @@ def test_off_switch_never_terminates(tmp_path):
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
+
     assert rc == 0  # never terminated despite sustained critical pressure
 
     events = read_events_for_current_month(log_dir)
@@ -433,7 +425,7 @@ def test_off_switch_never_terminates(tmp_path):
     assert "round_mem_terminated" not in kinds
 
 
-def test_off_switch_critical_sample_capped_then_resets(tmp_path):
+def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset(tmp_path):
     """0.2.17: round_mem_critical_sample is capped at
     2 * mem_critical_consecutive_samples (1..6 at the default 3) -- a
     sustained-critical don't-terminate run (here: the off switch) must not
@@ -480,6 +472,7 @@ def test_off_switch_critical_sample_capped_then_resets(tmp_path):
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
+
     assert rc == 0  # off switch: never terminated despite sustained critical pressure
 
     events = read_events_for_current_month(log_dir)
@@ -498,14 +491,15 @@ def test_off_switch_critical_sample_capped_then_resets(tmp_path):
     assert consecutive[6] == 1
 
 
-def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
+def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(tmp_path):
     """The one cell _mid_round_action's own unit test proves structurally but
     no integration test drove end to end: in_round_mem_terminate=False AND
     defer_to_cgroup=True at once. The off switch wins over cgroup-defer (see
     _mid_round_action's docstring: "count_only" is returned before
     defer_to_cgroup is even consulted), so sustained critical pressure here
     must produce NEITHER round_mem_terminated NOR
-    mem_pressure_deferred_to_cgroup -- unlike test_both_finite_defers_never_terminates
+    mem_pressure_deferred_to_cgroup -- unlike
+    test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded
     (defer_to_cgroup=True alone, default in_round_mem_terminate=True), which
     DOES emit mem_pressure_deferred_to_cgroup. If count_only's off-switch
     check were ever weakened to fall through to the defer/terminate branch
@@ -534,6 +528,7 @@ def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
+
     assert rc == 0  # never terminated -- the round completed on its own
 
     events = read_events_for_current_month(log_dir)
@@ -545,7 +540,7 @@ def test_off_switch_wins_over_cgroup_defer_emits_nothing(tmp_path):
     assert kinds.count("round_mem_critical_sample") >= 1
 
 
-def test_both_finite_defers_never_terminates(tmp_path):
+def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tmp_path):
     """0.2.16 Task 3: when the cgroup's (mem+swap) budget is bounded end to
     end (both memory.max and memory.swap.max finite -- exactly the field
     host's MemoryMax=320M + MemorySwapMax=160M), kernel cgroup-OOM WILL fire
@@ -579,6 +574,7 @@ def test_both_finite_defers_never_terminates(tmp_path):
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
+
     assert rc == 0  # round completed on its own -- the floor deferred, never terminated
 
     events = read_events_for_current_month(log_dir)
@@ -589,7 +585,7 @@ def test_both_finite_defers_never_terminates(tmp_path):
     assert "round_supervisor_wedged" not in kinds
 
 
-def test_swap_unbounded_still_terminates(tmp_path):
+def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path):
     """Only memory.max finite (systemd's MemoryMax-without-MemorySwapMax
     default -- swap unbounded) means cgroup-OOM never fires on its own (the
     agent just swaps), so defer_to_cgroup is False and the floor stays
@@ -609,6 +605,7 @@ def test_swap_unbounded_still_terminates(tmp_path):
         sample_fn=lambda: _CRITICAL_SAMPLE,
         defer_to_cgroup=False,
     )
+
     assert rc != 0  # terminated, not a clean exit
 
     events = read_events_for_current_month(log_dir)
@@ -617,14 +614,14 @@ def test_swap_unbounded_still_terminates(tmp_path):
     assert "mem_pressure_deferred_to_cgroup" not in kinds
 
 
-def test_mid_round_floor_disabled_by_default(tmp_path):
+def test_spawn_round_should_skip_sampling_when_host_health_cfg_is_none(tmp_path):
     """host_health_cfg defaults to None: existing callers (no mid-round floor
     wired) get byte-identical behavior -- the sampler is never even invoked."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     argv = [sys.executable, "-c", "print('ok')"]
-
     calls = []
+
     rc = serve_cmd._spawn_round(
         argv,
         log_dir / "round-1.log",
@@ -633,5 +630,6 @@ def test_mid_round_floor_disabled_by_default(tmp_path):
         round_num=1,
         sample_fn=lambda: calls.append(1) or _CRITICAL_SAMPLE,
     )
+
     assert rc == 0
     assert calls == []

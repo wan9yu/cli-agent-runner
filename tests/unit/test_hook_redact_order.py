@@ -6,7 +6,7 @@ from __future__ import annotations
 from agent_runner.hooks import _MAX_ERROR_MSG_BYTES, _cap_redacted, _summarize_error
 
 
-def test_secret_straddling_the_truncation_cut_is_never_emitted() -> None:
+def test_secret_straddling_truncation_cut_should_never_be_emitted() -> None:
     # sk-ant-<16+ chars> is one of the anchored patterns, but the anchor regex
     # requires >= 16 trailing chars to match. Position the secret so the 1024-byte
     # head cut lands just 12 chars into its payload: truncate-then-redact would
@@ -18,16 +18,20 @@ def test_secret_straddling_the_truncation_cut_is_never_emitted() -> None:
     tb = ("x" * 1004) + " " + secret + ("y" * 3000)
     payload_start = tb.index(secret) + len("sk-ant-")
     assert 1024 - payload_start == 12  # sanity: cut lands 12 chars into the "A" payload
+
     out = _summarize_error(RuntimeError("boom"), tb=tb)
+
     assert secret not in out["traceback"]
     assert "AAAAAAAAAA" not in out["traceback"]  # no surviving fragment of the key
 
 
-def test_error_message_is_capped() -> None:
+def test_error_message_should_be_capped_when_huge() -> None:
     huge = RuntimeError("z" * 10000)
+
     out = _summarize_error(huge, tb="short")
+
     assert len(out["error_message"]) <= _MAX_ERROR_MSG_BYTES + len("\n... [truncated] ...\n")
 
 
-def test_cap_redacted_short_text_passthrough() -> None:
+def test_cap_redacted_should_passthrough_short_text() -> None:
     assert _cap_redacted("hello", 100) == "hello"

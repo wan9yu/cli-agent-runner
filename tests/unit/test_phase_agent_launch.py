@@ -74,7 +74,7 @@ def _capture_hook_binary(monkeypatch: pytest.MonkeyPatch) -> list[str | None]:
     return seen
 
 
-def test_given_phase_override_agent_when_round_runs_then_launches_phase_agent(
+def test_phase_override_agent_should_launch_when_round_runs(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _cfg(tmp_git_repo, base_cmd=["base-agent"], phase_b_cmd=["glm-cli"])
@@ -87,7 +87,7 @@ def test_given_phase_override_agent_when_round_runs_then_launches_phase_agent(
     assert seen == ["glm-cli"]
 
 
-def test_given_phase_without_override_when_round_runs_then_launches_base_agent(
+def test_base_agent_should_launch_when_phase_has_no_override(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _cfg(tmp_git_repo, base_cmd=["base-agent"], phase_b_cmd=["glm-cli"])
@@ -100,11 +100,13 @@ def test_given_phase_without_override_when_round_runs_then_launches_base_agent(
     assert seen == ["base-agent"]
 
 
-def test_given_bad_phase_agent_when_battery_runs_then_cli_check_fails(
+def test_bad_phase_agent_should_fail_cli_check_when_battery_runs(
     tmp_git_repo: Path,
 ) -> None:
     from agent_runner.startup_check import run_battery
 
     cfg = _cfg(tmp_git_repo, base_cmd=["bash"], phase_b_cmd=["definitely-nonexistent-cli-xyz"])
+
     failures = [r for r in run_battery(cfg) if not r.ok]
+
     assert any(r.name.startswith("agent_cli_in_path") for r in failures), failures

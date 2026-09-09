@@ -14,7 +14,7 @@ def _init(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     main(["init", "--no-commit"])
 
 
-def test_given_status_subcommand_when_invoked_then_calls_api_status(
+def test_status_subcommand_should_call_api_status_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -23,12 +23,14 @@ def test_given_status_subcommand_when_invoked_then_calls_api_status(
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
         st.return_value = ServiceStatus(mode=ServiceMode.NONE, active=False)
+
         rc = main(["status"])
+
         assert rc == 0
         st.assert_called_once()
 
 
-def test_given_stop_subcommand_when_invoked_then_calls_api_stop(
+def test_stop_subcommand_should_call_api_stop_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -37,11 +39,13 @@ def test_given_stop_subcommand_when_invoked_then_calls_api_stop(
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
         stop.return_value = ServiceStatus(mode=ServiceMode.NONE, active=False)
+
         main(["stop"])
+
         stop.assert_called_once()
 
 
-def test_given_kill_subcommand_when_invoked_then_calls_api_kill(
+def test_kill_subcommand_should_call_api_kill_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -50,11 +54,13 @@ def test_given_kill_subcommand_when_invoked_then_calls_api_kill(
         from agent_runner.api_types import ServiceMode, ServiceStatus
 
         k.return_value = ServiceStatus(mode=ServiceMode.NONE, active=False)
+
         main(["kill"])
+
         k.assert_called_once()
 
 
-def test_given_pid_file_service_when_restart_then_clean_error_not_traceback(
+def test_cmd_restart_should_reject_cleanly_when_service_is_pid_file_based(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys,
@@ -83,7 +89,7 @@ def test_given_pid_file_service_when_restart_then_clean_error_not_traceback(
     assert "Traceback" not in captured.out
 
 
-def test_given_peek_with_select_when_invoked_then_passes_select_arg(
+def test_peek_should_pass_select_arg_when_invoked_with_select(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys,
@@ -91,6 +97,7 @@ def test_given_peek_with_select_when_invoked_then_passes_select_arg(
     _init(tmp_git_repo, monkeypatch)
     with patch("agent_runner.api.peek", return_value=42) as p:
         rc = main(["peek", "--select", "system.disk_used_pct"])
+
         assert rc == 0
         kwargs = p.call_args.kwargs
         assert kwargs["select"] == "system.disk_used_pct"
@@ -99,7 +106,7 @@ def test_given_peek_with_select_when_invoked_then_passes_select_arg(
 
 
 @pytest.mark.parametrize("mode", ["anomaly", "narrate", "http"])
-def test_given_host_with_detection_mode_when_cmd_then_exit_1_pointing_at_events(
+def test_monitor_cmd_should_reject_host_when_mode_not_events(
     capsys, tmp_path: Path, mode: str
 ) -> None:
     """--host is rejected for every mode but events: detection runs on-host."""
@@ -118,6 +125,7 @@ def test_given_host_with_detection_mode_when_cmd_then_exit_1_pointing_at_events(
         json=False,
         config=str(tmp_path / "agent-runner.toml"),
     )
+
     rc = monitor_cmd.cmd(args)
 
     captured = capsys.readouterr()
@@ -129,7 +137,7 @@ def test_given_host_with_detection_mode_when_cmd_then_exit_1_pointing_at_events(
     assert captured.out == ""  # error path must not leak to stdout
 
 
-def test_given_relay_only_flags_without_host_when_cmd_then_rejected(capsys, tmp_path: Path) -> None:
+def test_monitor_cmd_should_reject_kind_flag_when_host_not_set(capsys, tmp_path: Path) -> None:
     """--kind / --remote-config must not silently no-op in local mode."""
     from types import SimpleNamespace
 
@@ -145,14 +153,14 @@ def test_given_relay_only_flags_without_host_when_cmd_then_rejected(capsys, tmp_
         json=False,
         config=str(tmp_path / "agent-runner.toml"),
     )
+
     assert monitor_cmd.cmd(args) == 1
     assert "--kind applies to --host --mode events only" in capsys.readouterr().err
 
 
-def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr(
+def test_cmd_stop_should_print_stopping_and_stopped_to_stderr_when_not_json(
     monkeypatch, capsys, tmp_path
 ) -> None:
-    """Non-json mode prints two stderr lines around api.stop()."""
     from types import SimpleNamespace
 
     from agent_runner import api
@@ -168,8 +176,8 @@ def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr
         return {"stopped": True}
 
     monkeypatch.setattr(api, "stop", fake_stop)
-
     args = SimpleNamespace(json=False, config=str(work_dir / "agent-runner.toml"))
+
     rc = service_cmd.cmd_stop(args)
 
     captured = capsys.readouterr()
@@ -179,7 +187,7 @@ def test_given_cmd_stop_when_not_json_then_prints_stopping_and_stopped_to_stderr
     assert "s)" in captured.err
 
 
-def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, tmp_path) -> None:
+def test_cmd_stop_should_be_silent_on_stderr_when_json_mode(monkeypatch, capsys, tmp_path) -> None:
     """Json mode is silent on stderr — machine readers want clean stdout JSON only."""
     from types import SimpleNamespace
 
@@ -191,10 +199,9 @@ def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, t
     (work_dir / "agent-runner.toml").write_text(
         f'[agent]\ncommand = ["true"]\n[runtime]\nwork_dir = "{work_dir}"\n[prompt]\ninline = "p"\n'
     )
-
     monkeypatch.setattr(api, "stop", lambda _wd: {"stopped": True})
-
     args = SimpleNamespace(json=True, config=str(work_dir / "agent-runner.toml"))
+
     rc = service_cmd.cmd_stop(args)
 
     captured = capsys.readouterr()
@@ -203,12 +210,9 @@ def test_given_cmd_stop_when_json_mode_then_stderr_silent(monkeypatch, capsys, t
     assert "stopped" not in captured.err
 
 
-def test_given_monitor_mode_narrate_when_with_host_then_rejected(
+def test_monitor_should_reject_host_when_mode_is_narrate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--mode narrate is local-only; --host is incompatible."""
-    from agent_runner.cli import main
-
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
         "[agent]\n"
@@ -232,10 +236,11 @@ def test_given_monitor_mode_narrate_when_with_host_then_rejected(
             "pi",
         ]
     )
+
     assert rc == 1
 
 
-def test_given_monitor_no_mode_when_invoked_then_anomaly_default(
+def test_monitor_cmd_should_default_to_anomaly_mode_when_mode_omitted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Default --mode is anomaly (preserves existing behavior)."""
@@ -272,16 +277,15 @@ def test_given_monitor_no_mode_when_invoked_then_anomaly_default(
     )
 
     rc = monitor_cmd.cmd(args)
+
     assert rc == 0
     assert captured.get("called"), "anomaly mode should call monitor_loop"
 
 
-def test_given_mode_events_when_main_then_dispatches_events_stream(
+def test_main_should_dispatch_events_stream_when_mode_is_events(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """`monitor --mode events` calls api.stream_events_jsonl and prints JSONL."""
     from agent_runner import api
-    from agent_runner.cli import main
 
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
@@ -298,17 +302,16 @@ def test_given_mode_events_when_main_then_dispatches_events_stream(
     monkeypatch.setattr(api, "stream_events_jsonl", fake_stream)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "events"])
+
     assert rc == 0
     assert captured_log_dir["path"] == log_dir
     assert len(events_seen) == 1
 
 
-def test_given_mode_events_with_host_when_main_then_dispatches_relay(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_main_should_dispatch_relay_when_mode_events_with_host(monkeypatch, tmp_path: Path) -> None:
     """`monitor --mode events --host pi` is the supported remote combination."""
     from agent_runner import api
-    from agent_runner.cli import main, monitor_cmd
+    from agent_runner.cli import monitor_cmd
 
     cfg_path = make_toml(tmp_path)
     seen: dict = {}
@@ -341,6 +344,7 @@ def test_given_mode_events_with_host_when_main_then_dispatches_relay(
             "/srv/proj/agent-runner.toml",
         ]
     )
+
     assert rc == 0
     assert seen["host"] == "pi"
     assert seen["kinds"] == ["round_end", "oauth_fail"]
@@ -349,12 +353,12 @@ def test_given_mode_events_with_host_when_main_then_dispatches_relay(
     assert seen["failure_tolerance_s"] == 90, "default [monitor] remote_failure_tolerance_s"
 
 
-def test_given_mode_events_with_host_and_no_kind_when_main_then_relay_defaults(
+def test_main_should_default_relay_kinds_to_none_when_kind_omitted(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Omitting --kind hands the relay None, which resolves to every known kind."""
     from agent_runner import api
-    from agent_runner.cli import main, monitor_cmd
+    from agent_runner.cli import monitor_cmd
 
     cfg_path = make_toml(tmp_path)
     seen: dict = {}
@@ -363,6 +367,7 @@ def test_given_mode_events_with_host_and_no_kind_when_main_then_relay_defaults(
     monkeypatch.setattr(monitor_cmd, "_install_term_handler", lambda: None)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "events", "--host", "pi"])
+
     assert rc == 0
     assert seen["kinds"] is None
     assert seen["remote_config"] is None

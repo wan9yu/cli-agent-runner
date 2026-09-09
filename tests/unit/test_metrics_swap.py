@@ -7,15 +7,16 @@ from __future__ import annotations
 from agent_runner import metrics
 
 
-def test_swap_total_bytes_is_int(monkeypatch):
+def test_swap_total_bytes_should_return_psutil_swap_total_value(monkeypatch):
     class S:
         total = 1234
 
     monkeypatch.setattr(metrics.psutil, "swap_memory", lambda: S())
+
     assert metrics.swap_total_bytes() == 1234
 
 
-def test_swap_total_bytes_matches_psutil():
+def test_swap_total_bytes_should_match_real_psutil_swap_total():
     import psutil
 
     assert metrics.swap_total_bytes() == psutil.swap_memory().total

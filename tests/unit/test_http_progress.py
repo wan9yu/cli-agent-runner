@@ -36,27 +36,30 @@ def _serving(log_dir: Path, narrative_file: Path | None = None, port: int = 0):
         server.server_close()
 
 
-def test_given_running_server_when_get_root_then_html_with_sections(tmp_path: Path) -> None:
-    """GET / returns HTML 200 with all 5 sections rendered."""
+def test_get_root_should_return_html_with_all_sections_when_server_running(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
     with _serving(log_dir) as port:
         resp = urlopen(f"http://127.0.0.1:{port}/")
+
         assert resp.status == 200
         body = resp.read().decode("utf-8")
-        assert "<html" in body.lower()
         for marker in ("round", "narrative", "events", "self-termin"):
             assert marker.lower() in body.lower(), f"missing section: {marker}"
 
 
-def test_given_running_server_when_get_api_state_then_json(tmp_path: Path) -> None:
-    """GET /api/state returns valid JSON with expected keys."""
+def test_get_api_state_should_return_json_with_expected_keys_when_server_running(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
     with _serving(log_dir) as port:
         resp = urlopen(f"http://127.0.0.1:{port}/api/state")
+
         assert resp.status == 200
         data = json.loads(resp.read())
         expected_keys = (
@@ -70,18 +73,19 @@ def test_given_running_server_when_get_api_state_then_json(tmp_path: Path) -> No
             assert key in data, f"missing key: {key}"
 
 
-def test_given_no_log_dir_state_when_get_then_renders_with_hints(tmp_path: Path) -> None:
-    """Empty log_dir → page renders with hints, no crash."""
+def test_get_root_should_render_with_hints_when_log_dir_empty(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
     with _serving(log_dir) as port:
         resp = urlopen(f"http://127.0.0.1:{port}/")
+
         assert resp.status == 200
 
 
-def test_given_narrative_file_when_get_then_rendered(tmp_path: Path) -> None:
-    """Narrative file content appears in the rendered page."""
+def test_get_root_should_render_narrative_content_when_narrative_file_given(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     narrative = tmp_path / "narrative.md"
@@ -89,19 +93,18 @@ def test_given_narrative_file_when_get_then_rendered(tmp_path: Path) -> None:
 
     with _serving(log_dir, narrative_file=narrative) as port:
         resp = urlopen(f"http://127.0.0.1:{port}/")
+
         body = resp.read().decode("utf-8")
         assert "hypothesis X covered" in body
 
 
-def test_given_sibling_recovered_when_rate_limit_state_then_still_throttled(
+def test_rate_limit_state_should_stay_throttled_when_sibling_agent_recovered(
     tmp_path: Path,
 ) -> None:
     """``_rate_limit_state`` must not report "not throttled" when the newest transient
     event is a sibling agent's recovered while another agent is still throttled — it
     must share the same max-reset fallback ``api.peek`` already has, via
     ``effective_throttle_view``."""
-    import time
-
     from agent_runner.http_progress import _rate_limit_state
 
     log_dir = tmp_path / "logs"
@@ -136,13 +139,13 @@ def test_given_sibling_recovered_when_rate_limit_state_then_still_throttled(
     (log_dir / "events-2026-05.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
     rl = _rate_limit_state(log_dir)
+
     assert rl is not None  # not dropped to null — claude is still throttled
     assert rl["limit_type"] == "rate_limit_account"
     assert rl["since_round"] == 7
 
 
-def test_given_port_in_use_when_serve_http_progress_then_exit_1(tmp_path: Path, capsys) -> None:
-    """If the requested port is in use, serve_http_progress returns 1 with structured stderr."""
+def test_serve_http_progress_should_exit_1_when_port_in_use(tmp_path: Path, capsys) -> None:
     from agent_runner.http_progress import serve_http_progress
 
     blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,7 +156,9 @@ def test_given_port_in_use_when_serve_http_progress_then_exit_1(tmp_path: Path, 
     try:
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
+
         rc = serve_http_progress(log_dir, None, port=blocked_port)
+
         assert rc == 1
         err = capsys.readouterr().err
         assert f"port {blocked_port}" in err

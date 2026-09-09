@@ -8,31 +8,43 @@ import pytest
 from agent_runner.cli.common import cfg_from_args, work_dir_from_args
 
 
-def test_given_config_arg_when_resolved_then_returns_parent_dir(tmp_path: Path) -> None:
+def test_work_dir_from_args_should_return_parent_dir_when_config_given(tmp_path: Path) -> None:
     cfg = tmp_path / "agent-runner.toml"
     cfg.write_text("")
     args = argparse.Namespace(config=cfg)
-    assert work_dir_from_args(args) == tmp_path.resolve()
+
+    result = work_dir_from_args(args)
+
+    assert result == tmp_path.resolve()
 
 
-def test_given_no_config_attr_when_resolved_then_returns_cwd(tmp_path: Path, monkeypatch) -> None:
+def test_work_dir_from_args_should_return_cwd_when_no_config_attr(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace()
-    assert work_dir_from_args(args) == tmp_path.resolve()
+
+    result = work_dir_from_args(args)
+
+    assert result == tmp_path.resolve()
 
 
-def test_given_relative_default_config_path_when_resolved_then_returns_cwd(
+def test_work_dir_from_args_should_return_cwd_when_config_path_relative_default(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(config=Path("./agent-runner.toml"))
-    assert work_dir_from_args(args) == tmp_path.resolve()
+
+    result = work_dir_from_args(args)
+
+    assert result == tmp_path.resolve()
 
 
-def test_given_config_with_wrong_filename_when_resolved_then_raises(
+def test_work_dir_from_args_should_raise_when_config_filename_wrong(
     tmp_path: Path,
 ) -> None:
     args = argparse.Namespace(config=tmp_path / "custom-name.toml")
+
     with pytest.raises(ValueError, match="agent-runner.toml"):
         work_dir_from_args(args)
 
@@ -42,7 +54,7 @@ def test_given_config_with_wrong_filename_when_resolved_then_raises(
 # "given CLI args, which toml"), same as work_dir_from_args above.
 
 
-def test_given_work_dir_differs_from_toml_dir_when_cfg_from_args_then_loads_declared_work_dir(
+def test_cfg_from_args_should_load_declared_work_dir_when_it_differs_from_toml_dir(
     tmp_path: Path,
 ) -> None:
     """config_path must reflect the --config path itself, not assume work_dir
@@ -68,7 +80,7 @@ def test_given_work_dir_differs_from_toml_dir_when_cfg_from_args_then_loads_decl
     assert cfg.runtime.work_dir == work_dir.resolve()
 
 
-def test_given_symlinked_config_when_cfg_from_args_then_work_dir_anchors_to_symlink_dir(
+def test_cfg_from_args_should_anchor_work_dir_to_symlink_dir_when_config_symlinked(
     tmp_path: Path,
 ) -> None:
     """A relative [runtime] work_dir must anchor to the --config symlink's OWN

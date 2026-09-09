@@ -29,9 +29,10 @@ _RETIRED_COUNT_PATTERNS = (
 )
 
 
-def test_given_readme_zh_when_measured_then_stays_a_thin_pointer() -> None:
+def test_readme_zh_should_stay_a_thin_pointer_when_measured() -> None:
     text = ZH.read_text(encoding="utf-8")
     lines = len(text.splitlines())
+
     assert lines <= MAX_LINES, (
         f"README.zh.md is {lines} lines (max {MAX_LINES}) — it must stay a "
         f"pointer to the English docs, not a fork of README.md"
@@ -40,8 +41,9 @@ def test_given_readme_zh_when_measured_then_stays_a_thin_pointer() -> None:
     assert "](docs/architecture.md)" in text, "README.zh.md must link docs/architecture.md"
 
 
-def test_given_readme_zh_when_scanned_then_carries_no_unguarded_counts() -> None:
+def test_readme_zh_should_carry_no_unguarded_counts_when_scanned() -> None:
     text = ZH.read_text(encoding="utf-8")
+
     failures = [p for p in _RETIRED_COUNT_PATTERNS if re.search(p, text)]
     assert not failures, (
         f"README.zh.md reintroduced unguarded count claims {failures} — state "

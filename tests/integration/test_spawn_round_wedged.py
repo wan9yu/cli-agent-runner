@@ -14,12 +14,13 @@ from agent_runner.cli import _serve_round, serve_cmd
 from tests._test_helpers import read_events_for_current_month
 
 
-def test_spawn_round_wedged_terminates_and_emits(tmp_path):
+def test_wedged_round_should_terminate_and_emit_wedged_event_when_ceiling_exceeded(tmp_path):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     # A round leader that ignores nothing: a plain sleeper. timeout_s is tiny so the
     # ceiling trips; SIGTERM (proc.terminate) reaps it well before killpg.
     argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+
     rc = serve_cmd._spawn_round(
         argv,
         log_dir / "round-1.log",
@@ -27,6 +28,7 @@ def test_spawn_round_wedged_terminates_and_emits(tmp_path):
         timeout_s=1,
         round_num=1,
     )
+
     assert rc != 0  # died by signal, not a clean 0
     wedged = [
         e
@@ -37,12 +39,14 @@ def test_spawn_round_wedged_terminates_and_emits(tmp_path):
     assert wedged[0]["timeout_s"] == 1
     assert (log_dir / "round-1.log").exists()
 
+
+def test_round_term_grace_should_be_at_least_reap_grace():
     from agent_runner.agent_runtime import REAP_GRACE_S
 
     assert _serve_round._ROUND_TERM_GRACE_S >= REAP_GRACE_S
 
 
-def test_spawn_round_wedged_escalates_to_killpg_when_term_ignored(tmp_path, monkeypatch):
+def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, monkeypatch):
     """The load-bearing safety net: a round leader that TRAPS SIGTERM (a real hang,
     not a cooperative one) forces `_terminate_round` past its TERM-then-wait branch
     into the killpg(SIGKILL) escalation. Spies on Popen.terminate + os.killpg (both
@@ -75,6 +79,7 @@ def test_spawn_round_wedged_escalates_to_killpg_when_term_ignored(tmp_path, monk
         "-c",
         "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(30)\n",
     ]
+
     rc = serve_cmd._spawn_round(argv, log_dir / "round-1.log", {}, timeout_s=1, round_num=1)
 
     assert call_order == ["terminate", "killpg"]  # TERM tried first, killpg last resort

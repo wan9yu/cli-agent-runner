@@ -37,13 +37,14 @@ file = "{prompt}"
     return toml
 
 
-def test_given_serve_once_with_succeed_then_runs_one_round_and_exits(
+def test_serve_once_should_run_one_round_and_exit_when_agent_succeeds(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     toml = _write_toml(tmp_git_repo, fake_agent_script)
     env = os.environ.copy()
     env["FAKE_AGENT_BEHAVIOR"] = "succeed"
+
     r = subprocess.run(
         [sys.executable, "-m", "agent_runner.cli", "--config", str(toml), "serve", "--once"],
         env=env,
@@ -51,12 +52,13 @@ def test_given_serve_once_with_succeed_then_runs_one_round_and_exits(
         text=True,
         timeout=30,
     )
+
     assert r.returncode == 0
     status = json.loads((tmp_git_repo / "logs" / "status.json").read_text())
     assert status["round_num"] == 1
 
 
-def test_given_serve_when_sigterm_received_then_exits_after_current_round(
+def test_serve_should_exit_after_current_round_when_sigterm_received(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
@@ -68,6 +70,7 @@ def test_given_serve_when_sigterm_received_then_exits_after_current_round(
         env=env,
     )
     log_dir = tmp_git_repo / "logs"
+
     try:
         # Wait for serve to be up (not an event -- the pidfile write predates
         # the first round) rather than guessing a fixed delay: this is the

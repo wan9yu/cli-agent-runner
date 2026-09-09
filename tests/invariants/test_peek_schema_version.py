@@ -20,7 +20,7 @@ def _ver(s: str) -> tuple[int, ...]:
     return tuple(int(x) for x in s.split("."))
 
 
-def test_given_peek_json_when_emitted_then_includes_schema_version(tmp_path: Path) -> None:
+def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) -> None:
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work_dir, check=True)
@@ -47,10 +47,8 @@ def test_given_peek_json_when_emitted_then_includes_schema_version(tmp_path: Pat
         cwd=work_dir,
         check=True,
     )
-
     bin_dir = Path(sys.executable).parent
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
-
     subprocess.run(
         ["agent-runner", "init", "--no-commit"],
         cwd=work_dir,

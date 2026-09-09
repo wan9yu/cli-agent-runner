@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from agent_runner.monitor import detect_supervisor_stale
 
 
-def test_fresh_monitor_alert_does_not_reset_staleness_baseline() -> None:
+def test_detect_supervisor_stale_should_ignore_own_emissions_when_computing_baseline() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
     events = [
         {"event": "round_end", "round_num": 4, "ts": "2026-08-30T10:00:00Z"},  # 2h old
@@ -26,6 +26,8 @@ def test_fresh_monitor_alert_does_not_reset_staleness_baseline() -> None:
         },
         {"event": "detector_error", "detector": "hung", "ts": "2026-08-30T11:59:59Z"},
     ]
+
     a = detect_supervisor_stale(events, now=now, stale_threshold_s=1800)
+
     assert a is not None  # dead supervisor + live monitor emissions still alarms
     assert a.context["last_ts"] == "2026-08-30T10:00:00Z"

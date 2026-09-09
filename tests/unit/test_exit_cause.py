@@ -12,12 +12,24 @@ def _rr(exit_code, timed_out=False, killed_for_grace=False):
     )
 
 
-def test_exit_cause_mapping():
+def test_exit_cause_should_return_clean_when_returncode_zero():
     assert _exit_cause(_rr(0)) == "clean"
+
+
+def test_exit_cause_should_return_error_when_returncode_nonzero():
     assert _exit_cause(_rr(1)) == "error"
+
+
+def test_exit_cause_should_return_signal_cause_when_process_was_signal_killed():
     assert _exit_cause(_rr(143)) == "signal:SIGTERM"
     assert _exit_cause(_rr(-15)) == "signal:SIGTERM"
+
+
+def test_exit_cause_should_return_timeout_when_timed_out_and_not_grace_killed():
     # timeout wins even though agent-runner signal-killed it to enforce the timeout
     assert _exit_cause(_rr(-15, timed_out=True)) == "timeout"
+
+
+def test_exit_cause_should_return_grace_kill_when_killed_for_grace_even_though_timed_out():
     # a grace-kill also sets timed_out, but it is NOT a hung round → distinct cause
     assert _exit_cause(_rr(-15, timed_out=True, killed_for_grace=True)) == "grace_kill"

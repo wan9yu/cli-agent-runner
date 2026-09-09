@@ -36,7 +36,7 @@ _TARGET_CLASSES: dict[str, type] = {
 
 # Fields with NO non-default producer today, allow-listed with a reason. Each
 # entry here must ALSO be named "reserved" in the owning dataclass's own
-# docstring (test_reserved_fields_documented_in_docstring below) — an entry
+# docstring (test_reserved_fields_should_be_documented_in_owning_docstring below) — an entry
 # here alone would be invisible to anyone reading api_types.py/context_store.py
 # without this test file open.
 _RESERVED: dict[tuple[str, str], str] = {
@@ -116,7 +116,7 @@ def _class_docstring(src: str, class_name: str) -> str:
     return ""
 
 
-def test_every_projectstate_and_status_field_has_a_producer_or_is_reserved() -> None:
+def test_projectstate_and_status_fields_should_have_a_producer_or_be_reserved() -> None:
     offenders: list[str] = []
     checked = 0
     for class_name, cls in _TARGET_CLASSES.items():
@@ -124,6 +124,7 @@ def test_every_projectstate_and_status_field_has_a_producer_or_is_reserved() -> 
         offenders += [
             f"{class_name}.{name}" for name in _offending_fields(cls, class_name, _PKG, _RESERVED)
         ]
+
     assert checked > 0, "no ProjectState/Status fields discovered"  # vacuity-guard
     assert not offenders, (
         f"field(s) with no non-default producer in agent_runner/: {offenders} — "
@@ -132,20 +133,21 @@ def test_every_projectstate_and_status_field_has_a_producer_or_is_reserved() -> 
     )
 
 
-def test_reserved_allowlist_names_real_fields() -> None:
+def test_reserved_allowlist_should_name_real_fields() -> None:
     """Keep `_RESERVED` honest: no stale entries for renamed/removed fields."""
     for class_name, field_name in _RESERVED:
         names = {f.name for f in dataclasses.fields(_TARGET_CLASSES[class_name])}
         assert field_name in names, f"_RESERVED names {class_name}.{field_name}, no such field"
 
 
-def test_reserved_fields_documented_in_docstring() -> None:
+def test_reserved_fields_should_be_documented_in_owning_docstring() -> None:
     """Every `_RESERVED` field must be named "reserved" + "0.3" in its owning
     dataclass's OWN docstring — not just in this test file's allow-list."""
     sources = {
         "ProjectState": (_PKG / "api_types.py").read_text(encoding="utf-8"),
         "Status": (_PKG / "context_store.py").read_text(encoding="utf-8"),
     }
+
     for class_name, field_name in _RESERVED:
         doc = _class_docstring(sources[class_name], class_name)
         assert field_name in doc and "reserved" in doc and "0.3" in doc, (
@@ -154,13 +156,11 @@ def test_reserved_fields_documented_in_docstring() -> None:
         )
 
 
-def test_self_check_scan_flags_an_unlisted_always_default_field(tmp_path: Path) -> None:
+def test_offending_fields_should_flag_unlisted_always_default_field(tmp_path: Path) -> None:
     """Non-vacuousness proof: a synthetic dataclass with a field that is ALWAYS
-    given its trivial default (``hollow=[]``) and a field that is genuinely
-    populated (``real=n``) must be told apart by `_offending_fields` — with no
-    allow-list entry the hollow one is flagged; allow-listing it quiets the
-    guard. If this ever passed with an empty `hits`/non-empty `offenders`
-    mismatch, the real invariant above would be vacuous."""
+    given its trivial default (``hollow=[]``) must be flagged when it has no
+    allow-list entry. If this ever passed with an empty `unlisted`, the real
+    invariant above would be vacuous."""
     pkg = tmp_path / "pkg"
     pkg.mkdir()
     (pkg / "producer.py").write_text(
@@ -179,19 +179,42 @@ def test_self_check_scan_flags_an_unlisted_always_default_field(tmp_path: Path) 
         real: int
 
     unlisted = _offending_fields(Widget, "Widget", pkg, reserved={})
+
     assert unlisted == ["hollow"], (
         f"self-check: an un-allow-listed always-[] field must be flagged, got {unlisted}"
     )
 
+
+def test_offending_fields_should_ignore_allowlisted_hollow_field(tmp_path: Path) -> None:
+    """Counterpart of the un-allow-listed self-check above: allow-listing the
+    same always-``[]`` field must quiet the guard."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "producer.py").write_text(
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\n"
+        "class Widget:\n"
+        "    hollow: list\n"
+        "    real: int\n\n"
+        "def build(n):\n"
+        "    return Widget(hollow=[], real=n)\n"
+    )
+
+    @dataclasses.dataclass
+    class Widget:
+        hollow: list
+        real: int
+
     allowlisted = _offending_fields(
         Widget, "Widget", pkg, reserved={("Widget", "hollow"): "test fixture"}
     )
+
     assert allowlisted == [], (
         f"self-check: allow-listing the hollow field must quiet the guard, got {allowlisted}"
     )
 
 
-def test_self_check_pass_through_is_not_mistaken_for_a_producer(tmp_path: Path) -> None:
+def test_producers_should_ignore_same_named_attribute_pass_through(tmp_path: Path) -> None:
     """A same-named attribute relay (`recent_rounds=base_state.recent_rounds`)
     forwards whatever the upstream field already holds — it must NOT count as
     a producer, or the real invariant would silently pass for exactly the bug
@@ -206,5 +229,7 @@ def test_self_check_pass_through_is_not_mistaken_for_a_producer(tmp_path: Path) 
         "def relay(base):\n"
         "    return Widget(hollow=base.hollow)\n"
     )
+
     hits = _producers("Widget", pkg)
+
     assert "hollow" not in hits, f"same-named attribute pass-through must not count: {hits}"

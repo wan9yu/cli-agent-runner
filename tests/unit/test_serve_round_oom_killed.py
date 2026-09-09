@@ -40,7 +40,7 @@ def _usage(oom_kill: int, oom: int = 0) -> dict:
     }
 
 
-def test_oom_kill_delta_emits_pointer_only_event(tmp_path, monkeypatch):
+def test_round_oom_killed_should_emit_pointer_only_event_when_oom_kill_rises(tmp_path, monkeypatch):
     log = tmp_path / "round-9.log"
     log.write_text("some transcript bytes")
     _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=3)
@@ -66,7 +66,9 @@ def test_oom_kill_delta_emits_pointer_only_event(tmp_path, monkeypatch):
     assert "[agent-runner] round log truncated: cgroup OOM-kill" in log.read_text()
 
 
-def test_sibling_oom_kill_with_clean_exit_does_not_emit(tmp_path, monkeypatch):
+def test_round_oom_killed_should_not_emit_when_sibling_oom_kill_but_clean_exit(
+    tmp_path, monkeypatch
+):
     """The bounding cgroup can be a shared ANCESTOR slice: a rising oom_kill
     counter can be a SIBLING process's kill, not this round's. A clean-exit
     round (returncode 0) must not be misattributed -- no round_oom_killed,
@@ -84,8 +86,7 @@ def test_sibling_oom_kill_with_clean_exit_does_not_emit(tmp_path, monkeypatch):
     assert log.read_text() == "this round exited cleanly"  # no trailer appended
 
 
-def test_normal_round_does_not_emit_oom_killed(tmp_path, monkeypatch):
-    """oom_kill counter unchanged over the round -- no event, no marker."""
+def test_round_oom_killed_should_not_emit_when_oom_kill_counter_unchanged(tmp_path, monkeypatch):
     log = tmp_path / "round-1.log"
     log.write_text("clean round output")
     _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=2)
@@ -98,7 +99,7 @@ def test_normal_round_does_not_emit_oom_killed(tmp_path, monkeypatch):
     assert log.read_text() == "clean round output"  # no trailer appended
 
 
-def test_no_finite_cgroup_bound_does_not_emit_oom_killed(tmp_path):
+def test_round_oom_killed_should_not_emit_when_no_finite_cgroup_bound(tmp_path):
     """Host has no finite cgroup bound -- _emit_round_cgroup_memory no-ops
     ({}), so there is nothing to diff and _maybe_emit_oom_killed must no-op."""
     log = tmp_path / "round-1.log"
@@ -110,7 +111,9 @@ def test_no_finite_cgroup_bound_does_not_emit_oom_killed(tmp_path):
     assert [e for e in _events(tmp_path) if e["event"] == "round_oom_killed"] == []
 
 
-def test_supervisor_mem_terminated_round_does_not_also_emit_oom_killed(tmp_path, monkeypatch):
+def test_round_oom_killed_should_not_emit_when_supervisor_mem_terminated_the_round(
+    tmp_path, monkeypatch
+):
     """A round the SUPERVISOR's own host_health floor kills (round_mem_terminated)
     is a DISTINCT cause from the kernel's cgroup-OOM: the kernel never actually
     OOM-killed anything, so oom_kill does not rise and round_oom_killed must not
@@ -141,7 +144,7 @@ def test_supervisor_mem_terminated_round_does_not_also_emit_oom_killed(tmp_path,
     assert not any(e["event"] == "round_oom_killed" for e in evs)
 
 
-def test_give_up_classification_unchanged_when_oom_killed_fires(tmp_path, monkeypatch):
+def test_post_round_verdicts_should_be_unchanged_when_oom_killed_fires(tmp_path, monkeypatch):
     """round_oom_killed is pure observability bolted onto post_round_verdicts
     AFTER its give-up decisions are already computed: the returned
     (exit_code, delay, streaks) for a kernel-SIGKILL round (exit 137) must be
@@ -187,12 +190,14 @@ def test_give_up_classification_unchanged_when_oom_killed_fires(tmp_path, monkey
     # A: kernel OOM-killed -- round_oom_killed fires alongside the verdict.
     log_dir_a = tmp_path / "a"
     result_a = _run(log_dir_a, oom_kill_baseline=0, oom_kill_now=1)
+
     assert any(e["event"] == "round_oom_killed" for e in _events(log_dir_a))
 
     # B: identical round, but no finite cgroup bound at all -- round_oom_killed
     # cannot fire (nothing to read).
     log_dir_b = tmp_path / "b"
     result_b = _run(log_dir_b, oom_kill_baseline=None, oom_kill_now=None)
+
     assert not any(e["event"] == "round_oom_killed" for e in _events(log_dir_b))
 
     assert result_a == result_b  # give-up decision/exit-code/streaks unchanged

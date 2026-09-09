@@ -7,17 +7,17 @@ import pytest
 from tests._test_helpers import FakeArgs, make_toml
 
 
-def test_given_no_registered_hooks_when_serve_startup_hooks_then_empty_list() -> None:
+def test_serve_startup_hooks_should_return_empty_list_when_no_hooks_registered() -> None:
     from agent_runner.hooks import serve_startup_hooks
 
     result = serve_startup_hooks()
+
     assert isinstance(result, list)
 
 
-def test_given_hook_registered_when_serve_startup_hooks_then_returned_in_order(
+def test_serve_startup_hooks_should_return_hooks_in_registration_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """register_serve_startup_hook adds to registry; order is registration order."""
     from agent_runner import hooks
 
     monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
@@ -38,10 +38,11 @@ def test_given_hook_registered_when_serve_startup_hooks_then_returned_in_order(
     hooks.register_serve_startup_hook(HookB())
 
     out = hooks.serve_startup_hooks()
+
     assert [h.name for h in out] == ["hook_a", "hook_b"]
 
 
-def test_given_duplicate_name_when_register_serve_startup_hook_then_raises(
+def test_register_serve_startup_hook_should_raise_when_name_is_duplicate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ensure_unique pattern: re-registering same name raises."""
@@ -56,11 +57,12 @@ def test_given_duplicate_name_when_register_serve_startup_hook_then_raises(
             pass
 
     hooks.register_serve_startup_hook(HookA())
+
     with pytest.raises(ValueError, match="dup"):
         hooks.register_serve_startup_hook(HookA())
 
 
-def test_given_protocol_then_runtime_checkable_class_satisfies(
+def test_serve_startup_hook_protocol_should_be_satisfied_by_class_with_name_and_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ServeStartupHook is runtime_checkable; classes with name + __call__ satisfy."""
@@ -75,7 +77,7 @@ def test_given_protocol_then_runtime_checkable_class_satisfies(
     assert isinstance(GoodHook(), ServeStartupHook)
 
 
-def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
+def test_serve_cmd_should_proceed_to_loop_when_startup_hook_succeeds(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """Hook runs successfully; serve proceeds to PID file write + loop."""
@@ -103,14 +105,15 @@ def test_given_hook_succeeds_when_serve_then_proceeds_to_loop(
     monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=True))
+
     assert rc == 0
     assert called["count"] == 1
 
 
-def test_given_hook_raises_when_serve_then_abort_exit_78_emit_event(
+def test_serve_cmd_should_abort_and_emit_failure_event_when_startup_hook_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """Hook raises; serve aborts with exit 78 (deterministic, no retry -- Group A)
+    """Serve aborts with exit 78 (deterministic, no retry -- Group A)
     and emits serve_startup_hook_failed."""
     import json
     import subprocess
@@ -145,6 +148,7 @@ def test_given_hook_raises_when_serve_then_abort_exit_78_emit_event(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
+
     assert rc == PERMANENT_CONFIG_EXIT
     assert called["subprocess_run"] == 0
 
@@ -158,10 +162,9 @@ def test_given_hook_raises_when_serve_then_abort_exit_78_emit_event(
     assert "disk full" in failed[0]["exc_msg"]
 
 
-def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
+def test_serve_cmd_should_skip_later_hooks_when_earlier_hook_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """Hooks run sequentially; first raise short-circuits subsequent hooks."""
     import subprocess
 
     from agent_runner import hooks
@@ -198,5 +201,6 @@ def test_given_first_hook_raises_when_serve_then_second_hook_not_called(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
+
     assert rc == PERMANENT_CONFIG_EXIT
     assert called_b["count"] == 0

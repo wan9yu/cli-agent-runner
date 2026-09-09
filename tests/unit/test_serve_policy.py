@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 
-def test_serve_policy_exports_constants_and_decision() -> None:
+def test_serve_policy_should_export_stable_exit_code_constants() -> None:
     from agent_runner import _serve_policy as sp
 
     assert sp.PERMANENT_CONFIG_EXIT == 78
     assert sp.CRASH_LOOP_EXIT == 75
     assert sp.ENV_BATTERY_EXIT == 76
+
+
+def test_post_round_decision_should_return_config_broken_when_permanent_config_exit() -> None:
+    from agent_runner import _serve_policy as sp
+
     action, _, n = sp.post_round_decision(
         returncode=sp.PERMANENT_CONFIG_EXIT,
         duration_s=1.0,
@@ -16,10 +21,11 @@ def test_serve_policy_exports_constants_and_decision() -> None:
         consecutive=0,
         restart_delay_s=5,
     )
+
     assert action == "config_broken"
 
 
-def test_api_facade_re_exports_the_same_policy_objects() -> None:
+def test_api_should_re_export_same_policy_objects_as_serve_policy() -> None:
     from agent_runner import _serve_policy as sp
     from agent_runner import api
 
@@ -29,31 +35,46 @@ def test_api_facade_re_exports_the_same_policy_objects() -> None:
     assert api.ENV_BATTERY_EXIT is sp.ENV_BATTERY_EXIT
 
 
-def test_mem_loop_decision_increments_to_threshold() -> None:
+def test_mem_loop_decision_should_trip_mem_loop_when_triggered_to_threshold() -> None:
     from agent_runner._serve_policy import MEM_LOOP_THRESHOLD, _mem_loop_decision
 
     c = 0
     action = "continue"
     for _ in range(MEM_LOOP_THRESHOLD):
         action, c = _mem_loop_decision(mem_terminated=True, consecutive=c)
+
     assert action == "mem_loop" and c == MEM_LOOP_THRESHOLD
 
 
-def test_mem_loop_decision_non_mem_round_resets() -> None:
+def test_mem_loop_decision_should_keep_incrementing_when_still_triggered() -> None:
     from agent_runner._serve_policy import _mem_loop_decision
 
     action, c = _mem_loop_decision(mem_terminated=True, consecutive=2)
+
     assert action == "continue" and c == 3
+
+
+def test_mem_loop_decision_should_reset_when_not_triggered() -> None:
+    from agent_runner._serve_policy import _mem_loop_decision
+
     action, c = _mem_loop_decision(mem_terminated=False, consecutive=3)
+
     assert action == "continue" and c == 0
 
 
-def test_mem_loop_exit_value_and_restartable(tmp_path) -> None:
+def test_mem_loop_exit_should_equal_71() -> None:
+    from agent_runner._serve_policy import MEM_LOOP_EXIT
+
+    assert MEM_LOOP_EXIT == 71
+
+
+def test_mem_loop_exit_should_be_excluded_from_restart_prevent_list_when_unit_rendered(
+    tmp_path,
+) -> None:
     from agent_runner._serve_policy import CRASH_LOOP_EXIT, MEM_LOOP_EXIT, PERMANENT_CONFIG_EXIT
     from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig, VcsConfig
     from agent_runner.service_unit import render_serve_unit
 
-    assert MEM_LOOP_EXIT == 71
     cfg = Config(
         agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
@@ -63,31 +84,40 @@ def test_mem_loop_exit_value_and_restartable(tmp_path) -> None:
     unit = render_serve_unit(
         cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
     )
+
     assert f"RestartPreventExitStatus={PERMANENT_CONFIG_EXIT} {CRASH_LOOP_EXIT}" in unit
     restart_line = [ln for ln in unit.splitlines() if ln.startswith("RestartPreventExitStatus=")][0]
     assert str(MEM_LOOP_EXIT) not in restart_line.split("=", 1)[1].split()
 
 
-def test_no_progress_decision_increments_to_threshold() -> None:
+def test_no_progress_decision_should_trip_stalled_when_triggered_to_threshold() -> None:
     from agent_runner._serve_policy import CRASH_LOOP_THRESHOLD, _no_progress_decision
 
     c = 0
     action = "continue"
     for _ in range(CRASH_LOOP_THRESHOLD):
         action, c = _no_progress_decision(no_progress=True, consecutive=c)
+
     assert action == "stalled_no_progress" and c == CRASH_LOOP_THRESHOLD
 
 
-def test_no_progress_decision_progress_round_resets() -> None:
+def test_no_progress_decision_should_keep_incrementing_when_still_triggered() -> None:
     from agent_runner._serve_policy import _no_progress_decision
 
     action, c = _no_progress_decision(no_progress=True, consecutive=2)
+
     assert action == "continue" and c == 3
+
+
+def test_no_progress_decision_should_reset_when_not_triggered() -> None:
+    from agent_runner._serve_policy import _no_progress_decision
+
     action, c = _no_progress_decision(no_progress=False, consecutive=3)
+
     assert action == "continue" and c == 0
 
 
-def test_consecutive_streak_decision_increments_then_trips_then_resets() -> None:
+def test_consecutive_streak_decision_should_increment_then_trip_then_reset() -> None:
     """The generic (0.2.17 Task 2) both _mem_loop_decision and
     _no_progress_decision now delegate to: increments while triggered, trips
     at threshold, and a non-triggered call resets to 0 regardless of the
@@ -98,21 +128,24 @@ def test_consecutive_streak_decision_increments_then_trips_then_resets() -> None
         triggered=True, consecutive=0, threshold=3, verdict="my_verdict"
     )
     assert (action, c) == ("continue", 1)
+
     action, c = _consecutive_streak_decision(
         triggered=True, consecutive=c, threshold=3, verdict="my_verdict"
     )
     assert (action, c) == ("continue", 2)
+
     action, c = _consecutive_streak_decision(
         triggered=True, consecutive=c, threshold=3, verdict="my_verdict"
     )
     assert (action, c) == ("my_verdict", 3)
+
     action, c = _consecutive_streak_decision(
         triggered=False, consecutive=c, threshold=3, verdict="my_verdict"
     )
     assert (action, c) == ("continue", 0)
 
 
-def test_mem_loop_persistent_exit_value_and_free() -> None:
+def test_mem_loop_persistent_exit_should_be_distinct_from_other_exit_codes() -> None:
     """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT is a distinct sysexits-band
     code from every other serve give-up/restart exit code in use."""
     from agent_runner._serve_policy import (

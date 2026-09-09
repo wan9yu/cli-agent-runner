@@ -26,18 +26,22 @@ def _cfg(tmp_path: Path, extra: str = "") -> api.Config:
     return load_config(toml)
 
 
-def test_ceiling_adds_derived_margin_for_base_timeout(tmp_path):
+def test_outer_round_ceiling_should_add_derived_margin_for_base_timeout(tmp_path):
     cfg = _cfg(tmp_path)
+
     _, expected_ceiling = _serve_policy.timeout_budget(100)
+
     assert api.outer_round_ceiling_s(cfg, None) == expected_ceiling
 
 
-def test_ceiling_uses_selected_phase_timeout(tmp_path):
+def test_outer_round_ceiling_should_use_phase_timeout_for_explicit_and_rotated_calls(tmp_path):
     cfg = _cfg(
         tmp_path,
         "[phases]\nlist = ['fast', 'slow']\n[phases.slow.runtime]\nround_timeout_s = 900\n",
     )
+
     _, expected_ceiling = _serve_policy.timeout_budget(900)
+
     assert api.outer_round_ceiling_s(cfg, "slow") == expected_ceiling
     # rotation (phase_arg None) must not under-budget a phase that overrides larger
     assert api.outer_round_ceiling_s(cfg, None) == expected_ceiling

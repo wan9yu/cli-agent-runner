@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -45,22 +47,29 @@ def _toml(tmp_path: Path) -> Path:
     return tmp_path / "agent-runner.toml"
 
 
-def test_given_serve_unit_filename_when_built_then_contains_project_name(tmp_path: Path) -> None:
+def test_serve_unit_filename_should_contain_project_name_when_built(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     project = cfg.runtime.work_dir.name
+
     assert serve_unit_filename(project) == f"agent-runner@{project}.service"
 
 
-def test_given_monitor_unit_filename_when_built_then_distinct_from_serve(tmp_path: Path) -> None:
+def test_monitor_unit_filename_should_return_project_scoped_unit_name_when_built(
+    tmp_path: Path,
+) -> None:
     cfg = _cfg(tmp_path)
     project = cfg.runtime.work_dir.name
+
     assert monitor_unit_filename(project) == f"agent-runner-monitor@{project}.service"
+    assert monitor_unit_filename(project) != serve_unit_filename(project)
 
 
-def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path: Path) -> None:
+def test_render_serve_unit_should_contain_required_sections_when_rendered(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+
     body = render_serve_unit(cfg, script_path=script_path, config_path=_toml(tmp_path))
+
     from agent_runner.api import CRASH_LOOP_EXIT, MEM_LOOP_PERSISTENT_EXIT, PERMANENT_CONFIG_EXIT
 
     for needle in (
@@ -76,7 +85,7 @@ def test_given_serve_unit_when_rendered_then_contains_required_sections(tmp_path
     assert "Restart=always" not in body  # a deliberate stop must not auto-restart
 
 
-def test_given_serve_unit_when_rendered_then_mem_loop_persistent_stops_but_mem_loop_restarts(
+def test_render_serve_unit_should_restrict_restart_prevention_to_giveup_exits_when_rendered(
     tmp_path: Path,
 ) -> None:
     """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT (a deliberate cross-restart
@@ -90,9 +99,11 @@ def test_given_serve_unit_when_rendered_then_mem_loop_persistent_stops_but_mem_l
     )
 
     cfg = _cfg(tmp_path)
+
     unit = render_serve_unit(
         cfg, script_path=tmp_path / "ar", config_path=tmp_path / "agent-runner.toml"
     )
+
     prevented = unit.split("RestartPreventExitStatus=")[1].split("\n")[0].split()
     assert str(MEM_LOOP_PERSISTENT_EXIT) in prevented
     assert str(PERMANENT_CONFIG_EXIT) in prevented
@@ -100,33 +111,49 @@ def test_given_serve_unit_when_rendered_then_mem_loop_persistent_stops_but_mem_l
     assert str(MEM_LOOP_EXIT) not in prevented
 
 
-def test_given_serve_unit_when_rendered_then_timeout_includes_grace(tmp_path: Path) -> None:
-    cfg = _cfg(tmp_path)  # round_timeout_s=600
+@pytest.mark.parametrize(
+    "round_timeout_s,expected",
+    [(600, 810), (1800, 2010)],
+    ids=["timeout-600", "timeout-1800"],
+)
+def test_render_serve_unit_should_add_grace_budget_to_timeout_when_rendered(
+    tmp_path: Path, round_timeout_s: int, expected: int
+) -> None:
+    """TimeoutStopSec = round_timeout_s + 210 budget (_serve_policy.timeout_budget)."""
+    cfg = _cfg(tmp_path, round_timeout_s=round_timeout_s)
+
     body = render_serve_unit(
         cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner", config_path=_toml(tmp_path)
     )
-    assert "TimeoutStopSec=810" in body  # 600 + 210 budget (_serve_policy.timeout_budget)
+
+    assert f"TimeoutStopSec={expected}" in body
 
 
-def test_given_serve_unit_when_rendered_then_paths_substituted(tmp_path: Path) -> None:
+def test_render_serve_unit_should_substitute_paths_when_rendered(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+
     body = render_serve_unit(cfg, script_path=script_path, config_path=_toml(tmp_path))
+
     assert str(cfg.runtime.work_dir) in body
     assert f"{script_path} serve" in body
 
 
-def test_given_config_path_when_rendered_then_execstart_uses_it_verbatim(tmp_path: Path) -> None:
+def test_render_serve_unit_should_use_given_config_path_verbatim_in_execstart_when_rendered(
+    tmp_path: Path,
+) -> None:
     """ExecStart's --config must be the toml the caller actually loaded ``cfg``
     from, not a re-derivation of cfg.runtime.work_dir / "agent-runner.toml"."""
     cfg = _cfg(tmp_path)
     explicit = tmp_path / "somewhere-else.toml"
+
     body = render_serve_unit(cfg, script_path=tmp_path / "ar", config_path=explicit)
+
     assert f"--config {explicit}\n" in body
     assert str(_toml(tmp_path)) not in body
 
 
-def test_given_work_dir_differs_from_toml_dir_when_rendered_then_config_flag_is_real_toml_path(
+def test_render_units_should_use_real_toml_config_path_when_work_dir_differs_from_toml_dir(
     tmp_path: Path,
 ) -> None:
     """Group C regression (spec-review finding): runtime.work_dir
@@ -161,24 +188,17 @@ def test_given_work_dir_differs_from_toml_dir_when_rendered_then_config_flag_is_
         assert f"WorkingDirectory={repo_dir}\n" in body
 
 
-def test_given_monitor_unit_when_rendered_then_runs_monitor_command(tmp_path: Path) -> None:
+def test_render_monitor_unit_should_run_monitor_command_when_rendered(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     script_path = tmp_path / ".venv" / "bin" / "agent-runner"
+
     body = render_monitor_unit(cfg, script_path=script_path, config_path=_toml(tmp_path))
+
     assert f"{script_path} monitor" in body
     assert str(cfg.runtime.work_dir) in body
 
 
-def test_given_round_timeout_when_render_then_timeout_includes_grace(tmp_path: Path) -> None:
-    """TimeoutStopSec = round_timeout_s + 210 budget (_serve_policy.timeout_budget)."""
-    cfg = _cfg(tmp_path, round_timeout_s=1800)
-    unit = render_serve_unit(
-        cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner", config_path=_toml(tmp_path)
-    )
-    assert "TimeoutStopSec=2010" in unit  # 1800 + 210
-
-
-def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
+def test_render_serve_unit_should_use_max_round_timeout_across_phases_when_phase_override_present(
     tmp_path: Path,
 ) -> None:
     """Per-phase round_timeout_s influences systemd TimeoutStopSec via max()."""
@@ -200,28 +220,37 @@ def test_given_per_phase_override_when_render_then_timeoutstopsec_uses_max(
     unit = render_serve_unit(
         cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner", config_path=_toml(tmp_path)
     )
+
     # max(1800, 3600) + 210 = 3810
     assert "TimeoutStopSec=3810" in unit
 
 
-def test_given_user_arg_when_render_serve_unit_then_includes_user_directive(tmp_path: Path) -> None:
+def test_render_serve_unit_should_include_user_directive_when_user_arg_given(
+    tmp_path: Path,
+) -> None:
     cfg = _cfg(tmp_path)
+
     body = render_serve_unit(
         cfg, script_path=tmp_path / "ar", config_path=_toml(tmp_path), user="dietpi"
     )
+
     assert "User=dietpi" in body
     assert "Group=dietpi" in body
     assert "WantedBy=multi-user.target" in body
 
 
-def test_given_no_user_arg_when_render_serve_unit_then_no_user_directive(tmp_path: Path) -> None:
+def test_render_serve_unit_should_omit_user_directive_when_no_user_arg_given(
+    tmp_path: Path,
+) -> None:
     cfg = _cfg(tmp_path)
+
     body = render_serve_unit(cfg, script_path=tmp_path / "ar", config_path=_toml(tmp_path))
+
     assert "User=" not in body
     assert "WantedBy=default.target" in body
 
 
-def test_given_serve_unit_when_rendered_then_killmode_mixed(tmp_path: Path) -> None:
+def test_render_serve_unit_should_set_killmode_mixed_when_rendered(tmp_path: Path) -> None:
     """KillMode=mixed is the load-bearing half of graceful drain: systemd's
     default control-group KillMode SIGTERMs the whole cgroup — round and agent
     child included — so serve would never get to drain the current round.
@@ -229,15 +258,19 @@ def test_given_serve_unit_when_rendered_then_killmode_mixed(tmp_path: Path) -> N
     body = render_serve_unit(
         _cfg(tmp_path), script_path=Path("/usr/bin/agent-runner"), config_path=_toml(tmp_path)
     )
+
     assert "KillMode=mixed" in body
 
 
-def test_given_serve_unit_when_rendered_then_startlimit_bounds_restart(tmp_path: Path) -> None:
+def test_render_serve_unit_should_bound_restart_with_startlimit_when_rendered(
+    tmp_path: Path,
+) -> None:
     """RestartSec=3 alone can respawn a broken serve indefinitely; the StartLimit
     window converts a persistent early-exit into a systemd 'failed' state."""
     body = render_serve_unit(
         _cfg(tmp_path), script_path=tmp_path / "ar", config_path=_toml(tmp_path)
     )
+
     assert "StartLimitIntervalSec=300" in body
     assert "StartLimitBurst=5" in body
     # StartLimit* are [Unit] directives — must precede [Service].

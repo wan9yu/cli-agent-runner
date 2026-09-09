@@ -14,22 +14,25 @@ from agent_runner.config import PhaseOverride, PhasesConfig, load_config
 from tests._clock import FakeClock
 
 
-def test_given_git_repo_when_api_init_then_returns_init_result(tmp_git_repo: Path) -> None:
+def test_git_repo_should_return_init_result_when_api_init(tmp_git_repo: Path) -> None:
     result = api.init(tmp_git_repo, force=False, commit=False)
+
     assert isinstance(result, InitResult)
     assert result.work_dir == tmp_git_repo
     assert any(f.name == "agent-runner.toml" for f in result.files_created)
 
 
-def test_given_no_systemd_no_pid_when_api_status_then_returns_mode_none(tmp_git_repo: Path) -> None:
+def test_no_systemd_no_pid_should_return_mode_none_when_api_status(tmp_git_repo: Path) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
+
     s = api.status(tmp_git_repo)
+
     assert isinstance(s, ServiceStatus)
     assert s.mode == ServiceMode.NONE
     assert s.active is False
 
 
-def test_given_pid_file_with_self_pid_when_status_then_active_true(
+def test_pid_file_with_self_pid_should_be_active_when_status(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -39,13 +42,15 @@ def test_given_pid_file_with_self_pid_when_status_then_active_true(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text(str(os.getpid()))
+
     s = api.status(tmp_git_repo)
+
     assert s.mode == ServiceMode.PID_FILE
     assert s.active is True
     assert s.pid == os.getpid()
 
 
-def test_given_pid_file_with_dead_pid_when_status_then_active_false(
+def test_pid_file_with_dead_pid_should_be_inactive_when_status(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -55,12 +60,14 @@ def test_given_pid_file_with_dead_pid_when_status_then_active_false(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("999999999")
+
     s = api.status(tmp_git_repo)
+
     assert s.mode == ServiceMode.PID_FILE
     assert s.active is False
 
 
-def test_given_pid_file_when_api_stop_then_sends_sigterm(
+def test_pid_file_should_send_sigterm_when_api_stop(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -70,12 +77,14 @@ def test_given_pid_file_when_api_stop_then_sends_sigterm(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
+
     with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
         api.stop(tmp_git_repo)
+
         send.assert_called_with(12345, signal.SIGTERM)
 
 
-def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
+def test_pid_file_should_send_sigterm_then_sigkill_when_api_kill(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -85,25 +94,28 @@ def test_given_pid_file_when_api_kill_then_sends_sigterm_then_sigkill(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
-    # True on the first liveness check, False on every one after -- robust to
-    # exactly how many times the poll re-checks before it settles (an
-    # implementation detail of the underlying wait, not this test's concern).
-    calls = {"n": 0}
+    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    # The pid stays alive through the whole SIGTERM grace window, so api.kill
+    # escalates to SIGKILL -- the branch the name promises. Without this the pid
+    # would report dead right after SIGTERM and SIGKILL would never be sent (nor
+    # asserted). FakeClock lets the grace deadline expire with no real sleep.
+    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: True)
+    sent: list[tuple[int, int]] = []
 
-    def fake_pid_alive(_pid: int) -> bool:
-        calls["n"] += 1
-        return calls["n"] == 1
+    def fake_send(pid: int, sig: int) -> bool:
+        sent.append((pid, sig))
+        return True
 
-    with (
-        patch("agent_runner.api.send_signal_to_pid", return_value=True) as send,
-        patch("agent_runner.api.pid_alive", side_effect=fake_pid_alive),
-    ):
-        api.kill(tmp_git_repo)
-        sent = [c.args[1] for c in send.call_args_list]
-        assert signal.SIGTERM in sent
+    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+
+    api.kill(tmp_git_repo)
+
+    assert (12345, signal.SIGTERM) in sent
+    assert (12345, signal.SIGKILL) in sent
+    assert sent.index((12345, signal.SIGTERM)) < sent.index((12345, signal.SIGKILL))
 
 
-def test_given_install_with_no_systemctl_when_called_then_returns_install_result(
+def test_install_with_no_systemctl_should_return_install_result_when_called(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -117,12 +129,14 @@ def test_given_install_with_no_systemctl_when_called_then_returns_install_result
         "agent_runner.api._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
+
     result = api.install(tmp_git_repo, system=False, with_monitor=False)
+
     assert result.unit_path.exists()
     assert result.monitor_unit_path is None
 
 
-def test_given_install_with_monitor_when_called_then_writes_two_units(
+def test_install_with_monitor_should_write_two_units_when_called(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -136,13 +150,15 @@ def test_given_install_with_monitor_when_called_then_writes_two_units(
         "agent_runner.api._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
+
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
+
     assert result.unit_path.exists()
     assert result.monitor_unit_path is not None
     assert result.monitor_unit_path.exists()
 
 
-def test_given_installed_unit_when_uninstall_then_removes_file(
+def test_installed_unit_should_be_removed_when_uninstall(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,12 +174,14 @@ def test_given_installed_unit_when_uninstall_then_removes_file(
         lambda: tmp_git_repo / "fake-agent-runner",
     )
     api.install(tmp_git_repo, system=False, with_monitor=True)
+
     api.uninstall(tmp_git_repo)
+
     unit_name = f"agent-runner@{tmp_git_repo.name}.service"
     assert not (fake_systemd / unit_name).exists()
 
 
-def test_given_draining_unit_when_uninstall_then_does_not_raise(
+def test_draining_unit_should_not_raise_when_uninstall(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -195,11 +213,10 @@ def test_given_draining_unit_when_uninstall_then_does_not_raise(
     assert any(a[:2] == ("--no-block", "stop") for a in calls)  # queued, never a blocking stop
 
 
-def test_given_per_phase_override_when_poll_once_then_forwards_phases_overrides_to_monitor(
+def test_per_phase_override_should_be_forwarded_to_monitor_when_poll_once(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_poll_once must forward cfg.phases.overrides to run_all_detectors as phases_overrides."""
     api.init(tmp_git_repo, force=False, commit=False)
 
     # Patch load_config to inject a phases override
@@ -244,78 +261,85 @@ def _fake_systemd_unit(tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake)
 
 
-def test_given_systemd_failed_when_status_then_active_false(
+def test_systemd_failed_should_be_inactive_when_status(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
     monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "failed")
+
     s = api.status(tmp_git_repo)
+
     assert s.mode == ServiceMode.SYSTEMD_USER
     assert s.active is False
 
 
-def test_given_systemd_activating_when_status_then_active_true(
+def test_systemd_activating_should_be_active_when_status(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
     monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "activating")
-    assert api.status(tmp_git_repo).active is True
+
+    s = api.status(tmp_git_repo)
+
+    assert s.active is True
 
 
-def test_given_systemctl_absent_when_status_then_falls_back_to_pid(
+def test_systemctl_absent_should_fall_back_to_pid_when_status(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    from agent_runner.config import load_config
-
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text(str(os.getpid()))
     monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: None)
-    assert api.status(tmp_git_repo).active is True  # live serve.pid
+
+    s = api.status(tmp_git_repo)
+
+    assert s.active is True  # live serve.pid
 
 
-def test_systemctl_is_active_seam_returns_none_when_binary_absent(
+def test_systemctl_is_active_seam_should_return_none_when_binary_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def boom(*a, **k):
         raise FileNotFoundError("systemctl")
 
     monkeypatch.setattr("agent_runner.api.subprocess.run", boom)
-    assert api._systemctl_is_active("agent-runner@x.service") is None
+
+    result = api._systemctl_is_active("agent-runner@x.service")
+
+    assert result is None
 
 
-def test_given_pid_file_when_restart_then_refuses_before_stopping(
+def test_pid_file_should_refuse_before_stopping_when_restart(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A plain serve process can't be respawned by the CLI — restart must refuse
     FIRST, never leaving a half-executed stop-without-start."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    from agent_runner.config import load_config
-
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
+
     with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
         with pytest.raises(RuntimeError, match="systemd"):
             api.restart(tmp_git_repo)
+
     send.assert_not_called()  # refused BEFORE stop()
 
 
-def test_given_pid_file_when_kill_then_rechecks_alive_after_sigkill(
+def test_pid_file_should_recheck_alive_after_sigkill_when_kill(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After SIGKILL, active must reflect the post-kill liveness, not the stale
     pre-SIGKILL True."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    from agent_runner.config import load_config
-
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
@@ -330,41 +354,56 @@ def test_given_pid_file_when_kill_then_rechecks_alive_after_sigkill(
 
     monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
     monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: not killed["sent"])
+
     with patch("os.killpg", side_effect=AssertionError("killpg in PID_FILE mode")):
         s = api.kill(tmp_git_repo)
+
     assert killed["sent"] is True  # loop never saw it die → escalated to SIGKILL
     assert s.active is False  # re-checked AFTER SIGKILL
 
 
-def test_round_holder_pid_missing_sidecar_returns_none(tmp_path: Path) -> None:
-    assert api._round_holder_pid(tmp_path) is None
+def test_round_holder_pid_should_return_none_when_sidecar_missing(tmp_path: Path) -> None:
+    result = api._round_holder_pid(tmp_path)
+
+    assert result is None
 
 
-def test_round_holder_pid_corrupt_sidecar_returns_none(tmp_path: Path) -> None:
+def test_round_holder_pid_should_return_none_when_sidecar_corrupt(tmp_path: Path) -> None:
     (tmp_path / "agent-runner.lock.holder").write_text("not json")
-    assert api._round_holder_pid(tmp_path) is None
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result is None
 
 
-def test_round_holder_pid_dead_pid_returns_none(tmp_path: Path) -> None:
+def test_round_holder_pid_should_return_none_when_pid_dead(tmp_path: Path) -> None:
     import json
 
     (tmp_path / "agent-runner.lock.holder").write_text(json.dumps({"pid": 999999999}))
-    assert api._round_holder_pid(tmp_path) is None
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result is None
 
 
-def test_round_holder_pid_live_pid_returned(tmp_path: Path) -> None:
+def test_round_holder_pid_should_return_pid_when_pid_live(tmp_path: Path) -> None:
     import json
 
     (tmp_path / "agent-runner.lock.holder").write_text(json.dumps({"pid": os.getpid()}))
-    assert api._round_holder_pid(tmp_path) == os.getpid()
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result == os.getpid()
 
 
-def test_kill_sends_sigterm_to_round_holder_before_serve(
+def test_kill_should_send_sigterm_to_serve_before_round_holder(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """api.kill's PID_FILE mode must reach the round via the .holder sidecar
-    (not killpg, which can't cross a start_new_session=True boundary) --
-    SIGTERM the round pid, and do it before waiting out serve's own grace."""
+    (not killpg, which can't cross a start_new_session=True boundary). Serve
+    is SIGTERM'd FIRST (arming its own stop["requested"] handler before the
+    in-flight round is force-ended), then the round holder -- both before
+    serve's own grace-wait."""
     import json
 
     monkeypatch.setenv("HOME", str(tmp_git_repo))
@@ -393,17 +432,19 @@ def test_kill_sends_sigterm_to_round_holder_before_serve(
         return True
 
     monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+
     with patch("os.killpg", side_effect=AssertionError("killpg must never be used here")):
         api.kill(tmp_git_repo)
 
-    # The round holder (54321) is TERM'd; serve (12345) is TERM'd too (to arm
-    # stop["requested"]) but the round's own pid is what actually reaches the
-    # agent -- killpg is never used for either.
+    # Serve (12345) is TERM'd first (to arm stop["requested"]); the round
+    # holder (54321) is TERM'd next -- the round's own pid is what actually
+    # reaches the agent, killpg is never used for either.
     assert (54321, signal.SIGTERM) in sent
     assert (12345, signal.SIGTERM) in sent
+    assert sent.index((12345, signal.SIGTERM)) < sent.index((54321, signal.SIGTERM))
 
 
-def test_kill_escalates_round_holder_to_sigkill_when_term_ignored(
+def test_kill_should_escalate_round_holder_to_sigkill_when_term_ignored(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A round that ignores SIGTERM (fully wedged, never even runs its own
@@ -429,13 +470,14 @@ def test_kill_escalates_round_holder_to_sigkill_when_term_ignored(
         return True
 
     monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+
     api.kill(tmp_git_repo)
 
     assert (54321, signal.SIGKILL) in sent  # round holder escalated
     assert (12345, signal.SIGKILL) in sent  # serve itself escalated too
 
 
-def test_round_kill_grace_matches_serve_cmd_grace() -> None:
+def test_round_kill_grace_should_match_serve_cmd_grace() -> None:
     """api._terminate_round_pid's grace (driven from a separate CLI process,
     api.kill) must stay in lockstep with _serve_round._terminate_round's own
     grace (driven from serve's in-process Popen handle) -- both exist so the
@@ -466,7 +508,7 @@ def _draining_systemctl_user(calls: list[tuple[str, ...]]):
     return run
 
 
-def test_systemd_stop_draining_does_not_raise_and_reports_active(
+def test_systemd_stop_should_not_raise_and_report_active_when_draining(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A `systemctl stop` that blocks past the confirm bound (serve draining the
@@ -492,7 +534,7 @@ def test_systemd_stop_draining_does_not_raise_and_reports_active(
     assert calls and calls[0][0] == "--no-block" and calls[0][1] == "stop"  # queued, not blocking
 
 
-def test_systemd_stop_draining_confirms_when_unit_goes_inactive(
+def test_systemd_stop_draining_should_confirm_when_unit_goes_inactive(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When the stop DOES complete inside the confirm window, stop reports
@@ -508,11 +550,12 @@ def test_systemd_stop_draining_confirms_when_unit_goes_inactive(
     monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
 
     s = api.stop(tmp_git_repo)
+
     assert s.mode == ServiceMode.SYSTEMD_USER
     assert s.active is False  # drained within the bound -> confirmed stopped
 
 
-def test_systemd_restart_still_starts_when_stop_is_draining(
+def test_systemd_restart_should_still_start_when_stop_is_draining(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """restart against a unit whose stop blocks past the bound must never leave
@@ -537,7 +580,7 @@ def test_systemd_restart_still_starts_when_stop_is_draining(
     )
 
 
-def test_systemd_restart_uses_blocking_start_when_stop_confirmed(
+def test_systemd_restart_should_use_blocking_start_when_stop_confirmed(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When the stop confirms inactive, restart uses the plain blocking start()
@@ -561,7 +604,7 @@ def test_systemd_restart_uses_blocking_start_when_stop_confirmed(
     assert not any(a[:2] == ("--no-block", "start") for a in calls)
 
 
-def test_kill_systemd_escalates_to_sigkill_when_still_active(
+def test_kill_systemd_should_escalate_to_sigkill_when_still_active(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """kill's SYSTEMD_USER branch must mirror the PID_FILE branch: SIGTERM
@@ -588,7 +631,7 @@ def test_kill_systemd_escalates_to_sigkill_when_still_active(
     assert s.mode == ServiceMode.SYSTEMD_USER
 
 
-def test_kill_systemd_does_not_escalate_when_sigterm_already_stopped_it(
+def test_kill_systemd_should_not_escalate_when_sigterm_already_stopped_it(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The mirror case: when the unit is already inactive after SIGTERM (no
@@ -612,11 +655,10 @@ def test_kill_systemd_does_not_escalate_when_sigterm_already_stopped_it(
     assert s.mode == ServiceMode.SYSTEMD_USER
 
 
-def test_poll_once_forwards_supervisor_stale_threshold(
+def test_poll_once_should_forward_supervisor_stale_threshold(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_poll_once must forward cfg.monitor.supervisor_stale_threshold_s."""
     api.init(tmp_git_repo, force=False, commit=False)
 
     captured: list[dict] = []
@@ -634,7 +676,7 @@ def test_poll_once_forwards_supervisor_stale_threshold(
     assert "supervisor_stale_threshold_s" in call_kwargs
 
 
-def test_poll_once_threads_host_health_floors(
+def test_poll_once_should_thread_host_health_floors(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

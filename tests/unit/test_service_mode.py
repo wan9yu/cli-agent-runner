@@ -24,7 +24,7 @@ def _install_unit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project: str)
     return fake_systemd
 
 
-def test_given_healthy_systemd_serve_when_detect_then_stays_systemd_user(
+def test_detect_service_mode_should_stay_systemd_user_when_serve_is_healthy_under_systemd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The naive fix (pidfile ranked above the unit) would misroute this to
@@ -35,21 +35,33 @@ def test_given_healthy_systemd_serve_when_detect_then_stays_systemd_user(
     (log_dir / "serve.pid").write_text(str(os.getpid()))
     _install_unit(tmp_path, monkeypatch, "myproj")
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "active")
-    assert detect_service_mode("myproj", log_dir=log_dir) == ServiceMode.SYSTEMD_USER
+
+    mode = detect_service_mode("myproj", log_dir=log_dir)
+
+    assert mode == ServiceMode.SYSTEMD_USER
 
 
-def test_given_hand_launched_serve_no_unit_when_detect_then_pid_file(tmp_path: Path) -> None:
+def test_detect_service_mode_should_return_pid_file_when_hand_launched_with_no_unit(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     (log_dir / "serve.pid").write_text(str(os.getpid()))
-    assert detect_service_mode("proj", log_dir=log_dir) == ServiceMode.PID_FILE
+
+    mode = detect_service_mode("proj", log_dir=log_dir)
+
+    assert mode == ServiceMode.PID_FILE
 
 
-def test_given_no_unit_no_pidfile_when_detect_then_none(tmp_path: Path) -> None:
-    assert detect_service_mode("nonexistent-project", log_dir=tmp_path) == ServiceMode.NONE
+def test_detect_service_mode_should_return_none_when_no_unit_and_no_pidfile(
+    tmp_path: Path,
+) -> None:
+    mode = detect_service_mode("nonexistent-project", log_dir=tmp_path)
+
+    assert mode == ServiceMode.NONE
 
 
-def test_given_failed_unit_with_live_pidfile_when_detect_then_pid_file(
+def test_detect_service_mode_should_return_pid_file_when_unit_failed_but_pidfile_live(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The unit is installed but its systemd record is stale/failed, while a
@@ -60,10 +72,13 @@ def test_given_failed_unit_with_live_pidfile_when_detect_then_pid_file(
     (log_dir / "serve.pid").write_text(str(os.getpid()))
     _install_unit(tmp_path, monkeypatch, "myproj")
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "failed")
-    assert detect_service_mode("myproj", log_dir=log_dir) == ServiceMode.PID_FILE
+
+    mode = detect_service_mode("myproj", log_dir=log_dir)
+
+    assert mode == ServiceMode.PID_FILE
 
 
-def test_given_inactive_unit_no_live_pid_when_detect_then_systemd_user(
+def test_detect_service_mode_should_return_systemd_user_when_unit_inactive_and_no_live_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Nothing is running at all: `start` must still resolve to SYSTEMD_USER so
@@ -72,10 +87,13 @@ def test_given_inactive_unit_no_live_pid_when_detect_then_systemd_user(
     log_dir.mkdir()
     _install_unit(tmp_path, monkeypatch, "myproj")
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "inactive")
-    assert detect_service_mode("myproj", log_dir=log_dir) == ServiceMode.SYSTEMD_USER
+
+    mode = detect_service_mode("myproj", log_dir=log_dir)
+
+    assert mode == ServiceMode.SYSTEMD_USER
 
 
-def test_given_inactive_unit_with_stale_pidfile_when_detect_then_systemd_user(
+def test_detect_service_mode_should_return_systemd_user_when_pidfile_is_stale(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A dead pid left behind in serve.pid (crash without cleanup) must not be
@@ -85,10 +103,13 @@ def test_given_inactive_unit_with_stale_pidfile_when_detect_then_systemd_user(
     (log_dir / "serve.pid").write_text("999999999")
     _install_unit(tmp_path, monkeypatch, "myproj")
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "inactive")
-    assert detect_service_mode("myproj", log_dir=log_dir) == ServiceMode.SYSTEMD_USER
+
+    mode = detect_service_mode("myproj", log_dir=log_dir)
+
+    assert mode == ServiceMode.SYSTEMD_USER
 
 
-def test_given_systemctl_absent_when_detect_then_falls_back_like_inactive(
+def test_detect_service_mode_should_fall_back_to_pid_file_when_systemctl_probe_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No systemctl binary (darwin dev box, container) -> the probe returns
@@ -100,4 +121,7 @@ def test_given_systemctl_absent_when_detect_then_falls_back_like_inactive(
     (log_dir / "serve.pid").write_text(str(os.getpid()))
     _install_unit(tmp_path, monkeypatch, "myproj")
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: None)
-    assert detect_service_mode("myproj", log_dir=log_dir) == ServiceMode.PID_FILE
+
+    mode = detect_service_mode("myproj", log_dir=log_dir)
+
+    assert mode == ServiceMode.PID_FILE

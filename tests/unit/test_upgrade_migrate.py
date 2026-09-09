@@ -19,44 +19,50 @@ _VALID = (
 )
 
 
-def test_preflight_migrate_applies_auto_before_load(tmp_path):
+def test_migrate_config_file_should_apply_when_only_auto_renames_present(tmp_path):
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'rate_limit_action = "skip"\n[prompt]\nfile = "p.md"\n'
     )
     cfg = _cfg(tmp_path, body)
     (tmp_path / "p.md").write_text("hi")
+
     applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+
     assert applied and not manual
     assert 'transient_error_action = "skip"' in cfg.read_text()
     assert (tmp_path / "agent-runner.toml.bak").exists()
 
 
-def test_no_migrate_skips(tmp_path):
+def test_migrate_config_file_should_skip_when_no_migrate_flag_set(tmp_path):
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'rate_limit_action = "skip"\n[prompt]\nfile = "p.md"\n'
     )
     cfg = _cfg(tmp_path, body)
+
     applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=True)
+
     assert applied == [] and manual == []
     assert 'rate_limit_action = "skip"' in cfg.read_text()  # untouched
 
 
-def test_manual_transform_reported(tmp_path):
+def test_migrate_config_file_should_report_manual_when_only_manual_transform_present(tmp_path):
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
     )
     cfg = _cfg(tmp_path, body)
+
     applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+
     assert applied == [] and len(manual) == 1
 
 
-def test_mixed_auto_and_manual_writes_nothing(tmp_path):
-    """A config with BOTH an auto rename and a manual transform is report-only:
-    the upgrade aborts, so _migrate_config_file must leave the file byte-for-byte
-    unchanged and write no `.bak` (never mutate a config on a doomed upgrade)."""
+def test_migrate_config_file_should_leave_file_untouched_when_auto_and_manual_both_present(
+    tmp_path,
+):
+    """Report-only path: never mutate a config on a doomed upgrade."""
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'rate_limit_action = "skip"\n'
@@ -64,36 +70,36 @@ def test_mixed_auto_and_manual_writes_nothing(tmp_path):
     )
     cfg = _cfg(tmp_path, body)
     before = cfg.read_bytes()
+
     applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+
     assert applied == [] and len(manual) == 1
     assert cfg.read_bytes() == before  # file untouched
     assert not (tmp_path / "agent-runner.toml.bak").exists()
 
 
-def test_try_load_cfg_returns_none_on_unmigratable(tmp_path):
-    """Defense-in-depth: a config that still carries a removed key after any
-    auto-migration must degrade to the package-only path (None), not crash
-    with a ConfigError traceback."""
+def test_try_load_cfg_should_return_none_when_config_has_unmigratable_manual_key(tmp_path):
+    """Defense-in-depth: must degrade to None, not raise ConfigError."""
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
     )
     cfg = _cfg(tmp_path, body)
     args = argparse.Namespace(config=cfg)
+
     assert upgrade_cmd._try_load_cfg(args) is None
 
 
-def test_try_load_cfg_returns_none_on_broken_toml(tmp_path):
-    """A syntactically broken config must degrade to package-only (None), not
-    escape as a raw TOMLDecodeError traceback."""
+def test_try_load_cfg_should_return_none_when_toml_is_syntactically_broken(tmp_path):
+    """Must degrade to None, not raise a raw TOMLDecodeError."""
     cfg = _cfg(tmp_path, "[runtime\n not toml")
     args = argparse.Namespace(config=cfg)
+
     assert upgrade_cmd._try_load_cfg(args) is None
 
 
-def test_flat_phase_alias_does_not_block_upgrade(tmp_path):
-    """The flat [phases.<name>] alias is a permanent, still-valid form —
-    it must never be treated as the `manual` remainder that aborts upgrade."""
+def test_flat_phase_alias_should_not_be_treated_as_manual_remainder(tmp_path):
+    """The flat [phases.<name>] alias is a permanent, still-valid form."""
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + '[prompt]\nfile = "p.md"\n'
@@ -101,17 +107,21 @@ def test_flat_phase_alias_does_not_block_upgrade(tmp_path):
     )
     cfg = _cfg(tmp_path, body)
     (tmp_path / "p.md").write_text("hi")
+
     applied, manual = upgrade_cmd._migrate_config_file(cfg, no_migrate=False)
+
     assert manual == []
 
 
-def test_manual_remedy_mentions_no_migrate_escape_hatch(tmp_path, capsys):
+def test_cmd_should_mention_no_migrate_flag_when_manual_transform_required(tmp_path, capsys):
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
     )
     cfg = _cfg(tmp_path, body)
     args = argparse.Namespace(config=str(cfg))
+
     rc = upgrade_cmd.cmd(args)
+
     assert rc == 1
     assert "--no-migrate" in capsys.readouterr().err

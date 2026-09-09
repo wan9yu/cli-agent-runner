@@ -36,18 +36,20 @@ file = "{prompt}"
     return toml
 
 
-def test_given_round_command_when_invoked_then_status_file_written(
+def test_main_round_should_write_status_file_when_invoked(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
+
     rc = main(["--config", str(toml), "round"])
+
     assert rc == 0
     status = json.loads((tmp_git_repo / "logs" / "status.json").read_text())
     assert status["round_num"] == 1
 
 
-def test_given_round_from_external_cwd_when_config_flag_used_then_finds_toml(
+def test_main_round_should_find_toml_when_config_flag_used_from_external_cwd(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     tmp_path: Path,
@@ -58,54 +60,60 @@ def test_given_round_from_external_cwd_when_config_flag_used_then_finds_toml(
     other_cwd = tmp_path / "elsewhere"
     other_cwd.mkdir()
     monkeypatch.chdir(other_cwd)
+
     rc = main(["--config", str(toml), "round"])
+
     assert rc == 0
     status = json.loads((tmp_git_repo / "logs" / "status.json").read_text())
     assert status["round_num"] == 1
 
 
-def test_given_status_subcommand_when_invoked_then_returns_zero(
+def test_main_status_should_exit_cleanly_when_invoked(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     capsys,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
+
     rc = main(["--config", str(toml), "status"])
-    # status subcommand may be stub or real, just verify it doesn't crash
-    assert rc in (0, 1)
+
+    assert rc == 0
 
 
-def test_given_status_subcommand_after_one_round_when_invoked_then_completes(
+def test_main_status_should_print_round_or_mode_info_when_invoked_after_one_round(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     capsys,
 ) -> None:
     toml = _write_minimal_toml(tmp_git_repo, fake_agent_script)
+
     main(["--config", str(toml), "round"])
     main(["--config", str(toml), "status"])
-    out = capsys.readouterr().out
-    # Either stub message OR real ServiceStatus output
-    assert "round" in out.lower() or "mode" in out.lower() or "not implemented" in out.lower()
+
+    out = capsys.readouterr().out.lower()
+
+    assert "mode: none" in out
+    assert "active: false" in out
 
 
-def test_given_version_flag_when_main_then_prints_version_and_exits_0(
+def test_main_should_print_version_and_exit_zero_when_version_flag_given(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """--version prints 'agent-runner <version>' and exits 0 via SystemExit."""
     with pytest.raises(SystemExit) as exc_info:
         main(["--version"])
+
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert f"agent-runner {__version__}" in captured.out
 
 
-def test_given_round_phase_flag_when_main_then_phase_passed_to_run(
+def test_main_round_should_pass_phase_override_to_run_one_round_when_phase_flag_given(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """`round --phase NAME` plumbs the override into run_one_round."""
     from agent_runner.api_types import RoundResult
-    from agent_runner.cli import main
 
     captured = {}
 
@@ -142,5 +150,6 @@ def test_given_round_phase_flag_when_main_then_phase_passed_to_run(
     )
 
     rc = main(["--config", str(tmp_path / "agent-runner.toml"), "round", "--phase", "product"])
+
     assert rc == 0
     assert captured["phase_override"] == "product"

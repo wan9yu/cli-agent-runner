@@ -36,16 +36,17 @@ def _emitted_hook_kinds() -> set[str]:
     return out
 
 
-def test_given_hooks_module_docstring_when_scanned_then_lists_every_protocol() -> None:
+def test_hooks_module_docstring_should_list_every_protocol_when_scanned() -> None:
     """hooks.py's docstring is the plugin-author contract — its count and its
     bullet list must both name every Protocol."""
     import agent_runner.hooks as hooks
 
     doc = hooks.__doc__ or ""
     protocols = _protocol_names()
-
     words = {"Three": 3, "Four": 4, "Five": 5, "Six": 6}
+
     m = re.search(r"\b(Three|Four|Five|Six) Protocol-typed extension points\b", doc)
+
     assert m, "hooks.py docstring no longer states an extension-point count"
     assert words[m.group(1)] == len(protocols), (
         f"hooks.py says {m.group(1)} extension points; hooks.py declares "
@@ -55,22 +56,26 @@ def test_given_hooks_module_docstring_when_scanned_then_lists_every_protocol() -
     assert not missing, f"hooks.py docstring does not name {sorted(missing)}"
 
 
-def test_given_thesis_hook_list_when_scanned_then_names_every_protocol() -> None:
+def test_thesis_hook_list_should_name_every_protocol_when_scanned() -> None:
     """thesis.md:26 claims 'That's the complete scope' — the list must be complete."""
     text = (REPO / "docs/thesis.md").read_text(encoding="utf-8")
     section = text.split("Exposes **plugin hooks**", 1)[-1].split("That's the complete scope", 1)[0]
     protocols = _protocol_names()
+
     assert protocols, "no Protocols found in hooks.py — AST scan broke"  # vacuity-guard
+
     missing = {p for p in protocols if p not in section}
     assert not missing, (
         f"docs/thesis.md's hook list omits {sorted(missing)} yet claims completeness"
     )
 
 
-def test_given_hook_failed_doc_when_compared_then_lists_every_emitted_kind() -> None:
+def test_hook_failed_doc_should_list_every_emitted_hook_kind_when_compared() -> None:
     """docs/plugins.md documents the hook_failed payload's hook_kind values."""
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
+
     m = re.search(r'"hook_kind":\s*"([^"]+)"', text)
+
     assert m, "docs/plugins.md no longer shows a hook_kind payload line"
     documented = {v.strip() for v in m.group(1).split("|")}
     emitted = _emitted_hook_kinds()

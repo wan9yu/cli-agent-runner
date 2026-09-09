@@ -17,20 +17,23 @@ def _bash_script(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_given_subprocess_within_timeout_when_run_then_returns_exit_code_zero(
+def test_subprocess_should_return_exit_code_zero_when_within_timeout(
     tmp_path: Path,
 ) -> None:
     script = _bash_script(tmp_path, "echo hello; exit 0")
     log = tmp_path / "out.log"
+
     result = run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=log,
         env_extra={},
     )
+
     assert isinstance(result, RunResult)
     assert result.exit_code == 0
     # Headroom over the configured timeout_s=40 -- the original bound was
@@ -42,26 +45,30 @@ def test_given_subprocess_within_timeout_when_run_then_returns_exit_code_zero(
     assert "hello" in log.read_text()
 
 
-def test_given_subprocess_returning_nonzero_when_run_then_exit_code_propagated(
+def test_subprocess_should_propagate_exit_code_when_nonzero(
     tmp_path: Path,
 ) -> None:
     script = _bash_script(tmp_path, "exit 7")
+
     result = run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=tmp_path / "out.log",
         env_extra={},
     )
+
     assert result.exit_code == 7
 
 
-def test_given_subprocess_exceeds_timeout_when_run_then_kills_process_group(
+def test_subprocess_should_kill_process_group_when_timeout_exceeded(
     tmp_path: Path,
 ) -> None:
     script = _bash_script(tmp_path, "sleep 30")
+
     start = time.time()
     result = run(
         work_dir=tmp_path,
@@ -73,6 +80,7 @@ def test_given_subprocess_exceeds_timeout_when_run_then_kills_process_group(
         env_extra={},
     )
     elapsed = time.time() - start
+
     assert result.timed_out is True
     assert result.exit_code != 0
     # 2x headroom for contention (timeout_s=2 -> ~2-3s expected); strictly
@@ -80,7 +88,7 @@ def test_given_subprocess_exceeds_timeout_when_run_then_kills_process_group(
     assert elapsed < 20  # killed quickly, not waited 30
 
 
-def test_given_subprocess_emits_constant_activity_when_timeout_exceeded_then_killed_anyway(
+def test_subprocess_emitting_constant_activity_should_be_killed_when_timeout_exceeded(
     tmp_path: Path,
 ) -> None:
     """R1128 lesson — ROUND_TIMEOUT is wall-clock hard wall, not activity-based."""
@@ -88,6 +96,7 @@ def test_given_subprocess_emits_constant_activity_when_timeout_exceeded_then_kil
         tmp_path,
         "while true; do echo activity; sleep 0.1; done",
     )
+
     result = run(
         work_dir=tmp_path,
         command=[str(script)],
@@ -97,10 +106,11 @@ def test_given_subprocess_emits_constant_activity_when_timeout_exceeded_then_kil
         log_path=tmp_path / "out.log",
         env_extra={},
     )
+
     assert result.timed_out is True
 
 
-def test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv(
+def test_prompt_arg_template_should_substitute_prompt_in_argv(
     tmp_path: Path,
 ) -> None:
     script = _bash_script(tmp_path, 'echo "prompt-was=$2"; exit 0')
@@ -114,6 +124,7 @@ def test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv(
     # gates (this test's own gate plus another full gate running at once,
     # ~2-3x CPU oversubscription): 15s was hit and the child was SIGTERMed
     # (exit_code -15) before ever writing the log -- 40s gives real margin.
+
     run(
         work_dir=tmp_path,
         command=[str(script)],
@@ -123,25 +134,29 @@ def test_given_prompt_arg_template_when_run_then_prompt_substituted_in_argv(
         log_path=log,
         env_extra={},
     )
+
     assert "prompt-was=HELLO" in log.read_text()
 
 
-def test_given_env_extra_when_run_then_envs_propagated_to_subprocess(tmp_path: Path) -> None:
+def test_env_extra_should_propagate_to_subprocess(tmp_path: Path) -> None:
     script = _bash_script(tmp_path, 'echo "EFFORT=$CLAUDE_CODE_EFFORT_LEVEL"; exit 0')
     log = tmp_path / "out.log"
+
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=log,
         env_extra={"CLAUDE_CODE_EFFORT_LEVEL": "xhigh"},
     )
+
     assert "EFFORT=xhigh" in log.read_text()
 
 
-def test_given_subprocess_in_process_group_when_killed_then_descendants_terminate(
+def test_process_group_should_terminate_descendants_when_killed(
     tmp_path: Path,
 ) -> None:
     """Spawn a subprocess that itself spawns a child; verify both die on timeout.
@@ -169,6 +184,7 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
     # this test's run time -- 30s (not the 40s used for the trivial-echo
     # siblings in this file) balances >=2-concurrent-gate headroom against
     # not needlessly inflating the parallel pass.
+
     run(
         work_dir=tmp_path,
         command=[str(script)],
@@ -178,6 +194,7 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
         log_path=tmp_path / "out.log",
         env_extra={},
     )
+
     assert poll_until(pid_file.exists, timeout_s=5), (
         f"grandchild never wrote its pidfile at {pid_file} — script did not run"
     )
@@ -195,7 +212,7 @@ def test_given_subprocess_in_process_group_when_killed_then_descendants_terminat
     )
 
 
-def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
+def test_env_extra_should_not_inject_implicit_env_when_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """0.1.7: agent_runtime injects nothing — caller's env_extra is verbatim."""
@@ -207,53 +224,62 @@ def test_given_empty_env_extra_when_run_then_no_implicit_env_injection(
         'echo "EFFORT=${CLAUDE_CODE_EFFORT_LEVEL:-unset}"; exit 0',
     )
     log = tmp_path / "out.log"
+
     run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=log,
         env_extra={},
     )
+
     text = log.read_text()
     assert "AUTOUPDATER=unset" in text
     assert "EFFORT=unset" in text
 
 
-def test_given_work_dir_when_run_then_child_executes_in_work_dir(tmp_path: Path) -> None:
+def test_child_should_execute_in_work_dir_when_run(tmp_path: Path) -> None:
     """The agent child runs in work_dir, not the supervisor's cwd."""
     work = tmp_path / "the-work-dir"
     work.mkdir()
     script = _bash_script(tmp_path, "pwd -P")
     log = tmp_path / "out.log"
+
     result = run(
         work_dir=work,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=log,
         env_extra={},
     )
+
     assert result.exit_code == 0
     assert log.read_text().strip() == str(work.resolve())
 
 
-def test_given_stderr_output_when_run_then_merged_into_round_log(tmp_path: Path) -> None:
+def test_stderr_output_should_merge_into_round_log_when_run(tmp_path: Path) -> None:
     """stderr=STDOUT is load-bearing: oauth_fail/network_fail regex-scan stderr
     text out of the round log (contract: hooks.HookContext.agent_log_path)."""
     script = _bash_script(tmp_path, "echo OUT_LINE; echo ERR_MARKER >&2")
     log = tmp_path / "out.log"
+
     result = run(
         work_dir=tmp_path,
         command=[str(script)],
         prompt_arg_template=[],
         prompt="ignored",
-        timeout_s=40,  # see test_given_prompt_arg_template_...: contention headroom
+        # see test_prompt_arg_template_should_substitute_prompt_in_argv: contention headroom
+        timeout_s=40,
         log_path=log,
         env_extra={},
     )
+
     assert result.exit_code == 0
     text = log.read_text()
     assert "OUT_LINE" in text

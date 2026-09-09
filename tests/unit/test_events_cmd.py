@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-
-import pytest
 
 
 def _write_events(log_dir: Path, events: list[dict]) -> Path:
@@ -57,8 +54,7 @@ def _make_args(
     )
 
 
-def test_events_query_one_shot_single_kind(tmp_path, capsys):
-    """One-shot mode: --kind X returns last N events of X as JSON lines."""
+def test_events_query_should_return_last_n_events_of_matching_kind(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -82,8 +78,9 @@ def test_events_query_one_shot_single_kind(tmp_path, capsys):
     assert json.loads(out[1])["round_num"] == 2
 
 
-def test_events_query_multi_kind_or_filter(tmp_path, capsys):
-    """--kind X,Y returns events matching either kind (OR filter), in file order."""
+def test_events_query_should_return_events_matching_any_kind_when_multiple_kinds_given(
+    tmp_path, capsys
+):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -107,8 +104,7 @@ def test_events_query_multi_kind_or_filter(tmp_path, capsys):
     assert kinds == ["round_start", "hook_failed", "round_start"]
 
 
-def test_events_query_no_match_returns_empty(tmp_path, capsys):
-    """Filter matching nothing prints nothing, exits 0."""
+def test_events_query_should_return_nothing_when_no_events_match(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -126,7 +122,7 @@ def test_events_query_no_match_returns_empty(tmp_path, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_events_query_skips_non_dict_json_line(tmp_path, capsys):
+def test_events_query_should_skip_non_dict_json_lines(tmp_path, capsys):
     """A valid-JSON but non-dict line (bare list/number) must be skipped, not crash
     (0.2.13 Group D: every events-*.jsonl reader assumes .get(...) shape)."""
     from agent_runner.cli import events_cmd
@@ -151,7 +147,7 @@ def test_events_query_skips_non_dict_json_line(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
-def test_events_since_skips_non_dict_json_line(tmp_path, capsys):
+def test_events_since_should_skip_non_dict_json_lines(tmp_path, capsys):
     """Same as above but through the --since replay path (_matches_since)."""
     from agent_runner.cli import events_cmd
 
@@ -173,7 +169,7 @@ def test_events_since_skips_non_dict_json_line(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
-def test_events_since_skips_blank_lines(tmp_path, capsys):
+def test_events_since_should_skip_blank_lines(tmp_path, capsys):
     """Blank lines through the --since replay path are skipped identically to
     the query path (0.2.14 Group 5: _replay_since shares events._iter_parsed_lines)."""
     from agent_runner.cli import events_cmd
@@ -196,8 +192,7 @@ def test_events_since_skips_blank_lines(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
-def test_events_window_and_tail_mutually_exclusive(tmp_path, capsys):
-    """--window with --tail explicitly should fail with exit 2."""
+def test_cmd_events_should_reject_when_window_and_tail_both_set(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
@@ -215,8 +210,7 @@ def test_events_window_and_tail_mutually_exclusive(tmp_path, capsys):
     assert "mutually exclusive" in err.lower() or "cannot combine" in err.lower()
 
 
-def test_events_since_replays_all_matches_unwindowed(tmp_path, capsys):
-    """--since emits every match at or after the timestamp — not the last N."""
+def test_events_since_should_replay_all_matches_ignoring_window_default(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -238,7 +232,7 @@ def test_events_since_replays_all_matches_unwindowed(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == list(range(1, 13))
 
 
-def test_events_since_boundary_is_inclusive(tmp_path, capsys):
+def test_events_since_should_include_event_at_exact_boundary(tmp_path, capsys):
     """An event whose ts equals --since exactly is emitted (at-least-once)."""
     from agent_runner.cli import events_cmd
 
@@ -260,7 +254,9 @@ def test_events_since_boundary_is_inclusive(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [2, 3]
 
 
-def test_events_since_replays_across_month_files(tmp_path, capsys, monkeypatch):
+def test_events_since_should_replay_across_month_files_when_since_spans_months(
+    tmp_path, capsys, monkeypatch
+):
     """Replay spans every month file at or after `since`'s month; older ones
     are never opened."""
     from agent_runner.cli import events_cmd
@@ -303,8 +299,7 @@ def test_events_since_replays_across_month_files(tmp_path, capsys, monkeypatch):
     assert "events-2026-01.jsonl" not in opened
 
 
-def test_events_since_skips_malformed_and_ts_less_lines(tmp_path, capsys):
-    """Unparseable lines and lines without a ts are skipped silently."""
+def test_events_since_should_skip_malformed_and_ts_less_lines(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     path = tmp_path / f"events-{_current_month()}.jsonl"
@@ -328,8 +323,7 @@ def test_events_since_skips_malformed_and_ts_less_lines(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [3]
 
 
-def test_events_since_and_window_mutually_exclusive(tmp_path, capsys):
-    """--since with an explicit --window fails with exit 2."""
+def test_cmd_events_should_reject_when_since_and_window_both_set(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
@@ -342,8 +336,7 @@ def test_events_since_and_window_mutually_exclusive(tmp_path, capsys):
     assert "mutually exclusive" in capsys.readouterr().err.lower()
 
 
-def test_events_since_invalid_timestamp_exits_2(tmp_path, capsys):
-    """A --since value that is not ISO-8601 fails with exit 2 and one stderr line."""
+def test_cmd_events_since_should_exit_2_when_timestamp_invalid(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
@@ -356,16 +349,14 @@ def test_events_since_invalid_timestamp_exits_2(tmp_path, capsys):
     assert "--since" in err[0]
 
 
-@pytest.mark.serial
-def test_events_tail_emits_new_events_as_they_arrive(tmp_path, capsys, monkeypatch):
-    """--tail mode polls and emits new matching lines. Uses signal to stop after 3s.
+def test_events_tail_should_emit_new_events_as_they_arrive(tmp_path, capsys, monkeypatch):
+    """--tail mode polls and emits new matching lines as they appear.
 
-    Marked serial: installs a process-wide SIGALRM handler + signal.alarm(3).
-    A signal delivered at the wrong moment in a shared xdist worker process
-    (mid-setup/teardown of an unrelated test) is not worth the risk for one
-    test; runs alone via the `-m serial` pass instead."""
-    import threading
-
+    The real poll loop (agent_runner.cli.events_cmd._tail_events) runs
+    unmodified; only its SYSTEM_CLOCK.sleep tick is stubbed so the test is
+    deterministic instead of racing a real 1s poll: tick 1 appends the new
+    event between polls (what a concurrent writer would do), tick 2 raises
+    KeyboardInterrupt (what a real SIGINT delivers) to stop the loop."""
     from agent_runner.cli import events_cmd
 
     events_file = _write_events(
@@ -375,40 +366,22 @@ def test_events_tail_emits_new_events_as_they_arrive(tmp_path, capsys, monkeypat
         ],
     )
 
-    # Append after a delay
-    def appender():
-        time.sleep(1.0)
-        with events_file.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {"event": "anomaly_repetitive_tool", "round_num": 5, "tool_name": "Edit"}
+    sleep_calls: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        if len(sleep_calls) == 1:
+            with events_file.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(
+                        {"event": "anomaly_repetitive_tool", "round_num": 5, "tool_name": "Edit"}
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
-            f.flush()
-
-    t = threading.Thread(target=appender, daemon=True)
-    t.start()
-
-    # Wrap the real tail loop with a 3s timeout via SIGALRM
-    real_tail = events_cmd._tail_events
-
-    def short_tail(log_dir, kind_set, since=None):
-        import signal
-
-        def timeout_handler(_signum, _frame):
+        else:
             raise KeyboardInterrupt()
 
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(3)
-        try:
-            return real_tail(log_dir, kind_set, since=since)
-        except KeyboardInterrupt:
-            return 0
-        finally:
-            signal.alarm(0)
-
-    monkeypatch.setattr(events_cmd, "_tail_events", short_tail)
+    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
 
     with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
         args = _make_args(kind="anomaly_repetitive_tool", tail=True)
@@ -416,6 +389,7 @@ def test_events_tail_emits_new_events_as_they_arrive(tmp_path, capsys, monkeypat
 
     assert rc == 0
     out = capsys.readouterr().out.strip().splitlines()
-    assert len(out) >= 1
+    assert len(out) == 1
     assert json.loads(out[0])["event"] == "anomaly_repetitive_tool"
     assert json.loads(out[0])["round_num"] == 5
+    assert sleep_calls == [1.0, 1.0]

@@ -187,7 +187,7 @@ def _assert_imports_within_allowlist(
             assert not extra, f"{label} imports {extra} from {mod} (not allowed)"
 
 
-def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
+def test_serve_cmd_should_stay_within_import_allowlist_when_scanned() -> None:
     _assert_imports_within_allowlist(
         PKG / "cli/serve_cmd.py",
         label="serve_cmd",
@@ -197,7 +197,7 @@ def test_given_serve_cmd_when_imports_scanned_then_within_allowlist() -> None:
     )
 
 
-def test_given_serve_round_when_imports_scanned_then_within_allowlist() -> None:
+def test_serve_round_should_stay_within_import_allowlist_when_scanned() -> None:
     _assert_imports_within_allowlist(
         PKG / "cli/_serve_round.py",
         label="_serve_round",
@@ -206,7 +206,7 @@ def test_given_serve_round_when_imports_scanned_then_within_allowlist() -> None:
     )
 
 
-def test_given_serve_cgroup_when_imports_scanned_then_within_allowlist() -> None:
+def test_serve_cgroup_should_stay_within_import_allowlist_when_scanned() -> None:
     _assert_imports_within_allowlist(
         PKG / "cli/_serve_cgroup.py",
         label="_serve_cgroup",
@@ -249,7 +249,7 @@ def _direct_emit_submodule_imports(base: Path) -> list[str]:
     return offenders
 
 
-def test_given_emit_facade_rule_when_scanned_then_no_direct_submodule_imports() -> None:
+def test_emit_facade_rule_should_have_no_direct_submodule_imports_when_scanned() -> None:
     """``_emit/__init__.py``'s docstring says every consumer imports from the
     FACADE (``agent_runner._emit``), never a submodule
     (``agent_runner._emit.<name>``) directly -- until now that rule was prose
@@ -261,15 +261,17 @@ def test_given_emit_facade_rule_when_scanned_then_no_direct_submodule_imports() 
     in a different module. Scans both ``agent_runner/`` (production) and
     ``tests/`` (so a test file introducing the bad pattern trips this too)."""
     repo_root = PKG.parent
+
     offenders = _direct_emit_submodule_imports(PKG) + _direct_emit_submodule_imports(
         repo_root / "tests"
     )
+
     assert offenders == [], "direct agent_runner._emit.<submodule> import(s) found:\n" + "\n".join(
         offenders
     )
 
 
-def test_given_direct_emit_submodule_import_when_scanned_then_flagged(tmp_path: Path) -> None:
+def test_direct_emit_submodule_import_should_be_flagged_when_scanned(tmp_path: Path) -> None:
     """Non-vacuity proof for the scan above: a real submodule import must be
     caught, a facade import and a same-looking STRING must not be."""
     (tmp_path / "bad_from.py").write_text("from agent_runner._emit.rounds import emit_round_end\n")
@@ -291,7 +293,7 @@ def test_given_direct_emit_submodule_import_when_scanned_then_flagged(tmp_path: 
     assert len(offenders) == 2
 
 
-def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() -> None:
+def test_cli_cmd_files_should_call_api_not_runner_directly_when_scanned() -> None:
     """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
     offenders: list[str] = []
     scanned = 0
@@ -311,31 +313,32 @@ def test_given_cli_cmd_files_when_scanned_then_call_api_not_runner_directly() ->
         )
         if not has_api_import:
             offenders.append(f.name)
+
     assert scanned > 0, "no cli/*_cmd.py files scanned"  # vacuity-guard
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
 
 
-def test_given_api_types_when_inspected_then_all_frozen_dataclasses() -> None:
+def test_api_types_should_all_be_frozen_dataclasses_when_inspected() -> None:
     import dataclasses
+    import inspect
 
     from agent_runner import api_types
 
-    cls_names = [
-        "Alert",
-        "InitResult",
-        "InstallResult",
-        "ProjectState",
-        "RoundView",
-        "ServiceStatus",
-        "SystemMetrics",
+    # Discovered by scanning the module rather than a hand-maintained name
+    # list: a newly added dataclass is caught automatically instead of
+    # silently escaping this check.
+    classes = [
+        obj
+        for _, obj in inspect.getmembers(api_types, dataclasses.is_dataclass)
+        if inspect.isclass(obj) and obj.__module__ == api_types.__name__
     ]
-    for name in cls_names:
-        cls = getattr(api_types, name)
-        assert dataclasses.is_dataclass(cls), f"{name} not a dataclass"
-        assert cls.__dataclass_params__.frozen, f"{name} not frozen"
+
+    assert len(classes) > 0, "no dataclasses discovered in agent_runner.api_types"
+    for cls in classes:
+        assert cls.__dataclass_params__.frozen, f"{cls.__name__} not frozen"
 
 
-def test_given_known_alert_kinds_when_inspected_then_well_formed() -> None:
+def test_known_alert_kinds_should_be_well_formed_when_inspected() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
     assert len(KNOWN_ALERT_KINDS) == 13

@@ -22,18 +22,21 @@ def _write(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_agent_env_as_scalar_raises_configerror(tmp_path: Path) -> None:
+def test_load_config_should_raise_configerror_when_agent_env_is_scalar(tmp_path: Path) -> None:
     # Reached mid-[agent]-parse, before any other table is even consulted, so
     # only [agent] itself needs to be otherwise-valid.
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\nenv = "oops"\n',
     )
+
     with pytest.raises(ConfigError, match=r"\[agent\.env\]"):
         load_config(p)
 
 
-def test_monitor_host_health_as_scalar_raises_configerror(tmp_path: Path) -> None:
+def test_load_config_should_raise_configerror_when_monitor_host_health_is_scalar(
+    tmp_path: Path,
+) -> None:
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -41,11 +44,14 @@ def test_monitor_host_health_as_scalar_raises_configerror(tmp_path: Path) -> Non
         f'[prompt]\nfile = "{tmp_path}/p.md"\n'
         "[monitor]\nhost_health = 1\n",
     )
+
     with pytest.raises(ConfigError, match=r"\[monitor\.host_health\]"):
         load_config(p)
 
 
-def test_monitor_host_health_unknown_key_raises_configerror(tmp_path: Path) -> None:
+def test_load_config_should_raise_configerror_when_monitor_host_health_has_unknown_key(
+    tmp_path: Path,
+) -> None:
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -53,11 +59,14 @@ def test_monitor_host_health_unknown_key_raises_configerror(tmp_path: Path) -> N
         f'[prompt]\nfile = "{tmp_path}/p.md"\n'
         "[monitor.host_health]\nbogus = 1\n",
     )
+
     with pytest.raises(ConfigError, match=r"\[monitor\.host_health\]"):
         load_config(p)
 
 
-def test_per_phase_schedule_bad_key_names_the_phase(tmp_path: Path) -> None:
+def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
+    tmp_path: Path,
+) -> None:
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -65,11 +74,14 @@ def test_per_phase_schedule_bad_key_names_the_phase(tmp_path: Path) -> None:
         '[phases]\nlist = ["dev"]\n'
         "[phases.dev.schedule]\nbogus = 1\n",
     )
+
     with pytest.raises(ConfigError, match=r"phases\.dev\.schedule"):
         load_config(p)
 
 
-def test_top_level_schedule_bad_key_still_names_schedule(tmp_path: Path) -> None:
+def test_load_config_should_name_schedule_when_top_level_schedule_has_bad_key(
+    tmp_path: Path,
+) -> None:
     """Regression guard for the label default: a top-level [schedule] bad key
     must still report `[schedule]`, not some leaked per-phase label."""
     p = _write(
@@ -79,5 +91,6 @@ def test_top_level_schedule_bad_key_still_names_schedule(tmp_path: Path) -> None
         f'[prompt]\nfile = "{tmp_path}/p.md"\n'
         "[schedule]\nbogus = 1\n",
     )
+
     with pytest.raises(ConfigError, match=r"unknown \[schedule\]"):
         load_config(p)

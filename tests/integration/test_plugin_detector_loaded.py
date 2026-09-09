@@ -27,7 +27,7 @@ class _AlwaysFiresDetector:
         )
 
 
-def test_given_registered_plugin_detector_alert_returned() -> None:
+def test_run_plugin_detectors_should_return_alert_when_detector_registered() -> None:
     """Smoke-test the plugin path independent of full api._poll_once setup."""
     from agent_runner.api_types import (
         ProjectState,
@@ -48,15 +48,16 @@ def test_given_registered_plugin_detector_alert_returned() -> None:
         system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
+
     alerts = run_plugin_detectors(state)
+
     assert len(alerts) == 1
     assert alerts[0].detector == "always_fires"
 
 
-def test_given_crashing_plugin_detector_when_invoked_then_warns_and_continues(
+def test_run_plugin_detectors_should_warn_and_continue_when_detector_crashes(
     tmp_path: Path,
 ) -> None:
-    """A plugin detector's exception during detect() does not propagate."""
     import warnings
 
     class _Crashes:
@@ -87,9 +88,11 @@ def test_given_crashing_plugin_detector_when_invoked_then_warns_and_continues(
         system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
+
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         alerts = run_plugin_detectors(state)
+
     assert any(a.detector == "always_fires" for a in alerts)
     assert not any(a.detector == "boom" for a in alerts)
     assert any("boom" in str(w.message) for w in caught), (

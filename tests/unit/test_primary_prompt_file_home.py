@@ -6,18 +6,24 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def test_primary_prompt_file_lives_in_runner_not_api() -> None:
+def test_primary_prompt_file_should_live_in_runner_not_api() -> None:
     from agent_runner import api, runner
 
     assert hasattr(runner, "_primary_prompt_file")
     assert not hasattr(api, "_primary_prompt_file")
 
 
-def test_primary_prompt_file_prefers_files_then_falls_back_to_file() -> None:
+def test_primary_prompt_file_should_prefer_files_when_present() -> None:
     from agent_runner.runner import _primary_prompt_file
 
     cfg = SimpleNamespace(prompt=SimpleNamespace(files=[Path("a.md")], file=Path("b.md")))
+
     assert _primary_prompt_file(cfg) == Path("a.md")
 
+
+def test_primary_prompt_file_should_fall_back_to_file_when_files_empty() -> None:
+    from agent_runner.runner import _primary_prompt_file
+
     cfg_single = SimpleNamespace(prompt=SimpleNamespace(files=[], file=Path("b.md")))
+
     assert _primary_prompt_file(cfg_single) == Path("b.md")

@@ -67,12 +67,10 @@ def _write_minimal_toml(work_dir: Path, agent_command: str, agent_name: str) -> 
     return cfg_path
 
 
-def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage_event_fires(
+def test_real_serve_should_emit_usage_event_when_round_completes_with_fake_claude_agent(
     tmp_path: Path,
 ) -> None:
-    """Canary: real flow emits agent_usage_recorded for claude.
-
-    Would have caught the 0.1.20-0.1.24 plugin-path bug if it had existed then.
+    """Would have caught the 0.1.20-0.1.24 plugin-path bug if it had existed then.
     Unit tests pre-seeded round-N.log directly (the wrong path that matched the
     plugin's wrong-path assumption); production behavior diverged silently.
     This test runs real agent-runner serve and checks the actual events file.
@@ -110,6 +108,7 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
         text=True,
         timeout=30,
     )
+
     assert proc.returncode == 0, (
         f"serve failed\nstdout={proc.stdout[:500]}\nstderr={proc.stderr[:500]}"
     )
@@ -125,10 +124,9 @@ def test_given_real_serve_with_fake_claude_agent_when_round_completes_then_usage
     assert usage[0]["cost_usd"] == 0.05
 
 
-def test_given_real_serve_with_fake_gemini_agent_when_round_completes_then_usage_event_fires(
+def test_real_serve_should_emit_usage_event_when_round_completes_with_fake_gemini_agent(
     tmp_path: Path,
 ) -> None:
-    """Canary: real flow emits agent_usage_recorded for gemini."""
     # Script must be named "gemini" so agent_binary == "gemini" (guard uses basename).
     fake_agent = tmp_path / "gemini"
     fake_agent.write_text(
@@ -161,6 +159,7 @@ def test_given_real_serve_with_fake_gemini_agent_when_round_completes_then_usage
         text=True,
         timeout=30,
     )
+
     assert proc.returncode == 0, (
         f"serve failed\nstdout={proc.stdout[:500]}\nstderr={proc.stderr[:500]}"
     )

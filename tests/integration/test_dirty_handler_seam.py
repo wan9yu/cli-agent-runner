@@ -56,7 +56,7 @@ def _make_auto_commit_cfg(tmp_git_repo: Path, agent_script: Path) -> Config:
     )
 
 
-def test_auto_commit_via_default_plugin_emits_dirty_auto_committed(
+def test_auto_commit_should_emit_dirty_auto_committed_via_default_plugin(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
@@ -70,8 +70,8 @@ def test_auto_commit_via_default_plugin_emits_dirty_auto_committed(
     # fake_agent_script writes $WORK_DIR/dirty.txt when FAKE_AGENT_BEHAVIOR=dirty
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
-
     cfg = _make_auto_commit_cfg(tmp_git_repo, fake_agent_script)
+
     result = run_one_round(cfg)
 
     assert result.exit_code == 0, "round should succeed"

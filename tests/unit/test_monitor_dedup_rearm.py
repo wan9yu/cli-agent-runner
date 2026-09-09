@@ -15,7 +15,7 @@ def _disk(v: float) -> Alert:
     return Alert("warning", "disk_warning", "m", {"value": v, "threshold": 90.0}, "t")
 
 
-def test_recovered_then_recurred_alert_fires_twice(tmp_path, monkeypatch) -> None:
+def test_alert_should_fire_twice_when_recovered_then_recurred(tmp_path, monkeypatch) -> None:
     # poll 1: firing; poll 2: cleared (empty); poll 3: firing again -> should re-yield.
     polls = iter([[_disk(91.0)], [], [_disk(92.0)]])
     monkeypatch.setattr(api, "_poll_once", lambda _wd, **_kwargs: next(polls))
@@ -31,6 +31,7 @@ def test_recovered_then_recurred_alert_fires_twice(tmp_path, monkeypatch) -> Non
     cfg = type("C", (), {"runtime": type("R", (), {"log_dir": tmp_path})(), "monitor": mon})()
     monkeypatch.setattr(api, "load_config", lambda _p: cfg)
     tmp_path.mkdir(exist_ok=True)
+
     with patch.object(api.monitor, "on_alert"):
         gen = api._monitor_loop_iter(tmp_path)
         seen = []
@@ -39,6 +40,7 @@ def test_recovered_then_recurred_alert_fires_twice(tmp_path, monkeypatch) -> Non
                 seen.append(a.context["value"])
         except _StopError:
             pass
+
     assert seen == [91.0, 92.0]  # not deduped away — the episode ended and re-armed
 
 
@@ -83,7 +85,7 @@ def _run_loop_over_persisting_alert(tmp_path, monkeypatch, *, on_alert_returns: 
     return calls["n"]
 
 
-def test_draining_verdict_forces_rearm_so_persisting_alert_refires_every_poll(
+def test_persisting_alert_should_refire_every_poll_when_verdict_is_draining(
     tmp_path, monkeypatch
 ) -> None:
     """A "draining" verdict means on_alert recorded NOTHING for this alert this
@@ -92,13 +94,17 @@ def test_draining_verdict_forces_rearm_so_persisting_alert_refires_every_poll(
     again on the very next poll, instead of sitting suppressed under the
     normal dedup with no outcome ever recorded."""
     calls = _run_loop_over_persisting_alert(tmp_path, monkeypatch, on_alert_returns="draining")
+
     assert calls == 3  # every poll re-fired -- never suppressed
 
 
-def test_non_draining_verdict_keeps_normal_dedup_suppression(tmp_path, monkeypatch) -> None:
+def test_persisting_alert_should_stay_suppressed_when_verdict_is_not_draining(
+    tmp_path, monkeypatch
+) -> None:
     """Contrast case: "failed" (like "triggered"/"none") recorded a real,
     final outcome for this episode, so the persisting alert must stay
     suppressed by the normal dedup -- re-arming here would re-run the stop
     attempt (and re-emit) every single poll instead of once per episode."""
     calls = _run_loop_over_persisting_alert(tmp_path, monkeypatch, on_alert_returns="failed")
+
     assert calls == 1  # suppressed on polls 2 and 3

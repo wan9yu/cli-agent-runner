@@ -12,11 +12,10 @@ def _is_pip_call(cmd) -> bool:
     return len(cmd) >= 3 and cmd[1] == "-m" and cmd[2] == "pip"
 
 
-def test_given_upgrade_subcommand_with_target_when_main_then_dispatches(
+def test_main_should_dispatch_to_upgrade_cmd_when_upgrade_subcommand_has_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """`agent-runner upgrade --target X.Y.Z` parses + dispatches to upgrade_cmd.cmd."""
     from agent_runner.cli import main, upgrade_cmd
 
     captured = {}
@@ -31,15 +30,16 @@ def test_given_upgrade_subcommand_with_target_when_main_then_dispatches(
     toml_path = make_toml(tmp_path)
 
     rc = main(["--config", str(toml_path), "upgrade", "--target", "0.1.99"])
+
     assert rc == 0
     assert captured["target"] == "0.1.99"
 
 
-def test_given_upgrade_no_target_when_main_then_target_defaults_none(
+def test_main_should_default_target_to_none_when_upgrade_subcommand_has_no_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """`agent-runner upgrade` (no --target) → args.target is None (= latest)."""
+    """``target=None`` means "use latest"."""
     from agent_runner.cli import main, upgrade_cmd
 
     captured = {}
@@ -53,14 +53,14 @@ def test_given_upgrade_no_target_when_main_then_target_defaults_none(
     toml_path = make_toml(tmp_path)
 
     rc = main(["--config", str(toml_path), "upgrade"])
+
     assert rc == 0
     assert captured["target"] is None
 
 
-def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
+def test_run_upgrade_should_emit_service_upgraded_when_happy_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Happy path: stop → pip install → smoke → start → emit service_upgraded."""
     import json
     import subprocess
 
@@ -94,6 +94,7 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 0
 
     pip_calls = [c for c in call_log if _is_pip_call(c)]
@@ -110,10 +111,9 @@ def test_given_happy_path_when_run_upgrade_then_emits_service_upgraded(
     assert "duration_s" in upgrades[0]
 
 
-def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
+def test_run_upgrade_should_use_unpinned_pip_install_when_no_target(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`--target` not supplied → pip install --upgrade cli-agent-runner (no version pin)."""
     import subprocess
 
     from agent_runner import api
@@ -143,6 +143,7 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target=None, cfg_path=toml_path)
+
     assert rc == 0
     pip_calls = [c for c in call_log if _is_pip_call(c)]
     assert len(pip_calls) == 1
@@ -150,10 +151,9 @@ def test_given_no_target_when_run_upgrade_then_pip_uses_unpinned(
     assert "==" not in " ".join(pip_calls[0])
 
 
-def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
+def test_run_upgrade_should_exit_1_with_no_event_when_pip_install_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """pip install rc!=0 → service stopped, no event emitted, exit 1."""
     import json
     import subprocess
 
@@ -180,6 +180,7 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="bogus", cfg_path=toml_path)
+
     assert rc == 1
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -188,10 +189,11 @@ def test_given_pip_install_fails_when_run_upgrade_then_no_event_exit_1(
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
 
 
-def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
+def test_run_upgrade_should_emit_rolled_back_event_when_smoke_peek_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Smoke peek fails → pip --force-reinstall <from> → sanity smoke → start → emit rolled_back."""
+    """Smoke peek fails → pip --force-reinstall <from> → sanity smoke → start →
+    emit rolled_back."""
     import json
     import subprocess
 
@@ -236,6 +238,7 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 1  # rollback succeeded but upgrade failed
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -248,7 +251,7 @@ def test_given_smoke_fails_when_run_upgrade_then_rollback_emits_event(
     assert "duration_s" in rolled_back[0]
 
 
-def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
+def test_run_upgrade_should_rollback_when_smoke_version_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Smoke --version fails (not just peek) → still triggers rollback."""
@@ -287,6 +290,7 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 1
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -296,10 +300,9 @@ def test_given_smoke_version_fails_when_run_upgrade_then_rollback(
     assert "ImportError" in rolled_back[0]["failure_reason"]
 
 
-def test_given_rollback_pip_uses_force_reinstall_with_from_version(
+def test_run_upgrade_rollback_pip_should_force_reinstall_from_version_when_smoke_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rollback pip command uses --force-reinstall and pins from_version."""
     import subprocess
 
     from agent_runner import __version__, api
@@ -340,10 +343,9 @@ def test_given_rollback_pip_uses_force_reinstall_with_from_version(
     assert f"cli-agent-runner=={__version__}" in rollback_pip
 
 
-def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_exit_2(
+def test_run_upgrade_should_exit_2_with_rollback_failed_event_when_rollback_pip_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Smoke fails AND rollback pip also fails → service_upgrade_rollback_failed + exit 2."""
     import json
     import subprocess
 
@@ -379,6 +381,7 @@ def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_ex
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 2
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -390,10 +393,9 @@ def test_given_rollback_pip_fails_when_run_upgrade_then_rollback_failed_event_ex
     assert "No version" in failed[0]["failure_reason"]
 
 
-def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed(
+def test_run_upgrade_should_emit_rollback_failed_when_sanity_smoke_fails_after_rollback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rollback pip succeeds but sanity smoke fails → service_upgrade_rollback_failed."""
     import json
     import subprocess
 
@@ -423,6 +425,7 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 2
 
     events_files = sorted(log_dir.glob("events-*.jsonl"))
@@ -432,10 +435,9 @@ def test_given_rollback_sanity_smoke_fails_when_run_upgrade_then_rollback_failed
     assert "sanity smoke failed" in failed[0]["failure_reason"]
 
 
-def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
+def test_run_upgrade_should_fail_without_calling_pip_when_api_stop_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """api.stop raises → rc=1, pip NEVER called, no service_upgrad* events emitted."""
     import json
     import subprocess
 
@@ -463,6 +465,7 @@ def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
 
     cfg = load_config(toml)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml)
+
     assert rc == 1
 
     # pip must NOT have been called
@@ -475,10 +478,9 @@ def test_given_api_stop_raises_when_run_upgrade_then_fail_no_pip_called(
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
 
 
-def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
+def test_run_upgrade_should_fail_without_calling_stop_when_target_is_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--target '' (empty string) → rc=1, api.stop NEVER called, no events."""
     import json
 
     from agent_runner import api
@@ -493,6 +495,7 @@ def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
 
     cfg = load_config(toml)
     rc = upgrade_cmd._run_upgrade(cfg, target="", cfg_path=toml)
+
     assert rc == 1
 
     assert not stop_called, "api.stop was called despite empty target"
@@ -503,16 +506,19 @@ def test_given_empty_target_when_run_upgrade_then_fail_no_stop_called(
         assert not any(p["event"].startswith("service_upgrad") for p in payloads)
 
 
-def test_pip_env_flags_in_venv_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pip_env_flags_should_return_empty_when_in_venv(monkeypatch: pytest.MonkeyPatch) -> None:
     import sys
 
     from agent_runner.cli import upgrade_cmd
 
     monkeypatch.setattr(sys, "base_prefix", sys.prefix + "_base")  # prefix != base => venv
+
     assert upgrade_cmd._pip_env_flags() == []
 
 
-def test_pip_env_flags_non_venv_user_site(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pip_env_flags_should_return_user_and_break_system_when_non_venv_user_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import site
     import sys
 
@@ -524,10 +530,13 @@ def test_pip_env_flags_non_venv_user_site(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(
         agent_runner, "__file__", "/home/u/.local/lib/py/site-packages/agent_runner/__init__.py"
     )
+
     assert upgrade_cmd._pip_env_flags() == ["--user", "--break-system-packages"]
 
 
-def test_pip_env_flags_non_venv_system_site(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pip_env_flags_should_return_break_system_only_when_non_venv_system_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import site
     import sys
 
@@ -541,10 +550,13 @@ def test_pip_env_flags_non_venv_system_site(monkeypatch: pytest.MonkeyPatch) -> 
         "__file__",
         "/usr/lib/python3/dist-packages/agent_runner/__init__.py",
     )
+
     assert upgrade_cmd._pip_env_flags() == ["--break-system-packages"]
 
 
-def test_pip_install_retries_on_externally_managed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pip_install_should_retry_with_break_system_packages_when_externally_managed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import subprocess
 
     from agent_runner.cli import upgrade_cmd
@@ -561,13 +573,17 @@ def test_pip_install_retries_on_externally_managed(monkeypatch: pytest.MonkeyPat
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+
     r = upgrade_cmd._pip_install("cli-agent-runner==9.9.9")
+
     assert r.returncode == 0
     assert len(calls) == 2
     assert "--break-system-packages" in calls[1]
 
 
-def test_pip_install_no_retry_when_not_externally_managed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pip_install_should_not_retry_when_failure_is_not_externally_managed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import subprocess
 
     from agent_runner.cli import upgrade_cmd
@@ -582,7 +598,9 @@ def test_pip_install_no_retry_when_not_externally_managed(monkeypatch: pytest.Mo
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+
     r = upgrade_cmd._pip_install("cli-agent-runner==9.9.9")
+
     assert r.returncode == 1
     assert len(calls) == 1  # no retry on a non-PEP668 failure
 
@@ -603,7 +621,7 @@ def _fake_run_factory(call_log, version="0.1.99"):
     return fake_run
 
 
-def test_given_missing_config_when_run_upgrade_then_package_only_no_crash(
+def test_run_upgrade_should_stay_package_only_without_crash_when_config_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import subprocess
@@ -618,13 +636,14 @@ def test_given_missing_config_when_run_upgrade_then_package_only_no_crash(
     monkeypatch.setattr(subprocess, "run", _fake_run_factory(call_log))
 
     rc = upgrade_cmd._run_upgrade(None, target="0.1.99", cfg_path=Path("agent-runner.toml"))
+
     assert rc == 0
     assert started == []  # service never touched
     assert any(_is_pip_call(c) for c in call_log)
     assert any("--version" in c for c in call_log)
 
 
-def test_given_non_user_mode_when_run_upgrade_then_package_only_no_start(
+def test_run_upgrade_should_stay_package_only_without_start_when_service_mode_is_pid_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     import json
@@ -646,6 +665,7 @@ def test_given_non_user_mode_when_run_upgrade_then_package_only_no_start(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 0
     assert started == []  # neither stop nor start called in package-only mode
 
@@ -661,7 +681,7 @@ def test_given_non_user_mode_when_run_upgrade_then_package_only_no_start(
     assert not [p for p in payloads if p["event"] == "service_upgraded"]
 
 
-def test_given_no_restart_flag_on_user_mode_then_package_only(
+def test_run_upgrade_should_stay_package_only_when_no_restart_flag_set(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     import subprocess
@@ -680,11 +700,12 @@ def test_given_no_restart_flag_on_user_mode_then_package_only(
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path, no_restart=True)
+
     assert rc == 0
     assert started == []  # --no-restart forces package-only even on user mode
 
 
-def test_given_package_only_smoke_fail_then_rollback_no_start(
+def test_run_upgrade_should_rollback_without_start_when_package_only_smoke_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     import subprocess
@@ -712,7 +733,9 @@ def test_given_package_only_smoke_fail_then_rollback_no_start(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     cfg = load_config(toml_path)
+
     rc = upgrade_cmd._run_upgrade(cfg, target="0.1.99", cfg_path=toml_path)
+
     assert rc == 1  # smoke failed, rolled back
     assert started == []  # service never started/stopped
     assert any("--force-reinstall" in c for c in pip_calls)  # pip-level rollback happened
@@ -725,7 +748,7 @@ def _config_arg(cmd) -> str | None:
     return None
 
 
-def test_given_new_binary_migrate_manual_when_upgrade_then_rollback_restores_config(
+def test_run_upgrade_should_restore_config_when_rollback_follows_manual_migrate_remainder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """New-binary migrate hits a manual remainder (rc=1) after mutating the file →
@@ -764,6 +787,7 @@ def test_given_new_binary_migrate_manual_when_upgrade_then_rollback_restores_con
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+
     assert rc == 1  # rolled back
     assert toml_path.read_text(encoding="utf-8") == original  # config restored
 
@@ -775,7 +799,7 @@ def test_given_new_binary_migrate_manual_when_upgrade_then_rollback_restores_con
     assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
 
 
-def test_given_migrate_succeeds_then_later_smoke_fails_when_rollback_then_config_restored(
+def test_run_upgrade_should_restore_config_when_rollback_follows_migrate_success_then_smoke_fail(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """New-binary migrate succeeds (rewrites the file to the new schema), but the
@@ -827,6 +851,7 @@ def test_given_migrate_succeeds_then_later_smoke_fails_when_rollback_then_config
 
     cfg = load_config(toml_path)
     rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+
     assert rc == 1  # rolled back
     assert toml_path.read_text(encoding="utf-8") == original  # migrate's rewrite undone
 
@@ -838,10 +863,9 @@ def test_given_migrate_succeeds_then_later_smoke_fails_when_rollback_then_config
     assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
 
 
-def test_given_orchestrated_upgrade_when_run_then_migrate_precedes_peek(
+def test_run_upgrade_should_call_migrate_before_peek_smoke(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The new-binary migrate subprocess is invoked before the peek smoke."""
     import subprocess
 
     from agent_runner import __version__, api
@@ -873,11 +897,13 @@ def test_given_orchestrated_upgrade_when_run_then_migrate_precedes_peek(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     cfg = load_config(toml_path)
+
     upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+
     assert order == ["migrate", "peek"]
 
 
-def test_given_start_fails_after_upgrade_when_run_then_emits_upgrade_start_failed(
+def test_run_upgrade_should_emit_upgrade_start_failed_when_api_start_raises_after_smoke_pass(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Smoke passes but api.start raises → emit upgrade_start_failed (not a
@@ -912,7 +938,9 @@ def test_given_start_fails_after_upgrade_when_run_then_emits_upgrade_start_faile
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     cfg = load_config(toml_path)
+
     rc = upgrade_cmd._run_upgrade(cfg, target="9.9.9", cfg_path=toml_path)
+
     assert rc == 2
 
     payloads = [

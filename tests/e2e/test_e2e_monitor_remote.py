@@ -3,7 +3,7 @@ from __future__ import annotations
 from .conftest import _ssh
 
 
-def test_given_seeded_disk_critical_on_pi_when_local_monitor_polls_then_alert(
+def test_seeded_disk_critical_on_pi_should_alert_when_local_monitor_polls(
     pi_install_agent_runner: str,
     pi_workdir: str,
     pi_config: str,
@@ -18,6 +18,8 @@ def test_given_seeded_disk_critical_on_pi_when_local_monitor_polls_then_alert(
     monitor_cmd = (
         f"timeout 5 {pi_install_agent_runner} --config {pi_config} monitor --interval 1 --json"
     )
+
     r = _ssh(monitor_cmd, check=False)
+
     output = r.stdout
     assert "disk_critical" in output, f"no disk_critical alert: {output}"

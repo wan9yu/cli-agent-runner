@@ -17,7 +17,7 @@ from tests._test_helpers import (
 )
 
 
-def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted(
+def test_fresh_eyes_every_n_2_should_emit_trigger_event_when_round_2_runs(
     tmp_path: Path,
 ):
     cfg_path = make_toml_with_sections(
@@ -27,6 +27,7 @@ def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted
     )
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     log_dir = tmp_path / "logs"
+
     proc = subprocess.run(
         [
             sys.executable,
@@ -43,6 +44,7 @@ def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted
         env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
+
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
     events = read_events_for_current_month(log_dir)
     fresh_events = [e for e in events if e.get("event") == "fresh_eyes_round_triggered"]
@@ -52,11 +54,12 @@ def test_given_fresh_eyes_every_n_2_when_round_2_runs_then_trigger_event_emitted
     assert fresh_events[0]["every_n"] == 2
 
 
-def test_given_no_fresh_eyes_config_when_rounds_run_then_no_trigger_events(
+def test_no_fresh_eyes_config_should_emit_no_trigger_events_when_rounds_run(
     tmp_path: Path,
 ):
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra="restart_delay_s = 1\n")
     log_dir = tmp_path / "logs"
+
     proc = subprocess.run(
         [
             sys.executable,
@@ -73,6 +76,7 @@ def test_given_no_fresh_eyes_config_when_rounds_run_then_no_trigger_events(
         env={**os.environ, "AGENT_RUNNER_SKIP_STARTUP_CHECK": "1"},
         timeout=30,
     )
+
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
     events = read_events_for_current_month(log_dir)
     fresh_events = [e for e in events if e.get("event") == "fresh_eyes_round_triggered"]
@@ -91,7 +95,7 @@ def _capturing_spawn(captured: list[dict]):
     return spawn
 
 
-def test_given_fresh_eyes_round_when_serve_dispatches_then_env_var_is_1(
+def test_fresh_eyes_round_should_set_env_var_to_1_when_serve_dispatches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The round subprocess env carries AGENT_RUNNER_FRESH_EYES="1" on a trigger
@@ -118,7 +122,7 @@ def test_given_fresh_eyes_round_when_serve_dispatches_then_env_var_is_1(
     assert captured[1]["AGENT_RUNNER_FRESH_EYES"] == "1"
 
 
-def test_given_no_fresh_eyes_config_when_serve_dispatches_then_env_var_is_0(
+def test_no_fresh_eyes_config_should_set_env_var_to_0_when_serve_dispatches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The var is always defined (matching the AGENT_RUNNER_PHASE pattern) —

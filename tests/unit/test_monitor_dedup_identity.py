@@ -29,18 +29,25 @@ def _disk_warning(value: float) -> Alert:
     )
 
 
-def test_same_hung_round_different_elapsed_dedups_to_one_key() -> None:
+def test_alert_identity_should_dedup_when_hung_round_elapsed_grows() -> None:
     # The elapsed_s growing every poll must NOT mint a new key (the ~2880/day spam).
-    assert alert_identity(_hung(5, 100.0)) == alert_identity(_hung(5, 130.0))
+    first = alert_identity(_hung(5, 100.0))
+    second = alert_identity(_hung(5, 130.0))
+
+    assert first == second
 
 
-def test_different_hung_round_is_a_distinct_key() -> None:
-    assert alert_identity(_hung(5, 100.0)) != alert_identity(_hung(6, 100.0))
+def test_alert_identity_should_differ_when_hung_round_number_differs() -> None:
+    first = alert_identity(_hung(5, 100.0))
+    second = alert_identity(_hung(6, 100.0))
+
+    assert first != second
 
 
-def test_rate_type_alert_keys_on_detector_only() -> None:
+def test_alert_identity_should_key_on_detector_only_when_rate_type_alert() -> None:
     a1 = Alert("warning", "disk_warning", "m", {"value": 91.0, "threshold": 90.0}, "t")
     a2 = Alert("warning", "disk_warning", "m", {"value": 93.0, "threshold": 90.0}, "t")
+
     assert alert_identity(a1) == alert_identity(a2)
 
 
@@ -60,7 +67,9 @@ def _write_minimal_monitor_toml(work_dir: Path) -> None:
     )
 
 
-def test_active_alert_with_growing_measurement_does_not_spam(tmp_git_repo: Path) -> None:
+def test_monitor_loop_should_yield_each_distinct_episode_once_when_polled_repeatedly(
+    tmp_git_repo: Path,
+) -> None:
     """End-to-end through _monitor_loop_iter: the same hung episode polled five
     times with ever-increasing elapsed_s (the real spam shape) must dedup down
     to a single yield; a genuinely different episode still gets through."""
@@ -75,6 +84,7 @@ def test_active_alert_with_growing_measurement_does_not_spam(tmp_git_repo: Path)
             [_disk_warning(91.0)],  # a distinct episode — must still surface
         ]
     )
+
     with (
         patch("agent_runner.clock.SYSTEM_CLOCK.sleep", return_value=None),
         patch("agent_runner.api._poll_once", side_effect=lambda *_a, **_k: next(polls)),
@@ -85,11 +95,14 @@ def test_active_alert_with_growing_measurement_does_not_spam(tmp_git_repo: Path)
             second = next(gen)
         finally:
             gen.close()
+
     assert first.detector == "hung"
     assert second.detector == "disk_warning"
 
 
-def test_seen_set_evicts_oldest_episode_once_bound_exceeded(tmp_git_repo: Path) -> None:
+def test_seen_set_should_evict_oldest_episode_when_bound_exceeded(
+    tmp_git_repo: Path,
+) -> None:
     """Fill the dedup set past its cap with distinct episodes, then replay the
     very first one — byte-for-byte identical to its first occurrence — followed
     by a guaranteed-fresh sentinel.
@@ -110,6 +123,7 @@ def test_seen_set_evicts_oldest_episode_once_bound_exceeded(tmp_git_repo: Path) 
         yield [_disk_warning(91.0)]  # sentinel: always fresh, either code path
 
     polls = _fill_then_replay()
+
     with (
         patch("agent_runner.clock.SYSTEM_CLOCK.sleep", return_value=None),
         patch("agent_runner.api._poll_once", side_effect=lambda *_a, **_k: next(polls)),
@@ -121,5 +135,6 @@ def test_seen_set_evicts_oldest_episode_once_bound_exceeded(tmp_git_repo: Path) 
             replayed = next(gen)
         finally:
             gen.close()
+
     assert replayed.detector == "hung"
     assert replayed.context["round_num"] == 0

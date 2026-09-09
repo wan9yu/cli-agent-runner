@@ -11,7 +11,7 @@ from tests._clock import FakeClock
 from tests._test_helpers import read_events_for_current_month
 
 
-def test_should_stop_breaks_within_one_chunk():
+def test_interruptible_sleep_should_stop_within_one_chunk_when_predicate_trips():
     clock = FakeClock()
     checks = {"n": 0}
 
@@ -22,11 +22,12 @@ def test_should_stop_breaks_within_one_chunk():
     interrupted = _interruptible_sleep(
         300, {"requested": False}, clock=clock, chunk_s=30, should_stop=should_stop
     )
+
     assert interrupted is True
     assert sum(clock.slept) == 60  # 2 chunks then broke, not the full 300s
 
 
-def test_apply_back_off_honors_should_stop_leaves_no_recovered(tmp_path: Path):
+def test_apply_back_off_should_not_emit_recovered_event_when_interrupted(tmp_path: Path):
     clock = FakeClock()
     throttle = TransientErrorState(
         reset_at_epoch=int(clock.epoch()) + 3600,
@@ -35,6 +36,7 @@ def test_apply_back_off_honors_should_stop_leaves_no_recovered(tmp_path: Path):
         since_round=1,
         phase="",
     )
+
     interrupted = _apply_back_off(
         tmp_path,
         throttle,
@@ -42,6 +44,7 @@ def test_apply_back_off_honors_should_stop_leaves_no_recovered(tmp_path: Path):
         clock=clock,
         should_stop=lambda: True,
     )
+
     assert interrupted is True
     kinds = [e.get("event") for e in read_events_for_current_month(tmp_path)]
     assert "transient_error_recovered" not in kinds  # interrupted: no false breadcrumb

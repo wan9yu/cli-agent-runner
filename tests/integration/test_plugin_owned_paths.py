@@ -38,7 +38,7 @@ def _intent_to_add(repo: Path) -> None:
     subprocess.run(["git", "add", "-N", "."], cwd=repo, check=True)
 
 
-def test_given_no_registration_when_dirty_files_then_all_returned(
+def test_no_registration_should_return_all_files_when_dirty_files_detected(
     tmp_git_repo: Path,
 ) -> None:
     """Baseline: with no registration, today's behavior is preserved."""
@@ -50,11 +50,12 @@ def test_given_no_registration_when_dirty_files_then_all_returned(
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "other.txt" in dirty
     assert "proposals/report.md" in dirty
 
 
-def test_given_proposals_registered_when_dirty_files_then_proposals_filtered(
+def test_proposals_registered_should_filter_proposals_when_dirty_files_detected(
     tmp_git_repo: Path,
 ) -> None:
     """Plugin-owned 'proposals/' files are excluded from dirty list."""
@@ -67,11 +68,12 @@ def test_given_proposals_registered_when_dirty_files_then_proposals_filtered(
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "other.txt" in dirty
     assert "proposals/report.md" not in dirty
 
 
-def test_given_recursive_glob_registered_when_dirty_files_then_deep_paths_filtered(
+def test_recursive_glob_registered_should_filter_deep_paths_when_dirty_files_detected(
     tmp_git_repo: Path,
 ) -> None:
     """Recursive ``**`` glob excludes nested paths too."""
@@ -84,11 +86,12 @@ def test_given_recursive_glob_registered_when_dirty_files_then_deep_paths_filter
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "logs/plugins/acme/state.json" not in dirty
     assert "logs/other.log" in dirty
 
 
-def test_given_double_star_glob_when_direct_child_file_then_filtered(
+def test_double_star_glob_should_filter_direct_child_file_when_dirty_files_detected(
     tmp_git_repo: Path,
 ) -> None:
     """``<dir>/**/*`` must exclude a file sitting DIRECTLY in ``<dir>``, not only
@@ -107,12 +110,13 @@ def test_given_double_star_glob_when_direct_child_file_then_filtered(
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "logs/plugins/my_plugin/state.json" not in dirty  # direct child
     assert "logs/plugins/my_plugin/sub/deep.json" not in dirty  # nested
     assert "logs/other.log" in dirty
 
 
-def test_given_double_star_ext_glob_when_direct_child_then_filtered(
+def test_double_star_ext_glob_should_filter_direct_child_file_when_dirty_files_detected(
     tmp_git_repo: Path,
 ) -> None:
     """docs/plugins.md's table promises ``reports/**/*.md`` matches BOTH
@@ -128,12 +132,13 @@ def test_given_double_star_ext_glob_when_direct_child_then_filtered(
     _intent_to_add(tmp_git_repo)
 
     dirty = detect_dirty_files(tmp_git_repo)
+
     assert "reports/dev.md" not in dirty  # direct child, .md
     assert "reports/sub/qa.md" not in dirty  # nested, .md
     assert "reports/notes.txt" in dirty  # not .md → still dirty
 
 
-def test_given_double_star_direct_child_when_stash_orphan_then_survives(
+def test_double_star_direct_child_should_survive_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:
     """End-to-end footgun proof: a file directly in the ``**`` dir must survive
@@ -169,7 +174,7 @@ def _stash_contents(repo: Path) -> list[str]:
     return r.stdout.split()
 
 
-def test_given_owned_and_non_owned_dirty_when_stash_orphan_then_owned_file_survives(
+def test_owned_and_non_owned_dirty_files_should_have_owned_file_survive_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:
     """The registry must bind at the git boundary, not only the report boundary.
@@ -192,7 +197,7 @@ def test_given_owned_and_non_owned_dirty_when_stash_orphan_then_owned_file_survi
     assert "src.py" in _stash_contents(tmp_git_repo)
 
 
-def test_given_gitignored_owned_path_when_stash_orphan_then_push_is_not_refused(
+def test_gitignored_owned_path_should_not_refuse_push_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:
     """An ignore-matched owned path must stay out of the pathspec.
@@ -221,7 +226,7 @@ def test_given_gitignored_owned_path_when_stash_orphan_then_push_is_not_refused(
     assert "src.py" in _stash_contents(tmp_git_repo)
 
 
-def test_given_glob_owned_path_in_fresh_untracked_dir_when_stash_orphan_then_survives(
+def test_glob_owned_path_in_fresh_untracked_dir_should_survive_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:
     """A glob-form owned path inside a wholly-untracked dir must survive the stash.
@@ -246,7 +251,7 @@ def test_given_glob_owned_path_in_fresh_untracked_dir_when_stash_orphan_then_sur
     assert "src.py" in _stash_contents(tmp_git_repo)
 
 
-def test_given_dash_prefixed_ignored_owned_path_when_stash_orphan_then_push_not_refused(
+def test_dash_prefixed_ignored_owned_path_should_not_refuse_push_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:
     """A leading-dash owned path must not turn the ignore gate into an error.

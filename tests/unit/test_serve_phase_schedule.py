@@ -56,16 +56,20 @@ def _phase_of(argv):
 # --- phase-aware: --phase appended when a phase is selected ---------------
 
 
-def test_skip_all_open_appends_rotation_phase(monkeypatch, tmp_path):
+def test_skip_policy_should_select_first_phase_when_all_phases_open(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert len(argvs) == 1
     assert _phase_of(argvs[0]) == "a"
 
 
-def test_skip_runs_next_and_emits_skip_event(monkeypatch, tmp_path):
+def test_skip_policy_should_advance_and_record_skip_when_current_phase_closed(
+    monkeypatch, tmp_path
+):
     argvs = _capture_run(monkeypatch)
     monkeypatch.setattr(
         serve_cmd.schedule,
@@ -78,7 +82,9 @@ def test_skip_runs_next_and_emits_skip_event(monkeypatch, tmp_path):
         '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'
         '[phases.a.schedule]\npause_windows = ["09:00-12:00"]\n',
     )
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) == "b"  # a closed → skipped, b runs
     evs = _events(tmp_path / "logs")
@@ -98,7 +104,9 @@ class _FlipClock:
         return datetime(2026, 8, 22, 13 if self.opened else 10, 0, tzinfo=TZ)
 
 
-def test_wait_pauses_on_rotation_window(monkeypatch, tmp_path):
+def test_wait_policy_should_pause_and_resume_at_next_open_window_when_phase_closed(
+    monkeypatch, tmp_path
+):
     argvs = _capture_run(monkeypatch)
     clock = _FlipClock()
     monkeypatch.setattr(serve_cmd.schedule, "now_in_zone", clock)
@@ -109,7 +117,9 @@ def test_wait_pauses_on_rotation_window(monkeypatch, tmp_path):
         '[phases]\nlist = ["a"]\nphase_policy = "wait"\n'
         '[phases.a.schedule]\npause_windows = ["09:00-12:00"]\n',
     )
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     evs = [e["event"] for e in _events(tmp_path / "logs")]
     assert "schedule_paused" in evs and "schedule_resumed" in evs
@@ -122,17 +132,19 @@ def test_wait_pauses_on_rotation_window(monkeypatch, tmp_path):
 # --- legacy path (no per-phase schedule, wait policy): byte-identical -----
 
 
-def test_legacy_phases_no_per_phase_schedule_appends_no_phase(monkeypatch, tmp_path):
+def test_phases_without_per_phase_schedule_should_omit_phase_arg(monkeypatch, tmp_path):
     """[phases] present but phase_policy=wait and NO per-phase schedule → not
     phase-aware → legacy pause path, no --phase appended (0.2.7 behavior)."""
     argvs = _capture_run(monkeypatch)
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\n')
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) is None  # round self-resolves rotation
 
 
-def test_phase_aware_predicate(tmp_path):
+def test_phase_aware_should_require_skip_policy_or_per_phase_schedule(tmp_path):
     """Only new 0.2.9 syntax (skip policy, or a per-phase schedule) is phase-aware;
     a plain wait rotation and a no-phases config take the legacy path."""
     from agent_runner.config import load_config
@@ -149,7 +161,7 @@ def test_phase_aware_predicate(tmp_path):
     assert _pa("") is False  # no [phases]
 
 
-def test_legacy_global_schedule_pause_omits_phase(tmp_path):
+def test_legacy_schedule_pause_should_omit_phase_field(tmp_path):
     """The legacy helper (used by non-phase-aware configs) emits schedule_paused
     with NO phase field — byte-identical to 0.2.7."""
     import types
@@ -163,6 +175,7 @@ def test_legacy_global_schedule_pause_omits_phase(tmp_path):
         runtime=types.SimpleNamespace(stop_file=None),
     )
     stop = {"requested": True}  # break the pause loop immediately after emit
+
     serve_cmd._maybe_pause_for_schedule(
         cfg,
         tmp_path,
@@ -170,6 +183,7 @@ def test_legacy_global_schedule_pause_omits_phase(tmp_path):
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=TZ),
         sleep_fn=lambda _s: None,
     )
+
     paused = next(e for e in _events(tmp_path) if e["event"] == "schedule_paused")
     assert "phase" not in paused
 
@@ -177,7 +191,7 @@ def test_legacy_global_schedule_pause_omits_phase(tmp_path):
 # --- --ignore-schedule bypass --------------------------------------------
 
 
-def test_ignore_schedule_bypasses_phase_gate(monkeypatch, tmp_path):
+def test_ignore_schedule_should_bypass_phase_selection_and_pause(monkeypatch, tmp_path):
     """--ignore-schedule skips select_phase entirely: no --phase, no pause even
     with an always-closed per-phase window."""
     argvs = _capture_run(monkeypatch)
@@ -188,7 +202,9 @@ def test_ignore_schedule_bypasses_phase_gate(monkeypatch, tmp_path):
         '[phases.a.schedule]\npause_windows = ["00:00-24:00"]\n',
     )
     args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
+
     rc = serve_cmd.cmd(args)
+
     assert rc == 0
     assert argvs and _phase_of(argvs[0]) is None
     assert "schedule_paused" not in [e["event"] for e in _events(tmp_path / "logs")]
@@ -229,31 +245,34 @@ _TWO_AGENTS = (
 )
 
 
-def test_throttled_agent_skips_to_healthy_sibling(monkeypatch, tmp_path):
+def test_skip_policy_should_route_to_healthy_sibling_when_agent_throttled(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
     _seed_throttle(tmp_path / "logs", phase="a", agent="claude")  # claude throttled, gemini healthy
     cfg_path = _cfg_path(tmp_path, _TWO_AGENTS)
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) == "b"  # rotated past claude-throttled a
     skip = [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
     assert skip and skip[0]["skipped"] == ["a"] and skip[0]["chosen"] == "b"
 
 
-def test_skip_around_does_not_apply_global_back_off(monkeypatch, tmp_path):
-    """A throttled agent under skip rotates to a healthy-agent sibling WITHOUT the sleep."""
+def test_skip_policy_should_not_apply_back_off_when_routing_around_throttle(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
     called = []
     monkeypatch.setattr(serve_cmd, "_apply_back_off", lambda *a, **k: called.append(True))
     _seed_throttle(tmp_path / "logs", phase="a", agent="claude")
     cfg_path = _cfg_path(tmp_path, _TWO_AGENTS)
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) == "b"
     assert called == []  # rotation handled it; no back-off
 
 
-def test_shared_agent_throttle_skips_all_its_phases(tmp_path):
+def test_throttle_skip_context_should_skip_all_phases_sharing_throttled_agent(tmp_path):
     """Two phases sharing ONE throttled agent are BOTH skipped — no hammering the
     rate-limited provider (the phase→agent re-key fix)."""
     from agent_runner.config import load_config
@@ -268,28 +287,38 @@ def test_shared_agent_throttle_skips_all_its_phases(tmp_path):
             '[phases.b.agent]\ncommand = ["claude"]\n',
         )
     )
+
     throttled, wake = serve_cmd._throttle_skip_context(cfg, tmp_path / "logs")
+
     assert throttled == frozenset({"a", "b"})
     assert wake == reset_at
 
 
-def test_ran_agent_throttled_precise_and_fallback(tmp_path):
-    """throttle_active keys on the agent that ran: precise when serve chose the phase,
-    agent-agnostic ("any throttled") when the round self-rotated (phase_arg None) — so a
+def test_ran_agent_throttled_should_check_only_selected_phase_agent_when_phase_arg_set(tmp_path):
+    """throttle_active keys on the agent that ran: phase_arg set means serve chose
+    the phase, so only that phase's configured agent is checked -- so a
     non-base agent's throttle under --ignore-schedule is not misread as a crash."""
     from agent_runner.config import load_config
 
     _seed_throttle(tmp_path / "logs", phase="b", agent="gemini")  # gemini throttled, claude healthy
     cfg = load_config(_cfg_path(tmp_path, _TWO_AGENTS))  # a→claude, b→gemini
-    # phase_arg set: check that exact agent
+
     assert serve_cmd._ran_agent_throttled(cfg, "b", tmp_path / "logs") is True  # gemini
     assert serve_cmd._ran_agent_throttled(cfg, "a", tmp_path / "logs") is False  # claude healthy
-    # phase_arg None (round self-rotated): fall back to "any agent throttled"
+
+
+def test_ran_agent_throttled_should_fallback_to_any_throttled_agent_when_phase_arg_none(tmp_path):
+    """phase_arg None means the round self-rotated: falls back to "any agent
+    throttled" rather than a precise per-phase check."""
+    from agent_runner.config import load_config
+
+    _seed_throttle(tmp_path / "logs", phase="b", agent="gemini")
+    cfg = load_config(_cfg_path(tmp_path, _TWO_AGENTS))
+
     assert serve_cmd._ran_agent_throttled(cfg, None, tmp_path / "logs") is True
 
 
-def test_two_agents_throttled_third_agent_runs(monkeypatch, tmp_path):
-    """Two agents throttled → both their phases skipped; a third healthy agent runs."""
+def test_skip_policy_should_run_third_agent_when_two_agents_throttled(monkeypatch, tmp_path):
     argvs = _capture_run(monkeypatch)
     _seed_throttle(tmp_path / "logs", phase="a", agent="claude")
     _seed_throttle(tmp_path / "logs", phase="b", agent="gemini")
@@ -300,14 +329,16 @@ def test_two_agents_throttled_third_agent_runs(monkeypatch, tmp_path):
         '[phases.b.agent]\ncommand = ["gemini"]\n'
         '[phases.c.agent]\ncommand = ["codewhale"]\n',
     )
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) == "c"
     skip = [e for e in _events(tmp_path / "logs") if e["event"] == "schedule_phase_skipped"]
     assert skip and set(skip[0]["skipped"]) == {"a", "b"} and skip[0]["chosen"] == "c"
 
 
-def test_ignore_schedule_throttle_still_backs_off(monkeypatch, tmp_path):
+def test_ignore_schedule_should_apply_global_back_off_when_throttled(monkeypatch, tmp_path):
     """--ignore-schedule keeps the 0.2.9 global back-off (defer must not fire)."""
     argvs = _capture_run(monkeypatch)
     called = []
@@ -315,13 +346,17 @@ def test_ignore_schedule_throttle_still_backs_off(monkeypatch, tmp_path):
     _seed_throttle(tmp_path / "logs", phase="a")
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
     args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
+
     rc = serve_cmd.cmd(args)
+
     assert rc == 0
     assert called == [True]  # global back-off, not rotation
     assert _phase_of(argvs[0]) is None  # ignore-schedule appends no --phase
 
 
-def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
+def test_select_and_gate_should_pause_with_wake_epoch_when_all_phases_throttled(
+    monkeypatch, tmp_path
+):
     """When every candidate phase is throttled, _select_and_gate pauses (does not
     launch), excluding the throttled phases from the window poll and waking at reset_at."""
     from agent_runner.config import load_config
@@ -335,6 +370,7 @@ def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
         lambda *a, **k: spy.update(k) or spy.update({"called": True}),
     )
     stop = {"requested": False}
+
     out = serve_cmd._select_and_gate(
         cfg,
         _args(tmp_path),
@@ -344,12 +380,15 @@ def test_all_throttled_routes_to_pause_with_wake_epoch(monkeypatch, tmp_path):
         throttled_phases=frozenset({"a"}),
         wake_epoch=reset_at,
     )
+
     assert out is serve_cmd._PAUSED_CONTINUE
     assert spy.get("called") and spy["throttled_phases"] == frozenset({"a"})
     assert spy["wake_epoch"] == reset_at
 
 
-def test_skip_around_clear_emits_one_recovered(monkeypatch, tmp_path):
+def test_skip_policy_should_emit_one_recovered_event_when_throttle_clears_via_skip_around(
+    monkeypatch, tmp_path
+):
     """A throttle that cleared via skip-around (reset_at already past, no
     breadcrumb) emits exactly one transient_error_recovered at loop top, with
     the detected event's classification/agent."""
@@ -363,7 +402,9 @@ def test_skip_around_clear_emits_one_recovered(monkeypatch, tmp_path):
         agent="deepseek-cli",
     )
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     rec = [e for e in _events(tmp_path / "logs") if e["event"] == "transient_error_recovered"]
     assert len(rec) == 1
@@ -372,21 +413,25 @@ def test_skip_around_clear_emits_one_recovered(monkeypatch, tmp_path):
     assert rec[0]["throttled_for_s"] >= 0
 
 
-def test_legacy_skip_action_emits_no_recovered_breadcrumb(monkeypatch, tmp_path):
+def test_legacy_skip_action_should_not_emit_recovered_event_when_throttle_clears(
+    monkeypatch, tmp_path
+):
     """Byte-identical guard: a non-[phases] config with transient_error_action=skip
     and a cleared throttle must NOT emit the 0.2.10 breadcrumb (0.2.9 emitted none)."""
     _capture_run(monkeypatch)
     _seed_throttle(tmp_path / "logs", phase="", reset_at=int(time.time() - 60))
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra='transient_error_action = "skip"\n')
+
     rc = serve_cmd.cmd(
         Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=False)
     )
+
     assert rc == 0
     rec = [e for e in _events(tmp_path / "logs") if e["event"] == "transient_error_recovered"]
     assert rec == []  # legacy path stays silent
 
 
-def test_skip_ignores_throttle_for_unused_agent(monkeypatch, tmp_path):
+def test_skip_policy_should_ignore_throttle_for_unconfigured_agent(monkeypatch, tmp_path):
     """Under skip, a throttle whose agent maps to no configured phase is ignored: the
     round runs normally — skip never applies the global back-off, and no phase is
     skipped. The join is by agent, so the detected event's phase field is irrelevant."""
@@ -397,7 +442,9 @@ def test_skip_ignores_throttle_for_unused_agent(monkeypatch, tmp_path):
         tmp_path / "logs", phase="", agent="unused-agent", reset_at=int(time.time() + 3600)
     )
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n')
+
     rc = serve_cmd.cmd(_args(cfg_path))
+
     assert rc == 0
     assert _phase_of(argvs[0]) == "a"  # nothing throttled for our agents → normal rotation
     assert called == []  # skip never applies the global back-off
@@ -418,7 +465,7 @@ def _paused_sel():
     )
 
 
-def test_pause_excludes_throttled_from_window_poll(tmp_path):
+def test_pause_until_selectable_should_sleep_when_only_open_window_is_throttled(tmp_path):
     """Busy-spin guard: a throttled phase whose window is OPEN must be excluded
     from the poll, so the loop actually sleeps instead of instant-resuming."""
     from agent_runner.config import load_config
@@ -426,6 +473,7 @@ def test_pause_excludes_throttled_from_window_poll(tmp_path):
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
     clock = FakeClock(epoch=1000.0)  # one seam for epoch + sleep
     stop = {"requested": False}
+
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -438,16 +486,18 @@ def test_pause_excludes_throttled_from_window_poll(tmp_path):
         clock=clock,
         chunk_s=1,
     )
+
     assert clock.slept  # it slept — did NOT instant-resume on the throttled-but-open phase
 
 
-def test_pause_wakes_at_wake_epoch(tmp_path):
+def test_pause_until_selectable_should_wake_at_wake_epoch_without_sleeping(tmp_path):
     """The throttle's reset_at is an extra wake trigger even with no open window."""
     from agent_runner.config import load_config
 
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
     clock = FakeClock(epoch=1000.0)
     stop = {"requested": False}
+
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -460,11 +510,12 @@ def test_pause_wakes_at_wake_epoch(tmp_path):
         clock=clock,
         chunk_s=1,
     )
+
     assert not clock.slept  # woke on reset_at without sleeping
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
-def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
+def test_pause_until_selectable_should_wake_when_fakeclock_sleep_crosses_wake_epoch(tmp_path):
     """Drive the real pause loop with the shared FakeClock: its sleep() advances
     virtual epoch AND monotonic, so the loop wakes deterministically once the
     injected clock crosses wake_epoch (no monkeypatch, no real sleep). One clock
@@ -474,6 +525,7 @@ def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n'))
     clock = FakeClock(epoch=1000.0)
     stop = {"requested": False}
+
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -486,12 +538,13 @@ def test_pause_loop_driven_by_fakeclock_sleep_advancing_time(tmp_path):
         clock=clock,
         chunk_s=10,
     )
+
     assert clock.slept == [10, 10, 10]  # 1000→1030 crosses 1025
     assert clock.epoch() == 1030.0 and clock.monotonic() == 30.0  # sleep advanced both
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
-def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
+def test_pause_until_selectable_should_wake_on_sibling_window_before_reset_epoch(tmp_path):
     """min(window, reset_at): a non-throttled sibling whose window is open resumes
     the loop before the far-future throttle reset."""
     from agent_runner.config import load_config
@@ -499,6 +552,7 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
     cfg = load_config(_cfg_path(tmp_path, '[phases]\nlist = ["a","b"]\nphase_policy = "skip"\n'))
     clock = FakeClock(epoch=1000.0)  # far below wake_epoch, so only b's window can resume
     stop = {"requested": False}
+
     serve_cmd._pause_until_selectable(
         cfg,
         tmp_path / "logs",
@@ -511,11 +565,12 @@ def test_pause_wakes_on_sibling_window_before_reset(tmp_path):
         clock=clock,
         chunk_s=1,
     )
+
     assert not clock.slept  # b's open window resumed immediately, before reset_at
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
-def test_second_serve_refused_when_lock_held(tmp_path, capsys):
+def test_serve_should_refuse_second_instance_when_lock_held(tmp_path, capsys):
     """Loop-lifetime single-instance guard: a second serve refuses to start (exit 1)
     while another holds the serve-scoped lock (0.2.11)."""
     import fcntl
@@ -527,6 +582,7 @@ def test_second_serve_refused_when_lock_held(tmp_path, capsys):
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # stand in for the running serve
     try:
         rc = serve_cmd.cmd(_args(cfg_path))
+
         assert rc == 1
         assert "already running" in capsys.readouterr().err
         assert not (log_dir / "serve.pid").exists()  # refused before writing its pid
@@ -535,14 +591,16 @@ def test_second_serve_refused_when_lock_held(tmp_path, capsys):
         os.close(fd)
 
 
-def test_serve_releases_lock_on_exit(tmp_path, monkeypatch):
+def test_serve_should_release_lock_when_run_exits(tmp_path, monkeypatch):
     """After a serve run exits, the lock is free for the next serve (once=True)."""
     import fcntl
     import os
 
     _capture_run(monkeypatch)
     cfg_path = _cfg_path(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n')
+
     assert serve_cmd.cmd(_args(cfg_path)) == 0
+
     # lock is released → we can acquire it non-blocking
     fd = os.open(tmp_path / "logs" / "serve.lock", os.O_RDWR | os.O_CREAT, 0o644)
     try:

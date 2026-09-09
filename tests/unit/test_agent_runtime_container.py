@@ -60,7 +60,9 @@ def _alive(pid: int) -> bool:
         (["docker", "-H", "unix:///var/run/docker.sock", "ps"], False),
     ],
 )
-def test_detect_container_run_recognizes_run_commands(command: list[str], expected: bool) -> None:
+def test_detect_container_run_should_recognize_run_commands(
+    command: list[str], expected: bool
+) -> None:
     assert (_detect_container_run(command) is not None) is expected
 
 
@@ -74,7 +76,7 @@ def test_detect_container_run_recognizes_run_commands(command: list[str], expect
         (["env", "X=1", "docker", "run", "image"], 3),
     ],
 )
-def test_detect_container_run_index_only_true_for_unwrapped_unflagged_form(
+def test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_form(
     command: list[str], run_idx: int
 ) -> None:
     """run()'s --cidfile injection only fires when run_idx == 1 (the simple,
@@ -82,24 +84,27 @@ def test_detect_container_run_index_only_true_for_unwrapped_unflagged_form(
     reports for each bypass form so that conservative gate stays provably correct
     as the detector above grows broader."""
     detected = _detect_container_run(command)
+
     assert detected is not None
     assert detected[1] == run_idx
     assert (run_idx == 1) == (command[0] in ("docker", "podman") and command[1] == "run")
 
 
-def test_cidfile_flag_value_scans_only_the_options_block_not_container_args() -> None:
+def test_cidfile_flag_value_should_scan_only_the_options_block_not_container_args() -> None:
     """Review fix 3: the scan must stay inside docker's own OPTIONS block
     (between `run` and IMAGE) -- an operator-supplied --cidfile IS found
     there, but a `--cidfile`-looking token belonging to the CONTAINERIZED
     PROGRAM's own args (after IMAGE) must never be mistaken for it."""
     real_docker_flag = ["docker", "run", "--cidfile", "/host/real.cid", "--rm", "image"]
+
     assert _cidfile_flag_value(real_docker_flag, 1) == "/host/real.cid"
 
     containers_own_arg = ["docker", "run", "--rm", "image", "--cidfile", "/container/internal/path"]
+
     assert _cidfile_flag_value(containers_own_arg, 1) is None
 
 
-def test_command_has_cidfile_flag_catches_operator_cidfile_past_untabled_flag() -> None:
+def test_command_has_cidfile_flag_should_catch_operator_cidfile_past_untabled_flag() -> None:
     """The injection guard's blind spot + its fix. ``_cidfile_flag_value``'s
     walk stops one token early at a value-flag NOT in
     ``_DOCKER_RUN_FLAGS_WITH_VALUE`` (e.g. ``--cpu-quota``), mistaking its value
@@ -108,14 +113,17 @@ def test_command_has_cidfile_flag_catches_operator_cidfile_past_untabled_flag() 
     ``_command_has_cidfile_flag`` scans position-independently and finds it, so
     injection is suppressed instead of emitting a duplicate."""
     past_untabled = ["docker", "run", "--cpu-quota", "50000", "--cidfile", "/op.cid", "image"]
+
     assert _cidfile_flag_value(past_untabled, 1) is None  # the blind spot
     assert _command_has_cidfile_flag(past_untabled, 1) is True  # closed by the guard
 
     tabled = ["docker", "run", "--cidfile", "/op.cid", "--rm", "image"]
+
     assert _cidfile_flag_value(tabled, 1) == "/op.cid"
     assert _command_has_cidfile_flag(tabled, 1) is True
 
     none_present = ["docker", "run", "--rm", "image"]
+
     assert _command_has_cidfile_flag(none_present, 1) is False
 
 
@@ -154,7 +162,9 @@ def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
 # tight window, racing the R1128 kill against the cidfile write below — run
 # this pass with no competing xdist workers instead of over-widening timeout_s.
 @pytest.mark.timeout(60)
-def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path, monkeypatch):
+def test_container_run_command_should_terminate_loudly_with_best_effort_stop_when_round_times_out(
+    tmp_path, monkeypatch
+):
     """A `docker run` command that's still alive at the R1128 wall-clock hits
     the timeout-kill path: the injected --cidfile is read back, `docker stop
     <id>` is actually invoked (proven via the fake stub's own STOP_LOG), and
@@ -195,10 +205,54 @@ def test_container_run_command_terminates_loudly_and_best_effort_stops(tmp_path,
     )
 
 
+@pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto
+# gate's own CPU contention can stretch the fake runtime's fork+exec past a
+# tight window, racing the R1128 kill against the cidfile write below — run
+# this pass with no competing xdist workers instead of over-widening timeout_s.
+@pytest.mark.timeout(60)
+def test_podman_run_command_should_terminate_loudly_with_best_effort_stop_when_round_times_out(
+    tmp_path, monkeypatch
+):
+    """Same full inject/stop/cleanup flow as the docker-flavored sibling
+    above, but through the podman binary name -- `_detect_container_run`
+    reports the runtime by its actual basename, and the fake stub, cidfile
+    injection, stop invocation and callback all key off that name too."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "podman")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("WRITE_CID", "1")
+    stop_log = tmp_path / "stop.log"
+    monkeypatch.setenv("STOP_LOG", str(stop_log))
+    log_path = tmp_path / "round.log"
+
+    calls: list[tuple[str, str | None, bool | None]] = []
+    result = run(
+        command=["podman", "run", "--rm", "some-agent-image"],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        work_dir=tmp_path,
+        log_path=log_path,
+        env_extra={},
+        on_container_orphan_risk=lambda *a: calls.append(a),
+    )
+
+    assert result.timed_out is True
+    assert not _alive(result.pid), "podman run launcher must be reaped like any other agent"
+    assert calls == [("podman", "fakecid123", True)]
+    assert stop_log.read_text(encoding="utf-8").strip() == "fakecid123"
+    assert not (tmp_path / (log_path.name + ".cid")).exists(), (
+        "our own injected cidfile must be cleaned up once the round is done"
+    )
+
+
 @pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): see the other
 # serial-marked tests in this file for the full rationale.
 @pytest.mark.timeout(60)
-def test_operator_provided_cidfile_is_read_but_never_deleted(tmp_path, monkeypatch):
+def test_operator_provided_cidfile_should_be_read_but_not_deleted_when_round_times_out(
+    tmp_path, monkeypatch
+):
     """Review fix 2's other half: run() only ever deletes a cidfile IT
     injected. An operator who already passes their own --cidfile gets it
     read back for the best-effort stop, same as any injected one -- but it
@@ -235,7 +289,7 @@ def test_operator_provided_cidfile_is_read_but_never_deleted(tmp_path, monkeypat
 # tight window, racing the R1128 kill against the cidfile write below — run
 # this pass with no competing xdist workers instead of over-widening timeout_s.
 @pytest.mark.timeout(60)
-def test_container_run_command_with_no_recoverable_id_only_warns(tmp_path, monkeypatch):
+def test_container_run_command_should_only_warn_when_no_id_is_recoverable(tmp_path, monkeypatch):
     """The container never actually started (WRITE_CID unset -> the cidfile
     stays empty): no `stop` is attempted, but the callback still fires — the
     honest floor is the loud report, not a fabricated stop."""
@@ -281,13 +335,14 @@ def test_container_run_command_with_no_recoverable_id_only_warns(tmp_path, monke
     ],
     ids=["global-flag-form", "env-wrapped-form"],
 )
-def test_bypass_forms_still_warn_on_terminate_without_a_stop_attempt(
+def test_bypass_forms_should_warn_without_stop_attempt_when_terminated(
     tmp_path, monkeypatch, build_command
 ):
     """Review fix 1 — the global-flag and `env`-wrapped bypass forms (2 of
     the 4 named forms; `sudo docker run ...`/`sudo -u ... docker run ...`
-    are covered at the pure-detector level in test_detect_container_run_recognizes_run_commands
-    and test_detect_container_run_index_only_true_for_unwrapped_unflagged_form
+    are covered at the pure-detector level in
+    test_detect_container_run_should_recognize_run_commands and
+    test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_form
     -- spawning a real `sudo` here would need passwordless sudo, which isn't
     a safe test-environment assumption): DETECTED (broad check), so the loud
     warn + round_container_orphan_risk event still fires on termination --
@@ -324,7 +379,7 @@ def test_bypass_forms_still_warn_on_terminate_without_a_stop_attempt(
     )
 
 
-def test_non_container_command_argv_and_callback_unchanged(tmp_path, monkeypatch):
+def test_non_container_command_should_leave_argv_and_callback_unchanged(tmp_path, monkeypatch):
     """A normal (non-container) command's spawn path is byte-unchanged: no
     --cidfile is injected, no .cid file appears, and on_container_orphan_risk
     is never called even though the callback is wired up."""

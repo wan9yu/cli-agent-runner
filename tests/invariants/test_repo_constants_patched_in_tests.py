@@ -17,7 +17,7 @@ TESTS = Path(__file__).resolve().parent.parent
 DANGEROUS_CALLS = {"run_one_round", "stash_orphan", "_run_one_round_inner"}
 
 
-def test_given_test_files_when_scanned_then_dangerous_calls_use_tmp_path_or_repo() -> None:
+def test_dangerous_calls_should_use_tmp_path_fixture_when_test_files_scanned() -> None:
     offenders: list[tuple[str, int, str]] = []
     scanned = 0
     for f in TESTS.rglob("test_*.py"):
@@ -26,7 +26,6 @@ def test_given_test_files_when_scanned_then_dangerous_calls_use_tmp_path_or_repo
         tree = ast.parse(text)
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
-                # Find dangerous calls inside this test
                 calls = []
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Call):
@@ -44,6 +43,7 @@ def test_given_test_files_when_scanned_then_dangerous_calls_use_tmp_path_or_repo
                 safe_fixtures = {"tmp_path", "tmp_git_repo", "tmp_log_dir", "fake_agent_script"}
                 if not (params & safe_fixtures):
                     offenders.append((f.name, node.lineno, node.name))
+
     assert scanned > 0, "no tests/**/test_*.py files scanned"  # vacuity-guard
     assert offenders == [], (
         f"tests calling {DANGEROUS_CALLS} without tmp_path-style fixture: {offenders}"

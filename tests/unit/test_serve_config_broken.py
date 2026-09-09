@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 
 from agent_runner.api import PERMANENT_CONFIG_EXIT
+from agent_runner.cli import serve_cmd
+from agent_runner.config import ConfigError
 from tests._test_helpers import FakeArgs, make_toml, read_events_for_current_month
 
 
-def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_stops(
+def test_serve_should_report_config_broken_and_stop_when_round_permanently_exits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from agent_runner.cli import serve_cmd
-
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
 
@@ -25,6 +25,7 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
         return PERMANENT_CONFIG_EXIT
 
     monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
+
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False))
 
     # serve broke the loop (returned the give-up exit code) rather than respawning
@@ -34,13 +35,12 @@ def test_given_round_exits_permanent_config_when_serve_then_config_broken_and_st
     assert "config_broken" in kinds
 
 
-def test_given_invalid_max_rounds_when_serve_then_config_broken_and_78(
+def test_serve_should_report_config_broken_and_stop_when_max_rounds_invalid(
     tmp_path: Path,
 ) -> None:
-    from agent_runner.cli import serve_cmd
-
     cfg_path = make_toml(tmp_path)
     log_dir = tmp_path / "logs"
+
     rc = serve_cmd.cmd(FakeArgs(cfg_path, once=False, max_rounds=0))
 
     assert rc == PERMANENT_CONFIG_EXIT
@@ -48,7 +48,7 @@ def test_given_invalid_max_rounds_when_serve_then_config_broken_and_78(
     assert "config_broken" in kinds
 
 
-def test_given_missing_config_at_boot_when_serve_then_raises_config_error(
+def test_serve_should_raise_config_error_when_config_missing_at_boot(
     tmp_path: Path,
 ) -> None:
     """Group A: a bad initial load (never even started the loop) is PERMANENT --
@@ -56,20 +56,15 @@ def test_given_missing_config_at_boot_when_serve_then_raises_config_error(
     cmd() raises ConfigError uncaught (main() maps it to 78); this pins the
     exception type main()'s handler relies on, mirroring round_cmd's own
     boundary conversion for the identical FileNotFoundError."""
-    from agent_runner.cli import serve_cmd
-    from agent_runner.config import ConfigError
-
     with pytest.raises(ConfigError):
         serve_cmd.cmd(FakeArgs(tmp_path / "nope.toml", once=False))
 
 
-def test_given_broken_toml_syntax_at_boot_when_serve_then_raises_config_error(
+def test_serve_should_raise_config_error_when_toml_syntax_broken_at_boot(
     tmp_path: Path,
 ) -> None:
-    from agent_runner.cli import serve_cmd
-    from agent_runner.config import ConfigError
-
     bad_toml = tmp_path / "agent-runner.toml"
     bad_toml.write_text("this is not [valid toml")
+
     with pytest.raises(ConfigError):
         serve_cmd.cmd(FakeArgs(bad_toml, once=False))

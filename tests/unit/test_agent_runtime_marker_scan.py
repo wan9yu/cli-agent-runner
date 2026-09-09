@@ -15,7 +15,7 @@ def _script(tmp_path: Path, body: str) -> Path:
     return p
 
 
-def test_marker_split_across_chunks_is_detected(tmp_path):
+def test_marker_should_be_detected_when_split_across_chunks(tmp_path):
     # First scan sees only '{"type":"res'; the completing 'ult"...' arrives after the
     # next scan tick. Without the carry, the delta read of 'ult"...' never re-forms the
     # marker and the grace kill never fires.
@@ -33,6 +33,7 @@ def test_marker_split_across_chunks_is_detected(tmp_path):
         env_extra={},
         max_grace_after_result_s=1,
     )
+
     # killed_for_grace=True already proves the marker-split reap fired via
     # grace (not the wall) -- the wall path returns killed_for_grace=False,
     # so no separate duration_s bound is needed to distinguish the two.
@@ -43,7 +44,7 @@ def test_marker_split_across_chunks_is_detected(tmp_path):
     assert result.killed_for_grace is True
 
 
-def test_delta_scan_does_not_reread_prefix(tmp_path, monkeypatch):
+def test_delta_scan_should_not_reread_already_scanned_bytes(tmp_path, monkeypatch):
     """Every rb read the marker scan performs advances the byte offset; across
     the whole scan lifetime each byte of the log is read exactly once. The old
     eager scan re-opened and re-read the WHOLE (ever-growing) file on every
@@ -82,6 +83,7 @@ def test_delta_scan_does_not_reread_prefix(tmp_path, monkeypatch):
         env_extra={},
         max_grace_after_result_s=1,
     )
+
     assert reads, "marker scan never ran"
     final_size = log_path.stat().st_size
     assert final_size > 4096  # the payload is large enough for a re-read to matter

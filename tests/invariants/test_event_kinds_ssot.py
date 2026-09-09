@@ -13,7 +13,7 @@ from tests.invariants._event_scan import (
 )
 
 
-def test_given_builtin_kinds_when_scanned_then_each_has_a_constant_emit_site() -> None:
+def test_builtin_kinds_should_each_have_a_constant_emit_site_when_scanned() -> None:
     """Every declared built-in kind appears as the value of some core emit call.
 
     Closes the "declared but never happens" hole structurally: a kind with no
@@ -29,6 +29,7 @@ def test_given_builtin_kinds_when_scanned_then_each_has_a_constant_emit_site() -
         for name, value in vars(events).items()
         if name.isupper() and isinstance(value, str) and value in events._BUILTIN_KINDS
     }
+
     emitted: set[str] = set()
     for path in package_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -37,10 +38,11 @@ def test_given_builtin_kinds_when_scanned_then_each_has_a_constant_emit_site() -
                 if name in value_by_name:
                     emitted.add(value_by_name[name])
     never = sorted(events._BUILTIN_KINDS - emitted)
+
     assert never == [], f"declared but never emitted: {never}"
 
 
-def test_given_emit_alias_import_when_scanned_then_kind_arg_resolved() -> None:
+def test_emit_kind_args_should_resolve_aliased_import_when_scanned() -> None:
     """monitor.py imports `emit as emit_event`; a scan that matches only
     `events.emit` is blind to it. _emit.py uses the bare `emit` name.
     """
@@ -51,6 +53,7 @@ def test_given_emit_alias_import_when_scanned_then_kind_arg_resolved() -> None:
         'emit(log_dir, "bare_kind", x=1)\n'
         'events.emit(log_dir, "qualified_kind", x=1)\n'
     )
+
     assert [a.value for a in emit_kind_args(tree)] == [
         "aliased_kind",
         "bare_kind",
@@ -58,7 +61,7 @@ def test_given_emit_alias_import_when_scanned_then_kind_arg_resolved() -> None:
     ]
 
 
-def test_given_package_when_listed_then_scan_reaches_subpackages() -> None:
+def test_package_modules_should_reach_subpackages_when_listed() -> None:
     """rglob, not glob: cli/ and builtin_plugins/ hold real emit sites."""
     names = {p.relative_to(PKG).as_posix() for p in package_modules()}
 
@@ -68,21 +71,6 @@ def test_given_package_when_listed_then_scan_reaches_subpackages() -> None:
     assert "cli/serve_cmd.py" in names
     assert "builtin_plugins/default_dirty_handler.py" in names
     assert "events.py" not in names  # events.py defines the kinds; it is the source
-
-
-def test_given_emit_calls_when_scanned_then_kind_is_a_constant_not_a_literal() -> None:
-    """emit() kinds come from events.py constants. A raw literal is invisible to
-    find-references and lets a declared kind go silently unemitted.
-    """
-    offenders: list[tuple[str, int, str]] = []
-    for path in package_modules():
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        rel = path.relative_to(PKG.parent).as_posix()
-        for arg in emit_kind_args(tree):
-            offenders.extend((rel, lit.lineno, lit.value) for lit in kind_literals(arg))
-    assert sorted(offenders) == [], (
-        f"events.emit() called with a raw kind literal: {sorted(offenders)}"
-    )
 
 
 # Namespaces that legitimately spell a string the same way an event kind is
@@ -139,7 +127,23 @@ def _metrics_event_literal_ids(tree: ast.Module) -> set[int]:
     return ids
 
 
-def test_given_agent_runner_source_when_scanned_then_no_raw_builtin_kind_literals() -> None:
+def test_emit_calls_should_use_constants_not_literals_when_scanned() -> None:
+    """emit() kinds come from events.py constants. A raw literal is invisible to
+    find-references and lets a declared kind go silently unemitted.
+    """
+    offenders: list[tuple[str, int, str]] = []
+    for path in package_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        rel = path.relative_to(PKG.parent).as_posix()
+        for arg in emit_kind_args(tree):
+            offenders.extend((rel, lit.lineno, lit.value) for lit in kind_literals(arg))
+
+    assert sorted(offenders) == [], (
+        f"events.emit() called with a raw kind literal: {sorted(offenders)}"
+    )
+
+
+def test_agent_runner_source_should_have_no_raw_builtin_kind_literals_when_scanned() -> None:
     """Built-in kinds are referenced through events.py constants, so a kind has
     exactly one spelling in the tree and find-references reaches its readers.
 
@@ -164,4 +168,5 @@ def test_given_agent_runner_source_when_scanned_then_no_raw_builtin_kind_literal
             if (rel, enclosing.get(id(node), "")) in _ALLOWED_KIND_SPELLINGS:
                 continue
             offenders.append((rel, node.lineno, node.value))
+
     assert sorted(offenders) == [], f"raw event-kind literals: {sorted(offenders)}"

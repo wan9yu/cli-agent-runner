@@ -69,7 +69,7 @@ def _seed_logs(work_dir: Path) -> None:
     (rounds / "R1-2026-05-12.log").write_text("line-1\nline-2\nline-3-with-error\nline-4\nline-5\n")
 
 
-def test_given_seeded_logs_when_api_peek_then_returns_project_state(
+def test_peek_should_return_project_state_when_logs_seeded(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -77,35 +77,40 @@ def test_given_seeded_logs_when_api_peek_then_returns_project_state(
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
     cfg = load_config(tmp_git_repo / "agent-runner.toml")
+
     state = api.peek(tmp_git_repo)
+
     assert isinstance(state, ProjectState)
     assert len(state.defenses) == len(defenses.catalog(cfg))
     assert state.system.mem_total_mb == 8000
 
 
-def test_given_state_when_peek_with_select_then_returns_subtree(
+def test_peek_should_return_subtree_when_select_specified(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     val = api.peek(tmp_git_repo, select="system.disk_used_pct")
+
     assert val == 50.0
 
 
-def test_given_invalid_select_when_peek_then_raises_keyerror(
+def test_peek_should_raise_keyerror_when_select_invalid(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     with pytest.raises(KeyError, match="nonexistent"):
         api.peek(tmp_git_repo, select="nonexistent")
 
 
-def test_given_no_alerts_when_poll_once_then_returns_empty(
+def test_poll_once_should_return_empty_when_no_alerts(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -127,60 +132,69 @@ def test_given_no_alerts_when_poll_once_then_returns_empty(
         )
 
     monkeypatch.setattr("agent_runner.api.load_config", patched_load)
+
     alerts = api._poll_once(tmp_git_repo)
+
     assert alerts == []
 
 
-def test_given_peek_with_round_latest_when_called_then_populates_current_round(
+def test_peek_should_populate_current_round_when_round_is_latest(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     state = api.peek(tmp_git_repo, round="latest")
+
     assert state.current_round is not None
     assert state.current_round.round_num == 1
     assert state.current_round.exit_code == 0
 
 
-def test_given_peek_with_log_flag_when_called_then_populates_log_tail(
+def test_peek_should_populate_log_tail_when_log_flag_set(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     state = api.peek(tmp_git_repo, round="latest", log=True)
+
     assert state.current_round is not None
     assert state.current_round.log_tail is not None
     assert "line-3-with-error" in state.current_round.log_tail
 
 
-def test_given_peek_with_events_when_called_then_populates_recent_events(
+def test_peek_should_populate_recent_events_when_events_count_given(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     state = api.peek(tmp_git_repo, events=2)
+
     assert len(state.recent_events) == 2
     assert state.recent_events[-1]["event"] == "round_end"
 
 
-def test_given_peek_with_missing_round_when_called_then_raises_keyerror(
+def test_peek_should_raise_keyerror_when_round_missing(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
+
     with pytest.raises(KeyError, match="round 99"):
         api.peek(tmp_git_repo, round=99)
 
 
-def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
+def test_poll_once_should_return_disk_critical_alert_when_disk_critical_seeded(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -192,20 +206,20 @@ def test_given_seeded_disk_critical_when_poll_once_then_alert_present(
     (log_dir / "metrics-2026-05.jsonl").write_text(
         '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","mem_total_mb":8000,"mem_available_mb":4000,"disk_used_pct":98.5,"disk_free_gb":1.0}\n'
     )
+
     alerts = api._poll_once(tmp_git_repo)
+
     crit = [a for a in alerts if a.detector == "disk_critical"]
     assert len(crit) == 1
     assert isinstance(crit[0], Alert)
     assert crit[0].auto_action == "stop_service"
 
 
-def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_keys(
+def test_emit_should_populate_plugin_hook_and_owned_path_keys_when_json_mode(
     tmp_git_repo: Path,
     capsys,
 ) -> None:
     """0.1.8: plugins block in peek JSON includes pre/post hooks + owned_paths."""
-    import json
-
     from agent_runner.api_types import (
         ProjectState,
         ServiceMode,
@@ -224,7 +238,9 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
         system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
+
     emit(state, json_mode=True)
+
     out = json.loads(capsys.readouterr().out)
     assert out["schema_version"] == PEEK_SCHEMA_VERSION
     assert "pre_round_hooks" in out["plugins"]
@@ -235,7 +251,7 @@ def test_given_peek_json_when_emit_then_plugins_block_has_hook_and_owned_path_ke
     assert isinstance(out["plugins"]["owned_paths"], list)
 
 
-def test_given_events_with_hook_failures_when_state_assembled_then_filtered_to_field(
+def test_peek_should_populate_recent_hook_failures_when_events_contain_hook_failures(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -251,17 +267,18 @@ def test_given_events_with_hook_failures_when_state_assembled_then_filtered_to_f
         '{"ts":"2026-05-13T00:02:00.000Z","event":"agent_exit","exit_code":0,"round_num":1,"duration_s":1.0,"timed_out":false}\n'
         '{"ts":"2026-05-13T00:03:00.000Z","event":"hook_failed","hook_name":"Y","hook_kind":"post"}\n'
     )
+
     state = api.peek(tmp_git_repo)
+
     assert len(state.recent_hook_failures) == 2
     assert all(e["event"] == "hook_failed" for e in state.recent_hook_failures)
     names = sorted(e["hook_name"] for e in state.recent_hook_failures)
     assert names == ["X", "Y"]
 
 
-def test_given_fresh_project_no_log_dir_when_monitor_loop_starts_then_creates_dir_and_emits(
+def test_monitor_loop_should_create_log_dir_and_emit_started_event_when_log_dir_missing(
     tmp_path: Path,
 ) -> None:
-    """monitor_loop creates log_dir if missing before emitting monitor_started."""
     work_dir = tmp_path / "proj"
     work_dir.mkdir()
     log_dir = work_dir / "logs"
@@ -273,24 +290,6 @@ def test_given_fresh_project_no_log_dir_when_monitor_loop_starts_then_creates_di
     assert log_dir.exists(), "monitor_loop should have created log_dir"
     events_files = sorted(log_dir.glob("events-*.jsonl"))
     assert events_files, "monitor_started should have been emitted"
-    payload = json.loads(events_files[-1].read_text(encoding="utf-8").strip())
-    assert payload["event"] == "monitor_started"
-
-
-def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
-    tmp_path: Path,
-) -> None:
-    """monitor_loop() emits a monitor_started event before its first poll."""
-    work_dir = tmp_path / "proj"
-    work_dir.mkdir()
-    log_dir = work_dir / "logs"
-    log_dir.mkdir()
-    _write_minimal_monitor_toml(work_dir, log_dir)
-
-    _drive_monitor_loop_once(work_dir)
-
-    events_files = sorted(log_dir.glob("events-*.jsonl"))
-    assert events_files, "expected at least one events file written"
     lines = events_files[-1].read_text(encoding="utf-8").splitlines()
     all_events = [json.loads(line) for line in lines]
     started = [e for e in all_events if e.get("event") == "monitor_started"]
@@ -302,7 +301,7 @@ def test_given_monitor_loop_when_started_then_emits_monitor_started_event(
     assert payload["log_dir"] == str(log_dir)
 
 
-def test_given_host_when_monitor_loop_then_raises_before_first_poll(
+def test_monitor_loop_should_raise_before_first_poll_when_host_given(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -340,28 +339,25 @@ def test_given_host_when_monitor_loop_then_raises_before_first_poll(
     )
 
 
-def test_given_work_dir_with_shell_metachars_when_project_name_then_raises(tmp_path: Path) -> None:
-    """Project name (work_dir basename) must reject shell metacharacters."""
+def test_project_name_should_raise_when_work_dir_has_shell_metachars(tmp_path: Path) -> None:
     bad_dir = tmp_path / "foo;rm -rf /"
     bad_dir.mkdir()
+
     with pytest.raises(ValueError, match="invalid project name"):
         api._project_name(bad_dir)
 
 
-def test_given_clean_work_dir_when_project_name_then_returns_basename(tmp_path: Path) -> None:
-    """Project name passes through for valid basenames."""
+def test_project_name_should_return_basename_when_work_dir_clean(tmp_path: Path) -> None:
     good_dir = tmp_path / "my-project_v1.2"
     good_dir.mkdir()
+
     assert api._project_name(good_dir) == "my-project_v1.2"
 
 
-def test_given_recent_blips_in_events_when_peek_then_populated_in_state(
+def test_peek_should_populate_recent_blips_when_events_contain_blips(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """peek populates ProjectState.recent_blips from events.jsonl entries."""
-    from agent_runner import api
-
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
@@ -388,16 +384,16 @@ def test_given_recent_blips_in_events_when_peek_then_populated_in_state(
         f.write("\n".join(blip_lines) + "\n")
 
     state = api.peek(tmp_git_repo)
+
     assert len(state.recent_blips) == 5, "default limit is 5, most-recent first"
     # The 5 returned should be the last 5 in chronological order (rounds 2..6)
     rounds = [b["round_num"] for b in state.recent_blips]
     assert rounds == [2, 3, 4, 5, 6]
 
 
-def test_given_seeded_events_when_narrate_then_yields_formatted_lines(
+def test_narrate_events_should_yield_formatted_lines_when_events_seeded(
     tmp_path: Path,
 ) -> None:
-    """narrate_events yields one formatted line per event read from the file."""
     from agent_runner.api import narrate_events
 
     log_dir = tmp_path / "logs"
@@ -422,11 +418,10 @@ def test_given_seeded_events_when_narrate_then_yields_formatted_lines(
     assert "pid=12345" in lines[1]
 
 
-def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
+def test_peek_should_return_rate_limit_state_when_supervisor_throttled(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """peek returns ServiceStatus.rate_limit populated when transient_error_detected is active."""
     import time
 
     from agent_runner.api_types import RateLimitState
@@ -453,6 +448,7 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     )
 
     state = api.peek(tmp_git_repo)
+
     assert state.service.rate_limit is not None
     assert isinstance(state.service.rate_limit, RateLimitState)
     assert state.service.rate_limit.throttled_until_epoch == future
@@ -461,7 +457,7 @@ def test_given_throttled_supervisor_when_peek_then_returns_rate_limit_state(
     assert state.service.rate_limit.throttled_agents == ("claude",)  # plural view
 
 
-def test_given_sibling_recovered_when_peek_then_still_throttled_agent_surfaces(
+def test_peek_should_surface_throttled_agent_when_sibling_recovers(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -507,13 +503,14 @@ def test_given_sibling_recovered_when_peek_then_still_throttled_agent_surfaces(
     (log_dir / "events-2026-05.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
     state = api.peek(tmp_git_repo)
+
     assert state.service.rate_limit is not None  # not dropped to null
     assert state.service.rate_limit.throttled_agents == ("claude",)
     assert state.service.rate_limit.agent == "claude"
     assert state.service.rate_limit.throttled_until_epoch == future
 
 
-def test_given_consecutive_5xx_detections_when_peek_then_reports_escalated_reset(
+def test_peek_should_report_escalated_reset_when_consecutive_5xx_detected(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -550,17 +547,16 @@ def test_given_consecutive_5xx_detections_when_peek_then_reports_escalated_reset
     expected_reset = raw_reset + base * (2**2 - 1)  # exponent=2 → 4x - 1x extra
 
     state = api.peek(tmp_git_repo)
+
     assert state.service.rate_limit is not None
     assert state.service.rate_limit.throttled_until_epoch == expected_reset
     assert state.service.rate_limit.throttled_until_epoch > raw_reset
 
 
-def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
+def test_emit_should_include_disabled_plugins_block_when_json_mode(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """peek --json includes plugins.disabled sub-key (verbatim from disabled_plugin_names())."""
-    import json
-
     from agent_runner.api_types import (
         ProjectState,
         ServiceMode,
@@ -579,7 +575,9 @@ def test_given_plugins_disable_when_peek_emit_then_disabled_block_present(
         system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
+
     emit(state, json_mode=True)
+
     out = json.loads(capsys.readouterr().out)
     assert "plugins" in out
     assert "disabled" in out["plugins"]

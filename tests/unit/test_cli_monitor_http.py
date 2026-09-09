@@ -9,10 +9,9 @@ import pytest
 from tests._test_helpers import make_toml
 
 
-def test_given_mode_http_when_main_then_dispatches_to_cmd_http(
+def test_cli_main_should_dispatch_to_cmd_http_when_mode_is_http(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`monitor --mode http --port 8765` calls _cmd_http with parsed args."""
     from agent_runner.cli import main, monitor_cmd
 
     cfg_path = make_toml(tmp_path)
@@ -26,11 +25,12 @@ def test_given_mode_http_when_main_then_dispatches_to_cmd_http(
     monkeypatch.setattr(monitor_cmd, "_cmd_http", fake_cmd_http)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "http", "--port", "8765"])
+
     assert rc == 0
     assert captured["port"] == 8765
 
 
-def test_given_mode_http_with_host_when_main_then_error(
+def test_cli_main_should_error_when_mode_http_with_host(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """`monitor --mode http --host pi` rejected (local-only, like narrate/events)."""
@@ -39,4 +39,5 @@ def test_given_mode_http_with_host_when_main_then_error(
     cfg_path = make_toml(tmp_path)
 
     rc = main(["--config", str(cfg_path), "monitor", "--mode", "http", "--host", "pi"])
+
     assert rc != 0

@@ -10,7 +10,7 @@ from agent_runner.cli._serve_round import _mid_round_action
 from agent_runner.config import MonitorHostHealthConfig
 
 
-def test_mid_round_action_2x2_at_threshold() -> None:
+def test_mid_round_action_should_match_2x2_matrix_at_threshold() -> None:
     on = MonitorHostHealthConfig(in_round_mem_terminate=True)
     off = MonitorHostHealthConfig(in_round_mem_terminate=False)
     streak = on.mem_critical_consecutive_samples  # at threshold
@@ -26,7 +26,7 @@ def test_mid_round_action_2x2_at_threshold() -> None:
     assert _mid_round_action(off, False, streak) == "count_only"
 
 
-def test_mid_round_action_below_threshold_is_always_count_only() -> None:
+def test_mid_round_action_should_be_count_only_when_below_threshold() -> None:
     cfg = MonitorHostHealthConfig(in_round_mem_terminate=True)
     below = cfg.mem_critical_consecutive_samples - 1
 

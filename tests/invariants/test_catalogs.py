@@ -8,7 +8,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 REPO = PKG.parent
 
 
-def test_given_defenses_catalog_when_loaded_then_each_entry_has_required_fields() -> None:
+def test_defenses_catalog_should_have_required_fields_when_loaded() -> None:
     from agent_runner.config import (
         AgentConfig,
         Config,
@@ -25,13 +25,15 @@ def test_given_defenses_catalog_when_loaded_then_each_entry_has_required_fields(
         vcs=VcsConfig(),
         phases=None,
     )
+
     cat = catalog(cfg)
+
     for d in cat:
         assert d.name and isinstance(d.name, str)
         assert d.current_state in {"active", "degraded", "off"}
 
 
-def test_given_defenses_invariant_paths_when_resolved_then_all_exist_or_none() -> None:
+def test_defenses_catalog_guarded_by_paths_should_exist_when_present() -> None:
     from agent_runner.config import (
         AgentConfig,
         Config,
@@ -48,28 +50,35 @@ def test_given_defenses_invariant_paths_when_resolved_then_all_exist_or_none() -
         vcs=VcsConfig(),
         phases=None,
     )
+
+    checked = 0
     for d in catalog(cfg):
         if d.guarded_by is None:
             continue
+        checked += 1
         full = REPO / d.guarded_by
         assert full.exists(), f"{d.name} references missing test {d.guarded_by}"
 
+    assert checked > 0, "no catalog entry had guarded_by set"  # vacuity-guard
 
-def test_given_codebase_when_scanned_then_no_paramiko_or_fabric_runtime_deps() -> None:
+
+def test_codebase_should_have_no_paramiko_or_fabric_runtime_deps_when_scanned() -> None:
     """ssh stays subprocess-based; paramiko/fabric only allowed in tests/e2e."""
     offenders: list[tuple[str, str]] = []
     scanned = 0
+
     for f in PKG.rglob("*.py"):
         scanned += 1
         text = f.read_text()
         for forbidden in ("paramiko", "fabric"):
             if f"import {forbidden}" in text or f"from {forbidden}" in text:
                 offenders.append((str(f.relative_to(REPO)), forbidden))
+
     assert scanned > 0, "no agent_runner modules scanned"  # vacuity-guard
     assert offenders == [], f"runtime modules import paramiko/fabric: {offenders}"
 
 
-def test_given_pyproject_when_read_then_e2e_extra_declares_no_ssh_library() -> None:
+def test_pyproject_e2e_extra_should_not_declare_paramiko_or_fabric_when_read() -> None:
     """The e2e suite is pure subprocess ssh (tests/e2e/conftest.py:21-27), and
     test_catalogs' sibling invariant forbids paramiko/fabric in source. A declared
     dep nothing imports still resolves invoke+paramiko+cryptography+bcrypt+pynacl
@@ -78,6 +87,7 @@ def test_given_pyproject_when_read_then_e2e_extra_declares_no_ssh_library() -> N
 
     data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     e2e = data["project"]["optional-dependencies"]["e2e"]
+
     for forbidden in ("paramiko", "fabric"):
         assert not any(forbidden in dep for dep in e2e), (
             f"pyproject [e2e] declares {forbidden}, which nothing imports and "

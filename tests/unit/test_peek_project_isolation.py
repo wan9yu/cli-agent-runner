@@ -9,7 +9,9 @@ import pytest
 from tests._test_helpers import make_toml
 
 
-def test_peek_uses_cwd_project_service_not_a_named_sibling(tmp_path, monkeypatch) -> None:
+def test_peek_should_resolve_service_from_cwd_project_not_a_named_sibling(
+    tmp_path, monkeypatch
+) -> None:
     from agent_runner import api
 
     # Project A: real toml at cwd, no serve.pid -> service inactive.
@@ -26,12 +28,13 @@ def test_peek_uses_cwd_project_service_not_a_named_sibling(tmp_path, monkeypatch
     (b_logs / "serve.pid").write_text(str(os.getpid()))
 
     state = api.peek("projB")
+
     # Bug: peek reads A's events (cwd) but B's service -> active from B's pid.
     # Fixed: service is resolved from the SAME project peek read events from (A).
     assert state.service.active is False
 
 
-def test_named_project_resolution_validates_charset() -> None:
+def test_named_project_resolution_should_raise_when_charset_invalid() -> None:
     from agent_runner import api
 
     with pytest.raises(ValueError):

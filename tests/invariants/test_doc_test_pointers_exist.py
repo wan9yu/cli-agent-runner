@@ -12,7 +12,7 @@ from tests.invariants._docs import ROOT, doc_files
 _PTR = re.compile(r"`(tests/[A-Za-z0-9_./-]+\.py)(::[A-Za-z0-9_]+)?`")
 
 
-def test_every_doc_test_pointer_resolves():
+def test_doc_test_pointers_should_all_resolve():
     missing = []
     checked = 0
     for doc in doc_files():
@@ -31,5 +31,6 @@ def test_every_doc_test_pointer_resolves():
                     missing.append(
                         f"{doc.relative_to(ROOT)} → {m.group(1)}{m.group(2)} (no such def)"
                     )
+
     assert checked > 0, "no doc test pointers scanned — pattern or corpus broke"  # vacuity-guard
     assert not missing, "doc pointers to non-existent tests:\n" + "\n".join(missing)

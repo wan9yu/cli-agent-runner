@@ -33,32 +33,36 @@ def _seed(
     (log_dir / "status.json").write_text(json.dumps({"round_num": 0, "running": False}))
 
 
-def test_given_seeded_disk_critical_when_poll_once_then_emits_auto_stop_alert(
+def test_poll_once_should_emit_auto_stop_alert_when_disk_critical(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
     _seed(tmp_git_repo, disk_pct=98.0, mem_avail_mb=4000)
+
     alerts = api._poll_once(tmp_git_repo)
+
     assert any(a.detector == "disk_critical" and a.auto_action == "stop_service" for a in alerts)
 
 
-def test_given_seeded_mem_pressure_when_poll_once_then_emits_warning(
+def test_poll_once_should_emit_mem_pressure_when_combined_low_signal_seeded(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """mem_free_mb=5 (low) alongside mem_available below default threshold (200) is
+    a genuine combined-low signal -- a bare low mem_available_mb alone (the old
+    dumb gate) would now report mem_signal_unavailable instead, not mem_pressure."""
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    # mem_free_mb=5 (low) alongside mem_available below default threshold (200) is
-    # a genuine combined-low signal -- a bare low mem_available_mb alone (the old
-    # dumb gate) would now report mem_signal_unavailable instead, not mem_pressure.
     _seed(tmp_git_repo, disk_pct=50.0, mem_avail_mb=100, mem_free_mb=5)
+
     alerts = api._poll_once(tmp_git_repo)
+
     assert any(a.detector == "mem_pressure" for a in alerts)
 
 
-def test_given_pre_0214_metrics_entry_when_poll_once_then_grace_not_spurious_unavailable(
+def test_poll_once_should_grace_pre_0214_metrics_entry_without_spurious_unavailable(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -87,12 +91,14 @@ def test_given_pre_0214_metrics_entry_when_poll_once_then_grace_not_spurious_una
         + "\n"
     )
     (log_dir / "status.json").write_text(json.dumps({"round_num": 0, "running": False}))
+
     alerts = api._poll_once(tmp_git_repo)
+
     assert not any(a.detector == "mem_signal_unavailable" for a in alerts)
     assert not any(a.detector == "mem_pressure" for a in alerts)
 
 
-def test_given_cache_poor_host_field_bug_shape_when_poll_once_then_fires_pressure_and_gate_inert(
+def test_poll_once_should_fire_mem_pressure_and_report_gate_inert_when_cache_poor_host_bug_shape(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -135,7 +141,9 @@ def test_given_cache_poor_host_field_bug_shape_when_poll_once_then_fires_pressur
         "\n".join(json.dumps(line) for line in lines) + "\n"
     )
     (log_dir / "status.json").write_text(json.dumps({"round_num": 0, "running": False}))
+
     alerts = api._poll_once(tmp_git_repo)
+
     kinds = {a.detector for a in alerts}
     assert "mem_pressure" in kinds
     assert "mem_pressure_gate_inert" in kinds

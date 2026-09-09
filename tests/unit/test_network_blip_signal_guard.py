@@ -17,11 +17,12 @@ def _blip_kinds(log_dir):
     return [e.get("event") for e in events]
 
 
-def test_signal_death_with_network_string_is_not_a_blip(tmp_path):
+def test_signal_death_with_network_string_should_not_be_a_blip(tmp_path):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     log_path = tmp_path / "round.log"
     log_path.write_text(DNS_LOG_LINE)
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -29,14 +30,16 @@ def test_signal_death_with_network_string_is_not_a_blip(tmp_path):
         round_num=1,
         phase=None,
     )
+
     assert "agent_network_blip" not in _blip_kinds(log_dir)
 
 
-def test_plain_error_with_network_string_still_blips(tmp_path):
+def test_plain_error_with_network_string_should_still_blip(tmp_path):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     log_path = tmp_path / "round.log"
     log_path.write_text(DNS_LOG_LINE)
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
@@ -44,4 +47,5 @@ def test_plain_error_with_network_string_still_blips(tmp_path):
         round_num=1,
         phase=None,
     )
+
     assert "agent_network_blip" in _blip_kinds(log_dir)

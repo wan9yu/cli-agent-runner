@@ -93,43 +93,48 @@ FORBIDDEN_AGENT_RUNTIME = {
 }
 
 
-def test_given_api_types_module_when_imported_then_public_surface_matches() -> None:
+def test_api_types_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.api_types")
+
     missing = EXPECTED_API_TYPES - actual
     assert not missing, f"agent_runner.api_types: missing public names {missing}"
 
 
-def test_given_events_module_when_imported_then_public_surface_matches() -> None:
+def test_events_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.events")
+
     missing = EXPECTED_EVENTS_API - actual
     assert not missing, f"agent_runner.events: missing public names {missing}"
 
 
-def test_given_hooks_module_when_imported_then_public_surface_matches() -> None:
+def test_hooks_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.hooks")
+
     missing = EXPECTED_HOOKS_API - actual
     assert not missing, f"agent_runner.hooks: missing public names {missing}"
 
 
-def test_given_monitor_module_when_imported_then_plugin_surface_matches() -> None:
+def test_monitor_module_should_match_plugin_surface_when_imported() -> None:
     actual = _public_names("agent_runner.monitor")
+
     missing = EXPECTED_MONITOR_API - actual
     assert not missing, f"agent_runner.monitor: missing public names {missing}"
 
 
-def test_given_agent_runtime_when_imported_then_claude_specific_symbols_absent() -> None:
+def test_agent_runtime_should_lack_claude_specific_symbols_when_imported() -> None:
     """0.1.7: CRITICAL_ENV_DEFAULTS + merge_critical_envs were removed. Their
     presence would indicate accidental restoration of Claude-specific coupling."""
     import agent_runner.agent_runtime as art
 
     present = FORBIDDEN_AGENT_RUNTIME & set(dir(art))
+
     assert not present, (
         f"agent_runner.agent_runtime: forbidden Claude-specific symbols present: {present}. "
         f"These were intentionally removed in 0.1.7 — env injection lives in AgentConfig.env."
     )
 
 
-def test_given_cancel_removed_when_public_surface_inspected_then_absent() -> None:
+def test_cancel_removed_should_be_absent_when_public_surface_inspected() -> None:
     """0.2.2 deletes `cancel`: CLI verb, api.cancel(), and the SIGUSR1 machinery.
 
     It never delivered the interrupt semantics it documented -- nothing ever
@@ -140,19 +145,21 @@ def test_given_cancel_removed_when_public_surface_inspected_then_absent() -> Non
     from agent_runner import api
     from agent_runner.cli import _build_parser, serve_cmd
 
-    assert not hasattr(api, "cancel")
     sub = next(a for a in _build_parser()._actions if a.__class__.__name__ == "_SubParsersAction")
-    assert "cancel" not in sub.choices
     src = inspect.getsource(serve_cmd)
+
+    assert not hasattr(api, "cancel")
+    assert "cancel" not in sub.choices
     assert "round.pid" not in src
     assert "SIGUSR1" not in src
 
 
-def test_given_vcs_state_module_when_imported_then_plugin_owned_paths_api_present() -> None:
+def test_vcs_state_module_should_expose_plugin_owned_paths_api_when_imported() -> None:
     """0.1.8: register_plugin_owned_paths + plugin_owned_paths are the new
     plugin-author public surface. Lock them in so a future refactor can't
     silently rename or remove them."""
     actual = _public_names("agent_runner.vcs_state")
+
     missing = EXPECTED_VCS_STATE_API - actual
     assert not missing, (
         f"agent_runner.vcs_state: missing public names {missing}. "
@@ -295,7 +302,7 @@ EXPECTED_API_SURFACE = {
 }
 
 
-def test_given_api_module_when_imported_then_public_surface_pinned() -> None:
+def test_api_module_should_have_public_surface_pinned_when_imported() -> None:
     """0.2.12 Group G0: freeze api's importable surface before the split.
 
     Uses exact equality (not the subset check other tests in this file use)
@@ -303,6 +310,7 @@ def test_given_api_module_when_imported_then_public_surface_pinned() -> None:
     added one (a deliberate change that must update this pin in the same
     commit)."""
     actual = _public_names("agent_runner.api")
+
     missing = EXPECTED_API_SURFACE - actual
     added = actual - EXPECTED_API_SURFACE
     assert not missing and not added, (

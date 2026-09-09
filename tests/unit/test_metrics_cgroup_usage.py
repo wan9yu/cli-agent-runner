@@ -21,39 +21,43 @@ def _tree(root):
     (leaf / "memory.max").write_text("max\n")  # unbounded leaf -> ancestor wins
 
 
-def test_cgroup_memory_usage_reads_bounding_ancestor(tmp_path):
+def test_cgroup_memory_usage_should_return_bounding_ancestor_usage_when_leaf_unbounded(tmp_path):
     _tree(tmp_path)
+
     usage = metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/user.slice/app.scope")
+
     assert usage["memory_current"] == 300000000
     assert usage["memory_swap_current"] == 100000000
     assert usage["memory_events"] == {"high": 12, "max": 3, "oom": 1, "oom_kill": 2}
     assert usage["cgroup_path"].endswith("user.slice")
 
 
-def test_cgroup_memory_usage_empty_when_unbounded(tmp_path):
+def test_cgroup_memory_usage_should_be_empty_when_unbounded(tmp_path):
     (tmp_path / "cgroup.controllers").write_text("memory\n")
+
     assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
 
 
-def test_cgroup_memory_usage_empty_when_no_cgroup_v2(tmp_path):
+def test_cgroup_memory_usage_should_be_empty_when_no_cgroup_v2(tmp_path):
     assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
 
 
-def test_cgroup_memory_usage_with_bounding_cgroup_reads_cached_path(tmp_path):
-    """The ``bounding_cgroup`` fast path (a caller's own earlier-resolved
-    ancestor, e.g. a mid-round tick reusing _spawn_round's round-start read)
-    skips the ancestor walk entirely and reads straight from the given path
-    -- ``self_cgroup``/``proc_self_cgroup`` are irrelevant here and left at
-    their defaults."""
+def test_cgroup_memory_usage_should_read_cached_bounding_cgroup_path_when_provided(tmp_path):
+    """self_cgroup/proc_self_cgroup are irrelevant here and left at their
+    defaults -- a caller's own earlier-resolved ancestor (e.g. a mid-round
+    tick reusing _spawn_round's round-start read) skips the ancestor walk
+    entirely and reads straight from the given path."""
     _tree(tmp_path)
+
     usage = metrics.cgroup_memory_usage(root=tmp_path, bounding_cgroup="/user.slice")
+
     assert usage["memory_current"] == 300000000
     assert usage["memory_swap_current"] == 100000000
     assert usage["memory_events"] == {"high": 12, "max": 3, "oom": 1, "oom_kill": 2}
     assert usage["cgroup_path"] == "/user.slice"
 
 
-def test_cgroup_memory_usage_with_bounding_cgroup_empty_when_ancestor_vanished(tmp_path):
+def test_cgroup_memory_usage_should_be_empty_when_cached_bounding_cgroup_vanished(tmp_path):
     """A cached ``bounding_cgroup`` whose directory no longer exists (renamed
     or removed mid-round) must report the same "can no longer tell" ``{}``
     the un-cached path returns when nothing bounds the process -- NOT a
@@ -64,11 +68,12 @@ def test_cgroup_memory_usage_with_bounding_cgroup_empty_when_ancestor_vanished(t
     0/{} for a MISSING path, without ever checking the directory itself
     still exists)."""
     (tmp_path / "cgroup.controllers").write_text("memory\n")
+
     # Deliberately no "vanished.slice" dir under tmp_path.
     assert metrics.cgroup_memory_usage(root=tmp_path, bounding_cgroup="/vanished.slice") == {}
 
 
-def test_cgroup_memory_usage_fails_open_on_os_error(tmp_path, monkeypatch):
+def test_cgroup_memory_usage_should_fail_open_when_os_error_raised(tmp_path, monkeypatch):
     """A non-ENOENT stat error (EACCES/EIO on a flaky sysfs) must not
     propagate: this runs inside _spawn_round's mid-round tick loop, whose
     surrounding `except BaseException: _terminate_round(proc); raise` would
@@ -80,4 +85,5 @@ def test_cgroup_memory_usage_fails_open_on_os_error(tmp_path, monkeypatch):
         raise OSError("simulated EIO")
 
     monkeypatch.setattr(Path, "exists", _raise)
+
     assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}

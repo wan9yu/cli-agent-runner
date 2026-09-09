@@ -9,16 +9,17 @@ from agent_runner.api import ENV_BATTERY_EXIT, PERMANENT_CONFIG_EXIT, post_round
 from agent_runner.startup_check import CheckResult, battery_exit_code
 
 
-def test_permanent_failure_maps_to_78() -> None:
+def test_battery_exit_code_should_return_78_when_failure_is_permanent() -> None:
     fs = [CheckResult("a", ok=False, permanent=True), CheckResult("b", ok=False)]
+
     assert battery_exit_code(fs) == PERMANENT_CONFIG_EXIT
 
 
-def test_only_environmental_maps_to_76() -> None:
+def test_battery_exit_code_should_return_76_when_only_environmental_failure() -> None:
     assert battery_exit_code([CheckResult("b", ok=False)]) == ENV_BATTERY_EXIT
 
 
-def test_env_battery_exit_never_trips_crash_loop() -> None:
+def test_post_round_decision_should_continue_when_env_battery_exit_repeats() -> None:
     # 76 is treated like an active throttle: continue, breaker disarmed, even
     # across many fast rounds — a ~5-round environmental blip must not hit 75.
     consecutive = 0
@@ -31,12 +32,13 @@ def test_env_battery_exit_never_trips_crash_loop() -> None:
             restart_delay_s=3,
         )
         assert action == "continue"
+
     assert (delay, consecutive) == (6, 0)  # doubled restart delay, breaker disarmed
 
 
-def test_run_one_round_exits_76_on_environmental_failure(monkeypatch, tmp_path):
-    import pytest
-
+def test_run_one_round_should_exit_76_when_battery_check_fails_environmentally(
+    monkeypatch, tmp_path
+):
     from agent_runner import runner, startup_check
     from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig, VcsConfig
 
@@ -52,13 +54,15 @@ def test_run_one_round_exits_76_on_environmental_failure(monkeypatch, tmp_path):
         "run_battery",
         lambda _c: [startup_check.CheckResult("log_dir_writable", False, "ENOSPC")],
     )
+
     with pytest.raises(SystemExit) as ei:
         runner.run_one_round(cfg)
+
     assert ei.value.code == ENV_BATTERY_EXIT
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file-permission checks")
-def test_run_one_round_reaches_sys_exit_76_on_genuinely_unwritable_log_dir(
+def test_run_one_round_should_exit_76_when_log_dir_genuinely_unwritable(
     tmp_git_repo: Path,
 ) -> None:
     """Reachability regression (Group A / spec-review critical): log_dir_writable is the
@@ -84,6 +88,7 @@ def test_run_one_round_reaches_sys_exit_76_on_genuinely_unwritable_log_dir(
         phases=None,
     )
     log_dir.chmod(0o555)  # genuinely unwritable, no events-*.jsonl exists yet
+
     try:
         with pytest.raises(SystemExit) as ei:
             runner.run_one_round(cfg)

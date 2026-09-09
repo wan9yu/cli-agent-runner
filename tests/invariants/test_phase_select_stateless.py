@@ -30,7 +30,7 @@ _FORBIDDEN_STATE = {
 }
 
 
-def test_select_phase_reads_no_supervisor_state() -> None:
+def test_select_phase_should_read_no_supervisor_state() -> None:
     tree = ast.parse(_SRC.read_text(encoding="utf-8"))
     hits: set[str] = set()
     for node in ast.walk(tree):
@@ -38,10 +38,11 @@ def test_select_phase_reads_no_supervisor_state() -> None:
             hits.add(node.id)
         elif isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_STATE:
             hits.add(node.attr)
+
     assert not hits, f"phase_select must stay stateless; references state: {sorted(hits)}"
 
 
-def test_select_phase_signature_is_cfg_round_clock() -> None:
+def test_select_phase_should_take_cfg_round_num_throttled_phases_and_now_fn() -> None:
     """The public entry takes exactly (cfg, round_num, *, throttled_phases, now_fn)
     — no log_dir / status handle through which run-state could leak in. The
     throttled set is a value injected by the caller, not read from disk."""
@@ -50,4 +51,5 @@ def test_select_phase_signature_is_cfg_round_clock() -> None:
     from agent_runner import phase_select
 
     params = list(inspect.signature(phase_select.select_phase).parameters)
+
     assert params == ["cfg", "round_num", "throttled_phases", "now_fn"], params

@@ -16,7 +16,7 @@ _reset = isolating(
 )
 
 
-def test_given_hook_context_when_constructed_then_carries_round_fields() -> None:
+def test_hook_context_should_carry_round_fields_when_constructed() -> None:
     ctx = hooks.HookContext(
         work_dir=Path("/tmp/proj"),
         log_dir=Path("/tmp/proj/logs"),
@@ -25,19 +25,20 @@ def test_given_hook_context_when_constructed_then_carries_round_fields() -> None
         phase="diverge",
         agent_name="some-cli",
     )
+
     assert ctx.round_num == 42
     assert ctx.phase == "diverge"
     assert ctx.agent_name == "some-cli"
 
 
-def test_given_no_plugins_when_listed_then_empty() -> None:
+def test_hook_listings_should_be_empty_when_no_plugins_registered() -> None:
     assert hooks.pre_round_hooks() == []
     assert hooks.context_enrichers() == []
     assert hooks.post_round_hooks() == []
     assert hooks.plugin_context_enrichers() == []
 
 
-def test_given_pre_round_hook_when_registered_then_visible_in_listing() -> None:
+def test_pre_round_hook_should_be_visible_in_listing_when_registered() -> None:
     class MyPreRound:
         name = "mine"
 
@@ -45,12 +46,14 @@ def test_given_pre_round_hook_when_registered_then_visible_in_listing() -> None:
             return None
 
     hooks.register_pre_round_hook(MyPreRound())
+
     listing = hooks.pre_round_hooks()
+
     assert len(listing) == 1
     assert listing[0].name == "mine"
 
 
-def test_given_context_enricher_when_registered_then_visible_in_listing() -> None:
+def test_context_enricher_should_be_visible_in_listing_when_registered() -> None:
     class MyEnricher:
         name = "branch_info"
 
@@ -58,11 +61,12 @@ def test_given_context_enricher_when_registered_then_visible_in_listing() -> Non
             return {"branch": "main"}
 
     hooks.register_context_enricher(MyEnricher())
+
     assert [e.name for e in hooks.context_enrichers()] == ["branch_info"]
     assert hooks.plugin_context_enrichers() == ["branch_info"]
 
 
-def test_given_post_round_hook_when_registered_then_visible_in_listing() -> None:
+def test_post_round_hook_should_be_visible_in_listing_when_registered() -> None:
     class MyPostRound:
         name = "logger"
 
@@ -70,11 +74,13 @@ def test_given_post_round_hook_when_registered_then_visible_in_listing() -> None
             return None
 
     hooks.register_post_round_hook(MyPostRound())
+
     listing = hooks.post_round_hooks()
+
     assert len(listing) == 1
 
 
-def test_given_duplicate_enricher_name_when_registered_then_raises() -> None:
+def test_context_enricher_registration_should_raise_when_name_is_duplicate() -> None:
     class A:
         name = "dup"
 
@@ -88,11 +94,12 @@ def test_given_duplicate_enricher_name_when_registered_then_raises() -> None:
             return {}
 
     hooks.register_context_enricher(A())
+
     with pytest.raises(ValueError, match="already registered"):
         hooks.register_context_enricher(B())
 
 
-def test_given_duplicate_pre_hook_name_when_registered_then_raises() -> None:
+def test_pre_round_hook_registration_should_raise_when_name_is_duplicate() -> None:
     class A:
         name = "dup_pre"
 
@@ -106,14 +113,17 @@ def test_given_duplicate_pre_hook_name_when_registered_then_raises() -> None:
             return None
 
     hooks.register_pre_round_hook(A())
+
     with pytest.raises(ValueError, match="already registered"):
         hooks.register_pre_round_hook(B())
 
 
-def test_given_summarize_error_when_called_then_truncates_long_traceback() -> None:
+def test_summarize_error_should_truncate_long_traceback() -> None:
     """Tracebacks > 2KB are truncated head 1KB + tail 1KB with separator."""
     long_tb = "x" * 5000
+
     out = hooks._summarize_error(RuntimeError("boom"), tb=long_tb)
+
     assert out["error_type"] == "RuntimeError"
     assert out["error_message"] == "boom"
     assert len(out["traceback"]) <= 2200
@@ -121,15 +131,16 @@ def test_given_summarize_error_when_called_then_truncates_long_traceback() -> No
     assert "[truncated]" in out["traceback"]
 
 
-def test_given_short_traceback_when_summarized_then_kept_intact() -> None:
+def test_summarize_error_should_keep_short_traceback_intact() -> None:
     short_tb = "short trace"
+
     out = hooks._summarize_error(ValueError("x"), tb=short_tb)
+
     assert out["traceback"] == "short trace"
     assert "[truncated]" not in out["traceback"]
 
 
-def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
-    """RuntimeConfig.dry_run=True flows into HookContext.dry_run for plugins."""
+def test_hook_context_should_receive_dry_run_when_runtime_config_sets_it(tmp_path) -> None:
     from agent_runner.config import (
         AgentConfig,
         Config,
@@ -147,7 +158,6 @@ def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
     script = tmp_path / "agent.sh"
     script.write_text("#!/bin/bash\nexit 0\n")
     script.chmod(0o755)
-
     cfg = Config(
         agent=AgentConfig(command=[str(script)], prompt_arg_template=[]),
         runtime=RuntimeConfig(
@@ -160,7 +170,6 @@ def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
         vcs=VcsConfig(),
         phases=PhasesConfig(),
     )
-
     captured: list[hooks.HookContext] = []
 
     class CapturingHook:
@@ -170,6 +179,7 @@ def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
             captured.append(ctx)
 
     hooks.register_post_round_hook(CapturingHook())
+
     try:
         _run_one_round_inner(cfg)
     finally:
@@ -179,10 +189,10 @@ def test_dry_run_propagated_to_hook_context(tmp_path) -> None:
     assert captured[0].dry_run is True
 
 
-def test_summarize_error_redacts_message_and_traceback():
-    from agent_runner.hooks import _summarize_error
-
+def test_summarize_error_should_redact_message_and_traceback():
     exc = RuntimeError("connect failed: postgresql://svc:S3cr3tPw0rd@db:5432/app")
-    out = _summarize_error(exc, tb="trace https://x-token:ghp_aaaaaaaaaaaaaaaaaaaa@h line 1")
+
+    out = hooks._summarize_error(exc, tb="trace https://x-token:ghp_aaaaaaaaaaaaaaaaaaaa@h line 1")
+
     assert "S3cr3tPw0rd" not in out["error_message"]
     assert "ghp_aaaaaaaaaaaaaaaaaaaa" not in out["traceback"]

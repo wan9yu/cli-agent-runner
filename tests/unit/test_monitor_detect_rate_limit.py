@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 
-def test_given_active_throttle_in_events_when_detect_then_warning_alert():
+def test_detect_rate_limit_active_should_return_warning_alert_when_throttle_active_in_events():
     from agent_runner.monitor import detect_rate_limit_active
 
     future = int(time.time() + 3600)
@@ -18,13 +18,15 @@ def test_given_active_throttle_in_events_when_detect_then_warning_alert():
             "classification": "rate_limit_account",
         },
     ]
+
     alert = detect_rate_limit_active(events)
+
     assert alert is not None
     assert alert.severity == "warning"
     assert alert.detector == "rate_limit_active"
 
 
-def test_given_recovered_after_rejected_when_detect_then_no_alert():
+def test_detect_rate_limit_active_should_return_none_when_recovered_after_throttle():
     from agent_runner.monitor import detect_rate_limit_active
 
     future = int(time.time() + 3600)
@@ -43,11 +45,13 @@ def test_given_recovered_after_rejected_when_detect_then_no_alert():
             "throttled_for_s": 60,
         },
     ]
+
     alert = detect_rate_limit_active(events)
+
     assert alert is None
 
 
-def test_given_log_dir_when_detect_then_uses_ladder_extended_reset(tmp_path):
+def test_detect_rate_limit_active_should_use_ladder_extended_reset_when_log_dir_given(tmp_path):
     """With ``log_dir`` given, the alert reads the SAME ladder-extended reset the
     serve gate / skip path / peek converge on (agent_runner._throttle), not the
     emitter's raw reset_at_epoch -- two consecutive api_timeout detections push the
@@ -77,17 +81,18 @@ def test_given_log_dir_when_detect_then_uses_ladder_extended_reset(tmp_path):
     ]
     events_path = tmp_path / "events-2026-05.jsonl"
     events_path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
-
     now = raw_reset + 5  # past the raw reset, before the extended one (+30 more)
-    assert detect_rate_limit_active(events, now=now) is None  # no log_dir -> raw reset
 
+    no_log_dir_alert = detect_rate_limit_active(events, now=now)
     alert = detect_rate_limit_active(events, now=now, log_dir=tmp_path)
+
+    assert no_log_dir_alert is None  # no log_dir -> raw reset
     assert alert is not None
     expected_iso = datetime.fromtimestamp(raw_reset + 30, UTC).isoformat()
     assert alert.context["throttled_until_iso"] == expected_iso
 
 
-def test_given_poisoned_far_future_epoch_when_detect_then_no_crash():
+def test_detect_rate_limit_active_should_not_crash_when_epoch_is_poisoned_far_future():
     """A huge finite reset_at_epoch (e.g. a corrupted event line) must not
     OverflowError out of the detector — it degrades to no alert instead of
     blind-crashing the monitor loop."""
@@ -102,10 +107,11 @@ def test_given_poisoned_far_future_epoch_when_detect_then_no_crash():
             "classification": "rate_limit_account",
         },
     ]
+
     assert detect_rate_limit_active(events, now=1_700_000_000) is None
 
 
-def test_given_mid_range_poisoned_epoch_when_detect_then_no_false_alert():
+def test_detect_rate_limit_active_should_not_alert_when_epoch_is_mid_range_poisoned():
     """A reset_at_epoch ~100 years out is still well within datetime's representable
     range (does NOT OverflowError -- that's the extreme case covered above), so this
     exercises the separate mid-range gap: without the epoch-sanity check, the detector
@@ -126,4 +132,5 @@ def test_given_mid_range_poisoned_epoch_when_detect_then_no_false_alert():
             "classification": "rate_limit_account",
         },
     ]
+
     assert detect_rate_limit_active(events, now=now) is None

@@ -23,9 +23,11 @@ def _keyword_only_params() -> list[str]:
     return [name for name, p in sig.parameters.items() if p.kind is inspect.Parameter.KEYWORD_ONLY]
 
 
-def test_given_usage_event_when_documented_then_every_field_present() -> None:
+def test_usage_event_fields_should_all_be_documented() -> None:
     text = PLUGINS_DOC.read_text(encoding="utf-8")
+
     missing = [name for name in _keyword_only_params() if f"`{name}`" not in text]
+
     assert not missing, (
         "docs/plugins.md omits agent_usage_recorded payload fields "
         f"(keyword-only params of emit_agent_usage_recorded): {missing}"

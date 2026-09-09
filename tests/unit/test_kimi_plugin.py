@@ -78,8 +78,9 @@ def _run(tmp_path, log, *, result=None, agent_name="kimi"):
     return err_emit
 
 
-def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(tmp_path):
+def test_after_round_should_classify_rate_limit_model_when_429_retry_on_failed_round(tmp_path):
     err_emit = _run(tmp_path, [_RETRY_429, _RETRY_429])
+
     err_emit.assert_called_once()
     kw = err_emit.call_args.kwargs
     assert kw["classification"] == "rate_limit_model"
@@ -88,36 +89,41 @@ def test_given_429_retry_on_failed_round_when_after_round_then_rate_limit_model(
     assert "429 Your account has hit the rate limit" in kw["raw"]
 
 
-def test_given_503_retry_on_failed_round_when_after_round_then_api_transient_5xx(tmp_path):
+def test_after_round_should_classify_api_transient_5xx_when_503_retry_on_failed_round(tmp_path):
     err_emit = _run(tmp_path, [_RETRY_503, _RESUME_HINT])
+
     err_emit.assert_called_once()
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
 
 
-def test_given_retry_absorbed_by_successful_round_when_after_round_then_no_emit(tmp_path):
+def test_after_round_should_not_emit_when_retry_absorbed_by_successful_round(tmp_path):
     """kimi retries internally (max_attempts 10); a blip it recovered from is not
     a supervisor-level transient error — backing off after a successful round
     would be a false alarm."""
     err_emit = _run(tmp_path, [_RETRY_429, _ASSISTANT, _RESUME_HINT], result=make_run_result())
+
     err_emit.assert_not_called()
 
 
-def test_given_non_kimi_binary_when_after_round_then_no_emit(tmp_path):
+def test_after_round_should_not_emit_when_agent_is_not_kimi(tmp_path):
     err_emit = _run(tmp_path, [_RETRY_429], agent_name="claude")
+
     err_emit.assert_not_called()
 
 
-def test_given_missing_round_log_when_after_round_then_no_crash(tmp_path):
+def test_after_round_should_not_crash_when_round_log_missing(tmp_path):
     from agent_runner.builtin_plugins.kimi import KimiErrorDetector
 
     ctx = make_hook_context(tmp_path, agent_name="kimi")
     assert not ctx.agent_log_path.exists()
+
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
         KimiErrorDetector().after_round(ctx, result=_failed_round())
+
     err_emit.assert_not_called()
 
 
-def test_given_plain_text_stderr_error_when_after_round_then_tolerated(tmp_path):
+def test_after_round_should_not_emit_when_stderr_has_plain_text_auth_error(tmp_path):
     """The round log merges stdout+stderr: kimi's fatal errors arrive as plain
     text (real captured 401 wording). Non-JSON lines must not crash the parser,
     and auth failure is oauth_fail territory, not a transient bucket."""
@@ -127,10 +133,11 @@ def test_given_plain_text_stderr_error_when_after_round_then_tolerated(tmp_path)
         "See log: /Users/dev/.kimi-code/logs/kimi-code.log\n",
         result=make_run_result(1),
     )
+
     err_emit.assert_not_called()
 
 
-def test_given_completed_round_when_after_round_then_no_usage_event_written(tmp_path):
+def test_after_round_should_not_emit_usage_event_when_round_completed(tmp_path):
     """Pins the Phase-A finding: kimi's stream-json writer emits no token
     counters, so no agent_usage_recorded is fabricated. Asserted through the
     real emitter path (no patching) so a future usage source has to update this.
@@ -139,9 +146,11 @@ def test_given_completed_round_when_after_round_then_no_usage_event_written(tmp_
     from agent_runner.events import AGENT_USAGE_RECORDED
 
     write_round_log(tmp_path, 1, [_ASSISTANT, _RESUME_HINT])
+
     KimiErrorDetector().after_round(
         make_hook_context(tmp_path, agent_name="kimi"),
         result=make_run_result(),
     )
+
     emitted = "".join(p.read_text() for p in tmp_path.glob("events-*.jsonl"))
     assert AGENT_USAGE_RECORDED not in emitted

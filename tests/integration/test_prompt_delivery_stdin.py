@@ -18,10 +18,11 @@ def _fake_agent(tmp_path: Path) -> Path:
     return p
 
 
-def test_stdin_mode_keeps_prompt_out_of_argv(tmp_path):
+def test_agent_runtime_run_should_keep_prompt_out_of_argv_when_stdin_delivery(tmp_path):
     fake = _fake_agent(tmp_path)
     log_path = tmp_path / "round.log"
     marker = "PYTEST_MARKER_TOKEN_XYZ"
+
     res = agent_runtime.run(
         work_dir=tmp_path,
         command=[sys.executable, str(fake)],
@@ -32,6 +33,7 @@ def test_stdin_mode_keeps_prompt_out_of_argv(tmp_path):
         log_path=log_path,
         env_extra={},
     )
+
     out = log_path.read_text()
     assert res.exit_code == 0
     argv_line = next(line for line in out.splitlines() if line.startswith("ARGV:"))
@@ -40,10 +42,11 @@ def test_stdin_mode_keeps_prompt_out_of_argv(tmp_path):
     assert marker in stdin_line  # prompt received on stdin
 
 
-def test_argv_mode_unchanged(tmp_path):
+def test_agent_runtime_run_should_put_prompt_in_argv_when_argv_delivery(tmp_path):
     fake = _fake_agent(tmp_path)
     log_path = tmp_path / "round.log"
     marker = "ARGV_MARKER_TOKEN"
+
     agent_runtime.run(
         work_dir=tmp_path,
         command=[sys.executable, str(fake)],
@@ -54,11 +57,14 @@ def test_argv_mode_unchanged(tmp_path):
         log_path=log_path,
         env_extra={},
     )
+
     argv_line = next(line for line in log_path.read_text().splitlines() if line.startswith("ARGV:"))
     assert marker in argv_line  # default argv behavior intact
 
 
-def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
+def test_agent_runtime_run_should_deliver_large_prompt_without_hanging_when_stdin_delivery(
+    tmp_path,
+):
     # Prompt exceeds the OS pipe buffer (~64KB); if the write were still
     # blocking on the main thread before the poll loop, an agent that reads
     # stdin only after some delay (or a full-pipe write) could hang run()
@@ -68,6 +74,7 @@ def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
     log_path = tmp_path / "round.log"
     marker = "LARGE_PROMPT_MARKER"
     big_prompt = "x" * 100_000 + marker
+
     res = agent_runtime.run(
         work_dir=tmp_path,
         command=[sys.executable, str(fake)],
@@ -78,6 +85,7 @@ def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
         log_path=log_path,
         env_extra={},
     )
+
     assert res.exit_code == 0
     assert not res.timed_out
     stdin_line = next(
@@ -86,13 +94,16 @@ def test_stdin_mode_delivers_large_prompt_without_hanging(tmp_path):
     assert marker in stdin_line  # fully delivered despite exceeding pipe buffer
 
 
-def test_stdin_mode_guards_against_prompt_in_argv_template(tmp_path):
+def test_agent_runtime_run_should_keep_prompt_out_of_argv_when_template_includes_prompt_placeholder(
+    tmp_path,
+):
     # Config validation already rejects {prompt} in the template for stdin
     # mode, but run() itself must never substitute {prompt} into argv in
     # stdin mode, even if called directly with a mismatched template.
     fake = _fake_agent(tmp_path)
     log_path = tmp_path / "round.log"
     marker = "SECRET_MARKER"
+
     agent_runtime.run(
         work_dir=tmp_path,
         command=[sys.executable, str(fake)],
@@ -103,5 +114,6 @@ def test_stdin_mode_guards_against_prompt_in_argv_template(tmp_path):
         log_path=log_path,
         env_extra={},
     )
+
     argv_line = next(line for line in log_path.read_text().splitlines() if line.startswith("ARGV:"))
     assert marker not in argv_line  # runtime guard holds even with a bad template

@@ -322,7 +322,7 @@ _PID_SIGNAL_GRACE_S = 5
 # round's own SIGTERM handler needs agent_runtime.REAP_GRACE_S + margin to reap
 # its agent pgroup and exit. Single-sourced in _serve_policy (cli._serve_round
 # imports it too) so the two paths can no longer drift apart; cross-checked
-# anyway by test_round_kill_grace_matches_serve_cmd_grace.
+# anyway by test_round_kill_grace_should_match_serve_cmd_grace.
 from agent_runner._serve_policy import _ROUND_TERM_GRACE_S  # noqa: E402 — single source
 
 

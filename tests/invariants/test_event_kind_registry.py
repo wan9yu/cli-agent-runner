@@ -28,11 +28,8 @@ def _reset_plugin_kinds():
     events._PLUGIN_KINDS.update(saved)
 
 
-def test_given_emit_calls_in_core_when_scanned_then_kinds_are_builtin() -> None:
-    """Core code only emits built-in kinds. Plugins emit plugin kinds from their own
-    callsites (not in this package).
-
-    Scans via the shared helper: rglob (cli/ and builtin_plugins/ hold real emit
+def test_emit_calls_in_core_should_use_builtin_kinds_when_scanned() -> None:
+    """Scans via the shared helper: rglob (cli/ and builtin_plugins/ hold real emit
     sites) and alias-aware (monitor.py's emit_event, _emit.py's bare emit). A
     private copy of this scan is what let both blind spots survive.
     """
@@ -48,22 +45,26 @@ def test_given_emit_calls_in_core_when_scanned_then_kinds_are_builtin() -> None:
                 for lit in kind_literals(arg)
                 if lit.value not in events._BUILTIN_KINDS
             )
+
     assert scanned > 0, "no agent_runner modules scanned"  # vacuity-guard
     assert bad_calls == [], f"events.emit() with non-builtin kinds: {bad_calls}"
 
 
-def test_given_register_collides_with_builtin_when_called_then_raises() -> None:
+def test_register_should_raise_when_colliding_with_builtin() -> None:
     with pytest.raises(ValueError, match="built-in"):
         events.register_event_kind("round_start", source="x")
 
 
-def test_given_register_conflicts_with_different_source_when_called_then_raises() -> None:
+def test_register_should_raise_when_conflicting_with_different_source() -> None:
     events.register_event_kind("conflict_name", source="src-a")
+
     with pytest.raises(ValueError, match="already registered"):
         events.register_event_kind("conflict_name", source="src-b")
 
 
-def test_given_register_same_source_when_called_twice_then_idempotent() -> None:
+def test_register_should_be_idempotent_when_called_twice_with_same_source() -> None:
     events.register_event_kind("idem_name", source="src-x")
+
     events.register_event_kind("idem_name", source="src-x")
+
     assert "idem_name" in events.KNOWN_EVENT_KINDS

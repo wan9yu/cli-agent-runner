@@ -13,15 +13,17 @@ from agent_runner.cli import round_cmd
 from tests._test_helpers import make_toml
 
 
-def test_install_term_handler_raises_keyboardinterrupt(monkeypatch):
+def test_install_term_handler_should_raise_keyboardinterrupt_when_sigterm_received(monkeypatch):
     captured = {}
     monkeypatch.setattr(signal, "signal", lambda s, h: captured.__setitem__(s, h))
+
     round_cmd._install_term_handler()
+
     with pytest.raises(KeyboardInterrupt):
         captured[signal.SIGTERM](signal.SIGTERM, None)
 
 
-def test_cmd_returns_130_on_keyboardinterrupt(monkeypatch, tmp_path):
+def test_round_cmd_should_return_130_when_keyboardinterrupt_raised(monkeypatch, tmp_path):
     cfg_path = make_toml(tmp_path)
     monkeypatch.setattr(round_cmd, "_install_term_handler", lambda: None)
 
@@ -29,5 +31,7 @@ def test_cmd_returns_130_on_keyboardinterrupt(monkeypatch, tmp_path):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(round_cmd, "run_one_round", boom)
+
     rc = round_cmd.cmd(SimpleNamespace(config=cfg_path, phase=None))
+
     assert rc == 130

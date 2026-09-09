@@ -30,13 +30,14 @@ def _fake_cfg(tmp_path):
     return type("C", (), {"runtime": type("R", (), {"log_dir": tmp_path})(), "monitor": mon})()
 
 
-def test_loop_survives_on_alert_raise(tmp_path, monkeypatch) -> None:
+def test_loop_should_survive_when_on_alert_raises(tmp_path, monkeypatch) -> None:
     """A raise inside on_alert (its own failure domain) must not end
     supervision: the loop warns and continues polling instead of dying.
 
     The same persisting alert is fed every poll, so the normal dedup (verdict
     "failed", not "draining") suppresses on_alert after the first attempt --
-    exactly like test_non_draining_verdict_keeps_normal_dedup_suppression.
+    exactly like
+    test_persisting_alert_should_stay_suppressed_when_verdict_is_not_draining.
     That makes `polls["n"] >= 2` (the loop reached a SECOND `_poll_once` call)
     the real non-vacuous survival signal here, not a second on_alert call:
     it proves the generator kept iterating past the raise instead of the
@@ -83,7 +84,7 @@ def test_loop_survives_on_alert_raise(tmp_path, monkeypatch) -> None:
     assert polls["n"] >= 2
 
 
-def test_monitor_started_emit_failure_does_not_crash_startup(tmp_path, monkeypatch) -> None:
+def test_startup_should_survive_when_monitor_started_emit_fails(tmp_path, monkeypatch) -> None:
     """A poisoned MONITOR_STARTED breadcrumb write (e.g. ENOSPC) must not
     prevent the just-(re)started monitor from reaching its poll loop."""
 
@@ -116,7 +117,7 @@ def test_monitor_started_emit_failure_does_not_crash_startup(tmp_path, monkeypat
     assert sleeps["n"] >= 1
 
 
-def test_loop_survives_poll_raise(tmp_path, monkeypatch) -> None:
+def test_loop_should_survive_when_poll_raises(tmp_path, monkeypatch) -> None:
     """A raise inside `_poll_once` (a poll crash) must not end supervision:
     the loop warns, then falls back to its OWN poll-site behavior --
     sleep-and-retry -- rather than the on_alert site's `verdict = "failed"`

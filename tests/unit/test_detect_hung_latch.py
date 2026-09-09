@@ -12,7 +12,7 @@ def _ev(kind: str, rn: int, ts: str, phase=None):
     return e
 
 
-def test_ancient_unclosed_round_does_not_latch_hung_after_later_rounds_complete() -> None:
+def test_ancient_unclosed_round_should_not_latch_hung_after_later_rounds_complete() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
     events = [
         _ev("round_start", 1, "2026-08-01T00:00:00Z"),  # round_end lost (crash) — stale
@@ -20,18 +20,21 @@ def test_ancient_unclosed_round_does_not_latch_hung_after_later_rounds_complete(
         _ev("round_end", 2, "2026-08-30T11:59:55Z"),
         _ev("round_start", 3, "2026-08-30T11:59:58Z"),  # newest open, 2s old
     ]
+
     # Old round 1 is weeks stale but must NOT alert; only round 3 is a live candidate.
     assert detect_hung(events, now=now, round_timeout_s=1800) is None
 
 
-def test_newest_open_round_past_threshold_still_alerts() -> None:
+def test_newest_open_round_should_still_alert_when_past_threshold() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
     events = [_ev("round_start", 7, "2026-08-30T10:00:00Z")]  # 2h old, threshold 45m
+
     a = detect_hung(events, now=now, round_timeout_s=1800)
+
     assert a is not None and a.context["round_num"] == 7
 
 
-def test_crashed_round_with_no_newer_open_round_stops_latching_once_next_round_closes() -> None:
+def test_crashed_round_should_stop_latching_once_next_round_closes() -> None:
     """monitor.py's comment says the check is against the "highest-numbered
     round", but the pre-fix code took ``max(open_rounds)`` — the max of only the
     STILL-OPEN round numbers. Once round 2 starts AND closes normally, it drops
@@ -47,10 +50,11 @@ def test_crashed_round_with_no_newer_open_round_stops_latching_once_next_round_c
         _ev("round_start", 2, "2026-08-30T11:00:00Z"),
         _ev("round_end", 2, "2026-08-30T11:05:00Z"),  # round 2 completed normally
     ]
+
     assert detect_hung(events, now=now, round_timeout_s=1800) is None
 
 
-def test_pre_round_event_for_next_round_does_not_suppress_a_real_hang() -> None:
+def test_pre_round_event_for_next_round_should_not_suppress_a_real_hang() -> None:
     """runner._run_pre_round_hooks can emit prompt_overwritten (or any other
     plugin-authored pre-round event) carrying the NEXT round's round_num BEFORE
     that round's own round_start is ever written (a plugin extension point, not
@@ -65,5 +69,7 @@ def test_pre_round_event_for_next_round_does_not_suppress_a_real_hang() -> None:
         # followed — round 1 is still the only STARTED round.
         _ev("prompt_overwritten", 2, "2026-08-30T11:59:59Z"),
     ]
+
     a = detect_hung(events, now=now, round_timeout_s=1800)
+
     assert a is not None and a.context["round_num"] == 1

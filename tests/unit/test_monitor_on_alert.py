@@ -23,7 +23,7 @@ def _make_alert(detector: str = "disk_critical", auto_action: str = "stop_servic
     )
 
 
-def test_on_alert_emit_failure_does_not_prevent_stop(
+def test_stop_should_still_happen_when_on_alert_emit_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An ENOSPC breadcrumb write (the disk_critical failure domain itself) must
@@ -49,7 +49,7 @@ def test_on_alert_emit_failure_does_not_prevent_stop(
     assert verdict == "triggered"  # confirmed stop still classified correctly
 
 
-def test_on_alert_is_dir_eio_does_not_prevent_stop(
+def test_stop_should_still_happen_when_is_dir_probe_raises_eio(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An EIO from log_dir.is_dir() (e.g. a failing mount) must be swallowed by
@@ -81,7 +81,7 @@ def test_on_alert_is_dir_eio_does_not_prevent_stop(
     assert verdict == "triggered"
 
 
-def test_on_alert_emit_failure_does_not_hide_stop_failure(
+def test_stop_failure_should_still_be_reported_when_on_alert_emit_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A poisoned emitter must not swallow a genuine stop failure either — the

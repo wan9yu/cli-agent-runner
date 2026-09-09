@@ -66,7 +66,7 @@ def _reap_in_background(proc: subprocess.Popen) -> None:
 
 
 @pytest.mark.timeout(150)  # see the wait_for(_drive_alert, ...) comment below for the budget
-def test_alert_drives_real_serve_to_stop(
+def test_on_alert_should_stop_real_serve_when_critical_alert_fires(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -158,7 +158,7 @@ def test_alert_drives_real_serve_to_stop(
     assert "monitor_auto_stop_failed" not in kinds
 
 
-def test_kill_reaps_round_and_agent_pgroup_via_holder_sidecar(
+def test_kill_should_reap_round_and_agent_pgroup_when_using_holder_sidecar(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch: pytest.MonkeyPatch,

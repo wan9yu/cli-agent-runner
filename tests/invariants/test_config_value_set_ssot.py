@@ -37,7 +37,7 @@ _PAIRS = [
 ]
 
 
-def test_given_config_literals_when_compared_then_match_valid_frozensets() -> None:
+def test_config_literals_should_match_valid_frozensets_when_compared() -> None:
     failures: list[str] = []
     for cls, field, ssot in _PAIRS:
         # get_type_hints (not raw __annotations__): `from __future__ import
@@ -46,10 +46,11 @@ def test_given_config_literals_when_compared_then_match_valid_frozensets() -> No
         literal = set(get_args(get_type_hints(cls)[field]))
         if literal != set(ssot):
             failures.append(f"{cls.__name__}.{field}: Literal {literal} != SSOT {set(ssot)}")
+
     assert not failures, "config value-set drift:\n" + "\n".join(failures)
 
 
-def test_given_monitor_module_source_when_scanned_then_detector_count_matches() -> None:
+def test_monitor_module_source_should_match_detector_count_when_scanned() -> None:
     """The detector count is stated in two docstrings, split across modules by
     the monitor.py pure-layer extraction: _monitor_detectors.py's module
     docstring ("11 built-in detectors") and monitor.py's run_all_detectors
@@ -63,6 +64,7 @@ def test_given_monitor_module_source_when_scanned_then_detector_count_matches() 
         src = (REPO / name).read_text(encoding="utf-8")
         found = re.findall(r"(\d+) built-in detectors|Run all (\d+) detectors", src)
         claims += [int(a or b) for a, b in found]
+
     assert claims, "no module states a detector count (reworded? update guard)"
     assert all(c == expected for c in claims), (
         f"detector-count docstrings claim {claims}; KNOWN_ALERT_KINDS has {expected}"

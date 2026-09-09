@@ -68,19 +68,20 @@ def _violations(tree: ast.AST) -> list[str]:
     return found
 
 
-def test_given_production_modules_when_scanned_then_no_unified_diff_marker_parsing() -> None:
+def test_production_modules_should_have_no_unified_diff_marker_parsing_when_scanned() -> None:
     failures: list[str] = []
     paths = sorted(PKG.rglob("*.py"))
     assert paths, "no agent_runner/*.py modules found"  # vacuity-guard
     for path in paths:
         hits = _violations(ast.parse(path.read_text(encoding="utf-8")))
         failures.extend(f"{path.relative_to(PKG.parent)}: {h}" for h in hits)
+
     assert not failures, "unified-diff +/- line parsing is forbidden (R2110):\n" + "\n".join(
         failures
     )
 
 
-def test_given_diff_scanning_shapes_when_checked_then_scan_flags_them() -> None:
+def test_scan_should_flag_known_diff_marker_shapes() -> None:
     """The scan's own teeth — each shape is a way R2110 has been reintroduced."""
     for src in (
         'if line.startswith("+"): pass',
@@ -91,6 +92,10 @@ def test_given_diff_scanning_shapes_when_checked_then_scan_flags_them() -> None:
         'import re\nre.match(r"^[+-]", line)',
     ):
         assert _violations(ast.parse(src)), f"scan missed diff-marker parsing: {src!r}"
+
+
+def test_scan_should_not_flag_look_alike_non_diff_shapes() -> None:
+    """The scan's own teeth — each shape looks like diff-marker parsing but is not."""
     for src in (
         'if host.startswith("-"): pass',
         'if text.startswith("---\\n"): pass',

@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tests._clock import FakeClock
 
 
@@ -42,7 +44,7 @@ def _append_events(log_dir: Path, events: list[dict]):
             f.write(json.dumps(ev) + "\n")
 
 
-def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_state(tmp_path):
+def test_rejected_with_reset_in_future_should_return_throttle_state_when_checked(tmp_path):
     from agent_runner._throttle import _check_throttle_state
 
     future = int(time.time() + 3600)
@@ -59,7 +61,9 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
             }
         ],
     )
+
     state = _check_throttle_state(tmp_path)
+
     assert state is not None
     assert state.reset_at_epoch == future
     assert state.classification == "rate_limit_account"
@@ -68,7 +72,7 @@ def test_given_rejected_with_reset_in_future_when_check_then_returns_throttle_st
     assert state.phase == ""  # no phase recorded → "" (back-compat)
 
 
-def test_check_throttle_state_carries_phase(tmp_path):
+def test_check_throttle_state_should_carry_phase_when_recorded(tmp_path):
     from agent_runner._throttle import _check_throttle_state
 
     _write_events(
@@ -85,11 +89,15 @@ def test_check_throttle_state_carries_phase(tmp_path):
             }
         ],
     )
+
     state = _check_throttle_state(tmp_path)
+
     assert state is not None and state.phase == "deepseek"
 
 
-def test_check_throttle_state_reads_ladder_extended_reset_not_raw(tmp_path):
+def test_check_throttle_state_should_return_ladder_extended_reset_when_detections_repeat(
+    tmp_path,
+):
     """The loop-top NON-skip gate (serve_cmd.py:382 -> _check_throttle_state) must
     read the SAME ladder-extended reset as _active_throttles (skip path /
     crash-loop excuse) and effective_throttle_view (peek) -- not the emitter's raw
@@ -112,8 +120,10 @@ def test_check_throttle_state_reads_ladder_extended_reset_not_raw(tmp_path):
         ],
     )
     clock = FakeClock(epoch=float(raw_reset + 5))  # past raw (+0), before extended (+30)
+
     state = _check_throttle_state(tmp_path, clock=clock)
     active = _active_throttles(tmp_path, clock=clock)
+
     assert state is not None  # still throttled per the ladder, not "cleared" per raw
     assert state.reset_at_epoch == raw_reset + 30
     assert state.reset_at_epoch == active["claude"].reset_at_epoch  # agrees with the skip map
@@ -130,23 +140,26 @@ def _detected(reset_at, *, ts="2026-05-16T00:00:00Z", agent="claude", cls="rate_
     }
 
 
-def test_pending_recovered_fires_when_throttle_cleared_without_breadcrumb(tmp_path):
+def test_pending_recovered_should_fire_when_throttle_cleared_without_breadcrumb(tmp_path):
     from agent_runner._throttle import pending_recovered
 
     now = 1_700_000_000
     _write_events(tmp_path, [_detected(now - 60, ts=_iso(now - 300), agent="deepseek")])
+
     pending = pending_recovered(tmp_path, clock=FakeClock(epoch=float(now)))
+
     assert pending == [("deepseek", "rate_limit_account", 300)]  # (agent, cls, throttled_for_s)
 
 
-def test_pending_recovered_empty_while_still_throttled(tmp_path):
+def test_pending_recovered_should_be_empty_when_still_throttled(tmp_path):
     from agent_runner._throttle import pending_recovered
 
     _write_events(tmp_path, [_detected(int(time.time() + 3600))])
+
     assert pending_recovered(tmp_path) == []
 
 
-def test_pending_recovered_empty_when_recovered_already_emitted(tmp_path):
+def test_pending_recovered_should_be_empty_when_recovered_already_emitted(tmp_path):
     """Dedup guard: the back-off path already left a recovered → stay quiet."""
     from agent_runner._throttle import pending_recovered
 
@@ -163,18 +176,17 @@ def test_pending_recovered_empty_when_recovered_already_emitted(tmp_path):
             },
         ],
     )
+
     assert pending_recovered(tmp_path) == []
 
 
-def test_pending_recovered_empty_with_no_events(tmp_path):
+def test_pending_recovered_should_be_empty_when_no_events(tmp_path):
     from agent_runner._throttle import pending_recovered
 
     assert pending_recovered(tmp_path) == []
 
 
-def test_pending_recovered_overlapping_one_clears_while_other_active(tmp_path):
-    """Agent A cleared (reset past) while agent B still throttled (reset future):
-    A is reported for its breadcrumb, B is not."""
+def test_pending_recovered_should_report_only_cleared_agent_when_another_still_active(tmp_path):
     from agent_runner._throttle import pending_recovered
 
     now = 1_700_000_000
@@ -185,11 +197,13 @@ def test_pending_recovered_overlapping_one_clears_while_other_active(tmp_path):
             _detected(now + 3600, ts=_iso(now - 100), agent="gemini"),  # still throttled
         ],
     )
+
     pending = pending_recovered(tmp_path, clock=FakeClock(epoch=float(now)))
+
     assert pending == [("claude", "rate_limit_account", 200)]
 
 
-def test_pending_recovered_holds_for_estimated_class_until_extended_reset(tmp_path):
+def test_pending_recovered_should_hold_for_estimated_class_until_extended_reset(tmp_path):
     """Estimated-class ladder: once _backoff_exponent pushes the effective reset
     past the emitter's raw reset_at_epoch, pending_recovered must NOT report the
     agent cleared just because the RAW reset passed — it has to agree with
@@ -210,16 +224,18 @@ def test_pending_recovered_holds_for_estimated_class_until_extended_reset(tmp_pa
         ],
     )
     still_extended = FakeClock(epoch=float(raw_reset + 30))  # past raw, before extended
+
     assert "codex" in _active_throttles(tmp_path, clock=still_extended)
     assert pending_recovered(tmp_path, clock=still_extended) == []
 
     past_extended = FakeClock(epoch=float(raw_reset + 61))  # past the extended reset too
+
     assert "codex" not in _active_throttles(tmp_path, clock=past_extended)
     pending = pending_recovered(tmp_path, clock=past_extended)
     assert pending and pending[0][0] == "codex"
 
 
-def test_active_throttles_keys_by_agent_multiple(tmp_path):
+def test_active_throttles_should_key_by_agent_when_multiple_agents_active(tmp_path):
     from agent_runner._throttle import _active_throttles
 
     now = 1_700_000_000
@@ -231,13 +247,14 @@ def test_active_throttles_keys_by_agent_multiple(tmp_path):
             _detected(now - 60, agent="codewhale"),  # reset passed → not active
         ],
     )
+
     active = _active_throttles(tmp_path, clock=FakeClock(epoch=float(now)))
+
     assert set(active) == {"claude", "gemini"}
     assert active["gemini"].reset_at_epoch == now + 1800
 
 
-def test_active_throttles_latest_per_agent_recovered_clears(tmp_path):
-    """A recovered after a detected for the same agent clears that agent."""
+def test_active_throttles_should_clear_agent_when_latest_event_is_recovered(tmp_path):
     from agent_runner._throttle import _active_throttles
 
     now = 1_700_000_000
@@ -248,10 +265,11 @@ def test_active_throttles_latest_per_agent_recovered_clears(tmp_path):
             {"event": "transient_error_recovered", "agent": "claude", "throttled_for_s": 10},
         ],
     )
+
     assert _active_throttles(tmp_path, clock=FakeClock(epoch=float(now))) == {}
 
 
-def test_active_throttles_spans_month_boundary_merged_per_agent(tmp_path):
+def test_active_throttles_should_merge_across_month_boundary_per_agent(tmp_path):
     """Agent A's detected in the OLD monthly file + agent B's in the NEW file → both
     active (per-agent scan must not early-exit at the first file with any transient)."""
     from agent_runner._throttle import _active_throttles
@@ -264,11 +282,13 @@ def test_active_throttles_spans_month_boundary_merged_per_agent(tmp_path):
     (tmp_path / "events-2026-05.jsonl").write_text(
         json.dumps(_detected(now + 1800, agent="gemini")) + "\n"
     )
+
     active = _active_throttles(tmp_path, clock=FakeClock(epoch=float(now)))
+
     assert set(active) == {"claude", "gemini"}
 
 
-def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_path):
+def test_rejected_followed_by_recovered_should_return_none_when_checked(tmp_path):
     from agent_runner._throttle import _check_throttle_state
 
     future = int(time.time() + 3600)
@@ -292,11 +312,13 @@ def test_given_rejected_followed_by_recovered_when_check_then_returns_none(tmp_p
             },
         ],
     )
+
     state = _check_throttle_state(tmp_path)
+
     assert state is None
 
 
-def test_given_rejected_with_reset_in_past_when_check_then_returns_none(tmp_path):
+def test_rejected_with_reset_in_past_should_return_none_when_checked(tmp_path):
     from agent_runner._throttle import _check_throttle_state
 
     past = int(time.time() - 3600)
@@ -313,45 +335,51 @@ def test_given_rejected_with_reset_in_past_when_check_then_returns_none(tmp_path
             }
         ],
     )
+
     state = _check_throttle_state(tmp_path)
+
     assert state is None
 
 
-def test_given_no_events_when_check_then_returns_none(tmp_path):
+def test_no_events_should_return_none_when_checked(tmp_path):
     from agent_runner._throttle import _check_throttle_state
 
     state = _check_throttle_state(tmp_path)
+
     assert state is None
 
 
-def test_interruptible_sleep_chunks_without_overshoot_and_returns_false():
-    """Uninterrupted: sleeps in <= chunk_s slices summing to total, no overshoot."""
+def test_interruptible_sleep_should_return_false_without_overshoot_when_uninterrupted():
     from agent_runner._throttle import _interruptible_sleep
 
     clock = FakeClock(epoch=1_700_000_000.0)
+
     interrupted = _interruptible_sleep(70.0, {"requested": False}, clock=clock, chunk_s=30)
+
     assert interrupted is False
     assert clock.slept == [30.0, 30.0, 10.0]  # final slice capped at the remainder
 
 
-def test_interruptible_sleep_short_delay_single_slice():
-    """A delay below one chunk sleeps exactly that delay (no chunk-sized overshoot)."""
+def test_interruptible_sleep_should_use_single_slice_when_delay_below_one_chunk():
     from agent_runner._throttle import _interruptible_sleep
 
     clock = FakeClock(epoch=1_700_000_000.0)
+
     _interruptible_sleep(5.0, {"requested": False}, clock=clock, chunk_s=30)
+
     assert clock.slept == [5.0]
 
 
-def test_interruptible_sleep_returns_true_when_stop_preset():
+def test_interruptible_sleep_should_return_true_when_stop_preset():
     from agent_runner._throttle import _interruptible_sleep
 
     clock = FakeClock(epoch=1_700_000_000.0)
+
     assert _interruptible_sleep(100.0, {"requested": True}, clock=clock) is True
     assert clock.slept == []
 
 
-def test_interruptible_sleep_terminates_when_sleep_is_noop():
+def test_interruptible_sleep_should_terminate_when_sleep_is_noop():
     """Regression: a no-op sleep whose monotonic never advances (a test patching only
     time.sleep) must NOT busy-spin — the count-down loop terminates after
     ceil(total/chunk) slices instead of looping until a real deadline."""
@@ -377,12 +405,14 @@ def test_interruptible_sleep_terminates_when_sleep_is_noop():
             raise NotImplementedError
 
     clock = _FrozenNoopClock()
+
     interrupted = _interruptible_sleep(70.0, {"requested": False}, clock=clock, chunk_s=30)
+
     assert interrupted is False
     assert clock.calls == 3  # 30 + 30 + 10 → remaining 0; no infinite loop
 
 
-def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp_path):
+def test_apply_back_off_should_cap_sleep_and_emit_warning_when_sleep_exceeds_cap(tmp_path):
     """When reset_at_epoch implies sleep > 8h, cap and emit transient_error_backoff_capped."""
     from agent_runner._throttle import _apply_back_off
     from agent_runner.api_types import TransientErrorState
@@ -395,12 +425,14 @@ def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp
         agent="claude",
         since_round=42,
     )
+
     with patch("agent_runner._emit.emit_transient_error_backoff_capped") as mock_new_capped:
         with patch("agent_runner._emit.emit_transient_error_recovered") as mock_new_recovered:
             # chunk_s == cap so the capped sleep is one slice (not 960 × 30s chunks).
             interrupted = _apply_back_off(
                 tmp_path, throttle, stop={"requested": False}, clock=clock, chunk_s=28800
             )
+
     assert interrupted is False
     # sleep should be capped — FakeClock records the requested sleep in .slept
     assert clock.slept
@@ -409,7 +441,7 @@ def test_given_sleep_exceeds_cap_when_back_off_then_capped_and_emits_warning(tmp
     mock_new_recovered.assert_called_once()
 
 
-def test_given_clock_jump_forward_during_capped_back_off_wakes_early(tmp_path):
+def test_apply_back_off_should_wake_early_when_clock_jumps_forward_mid_back_off(tmp_path):
     """RTC-less back-off: an on-host clock reading hours behind real time inflates
     the pre-computed sleep past the 8h magnitude cap (a Pi booting with no battery
     RTC, before NTP has synced). Once NTP corrects the clock MID-SLEEP, the back-off
@@ -457,11 +489,13 @@ def test_given_clock_jump_forward_during_capped_back_off_wakes_early(tmp_path):
         agent="claude",
         since_round=1,
     )
+
     with patch("agent_runner._emit.emit_transient_error_backoff_capped"):
         with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
             interrupted = _apply_back_off(
                 tmp_path, throttle, stop={"requested": False}, clock=clock, chunk_s=30
             )
+
     assert interrupted is False
     # Woke 2 chunks in, right after the jump — nowhere near the 960 chunks
     # (28800 / 30) the un-fixed 8h cap would otherwise require.
@@ -469,7 +503,7 @@ def test_given_clock_jump_forward_during_capped_back_off_wakes_early(tmp_path):
     mock_recovered.assert_called_once()
 
 
-def test_given_stop_set_mid_back_off_then_returns_true_and_no_recovered(tmp_path):
+def test_apply_back_off_should_return_true_without_recovered_when_stop_set_mid_sleep(tmp_path):
     """A SIGTERM during a multi-hour back-off must land within one chunk and leave NO
     recovered breadcrumb — the throttle is still active, so recovering would poison it."""
     from agent_runner._throttle import _apply_back_off
@@ -510,14 +544,16 @@ def test_given_stop_set_mid_back_off_then_returns_true_and_no_recovered(tmp_path
         agent="claude",
         since_round=1,
     )
+
     with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
         interrupted = _apply_back_off(tmp_path, throttle, stop=stop, clock=clock, chunk_s=30)
+
     assert interrupted is True
     assert clock.slept == [30.0]  # exactly one 30s chunk, not the full hour
     mock_recovered.assert_not_called()
 
 
-def test_given_stop_preset_when_back_off_then_returns_true_without_sleeping(tmp_path):
+def test_apply_back_off_should_return_true_without_sleeping_when_stop_preset(tmp_path):
     """stop already requested at entry → return True before any sleep or recovered emit."""
     from agent_runner._throttle import _apply_back_off
     from agent_runner.api_types import TransientErrorState
@@ -529,18 +565,40 @@ def test_given_stop_preset_when_back_off_then_returns_true_without_sleeping(tmp_
         agent="claude",
         since_round=1,
     )
+
     with patch("agent_runner._emit.emit_transient_error_recovered") as mock_recovered:
         interrupted = _apply_back_off(tmp_path, throttle, stop={"requested": True}, clock=clock)
+
     assert interrupted is True
     assert clock.slept == []
     mock_recovered.assert_not_called()
 
 
-def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
-    """First failure of a bucket: multiplier = 2^0 = 1×; applied = original."""
+@pytest.mark.parametrize(
+    "n_pre_events,expected_offset,expected_count,expected_capped",
+    [
+        pytest.param(0, 60, 1, False, id="1st_failure_no_multiplier"),
+        pytest.param(2, 120, 2, False, id="2nd_consecutive_failure_doubles"),
+        pytest.param(6, 1800, 6, True, id="6th_consecutive_failure_plateaus_at_32x"),
+    ],
+)
+def test_compute_adjusted_reset_at_should_apply_ladder_multiplier_when_detections_repeat(
+    tmp_path, n_pre_events, expected_offset, expected_count, expected_capped
+):
+    """Ladder over persisted ``transient_error_detected`` history for the SAME
+    agent/classification, not a repeated in-process call: 0 pre-existing → first
+    failure, multiplier=2^0=1×; 2 pre-existing → exponent=1, multiplier=2×; 6
+    pre-existing → exponent=5, multiplier=32× (60*32=1920s) capped at 1800s by
+    the exp_cap plateau."""
     from agent_runner import _throttle
 
     now = 1_700_000_000.0  # injected clock → exact, no time.time() drift
+    if n_pre_events:
+        _write_events(
+            tmp_path,
+            [_detected(int(now) + 60, cls="rate_limit_model") for _ in range(n_pre_events)],
+        )
+
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=int(now) + 60,
@@ -548,65 +606,22 @@ def test_compute_adjusted_reset_at_first_failure_no_multiplier(tmp_path):
         log_dir=tmp_path,
         clock=FakeClock(epoch=now),
     )
-    # multiplier = 1 → applied_duration = base (60s) → applied_reset = now + 60
-    assert applied == int(now) + 60
-    assert count == 1
-    assert capped is False
+
+    assert applied == int(now) + expected_offset  # exact via injected clock
+    assert count == expected_count
+    assert capped is expected_capped
 
 
-def test_compute_adjusted_reset_at_second_failure_doubles(tmp_path):
-    """Second consecutive failure: exponent (from 2 persisted detections) is 1 →
-    multiplier = 2^1 = 2×. The events-derived ladder counts the SAME agent's
-    ``transient_error_detected`` history, not a repeated in-process call."""
-    from agent_runner import _throttle
-
-    now = 1_700_000_000.0
-    _write_events(
-        tmp_path,
-        [
-            _detected(int(now) + 60, cls="rate_limit_model"),
-            _detected(int(now) + 60, cls="rate_limit_model"),
-        ],
-    )
-    applied, count, capped = _throttle.compute_adjusted_reset_at(
-        classification="rate_limit_model",
-        original_reset_at_epoch=int(now) + 60,
-        agent="claude",
-        log_dir=tmp_path,
-        clock=FakeClock(epoch=now),
-    )
-    assert applied == int(now) + 120  # exact via injected clock
-    assert count == 2
-    assert capped is False
-
-
-def test_compute_adjusted_reset_at_sixth_plateaus_at_32x(tmp_path):
-    """6 persisted detections → exponent=5 → multiplier=32× (2^5), capped at 1800s.
-    The exp_cap (5) plateaus the multiplier beyond this."""
-    from agent_runner import _throttle
-
-    now = 1_700_000_000.0
-    _write_events(tmp_path, [_detected(int(now) + 60, cls="rate_limit_model") for _ in range(6)])
-    # 6th detection already persisted: n=5 → multiplier=32 → duration=60*32=1920s but capped at 1800
-    applied_6, count_6, capped_6 = _throttle.compute_adjusted_reset_at(
-        classification="rate_limit_model",
-        original_reset_at_epoch=int(now) + 60,
-        agent="claude",
-        log_dir=tmp_path,
-        clock=FakeClock(epoch=now),
-    )
-    assert count_6 == 6
-    assert capped_6 is True  # 60*32=1920 > 1800
-    assert applied_6 == int(now) + 1800  # capped, exact
-
-
-def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
+def test_compute_adjusted_reset_at_should_apply_30s_base_when_classification_is_api_timeout(
+    tmp_path,
+):
     """api_timeout has 30s base; 6 persisted detections → exponent=5 → multiplier=32 →
     30*32=960s (under cap)."""
     from agent_runner import _throttle
 
     now = 1_700_000_000.0
     _write_events(tmp_path, [_detected(int(now) + 30, cls="api_timeout") for _ in range(6)])
+
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="api_timeout",
         original_reset_at_epoch=int(now) + 30,
@@ -614,19 +629,21 @@ def test_compute_adjusted_reset_at_api_timeout_30s_base(tmp_path):
         log_dir=tmp_path,
         clock=FakeClock(epoch=now),
     )
+
     assert count == 6
     assert capped is False  # 30*32=960 < 1800
     assert applied == int(now) + 960  # exact
 
 
-def test_compute_adjusted_reset_at_rate_limit_account_exempt(tmp_path):
+def test_compute_adjusted_reset_at_should_be_exempt_when_classification_is_rate_limit_account(
+    tmp_path,
+):
     """Server-authoritative rate_limit_account: counter never increments,
     returned reset is the original (resetsAt from server), no event fires."""
-    import json
-
     from agent_runner import _throttle
 
     server_reset = int(time.time()) + 18000  # 5h from now (resetsAt from Anthropic)
+
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_account",
         original_reset_at_epoch=server_reset,
@@ -661,15 +678,15 @@ def test_compute_adjusted_reset_at_rate_limit_account_exempt(tmp_path):
     assert capped_events == []  # no events fired for server-authoritative bucket
 
 
-def test_compute_adjusted_reset_at_emits_backoff_capped_event_on_adjustment(tmp_path):
+def test_compute_adjusted_reset_at_should_emit_backoff_capped_event_when_multiplier_applied(
+    tmp_path,
+):
     """When multiplier > 1, emit transient_error_backoff_capped with all new fields.
 
     Mirrors the real call sequence: the plugin already persisted a
     ``transient_error_detected`` for each occurrence before the supervisor calls
     ``compute_adjusted_reset_at`` — the exponent is read from that stream, not
     incremented by the call itself."""
-    import json
-
     from agent_runner import _throttle
 
     now = int(time.time())
@@ -683,12 +700,14 @@ def test_compute_adjusted_reset_at_emits_backoff_capped_event_on_adjustment(tmp_
     )
     # Second detection persisted: exponent=1 → multiplier=2, event should fire
     _append_events(tmp_path, [_detected(now + 60, cls="rate_limit_model")])
+
     applied, count, capped = _throttle.compute_adjusted_reset_at(
         classification="rate_limit_model",
         original_reset_at_epoch=now + 60,
         agent="claude",
         log_dir=tmp_path,
     )
+
     events_files = sorted(tmp_path.glob("events-*.jsonl"))
     capped_events = []
     for f in events_files:
@@ -712,20 +731,24 @@ def test_compute_adjusted_reset_at_emits_backoff_capped_event_on_adjustment(tmp_
     assert ev["applied_reset_at_epoch"] == applied
 
 
-def test_elapsed_s_clamps_backward_clock_step_to_zero() -> None:
+def test_elapsed_s_should_clamp_to_zero_when_clock_steps_backward() -> None:
     from agent_runner._throttle import _elapsed_s
 
     clk = FakeClock(epoch=1000.0)
+
     assert _elapsed_s(900.0, clock=clk) == 100
     clk.warp_epoch(-500.0)  # NTP step backward: now < since_epoch
     assert _elapsed_s(900.0, clock=clk) == 0  # never negative
 
 
-def test_apply_back_off_emits_raw_detector_reset_not_ladder_extended(tmp_path):
+def test_apply_back_off_should_emit_raw_detector_reset_when_ladder_extends_the_throttle(
+    tmp_path,
+):
     """_apply_back_off hands compute_adjusted_reset_at the RAW detector reset for
     the transient_error_backoff_capped event's original_reset_at_epoch field --
     not throttle.reset_at_epoch, which _check_throttle_state already ladder-
-    extends (see test_check_throttle_state_reads_ladder_extended_reset_not_raw).
+    extends (see
+    test_check_throttle_state_should_return_ladder_extended_reset_when_detections_repeat).
     0.3's structured-event consumers would otherwise inherit the wrong field."""
     from agent_runner._throttle import _apply_back_off, _check_throttle_state
 
@@ -738,6 +761,7 @@ def test_apply_back_off_emits_raw_detector_reset_not_ladder_extended(tmp_path):
             _detected(raw_reset, ts=_iso(raw_reset - 30), cls="api_timeout"),
         ],
     )
+
     throttle = _check_throttle_state(tmp_path, clock=clock)
     assert throttle is not None
     assert throttle.reset_at_epoch == raw_reset + 30  # ladder-extended (exponent=1)
@@ -757,7 +781,9 @@ def test_apply_back_off_emits_raw_detector_reset_not_ladder_extended(tmp_path):
     assert capped[0]["original_reset_at_epoch"] == raw_reset  # RAW, not raw_reset + 30
 
 
-def test_apply_back_off_recovered_throttled_for_s_matches_sleep(tmp_path) -> None:
+def test_apply_back_off_should_report_throttled_for_s_matching_sleep_when_recovered(
+    tmp_path,
+) -> None:
     from agent_runner._throttle import _apply_back_off
     from agent_runner.api_types import TransientErrorState
 
@@ -770,7 +796,9 @@ def test_apply_back_off_recovered_throttled_for_s_matches_sleep(tmp_path) -> Non
         phase="",
     )
     stop = {"requested": False}
+
     assert _apply_back_off(tmp_path, throttle, stop=stop, clock=clk) is False
+
     rec = [
         json.loads(line)
         for f in tmp_path.glob("events-*.jsonl")

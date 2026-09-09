@@ -8,9 +8,10 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 
 
-def test_given_context_store_writers_when_scanned_then_use_atomic_helper() -> None:
+def test_context_store_writers_should_use_atomic_helper_when_scanned() -> None:
     text = (PKG / "context_store.py").read_text()
     tree = ast.parse(text)
+
     scanned = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name.startswith("write_"):

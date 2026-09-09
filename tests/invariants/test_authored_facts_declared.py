@@ -56,8 +56,9 @@ def _prose_lines(text: str) -> list[tuple[int, str]]:
     return [(i, ln) for i, ln in enumerate(stripped.splitlines(), 1)]
 
 
-def test_no_undeclared_config_default_in_prose():
+def test_docs_should_have_no_undeclared_config_default_in_prose():
     fields = _config_field_names()
+
     offenders: list[str] = []
     checked = 0
     for doc in doc_files():

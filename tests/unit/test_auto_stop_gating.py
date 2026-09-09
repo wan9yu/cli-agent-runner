@@ -25,10 +25,11 @@ def _make_alert(detector: str, auto_action: str = "stop_service") -> Alert:
     )
 
 
-def test_given_builtin_critical_in_allowed_list_when_on_alert_then_stop_called(
+def test_on_alert_should_call_stop_when_builtin_critical_in_allowed_list(
     tmp_path: Path,
 ) -> None:
     alert = _make_alert("oauth_fail")
+
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
         on_alert(
             alert,
@@ -36,13 +37,15 @@ def test_given_builtin_critical_in_allowed_list_when_on_alert_then_stop_called(
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical"],
         )
+
     mock_stop.assert_called_once_with("proj")
 
 
-def test_given_plugin_critical_not_in_allowed_list_when_on_alert_then_stop_not_called(
+def test_on_alert_should_not_call_stop_when_plugin_critical_not_in_allowed_list(
     tmp_path: Path,
 ) -> None:
     alert = _make_alert("my_plugin_critical")
+
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
         on_alert(
             alert,
@@ -50,13 +53,15 @@ def test_given_plugin_critical_not_in_allowed_list_when_on_alert_then_stop_not_c
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical"],
         )
+
     mock_stop.assert_not_called()
 
 
-def test_given_plugin_critical_explicitly_opted_in_when_on_alert_then_stop_called(
+def test_on_alert_should_call_stop_when_plugin_critical_explicitly_opted_in(
     tmp_path: Path,
 ) -> None:
     alert = _make_alert("my_plugin_critical")
+
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
         on_alert(
             alert,
@@ -64,13 +69,15 @@ def test_given_plugin_critical_explicitly_opted_in_when_on_alert_then_stop_calle
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail", "disk_critical", "my_plugin_critical"],
         )
+
     mock_stop.assert_called_once_with("proj")
 
 
-def test_given_non_stop_action_when_on_alert_then_stop_not_called(
+def test_on_alert_should_not_call_stop_when_action_is_not_stop(
     tmp_path: Path,
 ) -> None:
     alert = _make_alert("plain_warning", auto_action="none")
+
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
         on_alert(
             alert,
@@ -78,17 +85,20 @@ def test_given_non_stop_action_when_on_alert_then_stop_not_called(
             log_dir=tmp_path,
             allowed_stop_names=["oauth_fail"],
         )
+
     mock_stop.assert_not_called()
 
 
-def test_given_no_allowed_list_when_on_alert_then_backward_compat_allows_builtins(
+def test_on_alert_should_default_to_builtin_allowlist_when_allowed_stop_names_omitted(
     tmp_path: Path,
 ) -> None:
     """Backward compatibility: ``allowed_stop_names=None`` falls back to the
     legacy builtin pair (oauth_fail + disk_critical)."""
     alert = _make_alert("oauth_fail")
+
     with patch("agent_runner.monitor._call_local_stop") as mock_stop:
         on_alert(alert, project="proj", log_dir=tmp_path)
+
     mock_stop.assert_called_once_with("proj")
 
 
@@ -96,7 +106,7 @@ class _StopLoopError(Exception):
     """Sentinel to break the monitor generator's infinite loop after one alert."""
 
 
-def test_monitor_loop_passes_work_dir_path_not_bare_name_to_on_alert(
+def test_monitor_loop_should_pass_work_dir_path_not_bare_name_to_on_alert(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The loop must hand on_alert the work_dir Path, not the bare project name:
@@ -123,14 +133,16 @@ def test_monitor_loop_passes_work_dir_path_not_bare_name_to_on_alert(
         raise _StopLoopError
 
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", fake_sleep)
+
     with pytest.raises(_StopLoopError):
         for _ in api._monitor_loop_iter(tmp_git_repo):
             pass
+
     assert isinstance(captured["project"], Path)
     assert captured["project"] == tmp_git_repo
 
 
-def test_auto_stop_resolves_real_log_dir_when_cwd_differs(
+def test_on_alert_should_resolve_real_log_dir_when_cwd_differs_from_work_dir(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """on_alert given the work_dir Path resolves the project's ACTUAL (non-preset)

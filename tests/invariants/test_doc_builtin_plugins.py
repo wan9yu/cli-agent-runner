@@ -20,11 +20,10 @@ def _builtin_post_round_hook_names() -> set[str]:
     return set(data["project"]["entry-points"]["agent_runner.post_round_hooks"])
 
 
-def test_given_plugins_doc_when_scanned_then_lists_every_builtin_post_round_hook() -> None:
+def test_plugins_doc_should_list_every_builtin_post_round_hook_when_scanned() -> None:
     names = _builtin_post_round_hook_names()
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
     section = text.split("## Built-in post_round_hooks", 1)[-1].split("\n## ", 1)[0]
-
     m = re.search(r"ships (\d+) built-in", section)
     assert m, (
         "docs/plugins.md no longer states a built-in post_round_hooks count as a "

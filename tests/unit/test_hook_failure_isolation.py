@@ -30,7 +30,7 @@ class _Ok:
         return {"ok": True}
 
 
-def test_given_enricher_raises_when_stitched_then_hook_failed_emitted_and_round_continues(
+def test_enricher_crash_should_emit_hook_failed_and_let_round_continue_when_stitched(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"

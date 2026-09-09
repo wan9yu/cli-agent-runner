@@ -60,9 +60,10 @@ def _raised_class_names() -> list[tuple[str, int, str]]:
     return out
 
 
-def test_given_config_module_when_scanned_then_user_facing_raises_are_config_error() -> None:
+def test_config_module_raises_should_all_be_config_error_when_scanned() -> None:
     """No bare ValueError in config/ — every invalid-field path is a ConfigError."""
     raised = _raised_class_names()
+
     assert raised, "no `raise` sites found in config/*.py — AST scan broke"  # vacuity-guard
     offenders = [
         f"config/{fname}:{lineno}: raise {name}"
@@ -76,7 +77,7 @@ def test_given_config_module_when_scanned_then_user_facing_raises_are_config_err
     )
 
 
-def test_given_config_error_when_inspected_then_subclasses_value_error() -> None:
+def test_config_error_should_subclass_value_error() -> None:
     """The promotion is a widening only because of this relationship. Pin it:
     if ConfigError ever stops subclassing ValueError, every existing
     `pytest.raises(ValueError)` caller silently breaks."""
@@ -85,7 +86,7 @@ def test_given_config_error_when_inspected_then_subclasses_value_error() -> None
     assert issubclass(ConfigError, ValueError)
 
 
-def test_given_stdin_delivery_with_prompt_token_when_loaded_then_config_error(
+def test_load_config_should_raise_config_error_when_stdin_delivery_has_prompt_token(
     tmp_path: Path,
 ) -> None:
     """docs/configuration.md § agent.prompt_delivery pins ConfigError at startup here."""
@@ -95,6 +96,7 @@ def test_given_stdin_delivery_with_prompt_token_when_loaded_then_config_error(
         tmp_path,
         agent_extra='prompt_delivery = "stdin"\nprompt_arg_template = ["-p", "{prompt}"]\n',
     )
+
     with pytest.raises(ConfigError):
         load_config(cfg_path)
 
@@ -129,11 +131,12 @@ def _write_config_with_scalar_table(tmp_path: Path, table: str) -> Path:
 
 
 @pytest.mark.parametrize("table", _TOP_LEVEL_TABLES)
-def test_given_top_level_table_as_scalar_when_loaded_then_config_error(
+def test_load_config_should_raise_config_error_when_top_level_table_given_as_scalar(
     tmp_path: Path, table: str
 ) -> None:
     from agent_runner.config import ConfigError, load_config
 
     cfg_path = _write_config_with_scalar_table(tmp_path, table)
+
     with pytest.raises(ConfigError):
         load_config(cfg_path)

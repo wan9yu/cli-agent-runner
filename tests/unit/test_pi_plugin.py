@@ -221,10 +221,11 @@ def _run(tmp_path, events, result=None, agent_name="pi"):
     return usage_emit, err_emit, auth_emit
 
 
-def test_given_successful_round_when_after_round_then_usage_from_final_message(tmp_path):
+def test_successful_round_should_report_usage_from_final_message_when_after_round(tmp_path):
     usage_emit, err_emit, auth_emit = _run(
         tmp_path, [_SESSION, _MSG_END_OK, _AGENT_END_OK, _AGENT_SETTLED]
     )
+
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
     usage_emit.assert_called_once()
@@ -241,12 +242,13 @@ def test_given_successful_round_when_after_round_then_usage_from_final_message(t
     assert kw["success"] is True
 
 
-def test_given_multi_turn_round_when_after_round_then_usage_summed_across_messages(tmp_path):
+def test_multi_turn_round_should_sum_usage_across_messages_when_after_round(tmp_path):
     """pi's usage is per-message, not cumulative: reading only the last message
     would drop every earlier turn of a tool-using round."""
     usage_emit, err_emit, auth_emit = _run(
         tmp_path, [_SESSION, _AGENT_END_MULTI_TURN, _AGENT_SETTLED]
     )
+
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
     kw = usage_emit.call_args.kwargs
@@ -258,7 +260,9 @@ def test_given_multi_turn_round_when_after_round_then_usage_summed_across_messag
     assert kw["model"] == "mockok/mock-ok"
 
 
-def test_given_retry_then_success_when_after_round_then_final_usage_and_no_transient(tmp_path):
+def test_retry_then_success_should_report_final_usage_without_transient_error_when_after_round(
+    tmp_path,
+):
     """pi self-retries up to 3x; a blip it recovered from is not a
     supervisor-level transient error, and the post-retry state is authoritative."""
     usage_emit, err_emit, auth_emit = _run(
@@ -275,6 +279,7 @@ def test_given_retry_then_success_when_after_round_then_final_usage_and_no_trans
             _AGENT_SETTLED,
         ],
     )
+
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
     kw = usage_emit.call_args.kwargs
@@ -291,13 +296,14 @@ def test_given_retry_then_success_when_after_round_then_final_usage_and_no_trans
         ("Request timed out.", "api_timeout"),
     ],
 )
-def test_given_exhausted_retries_when_after_round_then_transient_only(
+def test_exhausted_retries_should_report_transient_error_only_when_after_round(
     tmp_path, error_text, classification
 ):
     """pi exits 0 even after burning all 3 retries — the stream is the only
     truthful failure signal. A throttle / 5xx / timeout is a back-off case, never
     a credential one, so no auth event rides along."""
     failed = _failing_assistant(error_text)
+
     usage_emit, err_emit, auth_emit = _run(
         tmp_path,
         [
@@ -308,6 +314,7 @@ def test_given_exhausted_retries_when_after_round_then_transient_only(
             _AGENT_SETTLED,
         ],
     )
+
     err_emit.assert_called_once()
     kw = err_emit.call_args.kwargs
     assert kw["classification"] == classification
@@ -318,9 +325,10 @@ def test_given_exhausted_retries_when_after_round_then_transient_only(
     usage_emit.assert_not_called()
 
 
-def test_given_exhausted_429_retries_when_after_round_then_back_off_deadline(tmp_path):
+def test_exhausted_429_retries_should_report_back_off_deadline_when_after_round(tmp_path):
     """The transient emission carries pi's default 60s rate-limit back-off."""
     failed = _failing_assistant(_ERR_429)
+
     _, err_emit, _ = _run(
         tmp_path,
         [
@@ -329,15 +337,17 @@ def test_given_exhausted_429_retries_when_after_round_then_back_off_deadline(tmp
             _AGENT_SETTLED,
         ],
     )
+
     assert err_emit.call_args.kwargs["reset_at_epoch"] == 1060  # now + 60s default
 
 
-def test_given_auth_failure_when_after_round_then_auth_event_and_no_transient(tmp_path):
+def test_auth_failure_should_report_auth_event_without_transient_error_when_after_round(tmp_path):
     """A 401 is permanent until an operator fixes config — no transient bucket
     (backing off would be wrong), but the round reports it as structured
     evidence so the monitor's oauth_fail detector can count it despite pi's
     exit 0."""
     failed = _failing_assistant(_ERR_401, provider="moonshot")
+
     usage_emit, err_emit, auth_emit = _run(
         tmp_path,
         [
@@ -347,6 +357,7 @@ def test_given_auth_failure_when_after_round_then_auth_event_and_no_transient(tm
             _AGENT_SETTLED,
         ],
     )
+
     err_emit.assert_not_called()
     usage_emit.assert_not_called()
     auth_emit.assert_called_once()
@@ -356,7 +367,7 @@ def test_given_auth_failure_when_after_round_then_auth_event_and_no_transient(tm
     assert "401" in kw["raw"]
 
 
-def test_given_round_killed_before_agent_end_when_after_round_then_usage_from_message_ends(
+def test_round_killed_before_agent_end_should_report_usage_from_message_ends_when_after_round(
     tmp_path,
 ):
     """A supervisor round-timeout kill leaves no agent_end record; the completed
@@ -366,6 +377,7 @@ def test_given_round_killed_before_agent_end_when_after_round_then_usage_from_me
         [_SESSION, _MSG_UPDATE_THINKING, _MSG_END_OK],
         result=make_run_result(124, timed_out=True),
     )
+
     err_emit.assert_not_called()  # no classifiable provider error in the stream
     auth_emit.assert_not_called()
     kw = usage_emit.call_args.kwargs
@@ -373,39 +385,43 @@ def test_given_round_killed_before_agent_end_when_after_round_then_usage_from_me
     assert kw["success"] is False
 
 
-def test_given_only_thinking_deltas_when_after_round_then_no_emit(tmp_path):
+def test_only_thinking_deltas_should_emit_nothing_when_after_round(tmp_path):
     """message_update repeats the full message state with zeroed usage and a
     stale stopReason; treating one as terminal would publish a phantom round."""
     usage_emit, err_emit, auth_emit = _run(tmp_path, [_SESSION] + [_MSG_UPDATE_THINKING] * 5)
+
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
 
 
-def test_given_non_pi_binary_when_after_round_then_no_emit(tmp_path):
+def test_non_pi_binary_should_emit_nothing_when_after_round(tmp_path):
     usage_emit, err_emit, auth_emit = _run(
         tmp_path, [_SESSION, _MSG_END_OK, _AGENT_END_OK], agent_name="claude"
     )
+
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
 
 
-def test_given_missing_round_log_when_after_round_then_no_crash(tmp_path):
+def test_missing_round_log_should_not_crash_when_after_round(tmp_path):
     from agent_runner.builtin_plugins.pi import PiErrorDetector
 
     ctx = make_hook_context(tmp_path, agent_name="pi")
     assert not ctx.agent_log_path.exists()
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
             with patch(f"{_MOD}.emit_agent_auth_error_detected") as auth_emit:
                 PiErrorDetector().after_round(ctx, result=_ok_round())
+
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
     auth_emit.assert_not_called()
 
 
-def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
+def test_plain_text_chatter_should_not_block_usage_parsing_when_after_round(tmp_path):
     """The round log merges stdout+stderr; non-JSON lines must not crash the
     parser nor block the usage record on the JSON lines around them.
 
@@ -422,17 +438,19 @@ def test_given_plain_text_chatter_when_after_round_then_tolerated(tmp_path):
         + log_path.read_text()
         + "some trailing stderr chatter\n",
     )
+
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
         with patch(f"{_MOD}.emit_transient_error_detected"):
             PiErrorDetector().after_round(
                 make_hook_context(tmp_path, agent_name="pi"), result=_ok_round()
             )
+
     kw = usage_emit.call_args.kwargs
     assert kw["input_tokens"] == 793
     assert kw["duration_ms"] == 12607  # session header found past the chatter
 
 
-def test_classify_pi_error_maps_only_observed_shapes():
+def test_classify_pi_error_should_map_only_observed_error_shapes():
     """Lock the errorMessage → bucket mapping to shapes captured from pi 0.80.10."""
     from agent_runner.builtin_plugins.pi import _classify_pi_error
 

@@ -104,7 +104,9 @@ def _one_round(log_dir: Path, clock: FakeClock) -> _round_outcome.RoundOutcome:
     return outcome
 
 
-def test_per_round_readers_do_not_grow_allocations(tmp_path: Path) -> None:
+def test_per_round_readers_should_not_grow_allocations_when_run_across_rounds(
+    tmp_path: Path,
+) -> None:
     clock = FakeClock(epoch=1_700_000_000.0)
     _seed_events(tmp_path)
 

@@ -135,7 +135,7 @@ Register the module under the `agent_runner.context_enrichers` entry-point group
 a `current_branch` key whose value is `{"branch": "main"}`, alongside every other
 enricher's namespaced slice.
 
-Runnable reference: `tests/integration/test_context_enricher_namespacing.py::test_given_two_enrichers_when_stitched_then_both_namespaced`
+Runnable reference: `tests/integration/test_context_enricher_namespacing.py::test_two_enrichers_should_both_be_namespaced_when_stitched`
 registers two enrichers and asserts the exact namespaced shape of the merged dict.
 
 ### Failure isolation

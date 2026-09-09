@@ -51,11 +51,12 @@ def _events(log_dir: Path) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_given_no_kinds_when_argv_built_then_defaults_to_every_known_kind() -> None:
+def test_no_kinds_should_default_to_every_known_kind_when_argv_built() -> None:
     """The documented default: every kind this client knows, comma-joined."""
     from agent_runner.events import KNOWN_EVENT_KINDS
 
     argv = remote_relay._remote_argv("pi", remote_relay.default_kinds(), None, since=None)
+
     assert argv[:3] == ["ssh", "pi", "--"]
     assert argv[3:6] == ["agent-runner", "events", "--tail"]
     assert argv[6] == "--kind"
@@ -64,19 +65,20 @@ def test_given_no_kinds_when_argv_built_then_defaults_to_every_known_kind() -> N
     assert "--config" not in argv, "no --remote-config: remote resolves ./agent-runner.toml"
 
 
-def test_given_explicit_kinds_and_remote_config_when_argv_built_then_passed_through() -> None:
+def test_explicit_kinds_and_remote_config_should_pass_through_when_argv_built() -> None:
     argv = remote_relay._remote_argv(
         "pi",
         ["round_end", "oauth_fail"],
         "/srv/proj/agent-runner.toml",
         since="2026-07-27T10:00:00.000Z",
     )
+
     assert "round_end,oauth_fail" in argv
     assert argv[argv.index("--since") + 1] == "2026-07-27T10:00:00.000Z"
     assert argv[argv.index("--config") + 1] == "/srv/proj/agent-runner.toml"
 
 
-def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Path) -> None:
+def test_host_starting_with_dash_should_raise_value_error_when_relayed(tmp_path: Path) -> None:
     """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
     with pytest.raises(ValueError, match="starts with '-'"):
         remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
@@ -87,10 +89,9 @@ def test_given_host_starting_with_dash_when_relay_then_value_error(tmp_path: Pat
 # ---------------------------------------------------------------------------
 
 
-def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
+def test_relay_should_pass_lines_through_and_resume_from_last_ts_when_reconnecting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
 ) -> None:
-    """Lines pass through byte-identically; every RE-connect carries --since <max ts>."""
     argv_log = tmp_path / "argv.log"
     state = tmp_path / "first-run-done"
     stub = _write_stub(
@@ -128,10 +129,9 @@ def test_given_stub_ssh_when_relayed_then_lines_identical_and_reconnect_resumes(
     assert blip["returncode"] == 1
 
 
-def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchanged(
+def test_malformed_line_should_pass_through_without_becoming_resume_point_when_relayed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_backoff: None
 ) -> None:
-    """Garbage is relayed verbatim but never becomes the resume point."""
     argv_log = tmp_path / "argv.log"
     state = tmp_path / "first-run-done"
     stub = _write_stub(
@@ -157,7 +157,7 @@ def test_given_malformed_line_when_relayed_then_passed_through_and_resume_unchan
         assert "--since" not in argv, "unparseable ts must not become a resume point"
 
 
-def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
+def test_ssh_should_give_up_and_exit_1_when_relay_always_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fast_backoff: None,
@@ -184,7 +184,7 @@ def test_given_ssh_that_always_fails_when_relayed_then_gives_up_and_exits_1(
     assert "gave up" in err and "no route to host" in err, "a terminal give-up must not be silent"
 
 
-def test_given_zero_tolerance_when_ssh_exits_then_gives_up_without_reconnecting(
+def test_zero_tolerance_should_give_up_without_reconnecting_when_ssh_exits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """tolerance 0 disables reconnection: one shot, no blip."""
@@ -218,7 +218,9 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def test_install_term_handler_raises_keyboardinterrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_term_handler_should_raise_keyboardinterrupt_when_sigterm_received(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Unit-level check of the handler itself: SIGTERM must convert to
     KeyboardInterrupt so it drains through the SAME path SIGINT already gets
     from Python's own default handler -- not Python's default SIGTERM
@@ -231,12 +233,14 @@ def test_install_term_handler_raises_keyboardinterrupt(monkeypatch: pytest.Monke
 
     captured = {}
     monkeypatch.setattr(signal, "signal", lambda s, h: captured.__setitem__(s, h))
+
     monitor_cmd._install_term_handler()
+
     with pytest.raises(KeyboardInterrupt):
         captured[signal.SIGTERM](signal.SIGTERM, None)
 
 
-def test_relay_remote_events_callable_from_worker_thread(
+def test_relay_remote_events_should_not_install_sigterm_handler_when_run_on_worker_thread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``relay_remote_events`` is pinned public API (``api.relay_remote_events``)
@@ -282,7 +286,7 @@ def test_relay_remote_events_callable_from_worker_thread(
 
 @pytest.mark.timeout(90)  # see the wait(timeout=45) comment below for the arithmetic
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
-def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
+def test_stop_signal_should_kill_ssh_process_group_when_relaying(
     tmp_path: Path, sig: signal.Signals
 ) -> None:
     """The orphan-tree scar: both stop signals must take out ssh AND its
@@ -294,9 +298,9 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
     backgrounded sleep, which is exactly what this parametrization would
     catch. ``relay_remote_events`` itself no longer installs this handler (it
     is pinned public API, safe to call off the main thread -- see
-    ``test_relay_remote_events_callable_from_worker_thread``); the driver
-    installs it explicitly, the same way ``cli/monitor_cmd.py`` does for the
-    real CLI path."""
+    ``test_relay_remote_events_should_not_install_sigterm_handler_when_run_on_worker_thread``);
+    the driver installs it explicitly, the same way ``cli/monitor_cmd.py``
+    does for the real CLI path."""
     stub = _write_stub(
         tmp_path / "fake-ssh",
         "sleep 300 &\n"
@@ -322,6 +326,7 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
         "install_term_handler('relay received SIGTERM')\n"
         "sys.exit(remote_relay.relay_remote_events('pi', log_dir=Path(sys.argv[2])))\n"
     )
+
     proc = subprocess.Popen(
         [sys.executable, str(driver), str(stub), str(tmp_path / "logs")],
         cwd=str(REPO_ROOT),
@@ -383,10 +388,13 @@ def test_given_stop_signal_when_relaying_then_ssh_process_group_is_killed(
 # ---------------------------------------------------------------------------
 
 
-def test_cmd_events_installs_term_handler_before_relaying(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cmd_events_should_install_term_handler_before_relaying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``relay_remote_events`` no longer installs its own SIGTERM handler (it
     is pinned public API and must stay callable off the main thread -- see
-    ``test_relay_remote_events_callable_from_worker_thread``). The CLI path
+    ``test_relay_remote_events_should_not_install_sigterm_handler_when_run_on_worker_thread``).
+    The CLI path
     (``monitor --host --mode events``) must still drain on SIGTERM, so
     ``monitor_cmd`` installs the handler itself, before invoking the relay --
     same precedent as ``round_cmd``."""
@@ -407,8 +415,8 @@ def test_cmd_events_installs_term_handler_before_relaying(monkeypatch: pytest.Mo
         monitor=SimpleNamespace(remote_failure_tolerance_s=90.0),
     )
     monkeypatch.setattr("agent_runner.cli.common.cfg_from_args", lambda args: fake_cfg)
-
     args = SimpleNamespace(host="pi", kind=None, remote_config=None, config=None, work_dir=None)
+
     rc = monitor_cmd._cmd_events(args)
 
     assert rc == 0
@@ -420,7 +428,7 @@ def test_cmd_events_installs_term_handler_before_relaying(monkeypatch: pytest.Mo
 # ---------------------------------------------------------------------------
 
 
-def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing(tmp_path: Path) -> None:
+def test_alert_with_no_auto_action_should_not_call_local_stop_when_on_alert(tmp_path: Path) -> None:
     a = Alert(
         severity="warning",
         detector="timeout_rate",
@@ -433,10 +441,11 @@ def test_given_alert_with_no_auto_action_when_on_alert_then_does_nothing(tmp_pat
 
     with patch("agent_runner.monitor._call_local_stop") as stop:
         on_alert(a, project="myproj", log_dir=tmp_path)
+
         stop.assert_not_called()
 
 
-def test_given_critical_alert_when_on_alert_then_calls_local_stop(tmp_log_dir: Path) -> None:
+def test_critical_alert_should_call_local_stop_when_on_alert(tmp_log_dir: Path) -> None:
     a = Alert(
         severity="critical",
         detector="oauth_fail",
@@ -449,10 +458,11 @@ def test_given_critical_alert_when_on_alert_then_calls_local_stop(tmp_log_dir: P
 
     with patch("agent_runner.monitor._call_local_stop") as stop:
         on_alert(a, project="myproj", log_dir=tmp_log_dir)
+
         stop.assert_called_once_with("myproj")
 
 
-def test_given_local_stop_raises_when_on_alert_then_emits_failed_event(tmp_log_dir: Path) -> None:
+def test_local_stop_raises_should_emit_failed_event_when_on_alert(tmp_log_dir: Path) -> None:
     """A failing stop is recorded, not raised — it must not kill the monitor."""
     from unittest.mock import patch
 
@@ -464,6 +474,7 @@ def test_given_local_stop_raises_when_on_alert_then_emits_failed_event(tmp_log_d
         ts="t",
         auto_action="stop_service",
     )
+
     with patch("agent_runner.monitor._call_local_stop", side_effect=RuntimeError("unit missing")):
         on_alert(a, project="myproj", log_dir=tmp_log_dir)
 
@@ -473,7 +484,7 @@ def test_given_local_stop_raises_when_on_alert_then_emits_failed_event(tmp_log_d
     assert "unit missing" in failed[0]["error"]
 
 
-def test_given_local_stop_no_ops_without_raising_when_on_alert_then_emits_failed_not_triggered(
+def test_local_stop_no_op_should_emit_failed_not_triggered_when_on_alert(
     tmp_log_dir: Path,
 ) -> None:
     """The real gap this closes: a mode mismatch (stale unit reference, wrong
@@ -495,8 +506,10 @@ def test_given_local_stop_no_ops_without_raising_when_on_alert_then_emits_failed
         auto_action="stop_service",
     )
     still_running = ServiceStatus(mode=ServiceMode.SYSTEMD_USER, active=True)
+
     with patch("agent_runner.monitor._call_local_stop", return_value=still_running) as stop:
         on_alert(a, project="myproj", log_dir=tmp_log_dir)
+
         stop.assert_called_once_with("myproj")
 
     kinds = [e["event"] for e in _events(tmp_log_dir)]
@@ -506,7 +519,7 @@ def test_given_local_stop_no_ops_without_raising_when_on_alert_then_emits_failed
     assert failed[0]["detector"] == "oauth_fail"
 
 
-def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_not_failed(
+def test_local_stop_confirms_stopped_should_emit_triggered_not_failed_when_on_alert(
     tmp_log_dir: Path,
 ) -> None:
     """The success path: api.stop returns active=False -> triggered fires,
@@ -524,6 +537,7 @@ def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_no
         auto_action="stop_service",
     )
     stopped = ServiceStatus(mode=ServiceMode.PID_FILE, active=False)
+
     with patch("agent_runner.monitor._call_local_stop", return_value=stopped):
         on_alert(a, project="myproj", log_dir=tmp_log_dir)
 
@@ -532,7 +546,7 @@ def test_given_local_stop_confirms_stopped_when_on_alert_then_emits_triggered_no
     assert "monitor_auto_stop_failed" not in kinds
 
 
-def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_event_recorded(
+def test_pid_file_stop_with_live_serve_pid_should_return_draining_and_record_no_event_when_on_alert(
     tmp_log_dir: Path,
 ) -> None:
     """The flake this closes, broadened: api.stop's PID_FILE confirm
@@ -560,6 +574,7 @@ def test_given_pid_file_stop_with_live_serve_pid_when_on_alert_then_draining_no_
         auto_action="stop_service",
     )
     still_draining = ServiceStatus(mode=ServiceMode.PID_FILE, active=True)
+
     with patch("agent_runner.monitor._call_local_stop", return_value=still_draining):
         verdict = on_alert(a, project="myproj", log_dir=tmp_log_dir)
 

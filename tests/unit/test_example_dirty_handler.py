@@ -29,7 +29,7 @@ class CommitEverythingHandler:
         return DirtyOutcome(kind="committed", ref="cafef00d")
 
 
-def test_given_custom_handler_when_dispatched_then_it_wins_over_default_stash(
+def test_custom_dirty_handler_should_win_over_default_stash_when_dispatched(
     tmp_path, monkeypatch
 ) -> None:
     # Isolate the registry the way test_dirty_handlers.py does, so this

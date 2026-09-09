@@ -15,7 +15,7 @@ from pathlib import Path
 from agent_runner._docgen import RENDERERS, render
 
 
-def test_render_prepends_the_declared_source_line(tmp_path: Path) -> None:
+def test_render_should_prepend_the_declared_source_line(tmp_path: Path) -> None:
     name = "event-kinds"  # representative static renderer
     source = RENDERERS[name].source
     doc = tmp_path / "sample.md"

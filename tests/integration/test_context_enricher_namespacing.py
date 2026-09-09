@@ -33,7 +33,7 @@ class _Stats:
         return {"open_prs": 3}
 
 
-def test_given_two_enrichers_when_stitched_then_both_namespaced(tmp_path: Path) -> None:
+def test_two_enrichers_should_both_be_namespaced_when_stitched(tmp_path: Path) -> None:
     hooks.register_context_enricher(_Branch())
     hooks.register_context_enricher(_Stats())
 
@@ -48,8 +48,8 @@ def test_given_two_enrichers_when_stitched_then_both_namespaced(tmp_path: Path) 
         phase=None,
         agent_name=None,
     )
-
     base = {"round_num": 1, "started_at": "2026-01-01T00:00:00.000Z"}
+
     out = _stitch_enricher_slices(base, hooks.context_enrichers(), hook_ctx, log_dir)
 
     assert out["round_num"] == 1

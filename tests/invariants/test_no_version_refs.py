@@ -91,17 +91,19 @@ def _scan(paths: list[Path]) -> list[str]:
     return hits
 
 
-def test_given_agent_runner_files_when_scanned_then_no_version_refs() -> None:
+def test_agent_runner_files_should_have_no_version_refs_when_scanned() -> None:
     rel_paths = _agent_runner_files()
     # vacuity guard
     assert len(rel_paths) > 50, "agent_runner/ scan found too few files — scan is vacuous"
+
     hits = _scan([_REPO / p for p in rel_paths])
+
     assert not hits, (
         "release-version / SDD-planning breadcrumbs leaked into agent_runner/:\n" + "\n".join(hits)
     )
 
 
-def test_given_a_reintroduced_version_breadcrumb_when_scanned_then_flagged(tmp_path: Path) -> None:
+def test_scanner_should_flag_reintroduced_version_breadcrumb_when_scanned(tmp_path: Path) -> None:
     """Non-vacuity proof: the scanner fires on the exact version-number shape
     this cleanup removed, so a regression re-adding one would fail CI, not
     slip by."""
@@ -118,7 +120,7 @@ def test_given_a_reintroduced_version_breadcrumb_when_scanned_then_flagged(tmp_p
     assert not _scan([clean]), "scanner false-positived on breadcrumb-free text"
 
 
-def test_given_a_reintroduced_sdd_tag_when_scanned_then_flagged(tmp_path: Path) -> None:
+def test_scanner_should_flag_reintroduced_sdd_tag_when_scanned(tmp_path: Path) -> None:
     """Non-vacuity proof for the bare (no version number) SDD-tag shape: a
     re-added "Group C, seam 3" or "Task 5" must trip the scanner too, not
     just the version-number form."""
@@ -141,15 +143,16 @@ def test_given_a_reintroduced_sdd_tag_when_scanned_then_flagged(tmp_path: Path) 
     assert not _scan([clean]), "scanner false-positived on tag-free text"
 
 
-def test_given_an_ipv4_literal_when_scanned_then_not_flagged(tmp_path: Path) -> None:
+def test_scanner_should_not_flag_ipv4_literal_when_scanned(tmp_path: Path) -> None:
     """The dotted-quad guard: an IPv4 literal like 127.0.0.1 (it contains
     "0.0.1") must not be mistaken for a release version."""
     ip_only = tmp_path / "ip_module.py"
     ip_only.write_text('SERVER_ADDR = ("127.0.0.1", 0)\n')
+
     assert not _scan([ip_only]), "scanner false-positived on an IPv4 literal"
 
 
-def test_given_ordinary_english_group_task_seam_when_scanned_then_not_flagged(
+def test_scanner_should_not_flag_ordinary_english_group_task_seam_when_scanned(
     tmp_path: Path,
 ) -> None:
     """The SDD-tag patterns must not fire on genuine domain/English usage of
@@ -170,4 +173,5 @@ def test_given_ordinary_english_group_task_seam_when_scanned_then_not_flagged(
             ]
         )
     )
+
     assert not _scan([english]), "scanner false-positived on ordinary English group/task/seam text"

@@ -11,37 +11,37 @@ from agent_runner._serve_policy import EnvironmentalError, classify_round_exit
 from agent_runner.config import ConfigError
 
 
-def test_config_error_is_permanent_78():
+def test_config_error_should_classify_as_permanent_78():
     assert classify_round_exit(ConfigError("bad")) == 78
 
 
-def test_environmental_error_is_76():
+def test_environmental_error_should_classify_as_environmental_76():
     assert classify_round_exit(EnvironmentalError("enospc")) == 76
 
 
-def test_keyboardinterrupt_is_130():
+def test_keyboard_interrupt_should_classify_as_130():
     assert classify_round_exit(KeyboardInterrupt()) == 130
 
 
-def test_unclassified_traceback_is_1_not_76():
+def test_unclassified_exception_should_classify_as_1_not_76():
     # A supervisor bug must hit the crash-loop breaker, never loop forever as 76.
     assert classify_round_exit(RuntimeError("plugin import blew up")) == 1
 
 
-def test_unicode_decode_error_is_not_78():
+def test_unicode_decode_error_should_not_classify_as_78():
     # UnicodeDecodeError subclasses ValueError; must NOT be swept to stay-stopped.
     assert classify_round_exit(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")) != 78
 
 
-def test_systemexit_passes_through():
+def test_system_exit_should_pass_through_code():
     assert classify_round_exit(SystemExit(76)) == 76
 
 
-def test_systemexit_non_int_code_is_1():
+def test_system_exit_with_non_int_code_should_classify_as_1():
     assert classify_round_exit(SystemExit("some message")) == 1
 
 
-def test_lock_held_error_is_environmental_76():
+def test_lock_held_error_should_classify_as_environmental_76():
     # LockHeldError is one of the *named* environmental classes (Group A spec):
     # a concurrent agent-runner holding the round lock self-heals -- retry, don't
     # count it toward the crash-loop breaker.
@@ -50,13 +50,13 @@ def test_lock_held_error_is_environmental_76():
     assert classify_round_exit(LockHeldError("another agent-runner is running")) == 76
 
 
-def test_git_timeout_is_environmental_76():
+def test_git_timeout_should_classify_as_environmental_76():
     from agent_runner.vcs_state import GitTimeout
 
     assert classify_round_exit(GitTimeout("git status exceeded 10s")) == 76
 
 
-def test_unclassified_short_crash_trips_crash_loop_after_5():
+def test_unclassified_exception_should_trip_crash_loop_after_5_consecutive_rounds():
     """Wires classify_round_exit's "else -> 1" verdict into post_round_decision's
     breaker, end to end: an unnamed traceback must still bound a genuine
     supervisor bug at CRASH_LOOP_EXIT (75), not loop forever like 76 would."""
@@ -75,6 +75,7 @@ def test_unclassified_short_crash_trips_crash_loop_after_5():
             consecutive=consecutive,
             restart_delay_s=3,
         )
+
     assert action == "crash_loop"
     assert consecutive == 5
 
@@ -83,7 +84,7 @@ def test_unclassified_short_crash_trips_crash_loop_after_5():
     "exc",
     [ConfigError("x"), EnvironmentalError("x"), KeyboardInterrupt(), RuntimeError("x")],
 )
-def test_classify_round_exit_never_returns_75(exc):
+def test_classify_round_exit_should_never_return_75(exc):
     # 75 (CRASH_LOOP_EXIT) is exclusively serve's own verdict from
     # post_round_decision -- a round child must never claim it directly.
     assert classify_round_exit(exc) != 75

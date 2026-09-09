@@ -13,7 +13,7 @@ PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 LIMIT = 1000
 
 
-def test_given_production_module_when_counted_then_under_thousand_lines() -> None:
+def test_production_modules_should_stay_under_thousand_lines_when_counted() -> None:
     offenders: list[tuple[str, int]] = []
     scanned = 0
     for path in PKG.rglob("*.py"):

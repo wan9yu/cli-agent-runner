@@ -20,34 +20,39 @@ def _broken_toml(tmp_path: Path) -> Path:
     return toml
 
 
-def test_given_broken_config_when_main_serve_then_exit_78_not_traceback(tmp_path: Path) -> None:
+def test_main_serve_should_exit_78_not_traceback_when_config_broken(tmp_path: Path) -> None:
     rc = main(["serve", "--config", str(_broken_toml(tmp_path))])
+
     assert rc == PERMANENT_CONFIG_EXIT
 
 
-def test_given_broken_config_when_main_then_names_migrate(tmp_path: Path, capsys) -> None:
+def test_main_should_name_migrate_in_stderr_when_config_broken(tmp_path: Path, capsys) -> None:
     main(["serve", "--config", str(_broken_toml(tmp_path))])
+
     assert "agent-runner migrate" in capsys.readouterr().err
 
 
-def test_given_missing_config_when_main_serve_then_exit_78_not_traceback(tmp_path: Path) -> None:
+def test_main_serve_should_exit_78_not_traceback_when_config_missing(tmp_path: Path) -> None:
     # Group A: a single bad load (missing file, never even started the loop) is
     # PERMANENT -- fatal to serve immediately, not a 5-restart crash loop.
     rc = main(["serve", "--config", str(tmp_path / "nope.toml")])
+
     assert rc == PERMANENT_CONFIG_EXIT
 
 
-def test_given_syntax_broken_toml_when_main_round_then_exit_78_not_traceback(
+def test_main_round_should_exit_78_not_traceback_when_toml_syntax_broken(
     tmp_path: Path,
 ) -> None:
     bad_toml = tmp_path / "agent-runner.toml"
     bad_toml.write_text("this is not [valid toml")
+
     rc = main(["round", "--config", str(bad_toml)])
+
     assert rc == PERMANENT_CONFIG_EXIT
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file perms")
-def test_given_unreadable_config_when_main_serve_then_exit_78_not_traceback(
+def test_main_serve_should_exit_78_not_traceback_when_config_unreadable(
     tmp_path: Path,
 ) -> None:
     # Under euid 0 this asserts VACUOUSLY: root can read a 000 file, so open()
@@ -63,4 +68,5 @@ def test_given_unreadable_config_when_main_serve_then_exit_78_not_traceback(
         rc = main(["serve", "--config", str(toml)])
     finally:
         toml.chmod(0o644)  # tmp_path teardown needs read/write back
+
     assert rc == PERMANENT_CONFIG_EXIT

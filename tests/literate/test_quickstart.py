@@ -19,7 +19,7 @@ from tests.literate.parser import parse_literate_blocks
 QUICKSTART = Path(__file__).resolve().parent.parent.parent / "docs" / "quickstart.md"
 
 
-def test_given_quickstart_when_each_bash_block_run_then_passes(
+def test_quickstart_should_pass_when_each_bash_block_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

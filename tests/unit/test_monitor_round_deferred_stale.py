@@ -12,7 +12,7 @@ def _ts(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def test_stale_suppressed_while_a_round_deferral_is_live():
+def test_stale_should_be_suppressed_while_round_deferral_is_live():
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     old = now - timedelta(hours=2)
     events = [
@@ -25,10 +25,11 @@ def test_stale_suppressed_while_a_round_deferral_is_live():
             "message": "PSI memory full avg10=2.0",
         },
     ]
+
     assert monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600) is None
 
 
-def test_stale_fires_after_deferral_8day_horizon_with_no_resume():
+def test_stale_should_fire_after_8day_horizon_when_deferral_has_no_resume():
     """round_deferred carries no resume_at (unlike schedule_paused) -- suppression
     falls back to the paused-ts + 8d horizon, so a supervisor that died mid-defer
     still eventually alarms."""
@@ -43,11 +44,13 @@ def test_stale_fires_after_deferral_8day_horizon_with_no_resume():
             "message": "mem_free_mb 10 < 16 and mem_available_mb 100 < 200",
         },
     ]
+
     alert = monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600)
+
     assert alert is not None and alert.detector == "supervisor_stale"
 
 
-def test_stale_fires_after_round_resumed():
+def test_stale_should_fire_after_round_resumed_when_threshold_exceeded():
     now = datetime(2026, 8, 22, 13, 0, tzinfo=UTC)
     deferred_ts = now - timedelta(hours=2)
     resumed_ts = now - timedelta(hours=1)
@@ -55,5 +58,7 @@ def test_stale_fires_after_round_resumed():
         {"ts": _ts(deferred_ts), "event": "round_deferred", "severity": "critical"},
         {"ts": _ts(resumed_ts), "event": "round_resumed", "deferred_for_s": 3600},
     ]
+
     alert = monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600)
+
     assert alert is not None and alert.detector == "supervisor_stale"

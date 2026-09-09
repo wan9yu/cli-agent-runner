@@ -62,17 +62,18 @@ _CONTROL_ESCAPES = {
 
 
 @pytest.mark.parametrize("escape", _CONTROL_ESCAPES.values(), ids=_CONTROL_ESCAPES.keys())
-def test_given_control_char_in_work_dir_when_load_config_then_config_error(
+def test_load_config_should_raise_config_error_when_work_dir_has_control_char(
     tmp_path: Path, escape: str
 ) -> None:
     injected = f"{tmp_path}{escape}User=root"
     p = _write(tmp_path, _base(tmp_path, work_dir_value=injected))
+
     with pytest.raises(ConfigError, match="work_dir"):
         load_config(p)
 
 
 @pytest.mark.parametrize("escape", _CONTROL_ESCAPES.values(), ids=_CONTROL_ESCAPES.keys())
-def test_given_control_char_in_relative_log_dir_when_load_config_then_config_error(
+def test_load_config_should_raise_config_error_when_relative_log_dir_has_control_char(
     tmp_path: Path, escape: str
 ) -> None:
     """A RELATIVE log_dir is the one that actually exercises Path.resolve()
@@ -81,12 +82,16 @@ def test_given_control_char_in_relative_log_dir_when_load_config_then_config_err
     reproduce."""
     injected = f"logs{escape}User=root"
     p = _write(tmp_path, _base(tmp_path, log_dir_value=injected))
+
     with pytest.raises(ConfigError, match="log_dir"):
         load_config(p)
 
 
-def test_given_newline_in_config_path_when_load_config_then_config_error(tmp_path: Path) -> None:
+def test_load_config_should_raise_config_error_when_config_path_has_newline(
+    tmp_path: Path,
+) -> None:
     weird = _write(tmp_path, _base(tmp_path), name="agent-runner.toml\nUser=root")
+
     with pytest.raises(ConfigError, match="config path"):
         load_config(weird)
 
@@ -102,28 +107,31 @@ def _direct_cfg(work_dir: Path, tmp_path: Path) -> Config:
     )
 
 
-def test_given_newline_in_work_dir_when_render_serve_unit_then_config_error(
+def test_render_serve_unit_should_raise_config_error_when_work_dir_has_newline(
     tmp_path: Path,
 ) -> None:
     poisoned_work_dir = Path(f"{tmp_path}\nUser=root")
     cfg = _direct_cfg(poisoned_work_dir, tmp_path)
+
     with pytest.raises(ConfigError, match="work_dir"):
         render_serve_unit(cfg, script_path=tmp_path / "ar", config_path=tmp_path / "a.toml")
 
 
-def test_given_newline_in_config_path_when_render_serve_unit_then_config_error(
+def test_render_serve_unit_should_raise_config_error_when_config_path_has_newline(
     tmp_path: Path,
 ) -> None:
     cfg = _direct_cfg(tmp_path, tmp_path)
     poisoned_config_path = Path(f"{tmp_path}/a.toml\nUser=root")
+
     with pytest.raises(ConfigError, match="config path"):
         render_serve_unit(cfg, script_path=tmp_path / "ar", config_path=poisoned_config_path)
 
 
-def test_given_newline_in_config_path_when_render_monitor_unit_then_config_error(
+def test_render_monitor_unit_should_raise_config_error_when_config_path_has_newline(
     tmp_path: Path,
 ) -> None:
     cfg = _direct_cfg(tmp_path, tmp_path)
     poisoned_config_path = Path(f"{tmp_path}/a.toml\nUser=root")
+
     with pytest.raises(ConfigError, match="config path"):
         render_monitor_unit(cfg, script_path=tmp_path / "ar", config_path=poisoned_config_path)

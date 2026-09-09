@@ -39,9 +39,10 @@ def _events(log_dir):
     return out
 
 
-def test_gate_no_pause_when_runnable(tmp_path):
+def test_maybe_pause_for_schedule_should_not_pause_when_runnable(tmp_path):
     cfg = _mk_cfg(tmp_path, _cfg(["09:00-12:00"]))
     stop = {"requested": False}
+
     paused = serve_cmd._maybe_pause_for_schedule(
         cfg,
         tmp_path,
@@ -49,25 +50,28 @@ def test_gate_no_pause_when_runnable(tmp_path):
         now_fn=lambda _tz: datetime(2026, 8, 22, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
         sleep_fn=lambda _s: None,
     )
+
     assert paused is False
     assert _events(tmp_path) == []
 
 
-def test_gate_pauses_then_resumes(tmp_path):
+def test_maybe_pause_for_schedule_should_resume_when_pause_window_ends(tmp_path):
     cfg = _mk_cfg(tmp_path, _cfg(["09:00-12:00"]))
     stop = {"requested": False}
     slept = []
     clock = _FakeClock([10, 10, 12])  # enter@10, still paused@10, runnable@12
+
     paused = serve_cmd._maybe_pause_for_schedule(
         cfg, tmp_path, stop, now_fn=clock, sleep_fn=lambda s: slept.append(s), chunk_s=30
     )
+
     assert paused is True
     evs = [e["event"] for e in _events(tmp_path)]
     assert evs == ["schedule_paused", "schedule_resumed"]
     assert slept  # at least one chunk slept
 
 
-def test_gate_interrupted_by_stop(tmp_path):
+def test_maybe_pause_for_schedule_should_not_resume_when_stop_requested_during_pause(tmp_path):
     cfg = _mk_cfg(tmp_path, _cfg(["09:00-12:00"]))
     stop = {"requested": False}
 
@@ -81,11 +85,12 @@ def test_gate_interrupted_by_stop(tmp_path):
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
         sleep_fn=_sleep,
     )
+
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["schedule_paused"]
 
 
-def test_gate_breaks_on_stop_file_during_pause(tmp_path):
+def test_maybe_pause_for_schedule_should_break_without_sleeping_when_stop_file_present(tmp_path):
     """A stop_file dropped during a pause is noticed on the first poll: the loop
     breaks without sleeping and without emitting schedule_resumed (the window did
     not open), leaving the outer serve loop to emit stop_file_detected."""
@@ -94,6 +99,7 @@ def test_gate_breaks_on_stop_file_during_pause(tmp_path):
     cfg = _mk_cfg(tmp_path, _cfg(["09:00-12:00"]), stop_file=stop_path)
     stop = {"requested": False}
     slept = []
+
     paused = serve_cmd._maybe_pause_for_schedule(
         cfg,
         tmp_path,
@@ -101,6 +107,7 @@ def test_gate_breaks_on_stop_file_during_pause(tmp_path):
         now_fn=lambda _tz: datetime(2026, 8, 22, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
         sleep_fn=lambda s: slept.append(s),
     )
+
     assert paused is True
     assert [e["event"] for e in _events(tmp_path)] == ["schedule_paused"]
     assert slept == []  # stop_file seen on the first iteration, no waiting
@@ -116,7 +123,7 @@ def _toml_with_always_pause(tmp_path):
     return cfg_path
 
 
-def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
+def test_serve_cmd_should_run_round_when_ignore_schedule_flag_set(monkeypatch, tmp_path):
     """serve --ignore-schedule runs the round with no schedule_paused emitted,
     even though the configured pause window is active for the entire day."""
     cfg_path = _toml_with_always_pause(tmp_path)
@@ -129,8 +136,8 @@ def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
         return 0
 
     monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
-
     args = Namespace(config=cfg_path, once=True, max_rounds=None, ignore_schedule=True)
+
     rc = serve_cmd.cmd(args)
 
     assert rc == 0
@@ -138,9 +145,12 @@ def test_ignore_schedule_bypasses_gate_and_runs_round(monkeypatch, tmp_path):
     assert "schedule_paused" not in [e["event"] for e in _events(log_dir)]
 
 
-def test_ignore_schedule_defaults_to_false():
+def test_ignore_schedule_arg_should_default_to_false():
     """Without the flag, args.ignore_schedule is False so the gate stays armed."""
     args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml"])
+
     assert args.ignore_schedule is False
+
     args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml", "--ignore-schedule"])
+
     assert args.ignore_schedule is True

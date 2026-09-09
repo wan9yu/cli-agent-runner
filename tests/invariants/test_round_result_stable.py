@@ -31,14 +31,16 @@ REQUIRED_FIELDS: set[str] = {
 }
 
 
-def test_given_round_result_when_inspected_then_all_required_fields_present() -> None:
+def test_round_result_should_have_all_required_fields_when_inspected() -> None:
     actual = {f.name for f in fields(RoundResult)}
+
     missing = REQUIRED_FIELDS - actual
     assert not missing, f"RoundResult missing fields: {missing}"
 
 
-def test_given_round_result_when_inspected_then_simple_types_match() -> None:
+def test_round_result_should_have_matching_simple_types_when_inspected() -> None:
     hints = get_type_hints(RoundResult)
+
     assert hints["round_num"] is int
     assert hints["started_at"] is str
     assert hints["ended_at"] is str
@@ -51,15 +53,16 @@ def test_given_round_result_when_inspected_then_simple_types_match() -> None:
     assert typing.get_origin(hints["dirty_files"]) is list
 
 
-def test_given_round_result_when_inspected_then_phase_is_optional_str() -> None:
+def test_round_result_phase_should_be_optional_str_when_inspected() -> None:
     hints = get_type_hints(RoundResult)
+
     # `str | None` is a Union of (str, NoneType)
     args = typing.get_args(hints["phase"])
     assert str in args, f"phase should accept str, got {hints['phase']}"
     assert type(None) in args, f"phase should accept None, got {hints['phase']}"
 
 
-def test_given_round_result_when_constructed_then_frozen() -> None:
+def test_round_result_should_be_frozen_when_constructed() -> None:
     r = RoundResult(
         round_num=1,
         phase=None,
@@ -72,5 +75,6 @@ def test_given_round_result_when_constructed_then_frozen() -> None:
         dirty_files=[],
         stashed=False,
     )
+
     with pytest.raises(FrozenInstanceError):
         r.round_num = 99  # type: ignore[misc]

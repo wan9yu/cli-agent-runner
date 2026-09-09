@@ -21,26 +21,29 @@ def _md(group: str) -> list[tuple[str, str]]:
     return sorted((ep.name, ep.value) for ep in entry_points(group=group))
 
 
-def test_scanner_matches_importlib_metadata_per_group():
+def test_scanner_should_match_importlib_metadata_per_group():
     """scanner(sys.path, group) == entry_points(group) for every group we load --
     run on the dev venv's real (possibly stale) dist-info + in CI."""
     groups = (*_HOOK_GROUPS, "agent_runner.event_kinds", "agent_runner.detectors")
+
     for group in groups:
         scanned = sorted(_plugin_scan.scan_entry_points(sys.path, group))
         assert scanned == _md(group), f"parity drift in {group}: {scanned} != {_md(group)}"
 
 
-def test_scanner_hard_falls_back_to_metadata_on_parse_error(monkeypatch):
+def test_scanner_should_fall_back_to_metadata_when_parse_fails(monkeypatch):
     def boom(*a, **k):
         raise ValueError("corrupt entry_points.txt")
 
     monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", boom)
+
     # must not raise -- falls back to importlib.metadata
     out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+
     assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
 
 
-def test_env_override_forces_metadata_path_without_touching_the_scan(monkeypatch):
+def test_scanner_should_skip_file_scan_when_env_override_is_metadata(monkeypatch):
     """AGENT_RUNNER_PLUGIN_DISCOVERY=metadata must skip the file scan entirely,
     not merely fall back to it after a failed attempt."""
     monkeypatch.setenv("AGENT_RUNNER_PLUGIN_DISCOVERY", "metadata")
@@ -49,15 +52,19 @@ def test_env_override_forces_metadata_path_without_touching_the_scan(monkeypatch
         raise AssertionError("scan should not run when the env override is set")
 
     monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", must_not_run)
+
     out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+
     assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
 
 
-def test_env_override_absent_uses_the_scan(monkeypatch):
+def test_scanner_should_use_file_scan_when_env_override_is_absent(monkeypatch):
     """Sanity check for the previous test: without the override, the real scan
     path IS exercised (and still agrees with importlib.metadata)."""
     monkeypatch.delenv("AGENT_RUNNER_PLUGIN_DISCOVERY", raising=False)
+
     scanned = sorted(_plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks"))
+
     assert scanned == _md("agent_runner.post_round_hooks")
 
 
@@ -77,18 +84,20 @@ def _write_dup_dist_info(tmp_path, name="dup_name", group="agent_runner.post_rou
     return [str(site1), str(site2)]
 
 
-def test_scanner_dedups_by_name_first_sys_path_entry_wins(tmp_path):
+def test_scanner_should_prefer_first_sys_path_entry_when_names_collide(tmp_path):
     """Two dist-info dirs on different sys.path entries declaring the same
     plugin name in the same group: the earlier sys.path entry wins, and the
     name is not returned twice."""
     sys_path = _write_dup_dist_info(tmp_path)
+
     with pytest.warns(UserWarning):  # the collision itself is asserted below
         out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.post_round_hooks")
+
     matches = [pair for pair in out if pair[0] == "dup_name"]
     assert matches == [("dup_name", "pkg_a.mod:First")]
 
 
-def test_scanner_warns_when_dropping_a_duplicate_entry_point_name(tmp_path):
+def test_scanner_should_warn_when_dropping_a_duplicate_entry_point_name(tmp_path):
     """A dropped duplicate must stay operator-visible: the OLD importlib.metadata
     + ensure_unique path surfaced a UserWarning naming the plugin when two
     dist-infos declared the same entry_point name in the same group. The
@@ -111,7 +120,7 @@ def test_scanner_warns_when_dropping_a_duplicate_entry_point_name(tmp_path):
     )
 
 
-def test_scanner_discovers_third_party_style_dist_info(tmp_path):
+def test_scanner_should_discover_third_party_dist_info_entry_points(tmp_path):
     """A plugin registered via [project.entry-points] in an installed dist
     (simulated here as a bare dist-info dir on a synthetic sys.path entry)
     must still be discovered."""
@@ -122,10 +131,11 @@ def test_scanner_discovers_third_party_style_dist_info(tmp_path):
     )
 
     out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+
     assert ("third_party_detector", "thirdparty_plugin.mod:Detector") in out
 
 
-def test_scanner_discovers_legacy_egg_info(tmp_path):
+def test_scanner_should_discover_legacy_egg_info_entry_points(tmp_path):
     """A legacy setuptools egg-info install (pre-dist-info layout, same
     entry_points.txt format) must be found by the fast path too — not only
     via the importlib.metadata fallback."""
@@ -136,10 +146,11 @@ def test_scanner_discovers_legacy_egg_info(tmp_path):
     )
 
     out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+
     assert ("legacy_detector", "thirdparty_plugin.mod:Detector") in out
 
 
-def test_scanner_dist_info_wins_over_egg_info_same_sys_path_entry(tmp_path):
+def test_scanner_should_prefer_dist_info_over_egg_info_on_same_sys_path_entry(tmp_path):
     """When a single sys.path entry has BOTH a dist-info and an egg-info
     declaring the same name (e.g. a stale egg-info left behind by an
     upgrade), the dist-info entry wins — dist-info is scanned first."""
@@ -154,10 +165,11 @@ def test_scanner_dist_info_wins_over_egg_info_same_sys_path_entry(tmp_path):
 
     with pytest.warns(UserWarning):
         out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+
     assert [pair for pair in out if pair[0] == "same_name"] == [("same_name", "pkg.mod:New")]
 
 
-def test_scanner_preserves_mixed_case_entry_point_names(tmp_path):
+def test_scanner_should_preserve_mixed_case_entry_point_names(tmp_path):
     """configparser's default optionxform lowercases option keys -- an
     entry-point NAME like 'MyPlugin' would silently come back as 'myplugin',
     diverging from importlib.metadata (which preserves case). The scanner
@@ -169,11 +181,14 @@ def test_scanner_preserves_mixed_case_entry_point_names(tmp_path):
     )
 
     out = _plugin_scan.scan_entry_points([str(tmp_path)], "agent_runner.detectors")
+
     assert ("MyPlugin", "thirdparty_plugin.mod:Detector") in out
     assert not any(name == "myplugin" for name, _ in out)
 
 
-def test_malformed_entry_points_txt_falls_back_without_dropping_plugins(tmp_path, monkeypatch):
+def test_scanner_should_fall_back_to_metadata_when_entry_points_txt_is_malformed(
+    tmp_path, monkeypatch
+):
     """A real (not mocked) malformed entry_points.txt on sys.path must not
     silently drop plugins -- the hard fallback to importlib.metadata kicks in
     and the real, installed entries still come back."""
@@ -182,7 +197,8 @@ def test_malformed_entry_points_txt_falls_back_without_dropping_plugins(tmp_path
     dist_info.mkdir()
     # Not valid INI: a bare line with no section header.
     (dist_info / "entry_points.txt").write_text("this is not ini content\nno section header\n")
-
     sys_path = [str(tmp_path), *sys.path]
+
     out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.post_round_hooks")
+
     assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out

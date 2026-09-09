@@ -67,21 +67,23 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_timeout_s: int = 
     )
 
 
-def test_given_fake_agent_succeeds_when_round_runs_then_status_marks_completed(
+def test_round_should_mark_status_completed_when_fake_agent_succeeds(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
+
     result = run_one_round(cfg)
+
     assert result.exit_code == 0
     assert not result.timed_out
     status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
     assert status["last_exit_code"] == 0
 
 
-def test_given_fake_agent_leaves_dirty_tree_when_round_completes_then_orphan_stashed(
+def test_round_should_orphan_stash_dirty_tree_when_fake_agent_leaves_it_dirty(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
@@ -89,7 +91,9 @@ def test_given_fake_agent_leaves_dirty_tree_when_round_completes_then_orphan_sta
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
     cfg = _cfg(tmp_git_repo, fake_agent_script)
+
     result = run_one_round(cfg)
+
     assert result.exit_code == 0
     assert result.stashed is True
 
@@ -100,7 +104,7 @@ def test_given_fake_agent_leaves_dirty_tree_when_round_completes_then_orphan_sta
     assert ctx["orphan_stash"]["ref"].startswith("")  # SHA, not stash@{N}
 
 
-def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
+def test_round_should_be_killed_within_grace_when_fake_agent_hangs_past_timeout(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
@@ -109,9 +113,11 @@ def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
     # This is the one caller that WANTS a small round_timeout_s -- it's the
     # only test in this file actually exercising the timeout-kill path.
     cfg = _cfg(tmp_git_repo, fake_agent_script, round_timeout_s=5)
+
     start = time.time()
     result = run_one_round(cfg)
     elapsed = time.time() - start
+
     assert result.timed_out is True
     # Baseline ~5s (round_timeout_s=5; REAP_GRACE_S is never paid -- SIGTERM
     # kills bash+sleep immediately). Widened from 15 to 30 (2x, matching the
@@ -128,18 +134,20 @@ def test_given_fake_agent_hangs_when_timeout_exceeded_then_killed_within_grace(
     assert any(e["event"] == "round_timeout_kill" for e in events)
 
 
-def test_given_fake_agent_crashes_when_round_runs_then_exit_code_propagated(
+def test_round_should_propagate_exit_code_when_fake_agent_crashes(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "crash")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
+
     result = run_one_round(cfg)
+
     assert result.exit_code == 137
 
 
-def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_timeout_applied(
+def test_round_should_apply_phase_override_timeout_when_phase_has_override(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,
@@ -182,7 +190,7 @@ def test_given_phase_with_override_round_timeout_when_round_runs_then_resolved_t
     )
 
 
-def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
+def test_round_should_pass_agent_env_to_subprocess_when_cfg_has_env(
     tmp_git_repo: Path,
 ) -> None:
     """cfg.agent.env reaches the subprocess as env_extra -- no implicit injection."""
@@ -215,13 +223,14 @@ def test_given_agent_env_in_cfg_when_round_runs_then_env_visible_to_subprocess(
         vcs=VcsConfig(),
         phases=PhasesConfig(),
     )
+
     run_one_round(cfg)
 
     assert record.exists(), "fake agent didn't run -- check runner spawn path"
     assert "MY_FLAG=passed-through" in record.read_text()
 
 
-def test_given_relative_paths_when_round_runs_from_other_cwd_then_succeeds(
+def test_round_command_should_succeed_when_launched_from_a_different_cwd_with_relative_paths(
     tmp_path: Path,
 ) -> None:
     """Launching `agent-runner round` from CWD ≠ work_dir with relative TOML paths
@@ -271,5 +280,6 @@ def test_given_relative_paths_when_round_runs_from_other_cwd_then_succeeds(
         text=True,
         timeout=60,
     )
+
     assert result.returncode == 0, f"round failed: stderr={result.stderr}"
     assert "STARTUP FAIL" not in result.stderr
