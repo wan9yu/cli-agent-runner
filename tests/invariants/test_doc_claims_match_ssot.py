@@ -13,6 +13,7 @@ from pathlib import Path
 from agent_runner import defenses
 from agent_runner.builtin_plugins._constants import _5XX_STATUSES, _TAIL_LINES
 from agent_runner.cli import _build_parser
+from agent_runner.cli.common import PEEK_SCHEMA_VERSION
 from agent_runner.config import (
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
     _VALID_DIRTY_ACTIONS,
@@ -63,6 +64,7 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
         ("docs/architecture.md", r"（(\d+) 条）", defs),
         ("docs/architecture.md", r"(\d+) presets ship", presets),
         ("docs/commands.md", r"Runs the (\d+) detectors", detectors),
+        ("docs/commands.md", r"\(default\) \| (\d+) detectors \+ auto-stop \|", detectors),
         ("docs/commands.md", r"(\d+) 个动词", verbs),
         ("docs/commands.md", r"at a default (\d+)s interval", monitor_interval),
         ("docs/commands.md", r"remote_failure_tolerance_s` \(default (\d+)s\)", remote_tol),
@@ -93,6 +95,24 @@ def test_doc_counts_match_ssot(tmp_path) -> None:
             if int(m) != expected:
                 failures.append(f"{fname}: claim '{m}' for {pattern!r} should be {expected}")
     assert not failures, "doc count drift:\n" + "\n".join(failures)
+
+
+def test_plugins_md_schema_version_matches_ssot() -> None:
+    """`docs/plugins.md` hand-copies the `peek --json` `schema_version` field into two
+    illustrative JSON snippets (too abbreviated — they use `...` placeholders — to host
+    a gen-block). Pin both copies to the real constant so a version bump doesn't leave a
+    stale doc example, per CONTRIBUTING.md's "never hand-copy the value" rule."""
+    text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
+    found = re.findall(r'"schema_version":\s*"([\d.]+)"', text)
+    assert len(found) >= 2, (
+        f"docs/plugins.md: expected >= 2 schema_version examples, found {len(found)} "
+        "(reworded? update this test)"
+    )
+    mismatches = {v for v in found if v != PEEK_SCHEMA_VERSION}
+    assert not mismatches, (
+        f"docs/plugins.md schema_version example(s) {mismatches} != "
+        f"PEEK_SCHEMA_VERSION {PEEK_SCHEMA_VERSION!r}"
+    )
 
 
 def _backtick_quoted_tokens(line: str) -> set[str]:
