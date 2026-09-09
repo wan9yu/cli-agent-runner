@@ -70,11 +70,13 @@ def _emit_round_cgroup_memory(
     cgroup read are available together, so detecting an OOM-kill never needs
     a second sysfs read. Both are ``({}, None)`` (no emit) when this host has
     no finite cgroup bound -- ``_spawn_round`` never stashes state in that
-    case -- when the bounding cgroup is no longer readable at round end
-    (``cur`` empty: it vanished or became unbounded mid-round), or when the
-    STARTING ``memory.events`` read failed (``baseline_events`` empty). The
-    middle case must skip the emit rather than write all-zero deltas against
-    a now-stale ``bounding_cgroup_path`` -- that would misreport "no
+    case -- when the bounding ancestor directory has vanished by round end
+    (``cur`` empty: renamed/removed mid-round -- a still-existing directory
+    is read at face value even if it became unbounded, since the cached
+    ``bounding_cgroup`` read skips the memory.max walk that would notice),
+    or when the STARTING ``memory.events`` read failed (``baseline_events``
+    empty). The middle case must skip the emit rather than write all-zero
+    deltas against a now-stale ``bounding_cgroup_path`` -- that would misreport "no
     pressure" when the truth is "can no longer tell"; the last case must
     skip it rather than diff against zero, which would report the cumulative
     since-cgroup-creation counter as this round's delta."""

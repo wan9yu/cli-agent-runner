@@ -398,6 +398,18 @@ def cgroup_memory_usage(
     try:
         if bounding_cgroup is not None:
             bounding = bounding_cgroup
+            base = root / bounding.lstrip("/")
+            if not base.is_dir():
+                # The cached ancestor from an earlier read in this round is
+                # gone (renamed/removed mid-round). Without this check we'd
+                # fall through to reading memory.current etc. below, which
+                # return 0/{} for a MISSING path -- a truthy all-zero dict
+                # that looks like "no pressure" instead of "can no longer
+                # tell". Report the same "can no longer tell" `{}` the
+                # un-cached path already returns when nothing bounds the
+                # process, so callers (`_emit_round_cgroup_memory`) skip
+                # instead of emitting a stale, misleading zero delta.
+                return {}
         else:
             resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
             if resolved is None:
@@ -406,7 +418,7 @@ def cgroup_memory_usage(
             bounding = _bounding_ancestor_path(root, ancestors)
             if bounding is None:
                 return {}
-        base = root / bounding.lstrip("/")
+            base = root / bounding.lstrip("/")
     except OSError:
         return {}
     return {

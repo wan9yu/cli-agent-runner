@@ -39,6 +39,35 @@ def test_cgroup_memory_usage_empty_when_no_cgroup_v2(tmp_path):
     assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
 
 
+def test_cgroup_memory_usage_with_bounding_cgroup_reads_cached_path(tmp_path):
+    """The ``bounding_cgroup`` fast path (a caller's own earlier-resolved
+    ancestor, e.g. a mid-round tick reusing _spawn_round's round-start read)
+    skips the ancestor walk entirely and reads straight from the given path
+    -- ``self_cgroup``/``proc_self_cgroup`` are irrelevant here and left at
+    their defaults."""
+    _tree(tmp_path)
+    usage = metrics.cgroup_memory_usage(root=tmp_path, bounding_cgroup="/user.slice")
+    assert usage["memory_current"] == 300000000
+    assert usage["memory_swap_current"] == 100000000
+    assert usage["memory_events"] == {"high": 12, "max": 3, "oom": 1, "oom_kill": 2}
+    assert usage["cgroup_path"] == "/user.slice"
+
+
+def test_cgroup_memory_usage_with_bounding_cgroup_empty_when_ancestor_vanished(tmp_path):
+    """A cached ``bounding_cgroup`` whose directory no longer exists (renamed
+    or removed mid-round) must report the same "can no longer tell" ``{}``
+    the un-cached path returns when nothing bounds the process -- NOT a
+    truthy all-zero dict, which would let ``_emit_round_cgroup_memory`` emit
+    a misleading zero-pressure delta against a stale path (the bug this
+    guard fixes: the fast path used to skip straight to reading
+    memory.current/memory.swap.current/memory.events, all of which report
+    0/{} for a MISSING path, without ever checking the directory itself
+    still exists)."""
+    (tmp_path / "cgroup.controllers").write_text("memory\n")
+    # Deliberately no "vanished.slice" dir under tmp_path.
+    assert metrics.cgroup_memory_usage(root=tmp_path, bounding_cgroup="/vanished.slice") == {}
+
+
 def test_cgroup_memory_usage_fails_open_on_os_error(tmp_path, monkeypatch):
     """A non-ENOENT stat error (EACCES/EIO on a flaky sysfs) must not
     propagate: this runs inside _spawn_round's mid-round tick loop, whose
