@@ -44,6 +44,7 @@ from agent_runner._throttle import (
     pending_recovered,
     round_had_no_progress,
 )
+from agent_runner.agent_runtime import _kill_stray_descendants, _live_children
 from agent_runner.api import (
     emit_config_broken,
     emit_crash_loop,
@@ -197,7 +198,20 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     Fail-open: a D-state (uninterruptible-sleep) leader can outlive even a killpg
     SIGKILL, so the post-killpg wait is also guarded -- this must never raise
     TimeoutExpired back into a caller (_spawn_round's own ``except BaseException``
-    calls this again on the way out), which would escape ``cmd()`` unclassified."""
+    calls this again on the way out), which would escape ``cmd()`` unclassified.
+
+    The killpg escalation ALSO reaps any live descendant that ``setsid()``'d off
+    the leader's own process group (POSIX ``setsid()`` changes pgid+sid but NOT
+    ppid, so it sits outside ``os.killpg(proc.pid, ...)``'s reach) via
+    ``agent_runtime._kill_stray_descendants`` -- the cooperative path (leader
+    exits inside the grace window) needs no extra handling here: the leader's
+    own SIGTERM handler already drives ``agent_runtime._kill_pgroup`` for its
+    agent child, which carries the same descendant coverage. The snapshot is
+    taken up front, before ``.terminate()``, while the leader (and hence its
+    process subtree) is still guaranteed resolvable -- once it exits, a
+    detached descendant is reparented to init and is no longer reachable by
+    walking down from the leader's (by then vacated, possibly reused) pid."""
+    stray, _ignored = _live_children(proc)
     proc.terminate()
     try:
         return proc.wait(timeout=_ROUND_TERM_GRACE_S)
@@ -206,6 +220,7 @@ def _terminate_round(proc: subprocess.Popen) -> int:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
             pass
+        _kill_stray_descendants(stray)
         try:
             return proc.wait(timeout=10)
         except subprocess.TimeoutExpired:

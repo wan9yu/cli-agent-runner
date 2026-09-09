@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -162,3 +163,70 @@ def test_sigterm_during_round_drains_and_reaps_agent_pgroup(tmp_path):
             break
         time.sleep(0.1)
     assert not _alive(pid), "agent child was orphaned when SIGTERM interrupted the round"
+
+
+def _write_detach_script(path: Path, pid_file: Path, sleep_s: int = 60) -> None:
+    """A script that setsid()s itself (POSIX: pgid+sid change, ppid unchanged)
+    then records its own pid and sleeps -- models a supervised CLI's own
+    tty-detach (gemini-cli's detach_from_tty; Claude Code observably:
+    anthropics/claude-code #88918/#89275/#91879/#72308 -- a parent/child pair
+    holding fds long after the task ended). Its ppid stays pointed at the
+    round leader the whole time, but it leaves the leader's process GROUP,
+    so os.killpg(leader_pgid, ...) alone never reaches it."""
+    path.write_text(
+        "import os, time\n"
+        "os.setsid()\n"
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        f"time.sleep({sleep_s})\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.timeout(90)
+def test_kill_pgroup_reaps_detached_descendant(tmp_path):
+    """B(orphan): a round leader whose child setsid()s off the leader's own
+    process group (POSIX setsid() changes pgid+sid but NOT ppid) sits outside
+    the pgroup `run`'s timeout path killpg's -- before this fix, that
+    descendant survived the round's hard-kill, orphaned. `agent_runtime.
+    _live_children` (ppid-based, psutil children(recursive=True)) already
+    discovers it for the grace busy-check; `_kill_pgroup` must ALSO use that
+    walk to target the descendant's own pgid at the hard-kill step.
+
+    timeout_s is generous (well above typical Python startup cost) so the
+    detached grandchild reliably exists before the round's wall-clock
+    ceiling trips -- a tight bound here would flake under oversubscription,
+    not test the fix."""
+    grandchild_pid_file = tmp_path / "grandchild.pid"
+    detach_py = tmp_path / "detach.py"
+    _write_detach_script(detach_py, grandchild_pid_file)
+    leader_py = tmp_path / "leader.py"
+    leader_py.write_text(
+        "import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, {str(detach_py)!r}])\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+
+    result = run(
+        work_dir=tmp_path,
+        command=[sys.executable, str(leader_py)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+    )
+    assert result.timed_out
+
+    for _ in range(150):
+        if grandchild_pid_file.exists() and grandchild_pid_file.read_text().strip():
+            break
+        time.sleep(0.1)
+    assert grandchild_pid_file.exists(), "detached grandchild never recorded its pid"
+    gc_pid = int(grandchild_pid_file.read_text())
+
+    for _ in range(150):
+        if not _alive(gc_pid):
+            break
+        time.sleep(0.1)
+    assert not _alive(gc_pid), "detached descendant was orphaned by the timeout hard-kill"

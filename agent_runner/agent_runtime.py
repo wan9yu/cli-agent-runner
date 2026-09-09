@@ -69,6 +69,38 @@ def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str)
     return list(command) + [a.replace("{prompt}", prompt) for a in prompt_arg_template]
 
 
+def _kill_stray_descendants(descendants: list[dict]) -> None:
+    """Hard-kill each descendant's OWN process group. Covers a descendant
+    that ``setsid()``'d off the leader's pgroup (POSIX ``setsid()`` changes
+    pgid+sid but NOT ppid), so it sits outside whatever pgroup the caller
+    just SIGKILLed and is otherwise left running -- orphaned, not reaped.
+    ``descendants`` is an earlier ``_live_children(proc)`` snapshot (see the
+    callers: it MUST be taken before the leader can die, because once it
+    does, a detached descendant is reparented to init and is no longer
+    reachable by walking down from the leader's — by then vacated, possibly
+    reused — pid). Each entry may already be dead by now (fine, swallowed)
+    or may share the leader's own pgid (already SIGKILLed by the caller —
+    redundant, harmless).
+
+    Defense-in-depth self-guard: never signal agent-runner's OWN process
+    group, even though ``_live_children`` is rooted at the round child (a
+    strict downward walk from ITS pid) and so cannot structurally reach
+    upward to the supervisor."""
+    own_pgid = os.getpgrp()
+    for entry in descendants:
+        pid = entry["pid"]
+        try:
+            dpgid = os.getpgid(pid)
+        except OSError:
+            continue  # already gone
+        if dpgid == own_pgid:
+            continue  # never signal agent-runner's own group
+        try:
+            os.killpg(dpgid, signal.SIGKILL)
+        except OSError:
+            pass  # already gone, or the group leader raced us to exit
+
+
 def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
     the round-timeout path and ``run``'s BaseException handler (which fires on
@@ -78,8 +110,15 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     first), so a re-entrant SIGTERM during the grace sleep below raises HERE —
     shielded (caught and retried) so the SIGKILL escalation always runs. An
     operator's impatient double-kill must not leave the agent outliving the
-    grace period unreaped."""
+    grace period unreaped.
+
+    Also reaps any live descendant that detached to its own process group
+    (see ``_kill_stray_descendants``) — the pgroup SIGKILL above only ever
+    reaches ``pgid``, never a ``setsid()``'d-off descendant. The snapshot is
+    taken up front, before the SIGTERM, while the leader (and hence its
+    process subtree) is still guaranteed resolvable."""
     pgid = proc.pid
+    stray, _ignored = _live_children(proc)
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
@@ -96,6 +135,7 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
+    _kill_stray_descendants(stray)
     while True:
         try:
             proc.wait(timeout=10)
