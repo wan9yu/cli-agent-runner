@@ -114,6 +114,7 @@ your laptop closed. Full relay + SSH-trust mechanics:
 - [`docs/configuration.md`](docs/configuration.md) — `agent-runner.toml` schema
 - [`docs/runbook.md`](docs/runbook.md) — operator troubleshooting (OAuth, disk, orphan)
 - [`docs/architecture.md`](docs/architecture.md) — 3-layer model, defenses-as-data
+- [`docs/memory-efficiency.md`](docs/memory-efficiency.md) — supervisor memory footprint, measured release over release
 
 ## Development
 
