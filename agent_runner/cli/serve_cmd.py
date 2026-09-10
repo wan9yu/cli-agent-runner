@@ -29,6 +29,7 @@ from agent_runner._throttle import (
     round_outcome,
     round_was_mem_terminated,
 )
+from agent_runner.agent_runtime import _detect_container_run
 from agent_runner.api import (
     check_self_terminated_sentinel,
     emit_config_broken,
@@ -611,7 +612,9 @@ def cmd(args) -> int:
         return fail_code
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     work_dir = cfg.runtime.work_dir
-    defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir)
+    defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir) and (
+        _detect_container_run(cfg.agent.spawn_command(cfg.runtime.work_dir)) is None
+    )
     rounds_completed = 0
     # Three independent consecutive-failure counters, one per breaker: b12
     # crash-loop (unknown short crashes), mem-loop (mem-terminated
