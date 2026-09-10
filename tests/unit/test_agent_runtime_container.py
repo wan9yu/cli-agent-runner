@@ -130,8 +130,12 @@ def test_command_has_cidfile_flag_should_catch_operator_cidfile_past_untabled_fl
 def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
     """A fake docker/podman stub: `run` parses --cidfile out of its argv and,
     when $WRITE_CID=1, writes a fixed fake container id there before sleeping
-    (simulating a long-running foreground container); `stop <id>` appends the
-    id to $STOP_LOG and exits 0 (simulating a successful container stop).
+    (simulating a long-running foreground container); `stop [-t <n>] <id>`
+    extracts the id as its last positional arg (robust to the `-t <n>`
+    grace-period prefix), appends it to $STOP_LOG and exits 0 (simulating a
+    successful stop) -- unless $STOP_NO_CONTAINER=1, in which case it prints
+    "No such container" to stderr and exits 1 instead (simulating a `--rm`
+    container that already self-removed before our stop landed).
     """
     script = bin_dir / name
     script.write_text(
@@ -148,13 +152,52 @@ def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
         "  fi\n"
         "  sleep 60\n"
         'elif [ "$1" = "stop" ]; then\n'
-        '  printf \'%s\\n\' "$2" >> "$STOP_LOG"\n'
+        '  cid="${@: -1}"\n'
+        '  if [ "$STOP_NO_CONTAINER" = "1" ]; then\n'
+        "    printf 'Error: No such container: %s\\n' \"$cid\" >&2\n"
+        "    exit 1\n"
+        "  fi\n"
+        '  printf \'%s\\n\' "$cid" >> "$STOP_LOG"\n'
         "  exit 0\n"
         "fi\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
     return script
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(60)
+def test_container_stop_should_report_success_when_container_already_removed(tmp_path, monkeypatch):
+    """A `--rm` container can self-remove before our best-effort `stop` runs
+    against it -- the runtime then reports "no such container" rather than
+    stopping anything. That is not a failure to warn loudly about: the
+    container is already gone, so the verdict must be a success, not a false
+    "stop failed"."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "docker")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("WRITE_CID", "1")
+    monkeypatch.setenv("STOP_NO_CONTAINER", "1")  # simulate --rm self-removal before our stop
+    stop_log = tmp_path / "stop.log"
+    monkeypatch.setenv("STOP_LOG", str(stop_log))
+
+    calls: list[tuple[str, str | None, bool | None]] = []
+    result = run(
+        command=["docker", "run", "--rm", "some-agent-image"],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        work_dir=tmp_path,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+        on_container_orphan_risk=lambda *a: calls.append(a),
+    )
+
+    assert result.timed_out is True
+    assert calls == [("docker", "fakecid123", True)]  # already-gone → success, NOT a false failure
+    assert not stop_log.exists()  # pins the exit-1 (already-gone) path, not the exit-0 success path
 
 
 @pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto

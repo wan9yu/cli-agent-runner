@@ -479,10 +479,12 @@ def _best_effort_container_stop(
     ``(container_id, stop_ok)``: `container_id` is None when no id could be
     recovered (the container never actually started, or the cidfile is still
     empty) -- `stop_ok` is then also None, meaning no stop was attempted.
-    Otherwise `stop_ok` is whether the `stop` subprocess exited zero. Every
-    failure here is swallowed -- this is advisory best-effort, never a
-    guarantee; the caller's loud warning + event is the actual floor when
-    this doesn't land."""
+    Otherwise `stop_ok` is True when the `stop` subprocess exited zero, or
+    when it failed because the container was already gone (a `--rm`
+    container can self-remove before our stop lands -- that's not a failure
+    to report). Every other failure here is swallowed -- this is advisory
+    best-effort, never a guarantee; the caller's loud warning + event is the
+    actual floor when this doesn't land."""
     if cidfile is None:
         return None, None
     try:
@@ -492,13 +494,19 @@ def _best_effort_container_stop(
     if not cid:
         return None, None
     try:
+        # timeout bounded to REAP_GRACE_S + 5 (10s) <= _ROUND_TERM_GRACE_S (15s)
+        # so serve's round-terminate escalation never SIGKILLs round_cmd mid-stop.
         result = subprocess.run(
-            [runtime, "stop", cid],
+            [runtime, "stop", "-t", str(REAP_GRACE_S), cid],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
+            stderr=subprocess.PIPE,
+            timeout=REAP_GRACE_S + 5,
         )
-        return cid, result.returncode == 0
+        if result.returncode == 0:
+            return cid, True
+        # A `--rm` container that already exited is GONE, not orphaned — not a failure.
+        stderr = (result.stderr or b"").decode("utf-8", "replace").lower()
+        return cid, "no such container" in stderr
     except (OSError, subprocess.TimeoutExpired):
         return cid, False
 
