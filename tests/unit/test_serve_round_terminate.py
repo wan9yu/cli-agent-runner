@@ -35,10 +35,10 @@ def test_terminate_round_should_return_sentinel_when_leader_is_dstate(monkeypatc
     killpg_calls = []
     monkeypatch.setattr(_serve_round.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
     # The fake pid 4242 must never reach a real psutil.Process() lookup: on a host
-    # where 4242 is a live daemon (CI, the Pi hosts), _live_children could return
-    # actual descendants and _kill_stray_descendants would fire a stray killpg,
-    # breaking the killpg_calls assertion below. Stub the descendant snapshot empty.
-    monkeypatch.setattr(_serve_round, "_live_children", lambda proc: ([], []))
+    # where 4242 is a live daemon (CI, the Pi hosts), the descendant snapshot could
+    # return actual descendants and _kill_stray_descendants would fire a stray
+    # killpg, breaking the killpg_calls assertion below. Stub the snapshot empty.
+    monkeypatch.setattr(_serve_round, "_snapshot_stray_descendants", lambda proc: [])
 
     rc = _serve_round._terminate_round(_WedgedProc())
 

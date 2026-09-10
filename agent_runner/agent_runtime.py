@@ -127,6 +127,17 @@ def _kill_stray_descendants(descendants: list[dict]) -> None:
             pass  # already gone, or the group leader raced us to exit
 
 
+def _snapshot_stray_descendants(proc: subprocess.Popen) -> list[dict]:
+    """Snapshot the leader's live descendants with each one's pgid captured, for
+    ``_kill_stray_descendants`` to reap at the hard-kill step. MUST be called
+    while the leader (and hence its subtree) is still alive -- both reap sites
+    (``_kill_pgroup`` and ``cli/_serve_round._terminate_round``) open with it, so
+    the capture-before-signal ordering lives in ONE place, not copy-pasted."""
+    stray, _ignored = _live_children(proc)
+    _capture_descendant_pgids(stray)
+    return stray
+
+
 def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
     the round-timeout path and ``run``'s BaseException handler (which fires on
@@ -144,8 +155,7 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     taken up front, before the SIGTERM, while the leader (and hence its
     process subtree) is still guaranteed resolvable."""
     pgid = proc.pid
-    stray, _ignored = _live_children(proc)
-    _capture_descendant_pgids(stray)  # while the leader (subtree) is still alive
+    stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:

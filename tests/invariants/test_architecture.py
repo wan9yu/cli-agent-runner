@@ -91,10 +91,7 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
 }
 ALLOWED_SERVE_ROUND_FROM = [
     ("agent_runner", {"host_health", "metrics"}),
-    (
-        "agent_runner.agent_runtime",
-        {"_capture_descendant_pgids", "_kill_stray_descendants", "_live_children"},
-    ),
+    ("agent_runner.agent_runtime", {"_kill_stray_descendants", "_snapshot_stray_descendants"}),
     (
         "agent_runner._serve_policy",
         {

@@ -44,11 +44,7 @@ from agent_runner._throttle import (
     pending_recovered,
     round_had_no_progress,
 )
-from agent_runner.agent_runtime import (
-    _capture_descendant_pgids,
-    _kill_stray_descendants,
-    _live_children,
-)
+from agent_runner.agent_runtime import _kill_stray_descendants, _snapshot_stray_descendants
 from agent_runner.api import (
     emit_config_broken,
     emit_crash_loop,
@@ -215,8 +211,7 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     process subtree) is still guaranteed resolvable -- once it exits, a
     detached descendant is reparented to init and is no longer reachable by
     walking down from the leader's (by then vacated, possibly reused) pid."""
-    stray, _ignored = _live_children(proc)
-    _capture_descendant_pgids(stray)  # while the leader (subtree) is still alive
+    stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     proc.terminate()
     try:
         return proc.wait(timeout=_ROUND_TERM_GRACE_S)
