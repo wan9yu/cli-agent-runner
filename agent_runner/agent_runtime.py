@@ -69,18 +69,40 @@ def _build_argv(command: list[str], prompt_arg_template: list[str], prompt: str)
     return list(command) + [a.replace("{prompt}", prompt) for a in prompt_arg_template]
 
 
+def _capture_descendant_pgids(descendants: list[dict]) -> None:
+    """Record each descendant's CURRENT pgid into its snapshot entry (as
+    ``entry["pgid"]``), called by the reap callers WHILE the leader — and hence
+    the whole subtree — is still alive and resolvable. ``_kill_stray_descendants``
+    later signals this CAPTURED pgid and re-verifies it against the live pgid, so
+    a descendant's pid that is freed during the grace window and reused by an
+    unrelated process cannot cause a wrong-group SIGKILL. An entry already gone at
+    capture time gets ``pgid=None`` and is skipped at kill."""
+    for entry in descendants:
+        try:
+            entry["pgid"] = os.getpgid(entry["pid"])
+        except OSError:
+            entry["pgid"] = None  # already gone
+
+
 def _kill_stray_descendants(descendants: list[dict]) -> None:
     """Hard-kill each descendant's OWN process group. Covers a descendant
     that ``setsid()``'d off the leader's pgroup (POSIX ``setsid()`` changes
     pgid+sid but NOT ppid), so it sits outside whatever pgroup the caller
     just SIGKILLed and is otherwise left running -- orphaned, not reaped.
-    ``descendants`` is an earlier ``_live_children(proc)`` snapshot (see the
-    callers: it MUST be taken before the leader can die, because once it
-    does, a detached descendant is reparented to init and is no longer
-    reachable by walking down from the leader's — by then vacated, possibly
-    reused — pid). Each entry may already be dead by now (fine, swallowed)
-    or may share the leader's own pgid (already SIGKILLed by the caller —
-    redundant, harmless).
+    ``descendants`` is an earlier ``_live_children(proc)`` snapshot whose pgids
+    were captured by ``_capture_descendant_pgids`` while the leader was still
+    alive (see the callers: the snapshot MUST be taken before the leader can die,
+    because once it does, a detached descendant is reparented to init and is no
+    longer reachable by walking down from the leader's — by then vacated, possibly
+    reused — pid). Each entry may already be dead by now (fine, swallowed) or may
+    share the leader's own pgid (already SIGKILLed by the caller — redundant,
+    harmless).
+
+    pid-reuse safety: we signal the CAPTURED pgid, not a freshly-derived one, and
+    only after confirming ``os.getpgid(pid)`` STILL equals it. If the descendant's
+    pid was freed during the grace window and reused by an unrelated process, its
+    live pgid no longer matches the capture, so we skip it — a reused pid can never
+    steer the SIGKILL onto the wrong group.
 
     Defense-in-depth self-guard: never signal agent-runner's OWN process
     group, even though ``_live_children`` is rooted at the round child (a
@@ -89,14 +111,18 @@ def _kill_stray_descendants(descendants: list[dict]) -> None:
     own_pgid = os.getpgrp()
     for entry in descendants:
         pid = entry["pid"]
-        try:
-            dpgid = os.getpgid(pid)
-        except OSError:
-            continue  # already gone
-        if dpgid == own_pgid:
+        spgid = entry.get("pgid")
+        if spgid is None:
+            continue  # gone at capture time (or capture skipped) — nothing to target
+        if spgid == own_pgid:
             continue  # never signal agent-runner's own group
         try:
-            os.killpg(dpgid, signal.SIGKILL)
+            if os.getpgid(pid) != spgid:
+                continue  # pid reused (or re-setsid'd) since capture — wrong target, skip
+        except OSError:
+            continue  # already gone
+        try:
+            os.killpg(spgid, signal.SIGKILL)
         except OSError:
             pass  # already gone, or the group leader raced us to exit
 
@@ -119,6 +145,7 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     process subtree) is still guaranteed resolvable."""
     pgid = proc.pid
     stray, _ignored = _live_children(proc)
+    _capture_descendant_pgids(stray)  # while the leader (subtree) is still alive
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
@@ -580,6 +607,21 @@ def run(
                 container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing one
                 container_cidfile_is_ours = True
                 spawn_command = _inject_cidfile(command, run_idx, container_cidfile)
+
+    # Fire-once guard for the "called exactly once" contract above: a re-entrant
+    # SIGTERM during _terminate_agent's best-effort container stop can escape into
+    # the BaseException handler, which reaps a SECOND time -- without this the
+    # orphan warn+event would fire twice for one round. Flag set BEFORE the call so
+    # an interrupt mid-callback can't re-fire it either.
+    _orphan_reported = False
+
+    def _report_orphan_once(runtime: str, cid: str | None, stop_ok: bool | None) -> None:
+        nonlocal _orphan_reported
+        if _orphan_reported or on_container_orphan_risk is None:
+            return
+        _orphan_reported = True
+        on_container_orphan_risk(runtime, cid, stop_ok)
+
     # Defense-in-depth: config validation already rejects {prompt} in the
     # template for stdin mode, but run() must be safe even if called
     # directly with a mismatched template. In stdin mode, never substitute
@@ -642,7 +684,7 @@ def run(
                     clock,
                     container_runtime=container_runtime,
                     container_cidfile=container_cidfile,
-                    on_container_orphan_risk=on_container_orphan_risk,
+                    on_container_orphan_risk=_report_orphan_once,
                 )
                 duration = clock.monotonic() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
@@ -682,7 +724,7 @@ def run(
                             clock,
                             container_runtime=container_runtime,
                             container_cidfile=container_cidfile,
-                            on_container_orphan_risk=on_container_orphan_risk,
+                            on_container_orphan_risk=_report_orphan_once,
                         )
                         duration = clock.monotonic() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
@@ -722,7 +764,7 @@ def run(
                 clock,
                 container_runtime=container_runtime,
                 container_cidfile=container_cidfile,
-                on_container_orphan_risk=on_container_orphan_risk,
+                on_container_orphan_risk=_report_orphan_once,
             )
         raise
     finally:

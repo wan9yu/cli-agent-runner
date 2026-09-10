@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.agent_runtime import run
+from agent_runner.agent_runtime import (
+    _capture_descendant_pgids,
+    _kill_stray_descendants,
+    run,
+)
 
 
 def _alive(pid: int) -> bool:
@@ -183,6 +187,10 @@ def _write_detach_script(path: Path, pid_file: Path, sleep_s: int = 60) -> None:
     )
 
 
+@pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): a double-nested
+# python launch racing the round's wall-clock kill is load-sensitive under >=2
+# concurrent gates -- run it with no competing xdist workers rather than betting
+# the grandchild's setsid+pidfile write always beats the kill under contention.
 @pytest.mark.timeout(90)
 def test_detached_descendant_should_be_reaped_when_pgroup_is_killed(tmp_path):
     """B(orphan): a round leader whose child setsid()s off the leader's own
@@ -213,7 +221,7 @@ def test_detached_descendant_should_be_reaped_when_pgroup_is_killed(tmp_path):
         command=[sys.executable, str(leader_py)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=5,
+        timeout_s=15,  # serial + generous: the grandchild must be captured before the kill
         log_path=tmp_path / "round.log",
         env_extra={},
     )
@@ -231,3 +239,61 @@ def test_detached_descendant_should_be_reaped_when_pgroup_is_killed(tmp_path):
             break
         time.sleep(0.1)
     assert not _alive(gc_pid), "detached descendant was orphaned by the timeout hard-kill"
+
+
+def test_capture_descendant_pgids_should_record_none_when_pid_already_gone(monkeypatch):
+    def fake_getpgid(pid):
+        if pid == 100:
+            return 4242
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "getpgid", fake_getpgid)
+    entries = [{"name": "a", "pid": 100}, {"name": "b", "pid": 200}]
+
+    _capture_descendant_pgids(entries)
+
+    assert entries[0]["pgid"] == 4242
+    assert entries[1]["pgid"] is None
+
+
+def test_kill_stray_descendants_should_signal_captured_pgid_when_pid_still_maps_to_it(monkeypatch):
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "getpgrp", lambda: 999)
+    monkeypatch.setattr(os, "getpgid", lambda pid: 4242)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+
+    _kill_stray_descendants([{"name": "c", "pid": 100, "pgid": 4242}])
+
+    assert killed == [(4242, signal.SIGKILL)]
+
+
+def test_kill_stray_descendants_should_skip_when_pid_reused_into_a_different_pgid(monkeypatch):
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "getpgrp", lambda: 999)
+    monkeypatch.setattr(os, "getpgid", lambda pid: 7777)  # captured 4242, now 7777 -> pid reused
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+
+    _kill_stray_descendants([{"name": "c", "pid": 100, "pgid": 4242}])
+
+    assert killed == []  # live pgid != captured -> never steer SIGKILL onto the wrong group
+
+
+def test_kill_stray_descendants_should_skip_when_captured_pgid_is_supervisors_own(monkeypatch):
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "getpgrp", lambda: 4242)  # supervisor's own group
+    monkeypatch.setattr(os, "getpgid", lambda pid: 4242)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+
+    _kill_stray_descendants([{"name": "c", "pid": 100, "pgid": 4242}])
+
+    assert killed == []  # never signal agent-runner's own process group
+
+
+def test_kill_stray_descendants_should_skip_when_pgid_was_none_at_capture(monkeypatch):
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "getpgrp", lambda: 999)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+
+    _kill_stray_descendants([{"name": "c", "pid": 100, "pgid": None}])
+
+    assert killed == []  # gone at capture time -> nothing to target

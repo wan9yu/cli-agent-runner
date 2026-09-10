@@ -56,6 +56,8 @@ def _alive(pid: int) -> bool:
     return True
 
 
+@pytest.mark.serial  # real-subprocess reap timing (0.2.19 lesson): consistent with
+# its agent_runtime reap twin -- keep it off the parallel gate's oversubscription.
 @pytest.mark.timeout(90)
 def test_terminate_round_should_reap_detached_descendant_when_leader_ignores_sigterm(
     tmp_path: Path, monkeypatch

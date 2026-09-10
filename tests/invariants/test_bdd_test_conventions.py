@@ -50,53 +50,67 @@ def test_every_test_should_carry_should_in_its_name() -> None:
     )
 
 
-_SECTION_LABEL = re.compile(r"#\s*(given|when|then|arrange|act|assert)\b", re.IGNORECASE)
+# A STANDALONE section-label comment only: the label word optionally with a
+# trailing colon, and nothing else on the comment. This catches `# given`,
+# `# Then:`, `result = x  # act` -- but NOT ordinary rationale prose that merely
+# starts with one of these words (`# given the file is large, we...`), which is a
+# legitimate comment, not a section marker.
+_SECTION_LABEL = re.compile(r"#\s*(given|when|then|arrange|act|assert)\s*:?\s*$", re.IGNORECASE)
 
 
 def test_test_bodies_should_omit_section_label_comments() -> None:
+    # Scan the whole function span (node.lineno..end_lineno), not from the first
+    # BODY statement -- a `# given` sitting between the signature and the first
+    # statement (or before a docstring) must not slip through.
     offenders: list[str] = []
     for f, node, src in _test_functions():
         lines = src.splitlines()
-        for i in range(node.body[0].lineno - 1, node.end_lineno):
+        for i in range(node.lineno - 1, node.end_lineno):
             if _SECTION_LABEL.search(lines[i]):
                 offenders.append(f"{f.relative_to(TESTS.parent)}:{i + 1}: {lines[i].strip()}")
 
     assert not offenders, (
         "test bodies must use blank-line grouping, not section-label comments "
-        "(no `# given` / `# when` / `# then` / `# arrange` / `# act` / `# assert`):\n"
+        "(no standalone `# given` / `# when` / `# then` / `# arrange` / `# act` / `# assert`):\n"
         + "\n".join(offenders)
     )
 
 
-def _body_start_line(node: ast.FunctionDef) -> int:
-    first = node.body[0]
+def _body_statements(node: ast.FunctionDef) -> list[ast.stmt]:
+    """Top-level statements of the test body, minus a leading docstring. A single
+    multi-line literal, or one for/with/if block, is ONE statement here -- so line
+    count never inflates a cohesive test into a false 'wall'."""
+    stmts = node.body
     if (
-        isinstance(first, ast.Expr)
-        and isinstance(first.value, ast.Constant)
-        and isinstance(first.value.value, str)
+        stmts
+        and isinstance(stmts[0], ast.Expr)
+        and isinstance(stmts[0].value, ast.Constant)
+        and isinstance(stmts[0].value.value, str)
     ):
-        return first.end_lineno + 1  # skip a leading docstring
-    return node.body[0].lineno
+        stmts = stmts[1:]
+    return stmts
 
 
 def test_nontrivial_test_bodies_should_be_grouped_with_blank_lines() -> None:
-    # A body of >=10 code lines with zero blank-line grouping is a wall; the
-    # convention wants given/when/then separated by blank lines. The threshold
-    # stays generous so short tests and single cohesive loops (a for-loop with an
-    # inline assert has no natural blank point) never trip -- it targets genuine
-    # ungrouped walls, not every multi-line test.
+    # Count top-level STATEMENTS, not source lines: a 12-line single literal is 1
+    # statement (never a wall), while 6+ sequential statements with NO interior
+    # blank line is a genuine ungrouped wall -- the given/when/then structure wants
+    # blank-line groups. A leading/trailing blank doesn't count; only a blank
+    # BETWEEN the first and last statement proves grouping.
     offenders: list[str] = []
     for f, node, src in _test_functions():
+        stmts = _body_statements(node)
+        if len(stmts) < 6:
+            continue  # short/cohesive bodies need no grouping
+
         lines = src.splitlines()
-        span = lines[_body_start_line(node) - 1 : node.end_lineno]
-        code = [ln for ln in span if ln.strip() and not ln.strip().startswith("#")]
-        blanks = [ln for ln in span if not ln.strip()]
-        if len(code) >= 10 and not blanks:
+        interior = lines[stmts[0].lineno : stmts[-1].end_lineno - 1]
+        if not any(not ln.strip() for ln in interior):
             offenders.append(
-                f"{f.relative_to(TESTS.parent)}::{node.name} ({len(code)} code lines, 0 blanks)"
+                f"{f.relative_to(TESTS.parent)}::{node.name} ({len(stmts)} stmts, ungrouped)"
             )
 
     assert not offenders, (
-        "non-trivial test bodies (>=10 code lines) must be grouped into "
-        "given/when/then sections separated by blank lines:\n" + "\n".join(sorted(offenders))
+        "non-trivial test bodies (>=6 statements) must be grouped into "
+        "given/when/then sections separated by a blank line:\n" + "\n".join(sorted(offenders))
     )
