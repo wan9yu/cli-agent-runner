@@ -5,6 +5,7 @@ spawning the agent so we never silent-burn rounds on broken config.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,6 +58,9 @@ def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckR
     resolved = agent_runtime.resolve_exec_target(cli, work_dir, env_path=agent.env.get("PATH"))
     if resolved is None:
         relative = "/" in cli
+        # cli is exec_prefix[0] when a prefix is set (spawn_command splices the
+        # prefix first) -- pointing the fix at agent.command[0] would be wrong.
+        target = "[agent] exec_prefix[0]" if agent.exec_prefix else "agent.command[0]"
         return CheckResult(
             name,
             False,
@@ -68,11 +72,39 @@ def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckR
             how_to_fix=(
                 "fix the path relative to runtime.work_dir, or use an absolute path"
                 if relative
-                else f"install {cli} or set agent.command[0] to its absolute path"
+                else f"install {cli} or set {target} to its absolute path"
             ),
             permanent=True,
         )
     return CheckResult(name, True)
+
+
+_INTERACTIVE_FLAG = re.compile(r"^(-[a-z]*i[a-z]*|--interactive(=.*)?)$")
+
+
+def _check_stdin_container_interactive(
+    agent: AgentConfig, work_dir: Path, name: str
+) -> CheckResult:
+    """A stdin-delivery agent whose container run drops stdin (no -i/--interactive)
+    silently hangs until the round-timeout kill -- fail loud at boot instead."""
+    if agent.prompt_delivery != "stdin":
+        return CheckResult(name, True)
+    argv = agent.spawn_command(work_dir)
+    if agent_runtime._detect_container_run(argv) is None:
+        return CheckResult(name, True)
+    if any(_INTERACTIVE_FLAG.match(tok) for tok in argv):
+        return CheckResult(name, True)
+
+    return CheckResult(
+        name,
+        False,
+        reason="stdin prompt delivery into a container, but exec_prefix lacks -i/--interactive",
+        how_to_fix=(
+            'add "-i" to [agent] exec_prefix (docker drops stdin without it '
+            "→ the agent hangs until the round-timeout kill)"
+        ),
+        permanent=True,
+    )
 
 
 def _check_work_dir_is_git(cfg: Config) -> CheckResult:
@@ -194,6 +226,14 @@ def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
         profile = cfg.profile_for(phase)
         name = "agent_cli_in_path" if phase is None else f"agent_cli_in_path:{phase}"
         results.append(_check_agent_target(profile.agent, cfg.runtime.work_dir, name))
+        stdin_name = (
+            "stdin_container_interactive"
+            if phase is None
+            else f"stdin_container_interactive:{phase}"
+        )
+        results.append(
+            _check_stdin_container_interactive(profile.agent, cfg.runtime.work_dir, stdin_name)
+        )
     return results
 
 

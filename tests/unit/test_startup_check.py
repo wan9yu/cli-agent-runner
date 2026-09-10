@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import startup_check
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -187,6 +188,35 @@ def test_run_battery_should_mark_log_dir_check_environmental_when_write_fails(
 
     log = next(r for r in failed if r.name == "log_dir_writable")
     assert log.permanent is False  # ENOSPC → recoverable → environmental
+
+
+def test_stdin_container_check_should_fail_permanent_when_container_prefix_lacks_interactive() -> (
+    None
+):
+    agent = AgentConfig(
+        command=["pi", "--mode", "json"],
+        prompt_arg_template=[],
+        prompt_delivery="stdin",
+        exec_prefix=["docker", "run", "--rm", "img"],  # no -i
+    )
+
+    result = startup_check._check_stdin_container_interactive(
+        agent, Path("/srv"), "stdin_container_interactive"
+    )
+
+    assert not result.ok
+    assert result.permanent  # silent hang otherwise → fail loud at boot
+
+
+def test_stdin_container_check_should_pass_when_interactive_present() -> None:
+    agent = AgentConfig(
+        command=["pi", "--mode", "json"],
+        prompt_arg_template=[],
+        prompt_delivery="stdin",
+        exec_prefix=["docker", "run", "--rm", "-i", "img"],
+    )
+
+    assert startup_check._check_stdin_container_interactive(agent, Path("/srv"), "n").ok
 
 
 def test_run_battery_should_fail_named_phase_check_when_phase_prompt_override_missing(
