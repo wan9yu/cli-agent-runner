@@ -554,7 +554,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         )
 
     result = agent_runtime.run(
-        command=profile.agent.command,
+        command=profile.agent.spawn_command(cfg.runtime.work_dir),
         prompt_arg_template=profile.agent.prompt_arg_template,
         prompt=prompt,
         prompt_delivery=profile.agent.prompt_delivery,

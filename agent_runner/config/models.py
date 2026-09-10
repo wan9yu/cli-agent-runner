@@ -30,6 +30,7 @@ class AgentConfig:
     name: str | None = None
     env: dict[str, str] = field(default_factory=dict)
     prompt_delivery: Literal["argv", "stdin"] = "argv"
+    exec_prefix: list[str] = field(default_factory=list)
 
     @property
     def binary(self) -> str | None:
@@ -39,6 +40,18 @@ class AgentConfig:
         real join key (unlike the cosmetic, optional ``name``), defined once here so
         serve and runner don't each re-spell ``Path(command[0]).name``."""
         return Path(self.command[0]).name if self.command else None
+
+    def spawn_command(self, work_dir: Path) -> list[str]:
+        """The effective argv to spawn: an opaque operator-supplied ``exec_prefix``
+        (e.g. ``docker run … img``) spliced BEFORE ``command``, with the one
+        ``{work_dir}`` token substituted IN THE PREFIX ONLY. ``command`` (and thus
+        ``binary``) is appended verbatim and never rewritten, so the
+        throttle/crash-loop/hook identity join stays keyed on the real agent. Empty
+        ``exec_prefix`` ⇒ ``command`` unchanged. The SSOT both the spawn (runner) and
+        the startup battery resolve, so they can't drift."""
+        return [t.replace("{work_dir}", str(work_dir)) for t in self.exec_prefix] + list(
+            self.command
+        )
 
 
 @dataclass(frozen=True)

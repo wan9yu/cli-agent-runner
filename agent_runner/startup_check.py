@@ -50,7 +50,7 @@ def _check_log_dir(cfg: Config) -> CheckResult:
 def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckResult:
     if not agent.command:
         return CheckResult(name, False, "agent.command is empty", permanent=True)
-    cli = agent.command[0]
+    cli = agent.spawn_command(work_dir)[0]
     # Validate with the exact resolution the spawn uses (agent_runtime owns
     # the model): slash-containing commands resolve against work_dir (the
     # child's cwd); bare names use the CHILD's PATH ([agent.env] may set it).

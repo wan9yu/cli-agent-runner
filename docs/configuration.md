@@ -30,6 +30,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `name` | `str \| None` | None |
 | `env` | `dict[str, str]` | {} |
 | `prompt_delivery` | `Literal['argv', 'stdin']` | 'argv' |
+| `exec_prefix` | `list[str]` | [] |
 
 ### `[runtime]`
 
@@ -311,7 +312,7 @@ sub-tables reject unknown keys: `agent` and `runtime` as noted below, and
 
 | Sub-table | Overrides | Fields accepted |
 |---|---|---|
-| `[phases.<name>.agent]` | `[agent]` | any `[agent]` field; field-merged onto the base `[agent]`, then validated (so the `stdin` + `{prompt}` cross-check runs on the merged result) |
+| `[phases.<name>.agent]` | `[agent]` | any `[agent]` field except `exec_prefix` (base-only, see below); field-merged onto the base `[agent]`, then validated (so the `stdin` + `{prompt}` cross-check runs on the merged result) |
 | `[phases.<name>.runtime]` | `[runtime]` | `round_timeout_s`, `disable_pre_round_hooks` only |
 | `[phases.<name>.schedule]` | `[schedule]` | any `[schedule]` field; **replaces** the global windows wholesale |
 | `[phases.<name>.prompt]` | `[prompt]` | `files` only |
@@ -343,6 +344,9 @@ the base config regardless of phase:
   `[monitor]`, and `[plugins]` — global only.
 - `[prompt]` fields other than `files` (`context_injection_mode`,
   `inject_context`, `concat_separator`, …).
+- **`agent.exec_prefix`** — set once on the base `[agent]` table; it applies to
+  every phase. A `[phases.<name>.agent]` sub-table that sets its own
+  `exec_prefix` is rejected at load.
 
 ### `phase_policy` — `wait` vs `skip`
 

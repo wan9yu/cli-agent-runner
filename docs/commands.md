@@ -275,7 +275,7 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [schedule] key(s) rejected in 0.2.12; delete them (allowed: ['pause_windows', 'run_windows', 'timezone'])
 - monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: lower the threshold or raise the window so the detector can fire
 - [<table>] given as a scalar, not a table; give it real [table] content (no auto-fix possible)
-- unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'name', 'prompt_arg_template', 'prompt_delivery'])
+- unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'exec_prefix', 'name', 'prompt_arg_template', 'prompt_delivery'])
 - unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['disable_pre_round_hooks', 'dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_log_retention', 'round_timeout_s', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
 - unknown [vcs] key(s) rejected in 0.2.13; delete them (allowed: ['dirty_action', 'stash_idempotency_s'])
 - unknown [monitor] key(s) rejected in 0.2.13; delete them (allowed: ['anomaly_repetitive_threshold', 'anomaly_repetitive_window', 'auth_fail_hint', 'auth_fail_patterns', 'auto_stop_on', 'host_health', 'remote_failure_tolerance_s', 'round_progress_interval_s', 'supervisor_stale_threshold_s'])

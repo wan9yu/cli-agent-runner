@@ -133,6 +133,7 @@ prompt_arg_template
 name
 env
 prompt_delivery
+exec_prefix
 
 # agent_runner.config.models.Config
 agent

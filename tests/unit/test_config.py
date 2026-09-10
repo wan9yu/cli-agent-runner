@@ -2184,3 +2184,32 @@ def test_enabled_phase_agent_should_raise_config_error_without_placeholder_when_
 
     with pytest.raises(ConfigError, match=r"prompt_arg_template.*\{prompt\}"):
         load_config(tmp_path / "agent-runner.toml")
+
+
+def test_load_config_should_parse_exec_prefix_when_set_on_base_agent(tmp_path: Path) -> None:
+    """exec_prefix is opaque operator-supplied argv (e.g. a container-run prefix);
+    the base [agent] table parses it into AgentConfig verbatim."""
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path, agent_extra='exec_prefix = ["docker", "run", "img"]\n')
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.agent.exec_prefix == ["docker", "run", "img"]
+
+
+def test_load_config_should_reject_exec_prefix_when_set_on_a_phase_agent(tmp_path: Path) -> None:
+    """exec_prefix is base-only: setting it under [phases.<name>.agent] would let
+    phases silently disagree on the container/runtime, defeating the SSOT."""
+    from agent_runner.config import ConfigError
+    from tests._test_helpers import make_toml_with_sections
+
+    cfg_path = make_toml_with_sections(
+        tmp_path,
+        phases_block=(
+            '[phases]\nlist = ["a"]\n[phases.a.agent]\nexec_prefix = ["docker","run","img"]\n'
+        ),
+    )
+
+    with pytest.raises(ConfigError, match="exec_prefix.*base"):
+        load_config(cfg_path)

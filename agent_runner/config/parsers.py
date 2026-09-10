@@ -106,12 +106,16 @@ def _parse_agent(
             f"{field_prefix} command: must be a non-empty list; run `agent-runner migrate`"
         )
     env_d = _require_table(agent_d, "env", label=f"{field_prefix.strip('[]')}.env")
+    exec_prefix = _require_str_list(
+        agent_d.get("exec_prefix", []), field=f"{field_prefix} exec_prefix"
+    )
     return AgentConfig(
         command=command,
         prompt_arg_template=prompt_arg_template,
         name=agent_d.get("name"),
         env={str(k): str(v) for k, v in env_d.items()},
         prompt_delivery=prompt_delivery,  # type: ignore[arg-type]  # narrowed above
+        exec_prefix=exec_prefix,
     )
 
 
@@ -214,6 +218,11 @@ def _parse_phase_overrides(
             agent_sub = value["agent"]
             if not isinstance(agent_sub, dict):
                 raise ConfigError(f"[phases.{phase_name}.agent] must be a table")
+            if "exec_prefix" in agent_sub:
+                raise ConfigError(
+                    f"[phases.{phase_name}.agent] exec_prefix: not allowed per-phase — set "
+                    "exec_prefix once on the base [agent] table (it applies to every phase)"
+                )
             merged = {**agent_d, **agent_sub}
             phase_agent = _parse_agent(
                 merged,
