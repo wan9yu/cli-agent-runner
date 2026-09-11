@@ -223,110 +223,113 @@ def _check_config_loaded(cfg: Config) -> CheckResult:
     return CheckResult("config_loaded", True)
 
 
-CHECKS: list[Callable[[Config], CheckResult]] = [
-    _check_config_loaded,
-    _check_log_dir,
-    _check_work_dir_is_git,
-    _check_prompt_file,
-    _check_prompt_smoke,
-]
-
-
 def _phase_qualified(base: str, phase: str | None) -> str:
     """A check's name, suffixed `:<phase>` for an overriding phase profile."""
     return base if phase is None else f"{base}:{phase}"
 
 
-def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
-    """Validate ``command[0]`` for EVERY profile the runner might launch — the
-    base agent plus each phase's own agent — so a bad phase agent fails at boot
-    instead of silent-burning the round it would have run. Each profile keeps
-    its own env PATH (`[phases.<name>.agent].env` may differ from the base's).
-    """
-    # Base agent once, plus each phase that actually OVERRIDES the agent — a phase
-    # with no [phases.<name>.agent] reuses the base command (already checked), so
-    # re-validating it would just re-run resolve_exec_target on the identical target.
-    phases = cfg.phases
-    overriding = (
-        [p for p in (phases.list or []) if (ov := phases.overrides.get(p)) and ov.agent]
-        if phases is not None
-        else []
-    )
-    results: list[CheckResult] = []
-    for phase in [None, *overriding]:
-        profile = cfg.profile_for(phase)
-        work_dir = cfg.runtime.work_dir
-        results.append(
-            _check_agent_target(
-                profile.agent, work_dir, _phase_qualified("agent_cli_in_path", phase)
-            )
-        )
-        results.append(
-            _check_stdin_container_interactive(
-                profile.agent, work_dir, _phase_qualified("stdin_container_interactive", phase)
-            )
-        )
-        results.append(
-            _check_control_plane_outside_container(
-                profile.agent,
-                work_dir,
-                cfg.runtime.log_dir,
-                _phase_qualified("control_plane_outside_container", phase),
-            )
-        )
-    return results
+@dataclass(frozen=True)
+class CheckSpec:
+    """One boot check. ``run`` is called per scope: base -> run(cfg);
+    per_profile -> run(cfg, profile, phase); per_phase -> run(cfg, phase)."""
+
+    kind: str
+    scope: str  # "base" | "per_profile" | "per_phase"
+    run: Callable[..., CheckResult]
 
 
-def _phase_prompt_checks(cfg: Config) -> list[CheckResult]:
-    """Smoke-check every phase that OVERRIDES the prompt (`[phases.<name>.prompt]`)
-    — mirror of _agent_cli_checks onto prompts — so a broken phase prompt fails at
-    boot instead of silent-burning the round it would run. Phases with no override
-    (prompt_files is None) reuse the base prompt, already checked; an explicit
-    `prompt.files = []` (a documented distinct state) is preserved and
-    not treated as broken here."""
+_CHECK_SPECS: tuple[CheckSpec, ...] = (
+    CheckSpec("config_loaded", "base", _check_config_loaded),
+    CheckSpec("log_dir_writable", "base", _check_log_dir),
+    CheckSpec("work_dir_is_git_repo", "base", _check_work_dir_is_git),
+    CheckSpec("prompt_file_exists", "base", _check_prompt_file),
+    CheckSpec("prompt_smoke_passes", "base", _check_prompt_smoke),
+    CheckSpec(
+        "agent_cli_in_path",
+        "per_profile",
+        lambda cfg, profile, phase: _check_agent_target(
+            profile.agent,
+            cfg.runtime.work_dir,
+            _phase_qualified("agent_cli_in_path", phase),
+        ),
+    ),
+    CheckSpec(
+        "stdin_container_interactive",
+        "per_profile",
+        lambda cfg, profile, phase: _check_stdin_container_interactive(
+            profile.agent,
+            cfg.runtime.work_dir,
+            _phase_qualified("stdin_container_interactive", phase),
+        ),
+    ),
+    CheckSpec(
+        "control_plane_outside_container",
+        "per_profile",
+        lambda cfg, profile, phase: _check_control_plane_outside_container(
+            profile.agent,
+            cfg.runtime.work_dir,
+            cfg.runtime.log_dir,
+            _phase_qualified("control_plane_outside_container", phase),
+        ),
+    ),
+    CheckSpec(
+        "prompt_smoke_passes",
+        "per_phase",
+        lambda cfg, phase: _check_prompt_smoke(
+            cfg, phase=phase, name=_phase_qualified("prompt_smoke_passes", phase)
+        ),
+    ),
+)
+
+
+def _agent_override_phases(cfg: Config) -> list[str]:
+    """Phases that actually OVERRIDE the agent — a phase with no
+    ``[phases.<name>.agent]`` reuses the base command (already checked as the
+    ``None`` profile), so re-validating it would just re-run
+    ``resolve_exec_target`` on the identical target."""
     phases = cfg.phases
     if phases is None:
         return []
-    results: list[CheckResult] = []
-    for phase in phases.list or []:
-        if cfg.profile_for(phase).prompt_files is None:
-            continue
-        results.append(_check_prompt_smoke(cfg, phase=phase, name=f"prompt_smoke_passes:{phase}"))
-    return results
+    return [p for p in (phases.list or []) if (ov := phases.overrides.get(p)) and ov.agent]
+
+
+def _prompt_override_phases(cfg: Config) -> list[str]:
+    """Phases that OVERRIDE the prompt (`[phases.<name>.prompt]`). Phases with
+    no override (``prompt_files`` is ``None``) reuse the base prompt, already
+    checked; an explicit ``prompt.files = []`` (a documented distinct state)
+    is preserved and not treated as broken here."""
+    phases = cfg.phases
+    if phases is None:
+        return []
+    return [p for p in (phases.list or []) if cfg.profile_for(p).prompt_files is not None]
 
 
 def all_check_kinds() -> tuple[str, ...]:
-    """Static kind-names ``run_battery`` can emit, ``:<phase>`` suffix
-    stripped: the 5 base ``CHECKS`` names plus the 3 per-profile kinds
-    ``_agent_cli_checks`` adds (``agent_cli_in_path``,
-    ``stdin_container_interactive``, ``control_plane_outside_container``).
-    Per-phase prompt checks (``_phase_prompt_checks``) reuse
-    ``prompt_smoke_passes`` under a ``:<phase>`` suffix -- the same kind,
-    not a new one, so it is not listed twice.
-
-    Single source of truth for the defenses catalog's ``startup_smoke_check``
-    entry (see ``defenses.py``), so the human-readable count there is
-    computed from this instead of hand-copied and drifting; pinned against
-    the real battery by
-    ``test_all_check_kinds_should_match_battery_kinds_when_config_is_valid``.
+    """Distinct check kinds (``:<phase>`` suffix stripped), in battery order,
+    derived from ``_CHECK_SPECS`` -- the single source of truth both
+    ``run_battery`` and the defenses catalog's ``startup_smoke_check`` entry
+    (see ``defenses.py``) read, so the human-readable count there can't
+    hand-drift from what the battery actually emits; pinned against the real
+    battery by ``test_all_check_kinds_should_match_battery_kinds_when_config_is_valid``.
     """
-    return (
-        "config_loaded",
-        "log_dir_writable",
-        "work_dir_is_git_repo",
-        "prompt_file_exists",
-        "prompt_smoke_passes",
-        "agent_cli_in_path",
-        "stdin_container_interactive",
-        "control_plane_outside_container",
-    )
+    seen: list[str] = []
+    for spec in _CHECK_SPECS:
+        if spec.kind not in seen:
+            seen.append(spec.kind)
+    return tuple(seen)
 
 
 def run_battery(cfg: Config) -> list[CheckResult]:
     """Run all checks. Returns empty list if escape hatch env is set."""
     if os.environ.get(ESCAPE_HATCH_ENV, "").lower() in ("1", "true", "yes", "on"):
         return []
-    return [check(cfg) for check in CHECKS] + _agent_cli_checks(cfg) + _phase_prompt_checks(cfg)
+    results: list[CheckResult] = [s.run(cfg) for s in _CHECK_SPECS if s.scope == "base"]
+    for phase in [None, *_agent_override_phases(cfg)]:
+        profile = cfg.profile_for(phase)
+        results += [s.run(cfg, profile, phase) for s in _CHECK_SPECS if s.scope == "per_profile"]
+    for phase in _prompt_override_phases(cfg):
+        results += [s.run(cfg, phase) for s in _CHECK_SPECS if s.scope == "per_phase"]
+    return results
 
 
 def battery_exit_code(failures: list[CheckResult]) -> int:

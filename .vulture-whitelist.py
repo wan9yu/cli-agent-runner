@@ -319,6 +319,11 @@ reason
 how_to_fix
 permanent
 
+# agent_runner.startup_check.CheckSpec
+kind
+scope
+run
+
 # agent_runner.vcs_state.StashRef
 sha
 message

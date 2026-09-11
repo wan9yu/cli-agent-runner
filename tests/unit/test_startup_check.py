@@ -8,6 +8,8 @@ from agent_runner import startup_check
 from agent_runner.config import (
     AgentConfig,
     Config,
+    PhaseOverride,
+    PhasesConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -25,6 +27,32 @@ def _cfg(tmp_git_repo: Path, prompt_text: str = "Long prompt body for testing." 
         prompt=PromptConfig(file=prompt_file, inject_context=True),
         vcs=VcsConfig(),
         phases=None,
+    )
+
+
+def _config_with_agent_and_prompt_override_phases(tmp_path: Path) -> Config:
+    """A config with one phase overriding the agent (``dev``) and a different
+    phase overriding the prompt (``review``) — exercises both per_profile and
+    per_phase battery scopes in a single run_battery() call."""
+    log_dir = tmp_path / "logs"
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("Long prompt body for testing." * 20)
+    override_prompt = tmp_path / "override.md"
+    override_prompt.write_text("Overriding prompt body for testing." * 20)
+    return Config(
+        agent=AgentConfig(command=["bash"], prompt_arg_template=["-c", "{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt_file, inject_context=True),
+        vcs=VcsConfig(),
+        phases=PhasesConfig(
+            list=["dev", "review"],
+            overrides={
+                "dev": PhaseOverride(
+                    agent=AgentConfig(command=["bash"], prompt_arg_template=["-c", "{prompt}"])
+                ),
+                "review": PhaseOverride(prompt_files=[override_prompt]),
+            },
+        ),
     )
 
 
@@ -183,6 +211,41 @@ def test_all_check_kinds_should_match_battery_kinds_when_config_is_valid(
 
     battery_kinds = {r.name.split(":", 1)[0] for r in results}
     assert battery_kinds == set(startup_check.all_check_kinds())
+
+
+def test_all_check_kinds_should_equal_unique_spec_kinds_in_order() -> None:
+    assert startup_check.all_check_kinds() == (
+        "config_loaded",
+        "log_dir_writable",
+        "work_dir_is_git_repo",
+        "prompt_file_exists",
+        "prompt_smoke_passes",
+        "agent_cli_in_path",
+        "stdin_container_interactive",
+        "control_plane_outside_container",
+    )
+
+
+def test_run_battery_should_preserve_base_then_profile_then_phase_order_when_config_has_phase_overrides(  # noqa: E501 — full name states the exact condition; BDD naming wins over line-length here
+    tmp_path: Path,
+) -> None:
+    cfg = _config_with_agent_and_prompt_override_phases(tmp_path)
+
+    names = [r.name for r in startup_check.run_battery(cfg)]
+
+    assert names[:5] == [
+        "config_loaded",
+        "log_dir_writable",
+        "work_dir_is_git_repo",
+        "prompt_file_exists",
+        "prompt_smoke_passes",
+    ]
+    assert names[5:8] == [
+        "agent_cli_in_path",
+        "stdin_container_interactive",
+        "control_plane_outside_container",
+    ]
+    assert any(n.startswith("prompt_smoke_passes:") for n in names[8:])
 
 
 def test_checkresult_permanent_should_default_to_false(tmp_git_repo: Path) -> None:
