@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.23]
+
+### Added
+- `[agent] terminal_marker` — per-preset grace-kill result marker (default = Claude's token; pi/codewhale set their own; kimi/aider have no marker and run to the wall-clock ceiling).
+- `doctor` — read-only pre-flight: startup checks, phase-window overlap warnings, and an N-round phase-plan preview.
+- `phase_window_overlap` event — emitted at serve boot when two agent-overriding phases' windows collide in the same timezone.
+
+### Changed
+- Startup-check dispatch and the catalog's kind list now derive from a single descriptor table (no behavior change).
+- The lock-holder pid create_time verify now shares one `lifecycle` helper with `serve.pid` (no behavior change).
+- Default `claude` preset model updated `claude-opus-4-7` → `claude-opus-5`.
+
+### Fixed
+- `peek` no longer prints spurious "cannot coerce None" warnings on a freshly-initialized project; absent metric samples fall back to defaults silently (a genuinely malformed value still warns).
+
 ## [0.2.22] - 2026-09-11
 
 ### Fixed

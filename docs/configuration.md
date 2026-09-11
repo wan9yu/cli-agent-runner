@@ -31,6 +31,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `env` | `dict[str, str]` | {} |
 | `prompt_delivery` | `Literal['argv', 'stdin']` | 'argv' |
 | `exec_prefix` | `list[str]` | [] |
+| `terminal_marker` | `str` | '"type":"result"' |
 
 ### `[runtime]`
 
@@ -145,6 +146,21 @@ argv):
 prompt_delivery = "stdin"
 prompt_arg_template = ["-p"]   # remove {prompt} — no longer substituted into argv
 ```
+
+### `agent.terminal_marker` (0.2.23+)
+
+Type: string, default `"type":"result"` (claude's own compact JSONL
+terminal-record token)
+
+Exact byte substring the grace-kill scan (`runtime.max_grace_after_result_s`)
+watches the round log for, to detect the agent has produced its terminal
+record and start the post-result grace countdown. The `pi` and `codewhale`
+presets set their own token (`"type":"agent_end"`, `"type":"metadata"`); the
+`kimi` and `aider` presets have no marker of their own; unless you set one,
+the default claude token never appears in their output, so marker-based
+grace-kill never engages and a round runs to the wall-clock
+`round_timeout_s` ceiling instead. An empty string disables the marker scan
+outright — an honest opt-out, not an empty-string-matches-everything trap.
 
 ### `runtime.round_log_retention`
 

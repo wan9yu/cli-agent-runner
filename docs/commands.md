@@ -26,6 +26,7 @@ are shared between `peek` and `watch`.
 | `round` | Run one round and exit |
 | `upgrade` | Package upgrade with service-mode gate: orchestrated stop/start for systemd --user; package-only otherwise |
 | `migrate` | Rewrite removed/renamed fields in agent-runner.toml to current form |
+| `doctor` | Read-only pre-flight: checks + phase plan |
 <!-- /gen:verb-table -->
 
 ## Lifecycle
@@ -289,7 +290,7 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [schedule] key(s) rejected in 0.2.12; delete them (allowed: ['pause_windows', 'run_windows', 'timezone'])
 - monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: lower the threshold or raise the window so the detector can fire
 - [<table>] given as a scalar, not a table; give it real [table] content (no auto-fix possible)
-- unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'exec_prefix', 'name', 'prompt_arg_template', 'prompt_delivery'])
+- unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'exec_prefix', 'name', 'prompt_arg_template', 'prompt_delivery', 'terminal_marker'])
 - unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['disable_pre_round_hooks', 'dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_log_retention', 'round_timeout_s', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
 - unknown [vcs] key(s) rejected in 0.2.13; delete them (allowed: ['dirty_action', 'stash_idempotency_s'])
 - unknown [monitor] key(s) rejected in 0.2.13; delete them (allowed: ['anomaly_repetitive_threshold', 'anomaly_repetitive_window', 'auth_fail_hint', 'auth_fail_patterns', 'auto_stop_on', 'host_health', 'remote_failure_tolerance_s', 'round_progress_interval_s', 'supervisor_stale_threshold_s'])
@@ -300,9 +301,18 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [monitor.host_health] key(s) rejected in 0.2.14; delete them (allowed: ['disk_critical_pct', 'disk_warning_pct', 'in_round_mem_terminate', 'mem_avail_min_mb', 'mem_critical_consecutive_samples', 'mem_free_low_mb', 'psi_full_avg10_critical', 'psi_some_avg10_warning', 'swap_sout_noise_floor_mb'])
 <!-- /gen:migrate-transforms -->
 
+### `agent-runner doctor [--rounds N]`
+
+Read-only pre-flight: does not spawn a round, mutate config, or touch disk.
+Prints (or `--json` emits) three sections: the startup-check battery — the
+same checks `serve` runs before its first round — any `[phases]` window
+overlaps (the `phase_window_overlap` event), and an N-round preview of which
+phase each upcoming round would select. `--rounds` sets the preview depth
+(default 3).
+
 ## 中文摘要
 
-16 个动词，完整列表见上方动词表（自动生成）。
+17 个动词，完整列表见上方动词表（自动生成）。
 
 观察类三视角（peek/watch/monitor）中，`--round / --log / --events / --select` 下钻参数仅 peek 与 watch 共用；monitor 不接受这些下钻参数（`--json` 三者皆可）。
 

@@ -47,6 +47,9 @@ This writes:
 command = ["codewhale", "exec", "--auto", "--output-format", "stream-json"]
 prompt_arg_template = ["{prompt}"]
 name = "codewhale"
+# Grace-kill result-detection token: codewhale's terminal JSONL record (vs.
+# claude's default "type":"result").
+terminal_marker = "\"type\":\"metadata\""
 # [agent.env] omitted — DeepSeek key is ambient (env or codewhale keyring).
 
 [runtime]

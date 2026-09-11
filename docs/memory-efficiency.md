@@ -127,6 +127,54 @@ resolution instead of re-walking the ancestor chain and re-reading
 same release (`_emit` → package, `_round_outcome`, `cli/_serve_cgroup`) are
 structure only — see axis 5.
 
+## 0.2.22 → 0.2.23
+
+Measured the same way as the table above (see Methodology), same machine,
+comparing **v0.2.22** = `7f99ad9` against **0.2.23** = the tip of this
+branch at measurement time (the docs-only commits after it don't touch the
+import graph, so the number holds for the shipped release).
+
+### Import/startup RSS
+
+| | v0.2.22 | 0.2.23 | delta |
+|---|---|---|---|
+| RSS (avg of 5 runs) | 23.9 MB | 23.9 MB | ~0 MB (flat, within noise) |
+| RSS range | 23.8–24.1 MB* | 23.8–24.0 MB | |
+| `sys.modules` count | 228 | 229 | +1 |
+
+\* one v0.2.22 run (of 8 total) came in at 26.1 MB — a cold-page-cache
+outlier on the first invocation, excluded from the range/average as noise,
+same treatment as the v0.2.18 outlier noted above.
+
+### Module count, source LOC, largest module
+
+Tracked source only (`git ls-tree`, not a working-tree `find` — this
+checkout also carries a generated, untracked `_version.py` that would
+otherwise inflate a naive file count by one regardless of which commit is
+measured).
+
+| | v0.2.22 | 0.2.23 | delta |
+|---|---|---|---|
+| `.py` files | 74 | 75 | +1 |
+| total LOC | 18,043 | 18,247 | +204 |
+| largest module | `api.py`, 998 | `api.py`, 990 | −8 |
+
+### Why it's flat
+
+The only startup-graph change this release is one new eager module,
+`agent_runner.cli.doctor_cmd` — the `doctor` verb's own imports
+(`phase_select`, `startup_check`, `cli.common`) were already on the startup
+path, so it adds no new transitive dependency, just itself. No per-round
+allocation path changed: `phase_window_overlap` is checked once at serve
+boot, not per round, and the pid `create_time` lifecycle-helper unification
+and the startup-check descriptor-table refactor are both structural, not
+allocation-path, changes.
+`tests/invariants/test_round_alloc_growth.py` stays green unmodified,
+confirming no new per-round leak. Axes 2 (`serve` startup RSS) and 4 (cgroup
+reads/round) weren't re-measured this release since neither's code path
+moved — re-running the full harness would report the same number as
+0.2.19 for a code path this release didn't touch, not new signal.
+
 ## Methodology
 
 Machine: macOS 26.6.2, arm64, 16 KB pages. Python 3.11.3 (CPython, pyenv),
