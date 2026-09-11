@@ -102,6 +102,11 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner.cli._serve_cgroup",
         "agent_runner.cli._serve_round",
         "agent_runner.cli.common",
+        # doctor_cmd (0.2.23 Task 5): a new read-only `doctor` CLI verb, imported
+        # eagerly like every sibling *_cmd module. Its own imports (phase_select,
+        # startup_check, cli.common) were ALL already in this allowlist -- it adds
+        # no new transitive dependency, just this one module itself.
+        "agent_runner.cli.doctor_cmd",
         "agent_runner.cli.events_cmd",
         "agent_runner.cli.init_cmd",
         "agent_runner.cli.install_cmd",

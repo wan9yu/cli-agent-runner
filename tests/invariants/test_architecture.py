@@ -301,8 +301,16 @@ def test_cli_cmd_files_should_call_api_not_runner_directly_when_scanned() -> Non
     scanned = 0
     for f in (PKG / "cli").glob("*_cmd.py"):
         # round/serve/events run the loop directly; migrate rewrites config file
-        # text on disk and never touches the api/runner surface.
-        if f.name in ("round_cmd.py", "serve_cmd.py", "events_cmd.py", "migrate_cmd.py"):
+        # text on disk and never touches the api/runner surface; doctor is a
+        # read-only pre-flight over the pure phase_select/startup_check modules
+        # and likewise never touches the api/runner surface.
+        if f.name in (
+            "round_cmd.py",
+            "serve_cmd.py",
+            "events_cmd.py",
+            "migrate_cmd.py",
+            "doctor_cmd.py",
+        ):
             continue
         scanned += 1
         text = f.read_text()
