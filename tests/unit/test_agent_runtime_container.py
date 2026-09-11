@@ -13,12 +13,15 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import agent_runtime
 from agent_runner.agent_runtime import (
     _cidfile_flag_value,
     _command_has_cidfile_flag,
     _detect_container_run,
     run,
 )
+
+_FAKE_CID = "a" * 64  # a valid [0-9a-f]{64} container id
 
 
 def _alive(pid: int) -> bool:
@@ -148,7 +151,7 @@ def _write_fake_runtime(bin_dir: Path, name: str) -> Path:
         "    shift\n"
         "  done\n"
         '  if [ -n "$cidfile" ] && [ "$WRITE_CID" = "1" ]; then\n'
-        '    printf \'%s\' "fakecid123" > "$cidfile"\n'
+        f"    printf '%s' {_FAKE_CID!r} > \"$cidfile\"\n"
         "  fi\n"
         "  sleep 60\n"
         'elif [ "$1" = "stop" ]; then\n'
@@ -196,8 +199,44 @@ def test_container_stop_should_report_success_when_container_already_removed(tmp
     )
 
     assert result.timed_out is True
-    assert calls == [("docker", "fakecid123", True)]  # already-gone → success, NOT a false failure
+    assert calls == [("docker", _FAKE_CID, True)]  # already-gone → success, NOT a false failure
     assert not stop_log.exists()  # pins the exit-1 (already-gone) path, not the exit-0 success path
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(60)
+def test_container_stop_should_not_run_stop_when_cidfile_content_is_not_a_hex_id(
+    tmp_path, monkeypatch
+):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "docker")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    stop_log = tmp_path / "stop.log"
+    monkeypatch.setenv("STOP_LOG", str(stop_log))
+    cidfile = tmp_path / "poison.cid"
+    cidfile.write_text("--all", encoding="utf-8")
+
+    cid, stop_ok = agent_runtime._best_effort_container_stop("docker", cidfile)
+
+    assert (cid, stop_ok) == (None, None)
+    assert not stop_log.exists()
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(60)
+def test_container_stop_should_not_read_an_oversize_cidfile_whole(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "docker")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("STOP_LOG", str(tmp_path / "stop.log"))
+    cidfile = tmp_path / "big.cid"
+    cidfile.write_bytes(b"a" * (5 * 1024 * 1024))
+
+    cid, stop_ok = agent_runtime._best_effort_container_stop("docker", cidfile)
+
+    assert (cid, stop_ok) == (None, None)
 
 
 @pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto
@@ -241,8 +280,8 @@ def test_container_run_command_should_terminate_loudly_with_best_effort_stop_whe
 
     assert result.timed_out is True
     assert not _alive(result.pid), "docker run launcher must be reaped like any other agent"
-    assert calls == [("docker", "fakecid123", True)]
-    assert stop_log.read_text(encoding="utf-8").strip() == "fakecid123"
+    assert calls == [("docker", _FAKE_CID, True)]
+    assert stop_log.read_text(encoding="utf-8").strip() == _FAKE_CID
     assert not (tmp_path / (log_path.name + ".cid")).exists(), (
         "our own injected cidfile must be cleaned up once the round is done"
     )
@@ -283,8 +322,8 @@ def test_podman_run_command_should_terminate_loudly_with_best_effort_stop_when_r
 
     assert result.timed_out is True
     assert not _alive(result.pid), "podman run launcher must be reaped like any other agent"
-    assert calls == [("podman", "fakecid123", True)]
-    assert stop_log.read_text(encoding="utf-8").strip() == "fakecid123"
+    assert calls == [("podman", _FAKE_CID, True)]
+    assert stop_log.read_text(encoding="utf-8").strip() == _FAKE_CID
     assert not (tmp_path / (log_path.name + ".cid")).exists(), (
         "our own injected cidfile must be cleaned up once the round is done"
     )
@@ -322,9 +361,9 @@ def test_operator_provided_cidfile_should_be_read_but_not_deleted_when_round_tim
     )
 
     assert result.timed_out is True
-    assert calls == [("docker", "fakecid123", True)]
+    assert calls == [("docker", _FAKE_CID, True)]
     assert operator_cidfile.exists(), "an operator-supplied --cidfile must survive run()'s cleanup"
-    assert operator_cidfile.read_text(encoding="utf-8").strip() == "fakecid123"
+    assert operator_cidfile.read_text(encoding="utf-8").strip() == _FAKE_CID
 
 
 @pytest.mark.serial  # real-subprocess timing (0.2.19 lesson): the -n auto
@@ -420,6 +459,40 @@ def test_bypass_forms_should_warn_without_stop_attempt_when_terminated(
     assert not (tmp_path / (log_path.name + ".cid")).exists(), (
         "bypass forms are outside the conservative gate -- no cidfile is ever created"
     )
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(60)
+def test_container_run_should_inject_cidfile_outside_log_dir_and_work_dir(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_runtime(bin_dir, "docker")
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("WRITE_CID", "1")
+    monkeypatch.setenv("STOP_LOG", str(tmp_path / "stop.log"))
+    captured: list[str] = []
+    real_inject = agent_runtime._inject_cidfile
+
+    def _spy_inject(command, run_idx, path):
+        captured.append(str(path))
+        return real_inject(command, run_idx, path)
+
+    monkeypatch.setattr(agent_runtime, "_inject_cidfile", _spy_inject)
+
+    run(
+        command=["docker", "run", "--rm", "img"],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=5,
+        work_dir=tmp_path,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+        on_container_orphan_risk=lambda *a: None,
+    )
+
+    assert captured, "cidfile was never injected"
+    cid_path = Path(captured[0])
+    assert not cid_path.is_relative_to(tmp_path)  # outside work_dir/log_dir
 
 
 def test_non_container_command_should_leave_argv_and_callback_unchanged(tmp_path, monkeypatch):

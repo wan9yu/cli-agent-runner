@@ -14,6 +14,7 @@ import re
 import shutil
 import signal
 import subprocess  # noqa: TID251 — sanctioned subprocess caller
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -290,6 +291,14 @@ def resolve_exec_target(command0: str, work_dir: Path, env_path: str | None = No
 # ladder) is out of scope here -- left for a future release.
 _CONTAINER_RUNTIMES = frozenset({"docker", "podman"})
 
+# A real docker/podman container id is hex, 12-64 chars (short or full form).
+# The cidfile is a trust-bearing control input -- validated before it's ever
+# handed to a `stop` subprocess argv.
+_CONTAINER_ID_RE = re.compile(r"^[0-9a-fA-F]{12,64}$")
+# A real container id is <=64 hex chars; cap the read so a poisoned giant
+# file can't OOM a constrained host.
+_CIDFILE_READ_CAP = 128
+
 # docker/podman GLOBAL flags (before the subcommand) that take a separate
 # value token -- skipped in pairs so `docker -H unix:///var/run/docker.sock
 # run ...` / `docker --context foo run ...` still resolve to `run`. Not
@@ -507,14 +516,18 @@ def _best_effort_container_stop(
     if cidfile is None:
         return None, None
     try:
-        cid = cidfile.read_text(encoding="utf-8").strip()
+        with cidfile.open("rb") as fh:
+            raw = fh.read(_CIDFILE_READ_CAP + 1)
     except OSError:
         return None, None
-    if not cid:
-        return None, None
+    if len(raw) > _CIDFILE_READ_CAP:
+        return None, None  # oversize — not a real container id
+    cid = raw.decode("utf-8", "replace").strip()
+    if not _CONTAINER_ID_RE.match(cid):
+        return None, None  # not a hex id — detection already fired the loud warn + event
     try:
         result = subprocess.run(
-            [runtime, "stop", "-t", str(REAP_GRACE_S), cid],
+            [runtime, "stop", "-t", str(REAP_GRACE_S), "--", cid],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=_CONTAINER_STOP_TIMEOUT_S,
@@ -638,8 +651,13 @@ def run(
                 # no-silent-orphan floor.
                 pass
             else:
-                container_cidfile = log_path.with_name(log_path.name + ".cid")
-                container_cidfile.unlink(missing_ok=True)  # docker/podman refuse an existing one
+                # A supervisor control file must not live where the container can
+                # write it; put our injected cidfile in a host-private 0700 dir
+                # outside any mount. Docker writes the file host-side; the
+                # container never needs it.
+                container_cid_dir = Path(tempfile.mkdtemp(prefix="agent-runner-cid-"))
+                # Not created here — docker/podman refuse an existing cidfile.
+                container_cidfile = container_cid_dir / "round.cid"
                 container_cidfile_is_ours = True
                 spawn_command = _inject_cidfile(command, run_idx, container_cidfile)
 
@@ -805,10 +823,10 @@ def run(
     finally:
         if log_file is not None:
             log_file.close()
-        # Cleanup, not correctness: our own injected cidfile is a tiny,
-        # round-scoped tmp file -- delete it once the round is fully done
-        # (read-back for the best-effort stop, if any, already happened
-        # above). Only ours: an operator-supplied --cidfile is never ours to
-        # delete.
+        # Cleanup, not correctness: our own injected cidfile lives in a tiny,
+        # round-scoped private tempdir -- remove that whole dir once the round
+        # is fully done (read-back for the best-effort stop, if any, already
+        # happened above). Only ours: an operator-supplied --cidfile is never
+        # ours to delete.
         if container_cidfile_is_ours and container_cidfile is not None:
-            container_cidfile.unlink(missing_ok=True)
+            shutil.rmtree(container_cidfile.parent, ignore_errors=True)
