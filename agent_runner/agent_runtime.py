@@ -619,6 +619,11 @@ def run(
     attempt where covered; it just isn't reported).
     """
     stdin_mode = prompt_delivery == "stdin"
+    # Raising work (mkdir can fail on disk-full/perms/removed log_dir) must
+    # happen BEFORE the container-detection block below creates the
+    # host-private cidfile tempdir -- otherwise a raise here would skip the
+    # try/finally that cleans that tempdir up, leaking it once per round.
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     # Container-orphan defense: detect BEFORE building argv (spawn_command may
     # gain an injected --cidfile) -- see _detect_container_run's module-level
     # note. A non-container command's argv is byte-identical to before:
@@ -687,7 +692,6 @@ def run(
     # PWD pinned last — it mirrors cwd= (a correctness pin, not a knob), so
     # an [agent.env] PWD cannot silently diverge from where the child runs.
     env = {**os.environ, **env_extra, "PWD": str(work_dir)}
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     proc: subprocess.Popen | None = None
     log_file = None
     try:

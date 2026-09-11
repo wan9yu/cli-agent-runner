@@ -57,6 +57,23 @@ a narrower safety net than the host-level reaping a bare agent process gets,
 not a wider one — keep running it as a dedicated unprivileged user with no
 passwordless sudo and tight egress limits regardless.
 
+**Residual: `agent-runner.toml` lives inside the mount.** The startup check
+above stops the agent's pid and lock files from sitting inside a mounted
+`work_dir` (the injected cidfile is separately placed in a host-private temp
+dir outside any mount, so it's protected independently of `log_dir`) — but
+`agent-runner.toml` itself is scaffolded at the `work_dir` root, and the
+container recipes in
+[docs/recipes/container-pi.md](docs/recipes/container-pi.md) bind-mount all
+of `work_dir` read-write. Each round re-reads the config, so a containerized
+agent that can write its own mount can rewrite `[agent] command` /
+`exec_prefix` — or `runtime.stop_file`, if it's pointed inside the mount —
+and have it run on the host next round. This is consistent with the threat
+model above: agent-runner bounds a *misbehaving* agent, not a *hostile* one,
+and containment is the container/VM's job, not agent-runner's. An operator
+who needs to contain a not-fully-trusted agent should keep the config (and
+`runtime.stop_file`) outside any bind-mount, or otherwise treat the
+container boundary as their own responsibility to shape.
+
 ## Scope
 
 In scope: the `agent_runner` Python package, its CLI, its bundled systemd

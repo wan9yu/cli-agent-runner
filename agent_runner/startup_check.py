@@ -109,12 +109,13 @@ def _check_stdin_container_interactive(
 def _check_control_plane_outside_container(
     agent: AgentConfig, work_dir: Path, log_dir: Path, name: str
 ) -> CheckResult:
-    """A supervisor's trust-bearing control files (pid, lock-holder, injected
-    cidfile) must not live where the supervised container can rewrite them.
-    When the agent runs in a container and log_dir resolves inside work_dir --
-    which the container mounts -- the agent could forge them; refuse at boot.
-    Enforced on work_dir (the mount we can reason about); exec_prefix's other
-    mounts are opaque, so the general rule is documented, not code-enforced."""
+    """The supervisor's per-round pid and lock-holder files live under
+    log_dir. When the agent runs in a container and log_dir resolves inside
+    work_dir -- which the container mounts -- the agent could forge them;
+    refuse at boot. (The injected cidfile is kept safe separately, in a
+    host-private temp dir outside any mount.) Enforced on work_dir (the mount
+    we can reason about); exec_prefix's other mounts are opaque, so the
+    general rule is documented, not code-enforced."""
     if agent_runtime._detect_container_run(agent.spawn_command(work_dir)) is None:
         return CheckResult(name, True)
     if log_dir.is_relative_to(work_dir):
@@ -122,10 +123,11 @@ def _check_control_plane_outside_container(
             name,
             False,
             reason="runtime.log_dir is inside work_dir, which the container mounts — "
-            "the agent could forge the pid/lock/cidfile control files agent-runner trusts",
+            "the agent could forge the pid/lock control files agent-runner trusts",
             how_to_fix="set runtime.log_dir OUTSIDE work_dir (the default "
-            "~/.agent-runner/<project>/logs already is); a supervisor's control "
-            "files must not sit inside the container it supervises",
+            "~/.agent-runner/<project>/logs already is); agent-runner's "
+            "per-round pid and lock files live under log_dir, so keeping "
+            "log_dir outside the mount keeps them out of the agent's reach",
             permanent=True,
         )
     return CheckResult(name, True)

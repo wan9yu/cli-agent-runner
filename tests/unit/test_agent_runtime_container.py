@@ -9,6 +9,7 @@ container runtime needed.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -530,3 +531,39 @@ def test_non_container_command_should_leave_argv_and_callback_unchanged(tmp_path
     ]
     assert calls == []
     assert not (tmp_path / (log_path.name + ".cid")).exists()
+
+
+def test_run_should_not_leak_the_injected_cidfile_tempdir_when_log_dir_setup_fails_first(
+    tmp_path,
+):
+    """The injected-cidfile tempdir (``mkdtemp(prefix="agent-runner-cid-")``)
+    is created well before run()'s try/finally, whose finally: is the only
+    thing that removes it. If some other pre-try statement raises --
+    log_path.parent.mkdir can raise OSError on disk-full/perms/a log_dir
+    removed mid-service -- the tempdir must never have been created in the
+    first place, or it leaks with nothing left to clean it up. Forced here by
+    pointing log_path under a FILE (not a directory): Path.mkdir(parents=True)
+    then raises NotADirectoryError, a realistic stand-in for the disk-full/
+    perms cases the fix targets.
+    """
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    log_path = blocker / "nested" / "round.log"
+
+    before = {p.name for p in Path(tempfile.gettempdir()).glob("agent-runner-cid-*")}
+
+    with pytest.raises(OSError):
+        run(
+            command=["docker", "run", "--rm", "some-agent-image"],
+            prompt_arg_template=[],
+            prompt="x",
+            timeout_s=5,
+            work_dir=tmp_path,
+            log_path=log_path,
+            env_extra={},
+            on_container_orphan_risk=lambda *a: None,
+        )
+
+    after = {p.name for p in Path(tempfile.gettempdir()).glob("agent-runner-cid-*")}
+
+    assert after == before, f"agent-runner-cid-* tempdir(s) leaked: {after - before}"

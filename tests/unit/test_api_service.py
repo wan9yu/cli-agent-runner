@@ -403,6 +403,7 @@ def test_no_user_bus_should_not_raise_when_uninstall(
     no-op -- but the final `daemon-reload` ran unconditionally and crashed with
     an uncaught CalledProcessError. It must now be swallowed."""
     api.init(tmp_git_repo, force=False, commit=False)
+    monkeypatch.setattr(api, "_system_unit_exists", lambda project: False)
     monkeypatch.setattr(
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "no-such-systemd-dir"
     )

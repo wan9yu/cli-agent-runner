@@ -87,6 +87,22 @@ dirty-tree detector every round:
 -v /home/you/.pi-container-auth:/home/agent/.pi/agent:ro
 ```
 
+## Residual: the config file is inside the mount
+
+`-v {work_dir}:/work:Z` above mounts all of `work_dir` read-write, and
+`agent-runner.toml` is scaffolded at the `work_dir` root — so it's inside
+that mount too. agent-runner's own startup check keeps its pid and lock
+files out of a mounted `work_dir` (they live under `runtime.log_dir`,
+required to sit outside it — the injected cidfile is separately placed in a
+host-private temp dir outside any mount, protected independently of
+`log_dir`), but it does not and cannot protect the config file the same way:
+a containerized agent that can write
+its own mount can rewrite `[agent] command` / `exec_prefix` and have it run
+on the host next round. This is a residual of the supervisor-not-sandbox
+model (see [SECURITY.md](../../SECURITY.md#containment)), not something this
+recipe or agent-runner defends against — if you don't fully trust the agent,
+keep the config (and `runtime.stop_file`, if set) outside any bind-mount.
+
 ## Footguns
 
 These aren't enforced by agent-runner (`exec_prefix` is opaque) — get them

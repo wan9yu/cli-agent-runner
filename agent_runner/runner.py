@@ -78,9 +78,9 @@ def _write_holder_sidecar(lock_path: Path) -> None:
         "started_at": now_iso_ms(),
         "cmdline": _read_cmdline(os.getpid()),
     }
-    try:
-        import psutil
+    import psutil
 
+    try:
         payload["create_time"] = psutil.Process(os.getpid()).create_time()
     except psutil.Error:
         pass
