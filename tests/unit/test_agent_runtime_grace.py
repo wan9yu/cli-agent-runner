@@ -160,13 +160,24 @@ def test_run_should_start_grace_countdown_when_configured_marker_appears(tmp_pat
     assert result.killed_for_grace is True
 
 
-def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path):
+def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path, monkeypatch):
     """The log contains A marker, just not the CONFIGURED one -- the scan never
     starts a countdown, so the round rides out to the wall-clock ceiling exactly
-    like a round that emitted nothing at all."""
+    like a round that emitted nothing at all.
+
+    Childless (exec) + a generous 45s wall + the 0.1s patched scan interval, all
+    mirroring test_run_should_start_grace_countdown_when_configured_marker_appears:
+    if the match were ever broken (e.g. treating any marker as a hit), this round
+    would be reaped for grace at ~1s -- well before the 45s wall -- so the
+    `killed_for_grace is False` below actually exercises the match, it doesn't
+    just win a timing race against a 2s wall (see the T3 review finding this test
+    used to be vacuous under). The exec'd sleep must OUTLAST the wall (60s > 45s)
+    -- otherwise the sleep would just exit on its own before timeout_s ever
+    fires, making `timed_out is True` false-fail regardless of the marker logic."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
-        'echo \'{"type":"agent_end","messages":[]}\'\nsleep 5\n',
+        'echo \'{"type":"agent_end","messages":[]}\'\nexec sleep 60\n',
     )
     log_path = tmp_path / "round.log"
 
@@ -175,7 +186,7 @@ def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=2,  # short wall timeout
+        timeout_s=45,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -186,14 +197,26 @@ def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path):
     assert result.timed_out is True  # killed by wall timeout instead
 
 
-def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path):
+def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path, monkeypatch):
     """An empty terminal_marker is an honest opt-out: even with the default
     claude token present in the log and max_grace_after_result_s > 0, the scan
     never runs (guarded by `and marker_bytes`) -- no empty-substring-matches-
-    everything trap. The round rides out to the wall-clock ceiling."""
+    everything trap. The round rides out to the wall-clock ceiling.
+
+    Childless (exec) + a generous 45s wall + the 0.1s patched scan interval, all
+    mirroring test_run_should_start_grace_countdown_when_configured_marker_appears:
+    if the `and marker_bytes` guard were ever dropped, an empty marker_bytes is
+    a substring of everything, so this round would be reaped for grace at ~1s --
+    well before the 45s wall -- so `killed_for_grace is False` below actually
+    exercises the guard, it doesn't just win a timing race against a 2s wall (see
+    the T3 review finding this test used to be vacuous under). The exec'd sleep
+    must OUTLAST the wall (60s > 45s) -- otherwise the sleep would just exit on
+    its own before timeout_s ever fires, making `timed_out is True` false-fail
+    regardless of the marker logic."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
-        'echo \'{"type":"result","is_error":false}\'\nsleep 5\n',
+        'echo \'{"type":"result","is_error":false}\'\nexec sleep 60\n',
     )
     log_path = tmp_path / "round.log"
 
@@ -202,7 +225,7 @@ def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path):
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=2,  # short wall timeout
+        timeout_s=45,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,

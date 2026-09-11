@@ -35,7 +35,7 @@ class AgentConfig:
     """Byte substring the grace-kill scan looks for in the round log to detect
     the agent's terminal record (see ``agent_runtime.run``'s marker scan).
     Defaults to claude's own JSONL token so existing configs are unaffected;
-    an empty string opt-outs the marker scan entirely (wall-clock-ceiling-only)."""
+    an empty string opts out of the marker scan entirely (wall-clock-ceiling-only)."""
 
     @property
     def binary(self) -> str | None:
