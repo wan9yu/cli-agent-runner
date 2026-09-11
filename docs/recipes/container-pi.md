@@ -112,6 +112,15 @@ right yourself:
 - **`--sig-proxy=false`** disables the relay of agent-runner's SIGTERM into
   the container for cooperative shutdown. Leave it at its default (`true`).
 
+## Monitoring
+
+`agent_process_count` in `peek`/metrics reads `0` for a containerized round —
+expected, not a failure. The host-side probe counts processes named after the
+agent (`pi`), but the host process is `docker`/`podman`; the agent runs in the
+container's own PID namespace where the probe can't see it. Round liveness is
+tracked by the container process agent-runner supervises directly, not this
+count.
+
 ## Not for tiny edge hosts
 
 This recipe assumes a host with room for a container runtime on top of the
