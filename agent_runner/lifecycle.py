@@ -89,6 +89,29 @@ def _valid_pid(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 1
 
 
+def create_time_of(pid: int) -> float | None:
+    """The process start-time identity token for ``pid``, or None if it can't be
+    read (no such process / no permission). Recorded when writing a pid so a
+    later read can tell the same process from a recycled PID."""
+    try:
+        return psutil.Process(pid).create_time()
+    except psutil.Error:
+        return None
+
+
+def create_time_matches(pid: int, recorded: float | None) -> bool:
+    """True iff ``pid`` still names the process whose start-time was ``recorded``.
+    ``recorded is None`` (a legacy sidecar without a token) -> True, best-effort
+    unverified, matching the historical behaviour. A live start-time differing by
+    >= 1s, or an unreadable process, -> False (a recycled PID: do not signal it)."""
+    if recorded is None:
+        return True
+    try:
+        return abs(psutil.Process(pid).create_time() - recorded) < 1.0
+    except psutil.Error:
+        return False
+
+
 @dataclass(frozen=True)
 class PIDFile:
     path: Path
@@ -99,10 +122,9 @@ class PIDFile:
         atomically (tmp + rename) so a concurrent ``stop``/``kill`` read never sees a
         torn file."""
         payload: dict[str, object] = {"pid": pid}
-        try:
-            payload["create_time"] = psutil.Process(pid).create_time()
-        except psutil.Error:
-            pass  # token is best-effort; a read without it falls back to unverified
+        ct = create_time_of(pid)
+        if ct is not None:
+            payload["create_time"] = ct
         atomic_write_json(self.path, payload)
 
     def read(self) -> int | None:
@@ -124,14 +146,7 @@ class PIDFile:
             return None
         pid = data["pid"]
         recorded = data.get("create_time")
-        if recorded is None:
-            return pid  # write couldn't capture a token; best-effort unverified
-        try:
-            if abs(psutil.Process(pid).create_time() - recorded) < 1.0:
-                return pid
-        except psutil.Error:
-            pass
-        return None  # process gone, or a different (recycled) process now holds the PID
+        return pid if create_time_matches(pid, recorded) else None
 
     def unlink(self) -> None:
         self.path.unlink(missing_ok=True)

@@ -7,8 +7,10 @@ import subprocess
 import time
 from pathlib import Path
 
+import psutil
 import pytest
 
+from agent_runner import lifecycle
 from agent_runner.api_types import ServiceMode
 from agent_runner.lifecycle import (
     PIDFile,
@@ -73,6 +75,35 @@ def test_pid_file_should_return_none_when_legacy_value_is_bool_true(tmp_path: Pa
     p.write_text("true")
 
     assert PIDFile(p).read() is None
+
+
+def test_create_time_matches_should_return_true_when_recorded_is_none() -> None:
+
+    assert lifecycle.create_time_matches(os.getpid(), None) is True
+
+
+def test_create_time_matches_should_return_true_when_start_time_within_tolerance() -> None:
+    recorded = psutil.Process(os.getpid()).create_time()
+
+    assert lifecycle.create_time_matches(os.getpid(), recorded) is True
+
+
+def test_create_time_matches_should_return_false_when_start_time_differs() -> None:
+    recorded = psutil.Process(os.getpid()).create_time() - 100.0
+
+    assert lifecycle.create_time_matches(os.getpid(), recorded) is False
+
+
+def test_create_time_matches_should_return_false_when_pid_absent() -> None:
+    dead = 2_000_000_000
+
+    assert lifecycle.create_time_matches(dead, 123.0) is False
+
+
+def test_create_time_of_should_return_none_when_pid_absent() -> None:
+    dead = 2_000_000_000
+
+    assert lifecycle.create_time_of(dead) is None
 
 
 def test_pid_file_should_return_none_when_legacy_pid_is_one(tmp_path: Path) -> None:

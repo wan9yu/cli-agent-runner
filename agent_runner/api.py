@@ -357,8 +357,6 @@ def _round_holder_pid(log_dir: Path) -> int | None:
     alive. This is the ONLY way ``kill()`` can reach an in-flight round: the
     round is ``start_new_session=True`` (its own session, its own pgid), so it
     sits outside whatever process group serve itself belongs to."""
-    import psutil
-
     from agent_runner.context_store import read_json
 
     data = read_json(log_dir / "agent-runner.lock.holder")
@@ -370,14 +368,7 @@ def _round_holder_pid(log_dir: Path) -> int | None:
     if not pid_alive(pid):
         return None
     recorded = data.get("create_time")
-    if recorded is None:
-        return pid  # legacy sidecar without a token: best-effort, mirrors serve.pid's read
-    try:
-        if abs(psutil.Process(pid).create_time() - recorded) < 1.0:
-            return pid
-    except psutil.Error:
-        return None
-    return None  # recorded create_time != live process: a recycled pid, do not signal it
+    return pid if lifecycle.create_time_matches(pid, recorded) else None
 
 
 def _terminate_round_pid(pid: int) -> None:

@@ -21,6 +21,7 @@ from agent_runner import (
     context_store,
     events,
     hooks,
+    lifecycle,
     metrics,
     phase_select,
     startup_check,
@@ -78,12 +79,9 @@ def _write_holder_sidecar(lock_path: Path) -> None:
         "started_at": now_iso_ms(),
         "cmdline": _read_cmdline(os.getpid()),
     }
-    import psutil
-
-    try:
-        payload["create_time"] = psutil.Process(os.getpid()).create_time()
-    except psutil.Error:
-        pass
+    ct = lifecycle.create_time_of(os.getpid())
+    if ct is not None:
+        payload["create_time"] = ct
     _holder_sidecar(lock_path).write_text(json.dumps(payload), encoding="utf-8")
 
 
