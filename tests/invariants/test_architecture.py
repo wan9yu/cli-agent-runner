@@ -41,6 +41,7 @@ ALLOWED_SERVE_FROM = [
             "check_self_terminated_sentinel",
             "emit_config_broken",
             "emit_max_rounds_reached",
+            "emit_phase_window_overlap",
             "emit_rate_limit_stop",
             "emit_round_logs_prune_deferred",
             "emit_stop_file_detected",

@@ -230,6 +230,7 @@ EXPECTED_API_SURFACE = {
     "emit_mem_loop",
     "emit_mem_loop_persistent",
     "emit_mem_pressure_deferred_to_cgroup",
+    "emit_phase_window_overlap",
     "emit_rate_limit_stop",
     "emit_round_cgroup_memory",
     "emit_round_container_orphan_risk",

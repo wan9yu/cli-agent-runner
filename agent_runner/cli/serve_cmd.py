@@ -35,6 +35,7 @@ from agent_runner.api import (
     emit_config_broken,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
+    emit_phase_window_overlap,
     emit_rate_limit_stop,
     emit_round_logs_prune_deferred,
     emit_round_substrate_after,
@@ -615,6 +616,16 @@ def cmd(args) -> int:
     # Emitted exactly once per serve lifetime -- the per-round defer decision below
     # reuses this bool rather than re-probing/re-emitting every round.
     cgroup_probe_defer = _probe_and_emit_cgroup_defer(log_dir)
+    # Static config check -- phase-window collisions can't change mid-lifetime, so
+    # (like the cgroup probe above) this runs once at boot, not once per round.
+    for ov in phase_select.find_phase_window_overlaps(cfg):
+        emit_phase_window_overlap(
+            log_dir,
+            phase_a=ov.phase_a,
+            phase_b=ov.phase_b,
+            window_a=ov.window_a,
+            window_b=ov.window_b,
+        )
     rounds_completed = 0
     # Three independent consecutive-failure counters, one per breaker: b12
     # crash-loop (unknown short crashes), mem-loop (mem-terminated

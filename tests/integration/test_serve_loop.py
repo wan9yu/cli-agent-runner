@@ -10,7 +10,9 @@ from pathlib import Path
 from tests._test_helpers import wait_for
 
 
-def _write_toml(tmp_git_repo: Path, fake_agent: Path, *, round_timeout: int = 5) -> Path:
+def _write_toml(
+    tmp_git_repo: Path, fake_agent: Path, *, round_timeout: int = 5, phases_block: str = ""
+) -> Path:
     toml = tmp_git_repo / "agent-runner.toml"
     prompt = tmp_git_repo / "p.md"
     prompt.write_text("Body content for serve loop test. " * 50)
@@ -26,7 +28,7 @@ round_timeout_s = {round_timeout}
 restart_delay_s = 1
 [prompt]
 file = "{prompt}"
-""")
+""" + phases_block)
     (tmp_git_repo / ".gitignore").write_text("logs/\n")
     subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
     subprocess.run(
@@ -35,6 +37,15 @@ file = "{prompt}"
         check=True,
     )
     return toml
+
+
+def _all_events(log_dir: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+        if line.strip()
+    ]
 
 
 def test_serve_once_should_run_one_round_and_exit_when_agent_succeeds(
@@ -86,3 +97,53 @@ def test_serve_should_exit_after_current_round_when_sigterm_received(
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+def test_serve_should_emit_phase_window_overlap_once_when_two_rounds_run(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+) -> None:
+    # Two agent-overriding phases sharing an always-open window: a guaranteed
+    # config-level collision. serve's own process (not a `round` child) owns the
+    # boot-once detection, so the warning must appear exactly once regardless of
+    # how many round subprocesses follow.
+    phases_block = """
+[phases]
+list = ["a", "b"]
+[phases.a.agent]
+name = "phase-a"
+[phases.a.schedule]
+run_windows = ["00:00-24:00"]
+[phases.b.agent]
+name = "phase-b"
+[phases.b.schedule]
+run_windows = ["00:00-24:00"]
+"""
+    toml = _write_toml(tmp_git_repo, fake_agent_script, phases_block=phases_block)
+    env = os.environ.copy()
+    env["FAKE_AGENT_BEHAVIOR"] = "succeed"
+
+    r = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent_runner.cli",
+            "--config",
+            str(toml),
+            "serve",
+            "--max-rounds",
+            "2",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert r.returncode == 0, r.stderr
+    log_dir = tmp_git_repo / "logs"
+    status = json.loads((log_dir / "status.json").read_text())
+    overlaps = [e for e in _all_events(log_dir) if e["event"] == "phase_window_overlap"]
+    assert status["round_num"] == 2  # two round subprocesses actually ran
+    assert len(overlaps) == 1
+    assert {overlaps[0]["phase_a"], overlaps[0]["phase_b"]} == {"a", "b"}
