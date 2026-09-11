@@ -669,7 +669,7 @@ JSONL and emit `agent_usage_recorded` / `transient_error_detected`).
 ```toml
 [agent]
 command = [
-  "claude", "--model", "claude-opus-4-7",
+  "claude", "--model", "claude-opus-5",
   "--dangerously-skip-permissions",
   "--verbose", "--output-format", "stream-json",
 ]
