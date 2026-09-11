@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.21] - 2026-09-11
+
+### Added
+- `[agent] exec_prefix`: an optional token list prepended to the agent command at spawn (with `{work_dir}` substituted), so the agent can run inside a container you supply (`docker`/`podman run …`) while agent-runner supervises the resulting process from outside. The agent's identity — throttle, crash-loop, usage plugins — still keys on `command`, unchanged.
+- Startup check: a stdin-delivery agent whose container `exec_prefix` omits `-i`/`--interactive` now fails loudly at boot instead of silently hanging until the round-timeout kill.
+- Docs: container recipes (`docs/recipes/container-pi.md`, with Kimi/Claude/rootless-podman deltas), an all-in-one deploy recipe (`deploy/` + `docs/recipes/deploy-all-in-one.md`), and a `SECURITY.md` containment section.
+
+### Fixed
+- The best-effort container stop no longer reports a false "stop failed" when a `--rm` container has already exited on its own; an already-removed container now counts as a successful stop.
+
+### Notes
+- Not breaking: no `agent-runner migrate` step, no systemd unit change.
+
 ## [0.2.20] - 2026-09-09
 
 ### Fixed
