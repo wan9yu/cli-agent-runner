@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.22] - 2026-09-11
+
+### Fixed
+- Container safety: agent-runner now refuses to boot when `runtime.log_dir` resolves inside a containerized `work_dir` — a contained agent could otherwise rewrite the pid/lock/cidfile control files the supervisor trusts. The best-effort container stop also validates the recovered container id (hex, length-bounded) and passes an end-of-options separator, and the injected `--cidfile` moves to a host-private directory, so a poisoned cidfile can no longer stop an unrelated container.
+- `kill` / `restart --force` verify the lock-holder's start time before signaling, so a recycled pid is never sent a signal.
+- System mode (`install --system`): `restart` / `uninstall` recognize a system unit and refuse with the exact `sudo systemctl …` command instead of a misleading one, and `uninstall` no longer aborts with an uncaught error on a host without a systemd user bus.
+
+### Security
+- Release and CI GitHub Actions are pinned to commit SHAs, with Dependabot tracking updates.
+
+### Notes
+- Not breaking: no `agent-runner migrate` step, no systemd unit change. `status --json` gains a `system_managed` field; existing fields unchanged. The one newly-rejected configuration is a containerized agent whose `runtime.log_dir` sits inside `work_dir` — move `log_dir` outside `work_dir` (the default already is).
+
 ## [0.2.21] - 2026-09-11
 
 ### Added
