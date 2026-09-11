@@ -1,0 +1,18 @@
+# Template compose file for the all-in-one deploy recipe — copy alongside
+# Dockerfile into your own project and adapt. See
+# docs/recipes/deploy-all-in-one.md.
+
+services:
+  agent-runner:
+    build: .
+    # Mount your project (it must contain agent-runner.toml at its root,
+    # matching [runtime] work_dir = "." in that file) at /work.
+    volumes:
+      - .:/work
+    working_dir: /work
+    environment:
+      # Value-less: pass through from the host shell. Add whatever your
+      # agent CLI needs the same way.
+      - ANTHROPIC_API_KEY
+    command: ["serve"]
+    restart: unless-stopped

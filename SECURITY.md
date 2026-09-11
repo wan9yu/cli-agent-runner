@@ -37,6 +37,26 @@ unprivileged user, inside a container or VM, without passwordless sudo, and
 with egress limits. The supervisor's defenses bound the blast radius of a
 *misbehaving* agent, not a *hostile* one.
 
+## Containment
+
+If you need to bound what the agent can reach, run it inside a container (or
+VM) you supply, via `[agent] exec_prefix` — see
+[docs/recipes/container-pi.md](docs/recipes/container-pi.md). The container
+(or VM) enforces the isolation; agent-runner still just watches the
+resulting process from outside, the same way it watches a bare agent
+process.
+
+One limit worth knowing: agent-runner's own process-tree defenses (reaping a
+hung round's descendants) only see processes in its own subtree, and a
+container-runtime-managed process usually isn't one of them. On a stuck
+round, the one remaining lever is stopping the container by the id
+agent-runner captured at spawn, which only works for a plain `docker
+run …`/`podman run …` invocation — not one wrapped in `sudo` or other global
+flags (see container-pi.md's footguns). Using a container this way gives you
+a narrower safety net than the host-level reaping a bare agent process gets,
+not a wider one — keep running it as a dedicated unprivileged user with no
+passwordless sudo and tight egress limits regardless.
+
 ## Scope
 
 In scope: the `agent_runner` Python package, its CLI, its bundled systemd
