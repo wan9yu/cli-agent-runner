@@ -766,7 +766,7 @@ def run(
                         else:
                             # Keep the tail so a marker split across two read
                             # chunks (this scan vs. the next) still re-forms.
-                            result_scan_carry = haystack[-(len(marker_bytes) - 1) :]
+                            result_scan_carry = haystack[-max(len(marker_bytes) - 1, 0) :]
                     except OSError:
                         pass  # log not flushed yet; retry next interval
                 if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:

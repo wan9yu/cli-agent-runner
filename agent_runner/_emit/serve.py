@@ -197,8 +197,8 @@ def emit_phase_window_overlap(
     log_dir: Path, *, phase_a: str, phase_b: str, window_a: str, window_b: str
 ) -> None:
     """Emit phase_window_overlap: two agent-overriding phases' own run_windows
-    collide (a rotation footgun; 0.3.0 promotes this exact detection to a hard
-    error). Called once at serve boot -- the collision is a property of the
+    collide (a rotation footgun; a later release promotes this exact detection
+    to a hard error). Called once at serve boot -- the collision is a property of the
     static config, not of any one round, so (like emit_max_rounds_reached's
     cgroup-probe sibling) this must not be called from the per-round path."""
     from agent_runner.events import PHASE_WINDOW_OVERLAP, emit

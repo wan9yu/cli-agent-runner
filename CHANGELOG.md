@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `[agent] terminal_marker` — per-preset grace-kill result marker (default = Claude's token; pi/codewhale set their own; kimi/aider have no marker and run to the wall-clock ceiling).
-- `doctor` — read-only pre-flight: startup checks, phase-window overlap warnings, and an N-round phase-plan preview.
+- `doctor` — read-only pre-flight (never launches the agent): startup checks, phase-window overlap warnings, and an N-round phase-plan preview.
 - `phase_window_overlap` event — emitted at serve boot when two agent-overriding phases' windows collide in the same timezone.
 
 ### Changed

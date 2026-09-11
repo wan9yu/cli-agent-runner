@@ -1,4 +1,6 @@
-"""doctor subcommand — read-only pre-flight: battery + window overlaps + phase plan."""
+"""doctor subcommand — never launches the configured agent; runs the same
+read-only-ish boot checks serve does (it may create/probe the log dir to
+verify it's writable), then reports window overlaps + phase plan."""
 
 from __future__ import annotations
 
@@ -10,9 +12,9 @@ from agent_runner.cli.common import cfg_from_args, emit
 
 @dataclass(frozen=True)
 class DoctorReport:
-    checks: list
-    overlaps: list
-    plan: list
+    checks: list[startup_check.CheckResult]
+    overlaps: list[phase_select.WindowOverlap]
+    plan: list[dict]
 
 
 def add_parser(sub, parent) -> None:
@@ -54,6 +56,9 @@ def cmd_doctor(args) -> int:
 
 
 def _format(report: DoctorReport) -> str:
+    # Hand-formatted rather than common._pretty: that helper repr()s nested
+    # lists/dicts, which would dump report.plan's per-round dicts as Python
+    # reprs instead of the readable "round N: phase" lines below.
     lines = ["checks:"]
     for c in report.checks:
         mark = "ok" if c.ok else "FAIL"

@@ -128,6 +128,11 @@ agent
 since_round
 phase
 
+# agent_runner.cli.doctor_cmd.DoctorReport
+checks
+overlaps
+plan
+
 # agent_runner.config.models.AgentConfig
 command
 prompt_arg_template
@@ -296,6 +301,12 @@ resume_phase
 resume_timezone
 skipped
 active_window
+
+# agent_runner.phase_select.WindowOverlap
+phase_a
+phase_b
+window_a
+window_b
 
 # agent_runner.round_log.PruneOutcome
 deleted

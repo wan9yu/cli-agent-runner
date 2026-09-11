@@ -80,8 +80,8 @@ def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
     define their own non-empty ``run_windows`` AND share an effective timezone AND
     whose windows intersect. Timezone-mismatched pairs are skipped (no cross-tz
     math in a warning). ``pause_windows`` are ignored for now — a pause that carves
-    out the overlap can over-warn, acceptable for a warning; 0.3.0's hard-error
-    form must model pauses before rejecting.
+    out the overlap can over-warn, acceptable for a warning; the eventual
+    hard-error form must model pauses before rejecting.
     """
     phases = cfg.phases
     if phases is None:
