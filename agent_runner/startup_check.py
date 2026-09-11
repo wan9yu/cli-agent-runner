@@ -232,6 +232,11 @@ CHECKS: list[Callable[[Config], CheckResult]] = [
 ]
 
 
+def _phase_qualified(base: str, phase: str | None) -> str:
+    """A check's name, suffixed `:<phase>` for an overriding phase profile."""
+    return base if phase is None else f"{base}:{phase}"
+
+
 def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
     """Validate ``command[0]`` for EVERY profile the runner might launch — the
     base agent plus each phase's own agent — so a bad phase agent fails at boot
@@ -250,24 +255,23 @@ def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
     results: list[CheckResult] = []
     for phase in [None, *overriding]:
         profile = cfg.profile_for(phase)
-        name = "agent_cli_in_path" if phase is None else f"agent_cli_in_path:{phase}"
-        results.append(_check_agent_target(profile.agent, cfg.runtime.work_dir, name))
-        stdin_name = (
-            "stdin_container_interactive"
-            if phase is None
-            else f"stdin_container_interactive:{phase}"
+        work_dir = cfg.runtime.work_dir
+        results.append(
+            _check_agent_target(
+                profile.agent, work_dir, _phase_qualified("agent_cli_in_path", phase)
+            )
         )
         results.append(
-            _check_stdin_container_interactive(profile.agent, cfg.runtime.work_dir, stdin_name)
-        )
-        cp_name = (
-            "control_plane_outside_container"
-            if phase is None
-            else f"control_plane_outside_container:{phase}"
+            _check_stdin_container_interactive(
+                profile.agent, work_dir, _phase_qualified("stdin_container_interactive", phase)
+            )
         )
         results.append(
             _check_control_plane_outside_container(
-                profile.agent, cfg.runtime.work_dir, cfg.runtime.log_dir, cp_name
+                profile.agent,
+                work_dir,
+                cfg.runtime.log_dir,
+                _phase_qualified("control_plane_outside_container", phase),
             )
         )
     return results

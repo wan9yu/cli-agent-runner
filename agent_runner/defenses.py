@@ -29,6 +29,7 @@ class Defense:
 
 def catalog(cfg: Config) -> list[Defense]:
     """Return the defense catalog parameterised by current config."""
+    check_kinds = startup_check.all_check_kinds()
     return [
         Defense(
             name="round_timeout_s",
@@ -92,10 +93,7 @@ def catalog(cfg: Config) -> list[Defense]:
             # Computed from startup_check.all_check_kinds() -- the battery's
             # own SSOT -- so this count/list can't drift from the real boot
             # battery the way the hand-written "6 checks" string once did.
-            value=(
-                f"{len(startup_check.all_check_kinds())} checks "
-                f"({' / '.join(startup_check.all_check_kinds())})"
-            ),
+            value=f"{len(check_kinds)} checks ({' / '.join(check_kinds)})",
             codifies=(
                 "R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; "
                 "now halts serve (config_broken) instead of respawning a broken config"
