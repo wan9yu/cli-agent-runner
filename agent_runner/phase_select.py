@@ -49,6 +49,66 @@ class Selection:
     active_window: str | None
 
 
+@dataclass(frozen=True)
+class WindowOverlap:
+    """Two agent-overriding phases whose own run-windows collide in the same
+    timezone — a rotation footgun (serve alternates between them round-to-round).
+    """
+
+    phase_a: str
+    phase_b: str
+    window_a: str
+    window_b: str
+
+
+def _subranges(w: schedule.Window) -> list[tuple[int, int]]:
+    if w.start_min >= w.end_min:  # wraps past midnight
+        return [(w.start_min, 1440), (0, w.end_min)]
+    return [(w.start_min, w.end_min)]
+
+
+def _windows_collide(a: schedule.Window, b: schedule.Window) -> bool:
+    if a.days and b.days and not (a.days & b.days):
+        return False
+    return any(
+        s1 < e2 and s2 < e1 for (s1, e1) in _subranges(a) for (s2, e2) in _subranges(b)
+    )
+
+
+def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
+    """Pure config check: pairs of phases that BOTH override ``agent`` AND BOTH
+    define their own non-empty ``run_windows`` AND share an effective timezone AND
+    whose windows intersect. Timezone-mismatched pairs are skipped (no cross-tz
+    math in a warning). ``pause_windows`` are ignored for now — a pause that carves
+    out the overlap can over-warn, acceptable for a warning; 0.3.0's hard-error
+    form must model pauses before rejecting.
+    """
+    phases = cfg.phases
+    if phases is None:
+        return []
+    candidates = []
+    for p in phases.list or []:
+        ov = phases.overrides.get(p)
+        if ov and ov.agent and ov.schedule is not None and ov.schedule.run_windows:
+            sched = cfg.profile_for(p).schedule  # effective tz (inherits global), own windows
+            candidates.append((p, sched))
+    overlaps: list[WindowOverlap] = []
+    for i in range(len(candidates)):
+        for j in range(i + 1, len(candidates)):
+            (pa, sa), (pb, sb) = candidates[i], candidates[j]
+            if sa.timezone != sb.timezone:
+                continue
+            for wa in sa.run_windows:
+                for wb in sb.run_windows:
+                    if _windows_collide(wa, wb):
+                        overlaps.append(WindowOverlap(pa, pb, wa.label, wb.label))
+                        break
+                else:
+                    continue
+                break
+    return overlaps
+
+
 def candidate_phases(cfg, round_num: int) -> list[str | None]:
     """Phases to consider this round, in preference order.
 

@@ -35,6 +35,8 @@ from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import Config, ConfigError
 from agent_runner.events import (
     AGENT_NETWORK_BLIP,
+    PHASE_WINDOW_OVERLAP,
+    emit,
     now_iso_ms,
     parse_iso_ms,
 )
@@ -404,6 +406,17 @@ def run_one_round(cfg: Config, *, phase_override: str | None = None) -> RoundRes
                 # a failed breadcrumb swallow the classified exit code below.
                 pass
         sys.exit(exit_code)
+
+    # L4: phase window-overlap footgun warning (0.3.0 promotes this to a hard error)
+    for ov in phase_select.find_phase_window_overlaps(cfg):
+        emit(
+            log_dir,
+            PHASE_WINDOW_OVERLAP,
+            phase_a=ov.phase_a,
+            phase_b=ov.phase_b,
+            window_a=ov.window_a,
+            window_b=ov.window_b,
+        )
 
     # Concurrency lock (per-project)
     lock_path = log_dir / "agent-runner.lock"

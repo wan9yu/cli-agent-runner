@@ -81,6 +81,10 @@ def test_known_event_kinds_should_contain_all_lifecycle_events() -> None:
     assert expected.issubset(KNOWN_EVENT_KINDS)
 
 
+def test_phase_window_overlap_should_be_a_registered_builtin_kind() -> None:
+    assert "phase_window_overlap" in KNOWN_EVENT_KINDS
+
+
 def test_registered_plugin_kind_should_appear_in_known_kinds() -> None:
     events.register_event_kind("custom_test_kind", source="test-plugin")
 

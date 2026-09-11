@@ -237,3 +237,91 @@ def test_phase_select_should_agree_with_runner_rotation_index_across_rounds(tmp_
         _, idx = _phase_for(r, phases)
         assert idx == phase_select.rotation_index(r, len(phases))
         assert phases[idx] == phase_select.candidate_phases(cfg, r)[0]
+
+
+def _run_windows_toml(windows: list[str]) -> str:
+    if not windows:
+        return ""
+    items = ", ".join(f'"{w}"' for w in windows)
+    return f"run_windows = [{items}]\n"
+
+
+def _cfg_two_agent_phases(
+    tmp_path,
+    *,
+    windows_a: list[str],
+    windows_b: list[str],
+    tz: str | None = None,
+    tz_a: str | None = None,
+    tz_b: str | None = None,
+):
+    tz_a = tz_a or tz
+    tz_b = tz_b or tz
+    block = (
+        '[phases]\nlist = ["a", "b"]\n'
+        '[phases.a.agent]\nname = "agent-a"\n'
+        "[phases.a.schedule]\n"
+        + (f'timezone = "{tz_a}"\n' if tz_a else "")
+        + _run_windows_toml(windows_a)
+        + '[phases.b.agent]\nname = "agent-b"\n'
+        + "[phases.b.schedule]\n"
+        + (f'timezone = "{tz_b}"\n' if tz_b else "")
+        + _run_windows_toml(windows_b)
+    )
+    return _cfg(tmp_path, block)
+
+
+def _cfg_one_agent_one_plain_phase(tmp_path, *, windows_a: list[str], windows_b: list[str]):
+    block = (
+        '[phases]\nlist = ["a", "b"]\n'
+        '[phases.a.agent]\nname = "agent-a"\n'
+        "[phases.a.schedule]\n"
+        + _run_windows_toml(windows_a)
+        + "[phases.b.schedule]\n"
+        + _run_windows_toml(windows_b)
+    )
+    return _cfg(tmp_path, block)
+
+
+def test_overlap_should_flag_pair_when_both_windowed_agent_phases_intersect_in_same_tz(tmp_path):
+    cfg = _cfg_two_agent_phases(
+        tmp_path, windows_a=["09:00-12:00"], windows_b=["11:00-14:00"], tz="UTC"
+    )
+
+    overlaps = phase_select.find_phase_window_overlaps(cfg)
+
+    assert len(overlaps) == 1
+
+
+def test_overlap_should_ignore_pair_when_one_phase_has_no_own_run_windows(tmp_path):
+    cfg = _cfg_two_agent_phases(tmp_path, windows_a=["09:00-12:00"], windows_b=[], tz="UTC")
+
+    assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_ignore_pair_when_agents_not_both_overridden(tmp_path):
+    cfg = _cfg_one_agent_one_plain_phase(
+        tmp_path, windows_a=["09:00-12:00"], windows_b=["10:00-11:00"]
+    )
+
+    assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_skip_pair_when_effective_timezones_differ(tmp_path):
+    cfg = _cfg_two_agent_phases(
+        tmp_path,
+        windows_a=["09:00-12:00"],
+        windows_b=["10:00-11:00"],
+        tz_a="UTC",
+        tz_b="Asia/Tokyo",
+    )
+
+    assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_ignore_pair_when_windows_do_not_intersect(tmp_path):
+    cfg = _cfg_two_agent_phases(
+        tmp_path, windows_a=["09:00-10:00"], windows_b=["11:00-12:00"], tz="UTC"
+    )
+
+    assert phase_select.find_phase_window_overlaps(cfg) == []
