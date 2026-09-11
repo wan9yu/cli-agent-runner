@@ -289,6 +289,33 @@ def _phase_prompt_checks(cfg: Config) -> list[CheckResult]:
     return results
 
 
+def all_check_kinds() -> tuple[str, ...]:
+    """Static kind-names ``run_battery`` can emit, ``:<phase>`` suffix
+    stripped: the 5 base ``CHECKS`` names plus the 3 per-profile kinds
+    ``_agent_cli_checks`` adds (``agent_cli_in_path``,
+    ``stdin_container_interactive``, ``control_plane_outside_container``).
+    Per-phase prompt checks (``_phase_prompt_checks``) reuse
+    ``prompt_smoke_passes`` under a ``:<phase>`` suffix -- the same kind,
+    not a new one, so it is not listed twice.
+
+    Single source of truth for the defenses catalog's ``startup_smoke_check``
+    entry (see ``defenses.py``), so the human-readable count there is
+    computed from this instead of hand-copied and drifting; pinned against
+    the real battery by
+    ``test_all_check_kinds_should_match_battery_kinds_when_config_is_valid``.
+    """
+    return (
+        "config_loaded",
+        "log_dir_writable",
+        "work_dir_is_git_repo",
+        "prompt_file_exists",
+        "prompt_smoke_passes",
+        "agent_cli_in_path",
+        "stdin_container_interactive",
+        "control_plane_outside_container",
+    )
+
+
 def run_battery(cfg: Config) -> list[CheckResult]:
     """Run all checks. Returns empty list if escape hatch env is set."""
     if os.environ.get(ESCAPE_HATCH_ENV, "").lower() in ("1", "true", "yes", "on"):

@@ -53,18 +53,6 @@ kind name is the version discriminator; a breaking change ships as
 `round_start_v2`). Reaching this failure requires a contract violation — but the
 suite would not report it.
 
-## `remote_failure_tolerance_s` does not cover `subprocess.TimeoutExpired` — NEEDS_DESIGN
-
-The tolerance window covers ssh exit code 255 only. `monitor.run_remote_command`
-raises `MonitorRemoteError` on rc=255, and `api.monitor_loop`'s retry loop
-catches exactly that. A hung (not failed) ssh connection instead trips the
-`subprocess.run(timeout=...)` guard and raises `subprocess.TimeoutExpired`,
-which bypasses the window and kills the monitor.
-
-The rc=255-only scope is intentional and pinned by the monitor-signals design,
-and the documentation matches the code exactly — there is no drift here. Widening
-it changes a documented recovery path, so it is a design decision, not debt.
-
 ## `anomaly_repetitive_*` default — NEEDS_DESIGN
 
 `monitor.anomaly_repetitive_window` and `anomaly_repetitive_threshold` both
@@ -88,21 +76,6 @@ just succeeded in the same repo).
 Deferred because closing it is a naming decision, not cleanup: no event kind
 carries the meaning "stashed but ref lost" (`orphan_stash_failed` would be wrong
 — the stash exists). Left as-is until that kind is designed.
-
-## `_monitor_loop_iter`'s three fail-open guards are hand-duplicated
-
-`api._monitor_loop_iter` wraps the startup `monitor_started` emit, the
-per-tick poll, and `on_alert`'s per-alert dispatch each in its own
-`try/except Exception: warnings.warn(...)` block so a crash in any one of the
-three never ends monitor supervision. The three guards are structurally
-identical (catch, format a `type(e).__name__: {e}` warning, keep the loop
-alive) but hand-copied rather than sharing one implementation; `on_alert`'s
-own `emit()` closure already shows the pattern for factoring a shared guard.
-
-Collapsing them to one shared guard is behavior-preserving — it must not
-change which failures warn vs which propagate, nor the specific fallback
-each site takes on failure (sleep-and-retry after a poll failure,
-`verdict = "failed"` after an `on_alert` failure). Slated for 0.2.19.
 
 ## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN, DEFERRED to 0.3
 

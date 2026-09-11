@@ -171,6 +171,20 @@ def test_run_battery_should_fail_cli_check_when_relative_command_missing_in_work
     assert str(tmp_git_repo) in cli.reason
 
 
+def test_all_check_kinds_should_match_battery_kinds_when_config_is_valid(
+    tmp_git_repo: Path,
+) -> None:
+    """Pin startup_check.all_check_kinds() -- the SSOT the defenses catalog's
+    startup_smoke_check entry renders its count from -- against what
+    run_battery() actually emits for a base (no-phase-override) config, so
+    the two can't silently drift apart the way the old hand-written "6
+    checks" string did."""
+    results = run_battery(_cfg(tmp_git_repo))
+
+    battery_kinds = {r.name.split(":", 1)[0] for r in results}
+    assert battery_kinds == set(startup_check.all_check_kinds())
+
+
 def test_checkresult_permanent_should_default_to_false(tmp_git_repo: Path) -> None:
     # Unclassified checks are environmental by default (locked decision).
     assert CheckResult("x", ok=False, reason="r").permanent is False

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_runner import events
+from agent_runner import events, startup_check
 from agent_runner.config import Config
 
 
@@ -89,7 +89,13 @@ def catalog(cfg: Config) -> list[Defense]:
         ),
         Defense(
             name="startup_smoke_check",
-            value="6 checks (config / log_dir / agent_cli / git / prompt_file / prompt_smoke)",
+            # Computed from startup_check.all_check_kinds() -- the battery's
+            # own SSOT -- so this count/list can't drift from the real boot
+            # battery the way the hand-written "6 checks" string once did.
+            value=(
+                f"{len(startup_check.all_check_kinds())} checks "
+                f"({' / '.join(startup_check.all_check_kinds())})"
+            ),
             codifies=(
                 "R721 + #446 — _common.md frontmatter caused 4h/123-round silent burn; "
                 "now halts serve (config_broken) instead of respawning a broken config"
