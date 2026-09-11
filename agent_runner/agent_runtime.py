@@ -568,7 +568,7 @@ def run(
     log_path: Path,
     env_extra: dict[str, str],
     max_grace_after_result_s: int = 0,
-    terminal_marker: str = '"type":"result"',
+    terminal_marker: str = '"type":"result"',  # mirrors config.DEFAULT_TERMINAL_MARKER
     progress_callback: Callable[[dict], None] | None = None,
     progress_interval_s: int = 0,
     on_grace_extended: Callable[[list[dict], list[dict]], None] | None = None,

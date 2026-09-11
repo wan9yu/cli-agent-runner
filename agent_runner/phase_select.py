@@ -12,6 +12,7 @@ the module never reads throttle/event state itself, which is what keeps it pure.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -93,19 +94,21 @@ def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
             sched = cfg.profile_for(p).schedule  # effective tz (inherits global), own windows
             candidates.append((p, sched))
     overlaps: list[WindowOverlap] = []
-    for i in range(len(candidates)):
-        for j in range(i + 1, len(candidates)):
-            (pa, sa), (pb, sb) = candidates[i], candidates[j]
-            if sa.timezone != sb.timezone:
-                continue
-            for wa in sa.run_windows:
-                for wb in sb.run_windows:
-                    if _windows_collide(wa, wb):
-                        overlaps.append(WindowOverlap(pa, pb, wa.label, wb.label))
-                        break
-                else:
-                    continue
-                break
+    for (pa, sa), (pb, sb) in itertools.combinations(candidates, 2):
+        if sa.timezone != sb.timezone:
+            continue
+        hit = next(
+            (
+                (wa, wb)
+                for wa in sa.run_windows
+                for wb in sb.run_windows
+                if _windows_collide(wa, wb)
+            ),
+            None,
+        )
+        if hit is not None:
+            wa, wb = hit
+            overlaps.append(WindowOverlap(pa, pb, wa.label, wb.label))
     return overlaps
 
 

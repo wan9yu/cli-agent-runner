@@ -8,6 +8,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from agent_runner import agent_runtime
 from agent_runner.config import AgentConfig, Config
@@ -234,7 +235,7 @@ class CheckSpec:
     per_profile -> run(cfg, profile, phase); per_phase -> run(cfg, phase)."""
 
     kind: str
-    scope: str  # "base" | "per_profile" | "per_phase"
+    scope: Literal["base", "per_profile", "per_phase"]
     run: Callable[..., CheckResult]
 
 
@@ -280,6 +281,12 @@ _CHECK_SPECS: tuple[CheckSpec, ...] = (
         ),
     ),
 )
+
+# Fail loud at import if a spec carries an unrecognized scope — run_battery's
+# scope-filtered dispatch would otherwise silently drop it from the whole battery.
+_CHECK_SCOPES = ("base", "per_profile", "per_phase")
+if any(s.scope not in _CHECK_SCOPES for s in _CHECK_SPECS):
+    raise ValueError(f"CheckSpec.scope must be one of {_CHECK_SCOPES}")
 
 
 def _agent_override_phases(cfg: Config) -> list[str]:

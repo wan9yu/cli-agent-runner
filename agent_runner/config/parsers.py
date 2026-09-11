@@ -32,6 +32,7 @@ from agent_runner.config.models import (
     _VALID_PROMPT_DELIVERY,
     _VALID_TRANSIENT_ERROR_ACTIONS,
     _VCS_ALLOWED_FIELDS,
+    DEFAULT_TERMINAL_MARKER,
     AgentConfig,
     MonitorConfig,
     MonitorHostHealthConfig,
@@ -109,7 +110,7 @@ def _parse_agent(
     exec_prefix = _require_str_list(
         agent_d.get("exec_prefix", []), field=f"{field_prefix} exec_prefix"
     )
-    terminal_marker = str(agent_d.get("terminal_marker", '"type":"result"'))
+    terminal_marker = str(agent_d.get("terminal_marker", DEFAULT_TERMINAL_MARKER))
     return AgentConfig(
         command=command,
         prompt_arg_template=prompt_arg_template,

@@ -45,7 +45,7 @@ def cmd_doctor(args) -> int:
     report = DoctorReport(
         checks=startup_check.run_battery(cfg),
         overlaps=phase_select.find_phase_window_overlaps(cfg),
-        plan=_plan(cfg, getattr(args, "rounds", 3)),
+        plan=_plan(cfg, args.rounds),
     )
     json_mode = getattr(args, "json", False)
     if json_mode:
@@ -62,7 +62,10 @@ def _format(report: DoctorReport) -> str:
     lines = ["checks:"]
     for c in report.checks:
         mark = "ok" if c.ok else "FAIL"
-        lines.append(f"  [{mark}] {c.name}" + (f" — {c.reason}" if not c.ok else ""))
+        detail = ""
+        if not c.ok:
+            detail = f" — {c.reason}" + (f" (fix: {c.how_to_fix})" if c.how_to_fix else "")
+        lines.append(f"  [{mark}] {c.name}{detail}")
     if report.overlaps:
         lines.append("window overlaps:")
         for o in report.overlaps:

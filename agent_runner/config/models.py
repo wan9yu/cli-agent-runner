@@ -22,6 +22,12 @@ _VALID_DIRTY_ACTIONS: frozenset[str] = frozenset({"stash", "ignore", "auto_commi
 _VALID_TRANSIENT_ERROR_ACTIONS: frozenset[str] = frozenset({"back_off", "skip", "stop"})
 _VALID_PROMPT_DELIVERY: frozenset[str] = frozenset({"argv", "stdin"})
 
+# claude's own compact JSONL terminal token — the default `[agent] terminal_marker`
+# so existing configs are unaffected. Single source for the field default and the
+# TOML-parse fallback (parsers.py); `agent_runtime.run`'s own kwarg default mirrors
+# this literal but is decoupled to avoid an agent_runtime -> config import.
+DEFAULT_TERMINAL_MARKER = '"type":"result"'
+
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -31,7 +37,7 @@ class AgentConfig:
     env: dict[str, str] = field(default_factory=dict)
     prompt_delivery: Literal["argv", "stdin"] = "argv"
     exec_prefix: list[str] = field(default_factory=list)
-    terminal_marker: str = '"type":"result"'
+    terminal_marker: str = DEFAULT_TERMINAL_MARKER
     """Byte substring the grace-kill scan looks for in the round log to detect
     the agent's terminal record (see ``agent_runtime.run``'s marker scan).
     Defaults to claude's own JSONL token so existing configs are unaffected;
