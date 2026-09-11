@@ -92,7 +92,10 @@ def _check_stdin_container_interactive(
     argv = agent.spawn_command(work_dir)
     if agent_runtime._detect_container_run(argv) is None:
         return CheckResult(name, True)
-    if any(_INTERACTIVE_FLAG.match(tok) for tok in argv):
+    # Whether docker forwards stdin depends ONLY on docker's own flags
+    # (exec_prefix) -- agent.command runs INSIDE the container, so an -i/
+    # --interactive there is irrelevant and must not satisfy this check.
+    if any(_INTERACTIVE_FLAG.match(tok) for tok in agent.exec_prefix):
         return CheckResult(name, True)
 
     return CheckResult(

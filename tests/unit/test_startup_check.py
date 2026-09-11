@@ -219,6 +219,27 @@ def test_stdin_container_check_should_pass_when_interactive_present() -> None:
     assert startup_check._check_stdin_container_interactive(agent, Path("/srv"), "n").ok
 
 
+def test_stdin_container_check_should_fail_permanent_when_only_command_has_interactive_flag() -> (
+    None
+):
+    # The agent's OWN -i (in command, which runs INSIDE the container) must not
+    # satisfy the check -- only exec_prefix's own flags control whether docker
+    # forwards stdin.
+    agent = AgentConfig(
+        command=["mycli", "-i", "x"],
+        prompt_arg_template=[],
+        prompt_delivery="stdin",
+        exec_prefix=["docker", "run", "--rm", "img"],  # no -i here
+    )
+
+    result = startup_check._check_stdin_container_interactive(
+        agent, Path("/srv"), "stdin_container_interactive"
+    )
+
+    assert not result.ok
+    assert result.permanent
+
+
 def test_run_battery_should_fail_named_phase_check_when_phase_prompt_override_missing(
     tmp_git_repo: Path,
 ) -> None:

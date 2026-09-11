@@ -12,7 +12,7 @@ import pytest
 from agent_runner import startup_check
 from agent_runner.agent_runtime import _detect_container_run
 from agent_runner.config.models import AgentConfig
-from tests._test_helpers import FakeArgs, write_min_config
+from tests._test_helpers import FakeArgs, make_toml_with_sections, write_min_config
 
 
 def test_spawn_command_should_splice_prefix_before_command_when_exec_prefix_set():
@@ -111,3 +111,40 @@ def test_serve_should_leave_cgroup_defer_governed_by_probe_when_exec_prefix_is_n
 
     assert rc == 0
     assert captured["defer_to_cgroup"] is True
+
+
+def test_serve_should_compute_defer_to_cgroup_per_round_from_the_phase_actually_selected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """exec_prefix is base-only, but a phase CAN override command to a bare
+    container run — so a stale, base-computed defer_to_cgroup would wrongly keep
+    deferring a containerized phase's mid-round kill to dockerd's own cgroup-OOM.
+    Same config, same probe result, two selections: the containerized phase
+    forces the round-level defer off; the base agent (no --phase) leaves it
+    governed by the probe."""
+    from agent_runner.cli import serve_cmd
+
+    cfg_path = make_toml_with_sections(
+        tmp_path,
+        phases_block=(
+            '[phases]\nlist = ["container"]\nphase_policy = "skip"\n'
+            '[phases.container.agent]\ncommand = ["docker", "run", "--rm", "img"]\n'
+        ),
+    )
+    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir: True)
+    captured = {}
+
+    def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **kwargs):
+        round_log_path.write_text("round output\n")
+        captured["defer_to_cgroup"] = kwargs["defer_to_cgroup"]
+        return 0
+
+    monkeypatch.setattr(serve_cmd, "_spawn_round", fake_spawn)
+
+    rc_container = serve_cmd.cmd(FakeArgs(cfg_path, once=True))
+    assert rc_container == 0
+    assert captured["defer_to_cgroup"] is False  # containerized phase -> never defer
+
+    rc_base = serve_cmd.cmd(FakeArgs(cfg_path, once=True, ignore_schedule=True))
+    assert rc_base == 0
+    assert captured["defer_to_cgroup"] is True  # base agent (no --phase) -> probe governs

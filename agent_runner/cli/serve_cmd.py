@@ -612,9 +612,9 @@ def cmd(args) -> int:
         return fail_code
     stop_file = cfg.runtime.stop_file  # cache: same pattern as effective_max_rounds
     work_dir = cfg.runtime.work_dir
-    defer_to_cgroup = _probe_and_emit_cgroup_defer(log_dir) and (
-        _detect_container_run(cfg.agent.spawn_command(cfg.runtime.work_dir)) is None
-    )
+    # Emitted exactly once per serve lifetime -- the per-round defer decision below
+    # reuses this bool rather than re-probing/re-emitting every round.
+    cgroup_probe_defer = _probe_and_emit_cgroup_defer(log_dir)
     rounds_completed = 0
     # Three independent consecutive-failure counters, one per breaker: b12
     # crash-loop (unknown short crashes), mem-loop (mem-terminated
@@ -688,6 +688,15 @@ def cmd(args) -> int:
             ]
             if phase_arg is not None:
                 round_argv += ["--phase", phase_arg]
+            # Phase-aware, per-round: a phase can override [phases.<name>.agent]
+            # command to a bare container run even when the base agent isn't one
+            # (exec_prefix is base-only, but command isn't) -- computing this once
+            # from the base agent would wrongly keep deferring a containerized
+            # phase's mid-round kill to dockerd's own cgroup-OOM.
+            defer_to_cgroup = cgroup_probe_defer and (
+                _detect_container_run(cfg.profile_for(phase_arg).agent.spawn_command(work_dir))
+                is None
+            )
             r_returncode = _spawn_round(
                 round_argv,
                 round_log_path,

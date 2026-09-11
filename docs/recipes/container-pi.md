@@ -70,8 +70,9 @@ unaffected by running inside docker.
 - **`-e ANTHROPIC_API_KEY`** (value-less) — forwards the key from
   agent-runner's own environment into the container. **Never write
   `-e ANTHROPIC_API_KEY=sk-…`** — a valued `-e` puts the secret straight into
-  the `docker run` argv, which lands in `ps` output and in agent-runner's own
-  events. Add every other provider key the same, value-less way.
+  the `docker run` argv, which lands in `ps` output and `/proc/<pid>/cmdline`
+  for any local user to read. Add every other provider key the same,
+  value-less way.
 - **`my-pi-image`** — the image you built above.
 
 ## Auth

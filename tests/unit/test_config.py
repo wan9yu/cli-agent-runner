@@ -2213,3 +2213,15 @@ def test_load_config_should_reject_exec_prefix_when_set_on_a_phase_agent(tmp_pat
 
     with pytest.raises(ConfigError, match="exec_prefix.*base"):
         load_config(cfg_path)
+
+
+def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent(tmp_path: Path) -> None:
+    """exec_prefix must be a list like command -- a bare string (a single-token
+    TOML mistake, e.g. `exec_prefix = "docker"`) is rejected via _require_str_list."""
+    from agent_runner.config import ConfigError
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path, agent_extra='exec_prefix = "docker"\n')
+
+    with pytest.raises(ConfigError, match="must be a list"):
+        load_config(cfg_path)
