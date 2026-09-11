@@ -193,6 +193,11 @@ def init(
 _SYSTEM_UNITS_DIR = Path("/etc/systemd/system")
 
 
+def _system_unit_exists(project: str) -> bool:
+    """A --system install's root-owned unit; detect_service_mode can't see it (user-scope only)."""
+    return (_SYSTEM_UNITS_DIR / serve_unit_filename(project)).exists()
+
+
 def _install_system(
     cfg: Config, project: str, *, config_path: Path, with_monitor: bool
 ) -> InstallResult:
@@ -283,6 +288,15 @@ def uninstall(work_dir: Path | None = None) -> bool:
     if work_dir is None:
         work_dir = Path.cwd()
     project = _project_name(work_dir)
+    if _system_unit_exists(project):  # root-owned -- don't silently no-op the user-scope dir
+        units = [serve_unit_filename(project)]
+        if (_SYSTEM_UNITS_DIR / monitor_unit_filename(project)).exists():
+            units.append(monitor_unit_filename(project))
+        remedy = " && ".join(
+            f"sudo systemctl disable --now {u} && sudo rm {_SYSTEM_UNITS_DIR / u}" for u in units
+        )
+        print(f"{project} is managed by a system unit; run: {remedy}")
+        return False
     units_dir = lifecycle._user_systemd_dir()
     serve = units_dir / serve_unit_filename(project)
     monitor = units_dir / monitor_unit_filename(project)
@@ -295,7 +309,10 @@ def uninstall(work_dir: Path | None = None) -> bool:
             lifecycle.stop_unit_draining(p.name, clock=SYSTEM_CLOCK, confirm_s=_PID_SIGNAL_GRACE_S)
             _systemctl_user("disable", p.name)
             p.unlink(missing_ok=True)
-    _systemctl_user("daemon-reload")
+    try:
+        _systemctl_user("daemon-reload")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass  # no user bus on this host -- units above (if any) already gone
     return True
 
 
@@ -447,6 +464,11 @@ def restart(project: str | Path, *, force: bool = False) -> ServiceStatus:
     # SYSTEMD_USER unit, so restarting a PID_FILE/NONE service would stop it and
     # never bring it back — the half-execution this fix eliminates.
     pname = _resolve_project(project)
+    if _system_unit_exists(pname):  # root-owned -- below's message would mislead
+        raise RuntimeError(
+            f"{pname} is managed by a system unit; run: "
+            f"sudo systemctl restart {serve_unit_filename(pname)}"
+        )
     log_dir = _log_dir_for_project(project)
     mode = detect_service_mode(pname, log_dir=log_dir)
     if mode != ServiceMode.SYSTEMD_USER:
@@ -475,14 +497,18 @@ def status(project: str | Path) -> ServiceStatus:
     pname = _resolve_project(project)
     log_dir = _log_dir_for_project(project)
     mode = detect_service_mode(pname, log_dir=log_dir)
-    if mode == ServiceMode.PID_FILE:
-        pid = PIDFile(log_dir / "serve.pid").read()
-        return ServiceStatus(mode=mode, active=pid is not None and pid_alive(pid), pid=pid)
     if mode == ServiceMode.SYSTEMD_USER:
         unit = lifecycle._user_systemd_dir() / serve_unit_filename(pname)
         active = _systemd_active(serve_unit_filename(pname), log_dir)
         return ServiceStatus(mode=mode, active=active, unit_file=unit)
-    return ServiceStatus(mode=ServiceMode.NONE, active=False)
+    # detect_service_mode only sees the user-scope unit dir; label a --system
+    # install found here (PID_FILE/NONE) via system_managed, not unit_file.
+    system_managed = _system_unit_exists(pname)
+    if mode == ServiceMode.PID_FILE:
+        pid = PIDFile(log_dir / "serve.pid").read()
+        active = pid is not None and pid_alive(pid)
+        return ServiceStatus(mode=mode, active=active, pid=pid, system_managed=system_managed)
+    return ServiceStatus(mode=ServiceMode.NONE, active=False, system_managed=system_managed)
 
 
 def _resolve_target(project: str | Path | None) -> tuple[str, Path]:

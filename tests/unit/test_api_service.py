@@ -333,6 +333,113 @@ def test_pid_file_should_refuse_before_stopping_when_restart(
     send.assert_not_called()  # refused BEFORE stop()
 
 
+def test_system_unit_should_refuse_with_systemctl_command_when_restart(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `--system` install's unit is root-owned; restart can't touch it, so it
+    must refuse naming the exact `sudo systemctl restart ...` remedy instead of
+    falling through to the PID_FILE/NONE "start it by hand" message."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+
+    with pytest.raises(RuntimeError, match="sudo systemctl restart"):
+        api.restart(tmp_git_repo)
+
+
+def test_system_unit_should_refuse_without_user_teardown_when_uninstall(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """uninstall against a `--system` install must not touch user-scope units at
+    all -- it refuses and prints the `sudo systemctl disable --now ...` remedy."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+
+    def _boom(*a, **k):
+        raise AssertionError("user-scope teardown must not run for a system-managed unit")
+
+    monkeypatch.setattr("agent_runner.lifecycle.stop_unit_draining", _boom)
+    monkeypatch.setattr("agent_runner.api._systemctl_user", _boom)
+
+    result = api.uninstall(tmp_git_repo)
+
+    assert result is False
+    assert "sudo systemctl disable --now" in capsys.readouterr().out
+
+
+def test_system_unit_should_include_monitor_remedy_when_both_units_installed_and_uninstall(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A --system --monitor install writes BOTH a serve and a monitor unit
+    under _SYSTEM_UNITS_DIR; the refusal message must name both remedies --
+    naming only the serve unit would leave an orphaned, enabled, root-owned
+    monitor unit behind if the operator follows the printed command verbatim."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    fake_system = tmp_git_repo / "fake-system-systemd"
+    fake_system.mkdir()
+    project = tmp_git_repo.name
+    serve_unit = f"agent-runner@{project}.service"
+    monitor_unit = f"agent-runner-monitor@{project}.service"
+    (fake_system / serve_unit).write_text("[Unit]\n")
+    (fake_system / monitor_unit).write_text("[Unit]\n")
+    monkeypatch.setattr("agent_runner.api._SYSTEM_UNITS_DIR", fake_system)
+
+    result = api.uninstall(tmp_git_repo)
+
+    assert result is False
+    out = capsys.readouterr().out
+    assert f"disable --now {serve_unit}" in out
+    assert f"disable --now {monitor_unit}" in out
+
+
+def test_no_user_bus_should_not_raise_when_uninstall(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A no-user-bus host (dietpi/RPi, exactly where --system is recommended) has
+    no units under lifecycle._user_systemd_dir(), so the per-unit loop is a
+    no-op -- but the final `daemon-reload` ran unconditionally and crashed with
+    an uncaught CalledProcessError. It must now be swallowed."""
+    api.init(tmp_git_repo, force=False, commit=False)
+    monkeypatch.setattr(
+        "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "no-such-systemd-dir"
+    )
+
+    def _boom(*args: str) -> None:
+        raise subprocess.CalledProcessError(1, "systemctl")
+
+    monkeypatch.setattr("agent_runner.api._systemctl_user", _boom)
+
+    result = api.uninstall(tmp_git_repo)
+
+    assert result is True
+
+
+def test_system_unit_should_set_system_managed_when_status_and_pid_file_mode(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """status() on a --system install falls through detect_service_mode into
+    PID_FILE (no user unit exists) -- it must still surface who manages the
+    service via `system_managed`, distinct from `unit_file` (which stays the
+    live, user-owned, CLI-restartable systemd_user unit's path -- overloading
+    it for a root-owned --system unit would misclassify it on the --json/
+    plugin surface)."""
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "serve.pid").write_text(str(os.getpid()))
+    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+
+    s = api.status(tmp_git_repo)
+
+    assert s.mode == ServiceMode.PID_FILE
+    assert s.system_managed is True
+    assert s.unit_file is None
+
+
 def test_pid_file_should_recheck_alive_after_sigkill_when_kill(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

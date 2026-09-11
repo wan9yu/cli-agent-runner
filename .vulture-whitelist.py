@@ -110,6 +110,7 @@ pid
 uptime_s
 unit_file
 rate_limit
+system_managed
 
 # agent_runner.api_types.SystemMetrics
 mem_total_mb

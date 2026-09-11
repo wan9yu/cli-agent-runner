@@ -62,6 +62,11 @@ class ServiceStatus:
     uptime_s: float | None = None
     unit_file: Path | None = None
     rate_limit: RateLimitState | None = None
+    # True when a `--system` install's root-owned unit owns this project but
+    # detect_service_mode fell through to PID_FILE/NONE (it only sees the
+    # user-scope unit dir) -- distinct from `unit_file`, which stays the
+    # live, user-owned, CLI-restartable systemd_user unit's path.
+    system_managed: bool = False
 
 
 @dataclass(frozen=True)

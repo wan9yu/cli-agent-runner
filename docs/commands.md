@@ -65,11 +65,20 @@ Generate and install systemd user unit(s):
 - `--force`: overwrite a same-basename sibling project's unit (the clobber guard
   otherwise refuses, e.g. after moving/renaming a project directory).
 
-After writing, runs `systemctl --user daemon-reload`, `enable`, `start`.
+For the default (non-`--system`) path, after writing the unit(s) it runs
+`systemctl --user daemon-reload`, `enable`, `start`. The `--system` path runs
+the system-level `daemon-reload` and `enable` only, as noted above — it does
+not start the unit.
 
 ### `agent-runner uninstall`
 
-Stops and disables both units, then deletes the unit files and reloads systemd.
+Stops and disables both user units, then deletes the unit files and reloads
+systemd. A `--system`-installed unit is root-owned and out of reach here: this
+refuses instead, printing the `sudo systemctl disable --now ...` command for
+the serve unit (and the monitor unit too, if `--system --monitor` installed
+one) to run in its place. Never raises for a missing user bus either (the
+dietpi/RPi hosts `--system` is recommended for) — a failed `daemon-reload`
+there is harmless once the units are already gone.
 
 ### `agent-runner start | stop | kill | restart | status`
 
@@ -79,6 +88,11 @@ there:
 - `start` is idempotent.
 - `stop` waits up to `round_timeout_s` for the current round.
 - `kill` (and `restart --force`) is for a stuck round only — 5s grace then SIGKILL.
+- `restart` against a `--system`-installed unit refuses, printing the
+  `sudo systemctl restart ...` command to run instead (it manages user-scope
+  units only). `status` still reports it correctly — a `--system` install
+  sets `system_managed: true` on the result rather than misreporting it as a
+  `systemd_user`-mode service.
 
 ### `agent-runner round`
 
