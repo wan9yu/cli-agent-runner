@@ -49,9 +49,7 @@ class AgentConfig:
         throttle/crash-loop/hook identity join stays keyed on the real agent. Empty
         ``exec_prefix`` ⇒ ``command`` unchanged. The SSOT both the spawn (runner) and
         the startup battery resolve, so they can't drift."""
-        return [t.replace("{work_dir}", str(work_dir)) for t in self.exec_prefix] + list(
-            self.command
-        )
+        return [t.replace("{work_dir}", str(work_dir)) for t in self.exec_prefix] + self.command
 
 
 @dataclass(frozen=True)

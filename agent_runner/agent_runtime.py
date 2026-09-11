@@ -26,6 +26,11 @@ from agent_runner.clock import SYSTEM_CLOCK, Clock
 
 REAP_GRACE_S = 5
 
+# Wall-clock bound on the best-effort `<runtime> stop` subprocess. Pinned by an
+# invariant test to stay <= _serve_policy._ROUND_TERM_GRACE_S so serve's
+# round-terminate escalation never SIGKILLs round_cmd mid-stop.
+_CONTAINER_STOP_TIMEOUT_S = REAP_GRACE_S + 5
+
 # Backstop cap on the stored child "name" (see _live_children). The primary
 # source (kernel comm) is already bounded (15 bytes on Linux); this only
 # guards the argv[0]-basename fallback used when comm is unavailable.
@@ -362,6 +367,20 @@ def _detect_container_run(command: list[str]) -> tuple[str, int] | None:
     return None
 
 
+# Matches the docker/podman flags that attach the container's stdin: `-i`, any
+# short cluster containing `i` (`-it`, `-ti`, `-di`), and `--interactive[=…]`;
+# NOT `--init` (double-dash, so the single-dash alternative can't consume it).
+_INTERACTIVE_FLAG = re.compile(r"^(-[a-z]*i[a-z]*|--interactive(=.*)?)$")
+
+
+def _exec_prefix_is_interactive(exec_prefix: list[str]) -> bool:
+    """True when the operator's ``exec_prefix`` carries a stdin-attaching flag.
+    Only the prefix's own docker flags matter -- the wrapped ``command`` runs
+    INSIDE the container, so an ``-i`` there is irrelevant to whether the
+    runtime forwards stdin."""
+    return any(_INTERACTIVE_FLAG.match(tok) for tok in exec_prefix)
+
+
 # `docker run`/`podman run` OPTIONS known to take a separate value token --
 # used only to walk PAST them without mistaking their value for IMAGE (e.g.
 # `--name foo`: without this, a naive scan would stop at "foo" thinking it's
@@ -494,13 +513,11 @@ def _best_effort_container_stop(
     if not cid:
         return None, None
     try:
-        # timeout bounded to REAP_GRACE_S + 5 (10s) <= _ROUND_TERM_GRACE_S (15s)
-        # so serve's round-terminate escalation never SIGKILLs round_cmd mid-stop.
         result = subprocess.run(
             [runtime, "stop", "-t", str(REAP_GRACE_S), cid],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
-            timeout=REAP_GRACE_S + 5,
+            timeout=_CONTAINER_STOP_TIMEOUT_S,
         )
         if result.returncode == 0:
             return cid, True

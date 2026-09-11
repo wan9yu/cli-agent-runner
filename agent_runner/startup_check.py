@@ -5,7 +5,6 @@ spawning the agent so we never silent-burn rounds on broken config.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,9 +78,6 @@ def _check_agent_target(agent: AgentConfig, work_dir: Path, name: str) -> CheckR
     return CheckResult(name, True)
 
 
-_INTERACTIVE_FLAG = re.compile(r"^(-[a-z]*i[a-z]*|--interactive(=.*)?)$")
-
-
 def _check_stdin_container_interactive(
     agent: AgentConfig, work_dir: Path, name: str
 ) -> CheckResult:
@@ -95,7 +91,7 @@ def _check_stdin_container_interactive(
     # Whether docker forwards stdin depends ONLY on docker's own flags
     # (exec_prefix) -- agent.command runs INSIDE the container, so an -i/
     # --interactive there is irrelevant and must not satisfy this check.
-    if any(_INTERACTIVE_FLAG.match(tok) for tok in agent.exec_prefix):
+    if agent_runtime._exec_prefix_is_interactive(agent.exec_prefix):
         return CheckResult(name, True)
 
     return CheckResult(
