@@ -396,6 +396,52 @@ def test_round_holder_pid_should_return_pid_when_pid_live(tmp_path: Path) -> Non
     assert result == os.getpid()
 
 
+def test_round_holder_pid_should_return_none_when_create_time_mismatches(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    import psutil
+
+    holder = {
+        "pid": os.getpid(),
+        "create_time": psutil.Process(os.getpid()).create_time() - 5000.0,
+    }
+    (tmp_path / "agent-runner.lock.holder").write_text(json.dumps(holder))
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result is None
+
+
+def test_round_holder_pid_should_return_pid_when_create_time_matches(tmp_path: Path) -> None:
+    import json
+
+    import psutil
+
+    holder = {
+        "pid": os.getpid(),
+        "create_time": psutil.Process(os.getpid()).create_time(),
+    }
+    (tmp_path / "agent-runner.lock.holder").write_text(json.dumps(holder))
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result == os.getpid()
+
+
+def test_round_holder_pid_should_best_effort_return_pid_when_create_time_missing(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    (tmp_path / "agent-runner.lock.holder").write_text(json.dumps({"pid": os.getpid()}))
+
+    result = api._round_holder_pid(tmp_path)
+
+    assert result == os.getpid()
+
+
 def test_kill_should_send_sigterm_to_serve_before_round_holder(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
