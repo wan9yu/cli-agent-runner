@@ -106,6 +106,31 @@ def _check_stdin_container_interactive(
     )
 
 
+def _check_control_plane_outside_container(
+    agent: AgentConfig, work_dir: Path, log_dir: Path, name: str
+) -> CheckResult:
+    """A supervisor's trust-bearing control files (pid, lock-holder, injected
+    cidfile) must not live where the supervised container can rewrite them.
+    When the agent runs in a container and log_dir resolves inside work_dir --
+    which the container mounts -- the agent could forge them; refuse at boot.
+    Enforced on work_dir (the mount we can reason about); exec_prefix's other
+    mounts are opaque, so the general rule is documented, not code-enforced."""
+    if agent_runtime._detect_container_run(agent.spawn_command(work_dir)) is None:
+        return CheckResult(name, True)
+    if log_dir.is_relative_to(work_dir):
+        return CheckResult(
+            name,
+            False,
+            reason="runtime.log_dir is inside work_dir, which the container mounts — "
+            "the agent could forge the pid/lock/cidfile control files agent-runner trusts",
+            how_to_fix="set runtime.log_dir OUTSIDE work_dir (the default "
+            "~/.agent-runner/<project>/logs already is); a supervisor's control "
+            "files must not sit inside the container it supervises",
+            permanent=True,
+        )
+    return CheckResult(name, True)
+
+
 def _check_work_dir_is_git(cfg: Config) -> CheckResult:
     from agent_runner.vcs_state import GitTimeout, is_git_repo
 
@@ -232,6 +257,16 @@ def _agent_cli_checks(cfg: Config) -> list[CheckResult]:
         )
         results.append(
             _check_stdin_container_interactive(profile.agent, cfg.runtime.work_dir, stdin_name)
+        )
+        cp_name = (
+            "control_plane_outside_container"
+            if phase is None
+            else f"control_plane_outside_container:{phase}"
+        )
+        results.append(
+            _check_control_plane_outside_container(
+                profile.agent, cfg.runtime.work_dir, cfg.runtime.log_dir, cp_name
+            )
         )
     return results
 

@@ -257,3 +257,40 @@ def test_run_battery_should_fail_named_phase_check_when_phase_prompt_override_mi
 
     dev = next(r for r in failed if r.name == "prompt_smoke_passes:dev")
     assert dev.permanent is True
+
+
+def test_control_plane_check_should_fail_permanent_when_log_dir_is_inside_a_containerized_work_dir():  # noqa: E501 — full name states the exact condition; BDD naming wins over line-length here
+    agent = AgentConfig(
+        command=["pi", "--mode", "json"],
+        prompt_arg_template=[],
+        exec_prefix=["docker", "run", "--rm", "-i", "img"],
+    )
+
+    result = startup_check._check_control_plane_outside_container(
+        agent, Path("/srv/proj"), Path("/srv/proj/logs"), "control_plane_outside_container"
+    )
+
+    assert not result.ok
+    assert result.permanent
+
+
+def test_control_plane_check_should_pass_when_log_dir_is_outside_work_dir():
+    agent = AgentConfig(
+        command=["pi", "--mode", "json"],
+        prompt_arg_template=[],
+        exec_prefix=["docker", "run", "--rm", "-i", "img"],
+    )
+
+    assert startup_check._check_control_plane_outside_container(
+        agent, Path("/srv/proj"), Path("/home/u/.agent-runner/proj/logs"), "n"
+    ).ok
+
+
+def test_control_plane_check_should_pass_when_not_containerized_even_if_log_dir_is_inside():
+    agent = AgentConfig(
+        command=["pi", "--mode", "json"], prompt_arg_template=[], exec_prefix=["nice", "-n", "10"]
+    )
+
+    assert startup_check._check_control_plane_outside_container(
+        agent, Path("/srv/proj"), Path("/srv/proj/logs"), "n"
+    ).ok
