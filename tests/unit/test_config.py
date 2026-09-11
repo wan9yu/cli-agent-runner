@@ -2225,3 +2225,31 @@ def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent(tmp_pat
 
     with pytest.raises(ConfigError, match="must be a list"):
         load_config(cfg_path)
+
+
+def test_agent_config_should_accept_terminal_marker_when_set_in_toml(tmp_path: Path) -> None:
+    """terminal_marker is opt-in per-preset grace-kill detection token (e.g. pi's
+    "type":"agent_end") -- the base [agent] table parses it into AgentConfig verbatim."""
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(
+        tmp_path, agent_extra='terminal_marker = "\\"type\\":\\"agent_end\\""\n'
+    )
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.agent.terminal_marker == '"type":"agent_end"'
+
+
+def test_agent_config_should_default_terminal_marker_to_claude_token_when_absent(
+    tmp_path: Path,
+) -> None:
+    """No [agent] terminal_marker key -> defaults to claude's own JSONL token, so
+    existing configs (pre-0.2.23) are unaffected."""
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path)
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.agent.terminal_marker == '"type":"result"'

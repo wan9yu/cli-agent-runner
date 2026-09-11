@@ -135,6 +135,7 @@ name
 env
 prompt_delivery
 exec_prefix
+terminal_marker
 
 # agent_runner.config.models.Config
 agent

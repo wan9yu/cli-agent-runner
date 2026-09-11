@@ -567,6 +567,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         log_path=log_path,
         env_extra={**framework_env, **dict(profile.agent.env)},
         max_grace_after_result_s=cfg.runtime.max_grace_after_result_s,
+        terminal_marker=profile.agent.terminal_marker,
         progress_callback=_progress_emit,
         progress_interval_s=cfg.monitor.round_progress_interval_s,
         on_grace_extended=_grace_extended_emit,

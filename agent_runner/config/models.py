@@ -31,6 +31,11 @@ class AgentConfig:
     env: dict[str, str] = field(default_factory=dict)
     prompt_delivery: Literal["argv", "stdin"] = "argv"
     exec_prefix: list[str] = field(default_factory=list)
+    terminal_marker: str = '"type":"result"'
+    """Byte substring the grace-kill scan looks for in the round log to detect
+    the agent's terminal record (see ``agent_runtime.run``'s marker scan).
+    Defaults to claude's own JSONL token so existing configs are unaffected;
+    an empty string opt-outs the marker scan entirely (wall-clock-ceiling-only)."""
 
     @property
     def binary(self) -> str | None:

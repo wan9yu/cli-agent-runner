@@ -134,6 +134,85 @@ def test_run_should_not_kill_for_grace_when_no_result_emitted(tmp_path, monkeypa
     assert result.exit_code == 0
 
 
+def test_run_should_start_grace_countdown_when_configured_marker_appears(tmp_path, monkeypatch):
+    """0.2.23: terminal_marker is opt-in per-preset (e.g. pi's "type":"agent_end").
+    A non-default marker drives the SAME grace-kill path as the claude default --
+    childless after the configured marker appears -> reaped within grace."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
+    script = _write_fake_script(
+        tmp_path,
+        'echo \'{"type":"agent_end","messages":[]}\'\nexec sleep 30\n',
+    )
+    log_path = tmp_path / "round.log"
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=45,
+        log_path=log_path,
+        env_extra={},
+        max_grace_after_result_s=1,
+        terminal_marker='"type":"agent_end"',
+    )
+
+    assert result.killed_for_grace is True
+
+
+def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path):
+    """The log contains A marker, just not the CONFIGURED one -- the scan never
+    starts a countdown, so the round rides out to the wall-clock ceiling exactly
+    like a round that emitted nothing at all."""
+    script = _write_fake_script(
+        tmp_path,
+        'echo \'{"type":"agent_end","messages":[]}\'\nsleep 5\n',
+    )
+    log_path = tmp_path / "round.log"
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=2,  # short wall timeout
+        log_path=log_path,
+        env_extra={},
+        max_grace_after_result_s=1,
+        terminal_marker='"type":"result"',
+    )
+
+    assert result.killed_for_grace is False
+    assert result.timed_out is True  # killed by wall timeout instead
+
+
+def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path):
+    """An empty terminal_marker is an honest opt-out: even with the default
+    claude token present in the log and max_grace_after_result_s > 0, the scan
+    never runs (guarded by `and marker_bytes`) -- no empty-substring-matches-
+    everything trap. The round rides out to the wall-clock ceiling."""
+    script = _write_fake_script(
+        tmp_path,
+        'echo \'{"type":"result","is_error":false}\'\nsleep 5\n',
+    )
+    log_path = tmp_path / "round.log"
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=2,  # short wall timeout
+        log_path=log_path,
+        env_extra={},
+        max_grace_after_result_s=1,
+        terminal_marker="",
+    )
+
+    assert result.killed_for_grace is False
+    assert result.timed_out is True  # killed by wall timeout instead
+
+
 def test_live_children_should_return_empty_when_process_has_no_children():
     from agent_runner.agent_runtime import _live_children
 

@@ -109,6 +109,7 @@ def _parse_agent(
     exec_prefix = _require_str_list(
         agent_d.get("exec_prefix", []), field=f"{field_prefix} exec_prefix"
     )
+    terminal_marker = str(agent_d.get("terminal_marker", '"type":"result"'))
     return AgentConfig(
         command=command,
         prompt_arg_template=prompt_arg_template,
@@ -116,6 +117,7 @@ def _parse_agent(
         env={str(k): str(v) for k, v in env_d.items()},
         prompt_delivery=prompt_delivery,  # type: ignore[arg-type]  # narrowed above
         exec_prefix=exec_prefix,
+        terminal_marker=terminal_marker,
     )
 
 

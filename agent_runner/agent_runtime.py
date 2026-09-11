@@ -247,11 +247,6 @@ def _live_children(
     return live, ignored
 
 
-# Exact compact bytes — matches claude CLI's no-whitespace JSONL output.
-# A future CLI variant emitting `{"type": "result", ...}` (with space) would
-# bypass this scan; revisit if that happens.
-_RESULT_MARKER = b'"type":"result"'
-
 # Decoupled from the 0.2s poll tick: the marker scan only needs to notice the
 # result within max_grace_after_result_s (seconds, integer), so scanning more
 # often than this buys nothing but re-read cost on a growing round log.
@@ -573,6 +568,7 @@ def run(
     log_path: Path,
     env_extra: dict[str, str],
     max_grace_after_result_s: int = 0,
+    terminal_marker: str = '"type":"result"',
     progress_callback: Callable[[dict], None] | None = None,
     progress_interval_s: int = 0,
     on_grace_extended: Callable[[list[dict], list[dict]], None] | None = None,
@@ -588,12 +584,18 @@ def run(
     already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
     own (e.g. pi) depend on this.
 
-    max_grace_after_result_s: when > 0, start a countdown after the first
-    type=result event is detected in the log. After it elapses, reap the
+    max_grace_after_result_s: when > 0, start a countdown after
+    ``terminal_marker`` is first detected in the log. After it elapses, reap the
     process group only if the agent has no live worker processes left (a
     genuine hang). If a worker is still running (e.g. a backgrounded build),
     do not reap — invoke ``on_grace_extended`` once and keep waiting until the
     round finishes or hits the wall-clock ``timeout_s`` ceiling. 0 = disabled.
+
+    terminal_marker: exact compact byte substring the grace-kill scan looks
+    for (default matches claude CLI's no-whitespace JSONL ``{"type":"result",
+    ...}`` output). An empty string disables the marker scan outright, even
+    with max_grace_after_result_s > 0 (honest opt-out, not an
+    empty-substring-matches-everything trap).
 
     progress_callback: when not None and progress_interval_s > 0, called every
     progress_interval_s seconds with a dict of log stats (log_size_kb,
@@ -619,6 +621,7 @@ def run(
     attempt where covered; it just isn't reported).
     """
     stdin_mode = prompt_delivery == "stdin"
+    marker_bytes = terminal_marker.encode("utf-8")
     # Raising work (mkdir can fail on disk-full/perms/removed log_dir) must
     # happen BEFORE the container-detection block below creates the
     # host-private cidfile tempdir -- otherwise a raise here would skip the
@@ -749,7 +752,7 @@ def run(
                     exit_code=exit_code, duration_s=duration, timed_out=True, pid=proc.pid
                 )
             # Grace kill: result emitted but subprocess still running.
-            if max_grace_after_result_s > 0:
+            if max_grace_after_result_s > 0 and marker_bytes:
                 if result_seen_at is None and now - last_result_scan >= _RESULT_SCAN_INTERVAL_S:
                     last_result_scan = now
                     try:
@@ -758,12 +761,12 @@ def run(
                             chunk = f.read()
                         result_scan_offset += len(chunk)
                         haystack = result_scan_carry + chunk
-                        if _RESULT_MARKER in haystack:
+                        if marker_bytes in haystack:
                             result_seen_at = now
                         else:
                             # Keep the tail so a marker split across two read
                             # chunks (this scan vs. the next) still re-forms.
-                            result_scan_carry = haystack[-(len(_RESULT_MARKER) - 1) :]
+                            result_scan_carry = haystack[-(len(marker_bytes) - 1) :]
                     except OSError:
                         pass  # log not flushed yet; retry next interval
                 if result_seen_at is not None and now - result_seen_at > max_grace_after_result_s:
