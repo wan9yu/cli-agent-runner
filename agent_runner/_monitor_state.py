@@ -154,21 +154,41 @@ def _latest_metric_dict(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics[-1] if metrics else {}
 
 
+def _metric_int(latest: dict[str, Any], key: str, default: int) -> int:
+    """``_coerce_int`` for a metric field, silent on absence.
+
+    A fresh project has no metric events yet, so ``latest`` is ``{}`` and
+    every field reads as None -- "no sample yet", not malformed data. Only a
+    present-but-non-numeric value should still warn (delegated to
+    ``_coerce_int``, which owns that contract)."""
+    from agent_runner._throttle import _coerce_int
+
+    value = latest.get(key)
+    return default if value is None else _coerce_int(value, default)
+
+
+def _metric_float(latest: dict[str, Any], key: str, default: float) -> float:
+    """Float sibling of ``_metric_int`` -- see its docstring."""
+    from agent_runner._throttle import _coerce_float
+
+    value = latest.get(key)
+    return default if value is None else _coerce_float(value, default)
+
+
 def assemble_project_state(source: LocalSource, *, project: str) -> ProjectState:
     metrics = parse_events_from_jsonl_files(source.metrics_files())
     status = read_json(source.status_path()) or {}
     orphan = read_json(source.orphan_path())
     latest = _latest_metric_dict(metrics)
-    from agent_runner._throttle import _coerce_float, _coerce_int
 
     system = SystemMetrics(
-        mem_total_mb=_coerce_int(latest.get("mem_total_mb"), 0),
-        mem_available_mb=_coerce_int(latest.get("mem_available_mb"), 0),
-        disk_used_pct=_coerce_float(latest.get("disk_used_pct"), 0.0),
-        disk_free_gb=_coerce_float(latest.get("disk_free_gb"), 0.0),
+        mem_total_mb=_metric_int(latest, "mem_total_mb", 0),
+        mem_available_mb=_metric_int(latest, "mem_available_mb", 0),
+        disk_used_pct=_metric_float(latest, "disk_used_pct", 0.0),
+        disk_free_gb=_metric_float(latest, "disk_free_gb", 0.0),
         load_1m=latest.get("load_1m"),
         cpu_pct=latest.get("cpu_pct"),
-        agent_process_count=_coerce_int(latest.get("agent_process_count"), 0),
+        agent_process_count=_metric_int(latest, "agent_process_count", 0),
     )
     return ProjectState(
         project=project,

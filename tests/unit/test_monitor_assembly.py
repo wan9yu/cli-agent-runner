@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 from agent_runner.monitor import (
@@ -70,6 +71,34 @@ def test_seeded_state_should_return_project_state_when_assembled(
     assert state.project == "myproj"
     assert state.status["round_num"] == 1
     assert state.system.disk_used_pct == 50.0
+
+
+def test_assemble_project_state_should_not_warn_when_no_metric_samples_exist(
+    tmp_log_dir: Path,
+) -> None:
+    src = LocalSource(log_dir=tmp_log_dir)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        state = assemble_project_state(src, project="p")
+
+    assert [w for w in caught if issubclass(w.category, UserWarning)] == []
+    assert state.system.mem_total_mb == 0
+
+
+def test_assemble_project_state_should_warn_when_metric_value_malformed(
+    tmp_log_dir: Path,
+) -> None:
+    (tmp_log_dir / "metrics-2026-05.jsonl").write_text(
+        '{"ts":"2026-05-12T10:00:02.000Z","event":"round_end","mem_total_mb":"abc"}\n'
+    )
+    src = LocalSource(log_dir=tmp_log_dir)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assemble_project_state(src, project="p")
+
+    assert any(issubclass(w.category, UserWarning) for w in caught)
 
 
 def test_clean_history_should_have_no_alerts_when_run_all_detectors(
