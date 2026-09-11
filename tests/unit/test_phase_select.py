@@ -325,3 +325,30 @@ def test_overlap_should_ignore_pair_when_windows_do_not_intersect(tmp_path):
     )
 
     assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_not_flag_pair_when_mon_only_wrapping_windows_never_coincide(tmp_path):
+    # A wraps MON 22:00 -> TUE 01:00 (real coverage: MON 22:00-24:00 + TUE 00:00-01:00,
+    # per Window.contains' start_day-shift). B is MON 00:00-02:00 (real MON only). The
+    # two never share a real (weekday, minute) instant, even though a naive day-set
+    # intersection + minute-of-day overlap (ignoring the wrap's day shift) would
+    # wrongly say they do.
+    cfg = _cfg_two_agent_phases(
+        tmp_path, windows_a=["MON 22:00-01:00"], windows_b=["MON 00:00-02:00"], tz="UTC"
+    )
+
+    assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_flag_pair_when_windows_overlap_across_midnight_on_adjacent_days(tmp_path):
+    # A wraps MON 22:00 -> TUE 02:00, so its tail really lands on real TUE 00:00-02:00
+    # (Window.contains attributes the wrapped tail to the day AFTER its nominal MON).
+    # B is TUE 01:00-03:00. Their real TUE coverage overlaps (01:00-02:00) even though
+    # the windows' own day-sets ({MON} vs {TUE}) never intersect.
+    cfg = _cfg_two_agent_phases(
+        tmp_path, windows_a=["MON 22:00-02:00"], windows_b=["TUE 01:00-03:00"], tz="UTC"
+    )
+
+    overlaps = phase_select.find_phase_window_overlaps(cfg)
+
+    assert len(overlaps) == 1

@@ -61,18 +61,18 @@ class WindowOverlap:
     window_b: str
 
 
-def _subranges(w: schedule.Window) -> list[tuple[int, int]]:
-    if w.start_min >= w.end_min:  # wraps past midnight
-        return [(w.start_min, 1440), (0, w.end_min)]
-    return [(w.start_min, w.end_min)]
-
-
 def _windows_collide(a: schedule.Window, b: schedule.Window) -> bool:
-    if a.days and b.days and not (a.days & b.days):
-        return False
-    return any(
-        s1 < e2 and s2 < e1 for (s1, e1) in _subranges(a) for (s2, e2) in _subranges(b)
-    )
+    """Two windows collide iff some (weekday, minute) is inside BOTH. Delegates
+    to ``Window.contains`` — the scheduler's own day-shift/midnight-wrap
+    semantics — instead of re-deriving interval/day math, so this can't drift
+    from what actually decides whether a round runs (a wrapped window's
+    past-midnight tail is attributed to its START day, not the calendar day
+    the tail's clock-time falls on — re-deriving that independently is exactly
+    what produced the false positive/negative this replaced). Config-time,
+    once per boot, over a handful of windows; ``any`` short-circuits, so the
+    O(7*1440) scan per pair is negligible.
+    """
+    return any(a.contains(d, m) and b.contains(d, m) for d in range(7) for m in range(1440))
 
 
 def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
