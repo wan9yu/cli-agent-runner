@@ -316,10 +316,11 @@ def _patch_probe(
     monkeypatch,
     *,
     memory_max: int | None,
-    memory_swap_max: int,
+    memory_swap_max: int | None,
     mem_total: int,
     swap_total: int,
     memory_high: int | None = None,
+    cgroup_path: str | None = "/x",
     bounding_cgroup_path: str | None = "/x",
 ):
     monkeypatch.setattr(
@@ -328,7 +329,7 @@ def _patch_probe(
         lambda: {
             "memory_max": memory_max,
             "memory_swap_max": memory_swap_max,
-            "cgroup_path": "/x",
+            "cgroup_path": cgroup_path,
             "bounding_cgroup_path": bounding_cgroup_path,
         },
     )
@@ -414,7 +415,9 @@ def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
         pytest.param(
             200_000_000, 12.5, True, "swap.max is far below host swap", id="far_below_host"
         ),
-        pytest.param(1_280_000_000, 80.0, True, "memory.high", id="within_host"),
+        pytest.param(
+            1_280_000_000, 80.0, True, "memory.high", id="within_host_swap_but_memory_high_unset"
+        ),
     ],
 )
 def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
@@ -456,6 +459,7 @@ def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
     assert ev["swap_cap_pct"] == expected_swap_cap_pct
     assert ev["memory_high"] is None
     assert (ev["advisory"] is not None) is expect_advisory
+    assert "memory.high" in ev["advisory"]
 
     captured = capsys.readouterr()
     if expected_stderr_substring is None:
@@ -528,26 +532,6 @@ def _only_event(tmp_path: Path) -> dict:
     return ev
 
 
-def test_advisory_should_recommend_memory_high_when_max_set_on_own_cgroup_and_high_unset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # memory.max set on the own leaf (/x), high unset, swap bounded plausibly -> memory.high hint
-
-    _run_probe(
-        monkeypatch,
-        tmp_path,
-        memory_max=256_000_000,
-        memory_swap_max=1_280_000_000,
-        mem_total=462_000_000,
-        swap_total=1_600_000_000,
-        memory_high=None,
-    )
-
-    ev = _only_event(tmp_path)
-    assert ev["advisory"] is not None
-    assert "memory.high" in ev["advisory"]
-
-
 def test_advisory_should_not_hint_memory_high_when_bound_is_an_inherited_ancestor(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -605,3 +589,44 @@ def test_advisory_memory_high_hint_should_omit_swap_caveat_when_already_deferrin
     ev = _only_event(tmp_path)
     assert "memory.high" in ev["advisory"]
     assert "swap" not in ev["advisory"].lower()
+
+
+def test_advisory_memory_high_hint_should_include_swap_caveat_when_not_deferring(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # memory.max bounded but memory.swap.max UNBOUNDED -> floor stays armed (no defer) -> caveat
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+    )
+
+    ev = _only_event(tmp_path)
+    assert "memory.high" in ev["advisory"]
+    assert "swap" in ev["advisory"].lower()
+
+
+def test_advisory_should_be_none_when_cgroup_v2_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # no cgroup v2 -> memory_max/cgroup_path/bounding_cgroup_path all None -> own_scope stays inert
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=None,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+        cgroup_path=None,
+        bounding_cgroup_path=None,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is None
