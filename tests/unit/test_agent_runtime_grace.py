@@ -165,15 +165,18 @@ def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path, monkeyp
     starts a countdown, so the round rides out to the wall-clock ceiling exactly
     like a round that emitted nothing at all.
 
-    Childless (exec) + a generous 45s wall + the 0.1s patched scan interval, all
+    Childless (exec) + a 5s wall + the 0.1s patched scan interval, all
     mirroring test_run_should_start_grace_countdown_when_configured_marker_appears:
     if the match were ever broken (e.g. treating any marker as a hit), this round
-    would be reaped for grace at ~1s -- well before the 45s wall -- so the
+    would be reaped for grace at ~1s -- well before the 5s wall -- so the
     `killed_for_grace is False` below actually exercises the match, it doesn't
     just win a timing race against a 2s wall (see the T3 review finding this test
-    used to be vacuous under). The exec'd sleep must OUTLAST the wall (60s > 45s)
-    -- otherwise the sleep would just exit on its own before timeout_s ever
-    fires, making `timed_out is True` false-fail regardless of the marker logic."""
+    used to be vacuous under). The exec'd sleep is kept at a long 60s (must
+    OUTLAST the wall) -- a short sleep would let the child exit on its own
+    before timeout_s ever fires (a risk under `-n auto` contention, see
+    test_run_should_kill_for_grace_when_agent_has_no_live_children_after_result's
+    docstring above), making `timed_out is True` false-fail regardless of the
+    marker logic; only the wall (timeout_s) shrinks."""
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
@@ -186,7 +189,7 @@ def test_run_should_wait_for_ceiling_when_marker_never_matches(tmp_path, monkeyp
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=45,
+        timeout_s=5,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
@@ -203,16 +206,19 @@ def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path, mo
     never runs (guarded by `and marker_bytes`) -- no empty-substring-matches-
     everything trap. The round rides out to the wall-clock ceiling.
 
-    Childless (exec) + a generous 45s wall + the 0.1s patched scan interval, all
+    Childless (exec) + a 5s wall + the 0.1s patched scan interval, all
     mirroring test_run_should_start_grace_countdown_when_configured_marker_appears:
     if the `and marker_bytes` guard were ever dropped, an empty marker_bytes is
     a substring of everything, so this round would be reaped for grace at ~1s --
-    well before the 45s wall -- so `killed_for_grace is False` below actually
+    well before the 5s wall -- so `killed_for_grace is False` below actually
     exercises the guard, it doesn't just win a timing race against a 2s wall (see
     the T3 review finding this test used to be vacuous under). The exec'd sleep
-    must OUTLAST the wall (60s > 45s) -- otherwise the sleep would just exit on
-    its own before timeout_s ever fires, making `timed_out is True` false-fail
-    regardless of the marker logic."""
+    is kept at a long 60s (must OUTLAST the wall) -- a short sleep would let the
+    child exit on its own before timeout_s ever fires (a risk under `-n auto`
+    contention, see
+    test_run_should_kill_for_grace_when_agent_has_no_live_children_after_result's
+    docstring above), making `timed_out is True` false-fail regardless of the
+    marker logic; only the wall (timeout_s) shrinks."""
     monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
     script = _write_fake_script(
         tmp_path,
@@ -225,7 +231,7 @@ def test_run_should_disable_marker_grace_when_terminal_marker_empty(tmp_path, mo
         command=[str(script)],
         prompt_arg_template=[],
         prompt="x",
-        timeout_s=45,
+        timeout_s=5,
         log_path=log_path,
         env_extra={},
         max_grace_after_result_s=1,
