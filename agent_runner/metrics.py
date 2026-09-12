@@ -320,11 +320,15 @@ def cgroup_memory_limits(
             "bounding_cgroup_path": None,
         }
     cgroup_path, ancestors = resolved
+    # One ancestor walk for memory.max, shared for both its value and its
+    # owning path (the "SAME winning ancestor" _min_ancestor_candidate's
+    # docstring promises) -- memory.swap.max is a distinct file, its own walk.
+    max_candidate = _min_ancestor_candidate(root, ancestors, "memory.max")
     return {
-        "memory_max": _min_ancestor_limit(root, ancestors, "memory.max"),
+        "memory_max": max_candidate[0] if max_candidate else None,
         "memory_swap_max": _min_ancestor_limit(root, ancestors, "memory.swap.max"),
         "cgroup_path": cgroup_path,
-        "bounding_cgroup_path": _bounding_ancestor_path(root, ancestors),
+        "bounding_cgroup_path": max_candidate[1] if max_candidate else None,
     }
 
 
