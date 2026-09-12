@@ -33,6 +33,8 @@ def _plan(cfg, rounds: int) -> list[dict]:
                 "phase": sel.phase,
                 "paused": sel.paused,
                 "resume_phase": sel.resume_phase,
+                "resume_at": sel.resume_at.isoformat() if sel.resume_at else None,
+                "resume_timezone": sel.resume_timezone,
                 "skipped": sel.skipped,
                 "active_window": sel.active_window,
             }
@@ -72,6 +74,11 @@ def _format(report: DoctorReport) -> str:
             lines.append(f"  {o.phase_a} ({o.window_a}) vs {o.phase_b} ({o.window_b})")
     lines.append("phase plan:")
     for step in report.plan:
-        where = "paused" if step["paused"] else (step["phase"] or "base")
+        if step["paused"]:
+            where = "paused"
+            if step["resume_at"] is not None:
+                where += f" -> resumes {step['resume_phase']} at {step['resume_at']}"
+        else:
+            where = step["phase"] or "base"
         lines.append(f"  round {step['round']}: {where}")
     return "\n".join(lines)
