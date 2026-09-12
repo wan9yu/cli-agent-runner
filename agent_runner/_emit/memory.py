@@ -113,7 +113,7 @@ def emit_host_cgroup_memory_limit(
     mid-round hard floor can defer to kernel cgroup-OOM -- see
     ``emit_mem_pressure_deferred_to_cgroup`` below.
 
-    This also carries an optional startup swap-cap advisory
+    This also carries an optional startup advisory
     (``swap_total_bytes`` / ``swap_cap_pct`` / ``memory_high`` / ``advisory``)
     as FIELDS on this SAME event -- never a separate event kind, and never an
     auto-change to the operator's cgroup or unit. ``swap_total_bytes`` is the
@@ -123,8 +123,12 @@ def emit_host_cgroup_memory_limit(
     bytes (``metrics.cgroup_memory_high``) -- ``None`` means unset (the
     cgroup read the literal ``"max"``, or no finite value at all), never the
     raw ``"max"`` token, so a caller can't mistake "unset" for a real
-    ceiling; ``advisory`` is the human-readable warning text when the swap
-    cap looks implausibly tight, else ``None``."""
+    ceiling; ``advisory`` is the human-readable warning text, else ``None`` --
+    it covers two independent conditions, joined with ``"; "`` when both
+    fire: a ``memory.swap.max`` that looks implausibly tight against host
+    swap, and a ``memory.max`` set on this process's OWN cgroup without a
+    ``memory.high``, which recommends adding one (below ``memory.max``) for
+    graceful pre-OOM throttling instead of a hard kill."""
     from agent_runner.events import HOST_CGROUP_MEMORY_LIMIT, emit
 
     emit(

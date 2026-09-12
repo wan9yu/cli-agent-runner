@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.24]
+
+### Added
+- `host_cgroup_memory_limit` now advises adding `MemoryHigh` when a cgroup has `memory.max` set without `memory.high` (graceful pre-OOM throttling) — only for a bound on the supervisor's own cgroup, with the PSI-floor caveat when the mid-round floor isn't already deferring.
+
+### Changed
+- `doctor`'s phase-plan preview now shows a paused phase's resume time.
+- Trimmed the grace-kill test wall-time (~80s faster suite; behavior-identical).
+
 ## [0.2.23] - 2026-09-12
 
 ### Added

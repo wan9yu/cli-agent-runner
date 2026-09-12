@@ -175,6 +175,49 @@ reads/round) weren't re-measured this release since neither's code path
 moved — re-running the full harness would report the same number as
 0.2.19 for a code path this release didn't touch, not new signal.
 
+## 0.2.23 → 0.2.24
+
+Measured the same way as the table above (see Methodology), same machine,
+comparing **v0.2.23**'s base — `60c666a` (one commit past the `v0.2.23` tag:
+a ruff-format-only fix, so equivalent to the shipped release for this
+purpose) — against **0.2.24**, the tip of this branch at measurement time.
+
+### Import/startup RSS
+
+| | v0.2.23 | 0.2.24 | delta |
+|---|---|---|---|
+| RSS (avg of 5 runs) | 24.0 MB | 24.1 MB | +0.03 MB (flat, within noise) |
+| RSS range | 23.9–24.1 MB | 24.0–24.3 MB | |
+| `sys.modules` count | 229 | 229 | +0 |
+
+### Module count, source LOC, largest module
+
+Tracked source only (`git ls-tree`, same convention as the row above).
+
+| | v0.2.23 | 0.2.24 | delta |
+|---|---|---|---|
+| `.py` files | 75 | 75 | +0 |
+| total LOC | 18,276 | 18,325 | +49 |
+| largest module | `api.py`, 990 | `api.py`, 990 | +0 |
+
+### Why it's flat
+
+This release's only startup-path-adjacent change is the second
+`host_cgroup_memory_limit` advisory (recommending `memory.high` when
+`memory.max` is set on the supervisor's own cgroup): it lives inside the
+probe function already called from the already-loaded `cli/_serve_cgroup`
+module, adds no new import, and only walks its extra branch when a real
+cgroup bound is present at startup. The `doctor` phase-plan resume-time
+addition and the grace-kill test wall-time trim touch neither the startup
+import graph nor any per-round allocation path.
+`tests/invariants/test_import_footprint.py` and
+`tests/invariants/test_round_alloc_growth.py` both stay green unmodified,
+confirming no new eager import and no new per-round leak.
+
+**Suite wall-time**: trimming the grace-kill negative test's sleep cuts
+roughly 80s off the test suite's wall-clock time — a test-only change, not
+reflected in any of the runtime numbers above.
+
 ## Methodology
 
 Machine: macOS 26.6.2, arm64, 16 KB pages. Python 3.11.3 (CPython, pyenv),
