@@ -17,7 +17,8 @@ def _write_toml(
     prompt = tmp_git_repo / "p.md"
     prompt.write_text("Body content for serve loop test. " * 50)
     log_dir = tmp_git_repo / "logs"
-    toml.write_text(f"""
+    toml.write_text(
+        f"""
 [agent]
 command = ["{fake_agent}"]
 prompt_arg_template = ["{{prompt}}"]
@@ -28,7 +29,9 @@ round_timeout_s = {round_timeout}
 restart_delay_s = 1
 [prompt]
 file = "{prompt}"
-""" + phases_block)
+"""
+        + phases_block
+    )
     (tmp_git_repo / ".gitignore").write_text("logs/\n")
     subprocess.run(["git", "add", "."], cwd=tmp_git_repo, check=True)
     subprocess.run(
