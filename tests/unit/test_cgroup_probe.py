@@ -97,6 +97,7 @@ def test_cgroup_memory_limits_should_return_both_limits_when_both_finite(
         "memory_max": 335544320,
         "memory_swap_max": 167772160,
         "cgroup_path": _LEAF,
+        "bounding_cgroup_path": _LEAF,
     }
 
 
@@ -141,6 +142,33 @@ def test_cgroup_memory_limits_should_pick_lower_of_leaf_and_ancestor_when_both_f
     assert lim["memory_max"] == 335544320
 
 
+def test_cgroup_memory_limits_should_report_bounding_path_as_the_min_max_owner_when_resolved(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """The own leaf sets memory.max itself, so it's also the bounding
+    ancestor -- ``bounding_cgroup_path`` equals ``cgroup_path``."""
+    fake_cgroup(memory_max="335544320", memory_swap_max="167772160")
+
+    lim = metrics.cgroup_memory_limits(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert lim["bounding_cgroup_path"] == lim["cgroup_path"]
+
+
+def test_cgroup_memory_limits_should_report_bounding_path_as_the_ancestor_when_leaf_unlimited(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """The leaf itself is unlimited; a parent slice owns the real budget --
+    ``bounding_cgroup_path`` names that ancestor, NOT the (looser) leaf, so a
+    caller can tell an inherited bound from an own-scope one."""
+    fake_cgroup(memory_max="max", memory_swap_max="max")
+    fake_cgroup.set_limit("/system.slice", memory_max="335544320", memory_swap_max="167772160")
+
+    lim = metrics.cgroup_memory_limits(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert lim["bounding_cgroup_path"] == "/system.slice"
+    assert lim["bounding_cgroup_path"] != lim["cgroup_path"]
+
+
 def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_or_missing(
     fake_cgroup: _FakeCgroup,
 ) -> None:
@@ -151,7 +179,12 @@ def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_or_missing(
 
     lim = metrics.cgroup_memory_limits(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
 
-    assert lim == {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+    assert lim == {
+        "memory_max": None,
+        "memory_swap_max": None,
+        "cgroup_path": None,
+        "bounding_cgroup_path": None,
+    }
 
 
 def test_cgroup_memory_limits_should_parse_self_cgroup_from_proc_file(tmp_path: Path) -> None:
@@ -176,6 +209,7 @@ def test_cgroup_memory_limits_should_parse_self_cgroup_from_proc_file(tmp_path: 
         "memory_max": 335544320,
         "memory_swap_max": 167772160,
         "cgroup_path": "/system.slice/example.service",
+        "bounding_cgroup_path": "/system.slice/example.service",
     }
 
 
@@ -190,7 +224,12 @@ def test_cgroup_memory_limits_should_return_all_none_when_proc_self_cgroup_missi
 
     lim = metrics.cgroup_memory_limits(root=root, proc_self_cgroup=tmp_path / "does-not-exist")
 
-    assert lim == {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+    assert lim == {
+        "memory_max": None,
+        "memory_swap_max": None,
+        "cgroup_path": None,
+        "bounding_cgroup_path": None,
+    }
 
 
 # --- 0.2.18 T1c fix round 1: cgroup_memory_high, a REAL memory.high read ---
@@ -281,11 +320,17 @@ def _patch_probe(
     mem_total: int,
     swap_total: int,
     memory_high: int | None = None,
+    bounding_cgroup_path: str | None = "/x",
 ):
     monkeypatch.setattr(
         metrics,
         "cgroup_memory_limits",
-        lambda: {"memory_max": memory_max, "memory_swap_max": memory_swap_max, "cgroup_path": "/x"},
+        lambda: {
+            "memory_max": memory_max,
+            "memory_swap_max": memory_swap_max,
+            "cgroup_path": "/x",
+            "bounding_cgroup_path": bounding_cgroup_path,
+        },
     )
     monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
     monkeypatch.setattr(metrics, "swap_total_bytes", lambda: swap_total)
@@ -369,7 +414,7 @@ def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
         pytest.param(
             200_000_000, 12.5, True, "swap.max is far below host swap", id="far_below_host"
         ),
-        pytest.param(1_280_000_000, 80.0, False, None, id="within_host"),
+        pytest.param(1_280_000_000, 80.0, True, "memory.high", id="within_host"),
     ],
 )
 def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
@@ -383,8 +428,10 @@ def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
 ) -> None:
     """swap.max below the 25% advisory floor (here 12.5% of host swap) rides
     as fields on the EXISTING host_cgroup_memory_limit event -- not a new
-    kind -- plus one stderr line; a plausible cap (80%) gets neither. Never
-    changes the cgroup/unit either way."""
+    kind -- plus one stderr line; a plausible cap (80%) gets no swap-cap
+    advisory, but BOTH cases still leave memory.high unset on the own leaf,
+    so both also carry the memory.high hint (joined onto the swap-cap one
+    for the far-below-host case). Never changes the cgroup/unit either way."""
     from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 
     _patch_probe(
@@ -446,3 +493,115 @@ def test_probe_and_emit_cgroup_defer_should_emit_real_memory_high_when_set(
         for line in f.read_text().splitlines()
     ]
     assert ev["memory_high"] == 192_000_000
+
+
+# --- 0.2.24 T1: the memory.high advisory, own-scope-gated + defer-aware ---
+#
+# memory.max set (anywhere on the ancestor chain) without memory.high means
+# the operator has a hard kill ceiling but no soft pre-OOM throttle -- worth
+# flagging. But cgroup_memory_limits reports memory.max as the MIN across
+# ALL ancestors, so "set" can also mean an inherited parent slice or a
+# container root, where "add MemoryHigh" is noise the operator can't act on
+# from their own unit. The hint fires ONLY when the bounding ancestor IS the
+# operator's own leaf (bounding_cgroup_path == cgroup_path), and only
+# appends the PSI-floor swap caveat when the mid-round floor isn't already
+# deferring to kernel cgroup-OOM. Advisory only -- never writes a cgroup or
+# unit file.
+
+
+def _run_probe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs) -> None:
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
+
+    _patch_probe(monkeypatch, **kwargs)
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _probe_and_emit_cgroup_defer(log_dir)
+
+
+def _only_event(tmp_path: Path) -> dict:
+    log_dir = tmp_path / "logs"
+    [ev] = [
+        json.loads(line)
+        for f in sorted(log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    return ev
+
+
+def test_advisory_should_recommend_memory_high_when_max_set_on_own_cgroup_and_high_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # memory.max set on the own leaf (/x), high unset, swap bounded plausibly -> memory.high hint
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is not None
+    assert "memory.high" in ev["advisory"]
+
+
+def test_advisory_should_not_hint_memory_high_when_bound_is_an_inherited_ancestor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # memory.max finite but owned by a PARENT slice, not the operator's leaf -> no hint
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+        bounding_cgroup_path="/system.slice",
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is None
+
+
+def test_advisory_should_omit_memory_high_hint_when_high_already_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # high already set -> no hint (and no swap-cap advisory here either)
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=224_000_000,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is None
+
+
+def test_advisory_memory_high_hint_should_omit_swap_caveat_when_already_deferring(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # both-finite + plausible -> floor defers -> hint fires WITHOUT the "bound swap" caveat
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+    )
+
+    ev = _only_event(tmp_path)
+    assert "memory.high" in ev["advisory"]
+    assert "swap" not in ev["advisory"].lower()

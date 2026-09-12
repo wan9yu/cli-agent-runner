@@ -297,6 +297,12 @@ def cgroup_memory_limits(
     host, or any host missing that file, has no reliable fixed-path budget
     file to read, so this returns all-``None`` rather than guessing.
 
+    ``cgroup_path`` is always the caller's OWN leaf; ``bounding_cgroup_path``
+    is the ancestor (possibly the leaf itself) that actually owns the
+    winning ``memory.max`` (see :func:`_bounding_ancestor_path`) -- callers
+    that need to tell "my own limit" from "an inherited parent/container
+    bound" compare the two.
+
     ``root`` and ``proc_self_cgroup`` default to the real paths and are
     injectable so tests can point at a fake ``/sys/fs/cgroup`` tree;
     ``self_cgroup`` lets a caller supply the resolved cgroup path directly,
@@ -307,12 +313,18 @@ def cgroup_memory_limits(
     """
     resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
     if resolved is None:
-        return {"memory_max": None, "memory_swap_max": None, "cgroup_path": None}
+        return {
+            "memory_max": None,
+            "memory_swap_max": None,
+            "cgroup_path": None,
+            "bounding_cgroup_path": None,
+        }
     cgroup_path, ancestors = resolved
     return {
         "memory_max": _min_ancestor_limit(root, ancestors, "memory.max"),
         "memory_swap_max": _min_ancestor_limit(root, ancestors, "memory.swap.max"),
         "cgroup_path": cgroup_path,
+        "bounding_cgroup_path": _bounding_ancestor_path(root, ancestors),
     }
 
 

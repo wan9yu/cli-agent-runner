@@ -225,9 +225,18 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     memory.swap.max is bounded but far below the host's own available swap
     (``_SWAP_CAP_ADVISORY_PCT``): the operator capped the cgroup's swap well
     under what the host has, so the mid-round floor may terminate a round
-    the kernel would have contained on a wider cap. One line is also printed
-    to stderr in that case. The event also carries ``memory_high`` -- the
-    bounding ancestor's ``memory.high`` soft-throttle threshold
+    the kernel would have contained on a wider cap. A second, independent
+    advisory recommends ``memory.high`` when ``memory.max`` is set but
+    ``memory.high`` isn't -- ONLY when the bounding ancestor is the
+    operator's OWN leaf (``bounding_cgroup_path == cgroup_path``): since
+    ``memory.max`` is the MIN across every ancestor, "set" can also mean an
+    inherited parent slice or a container root, where "add MemoryHigh" is
+    noise the operator can't act on from their own unit. That hint also
+    appends a PSI-floor caveat, but only when the floor ISN'T already
+    deferring to kernel cgroup-OOM (a deferring host has no floor for the
+    throttle's PSI-full rise to trip). Both advisories join with ``"; "``
+    and print as one stderr line. The event also carries ``memory_high`` --
+    the bounding ancestor's ``memory.high`` soft-throttle threshold
     (``metrics.cgroup_memory_high``), ``None`` when unset -- for the same
     reason: an operator asking "is MemoryHigh even set" is exactly this
     release's field ask. Advisory only -- this never changes the operator's
@@ -247,13 +256,39 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
     )
-    advisory: str | None = None
+    advisories: list[str] = []
     if swap_cap_pct is not None and swap_cap_pct < _SWAP_CAP_ADVISORY_PCT:
-        advisory = (
+        advisories.append(
             "cgroup memory.swap.max is far below host swap; the mid-round floor may "
             "terminate rounds the kernel would have contained -- consider bounding "
             "both memory.max and memory.swap.max, or set in_round_mem_terminate=false"
         )
+    defer = (
+        limits["memory_max"] is not None
+        and swap_max is not None
+        and limits["memory_max"] < metrics.mem_total_bytes()
+        and swap_max <= swap_total  # 4th guard: a >> host-swap cap can't bind -> stay armed
+    )
+    own_scope = (
+        limits["memory_max"] is not None
+        and memory_high is None
+        and limits["bounding_cgroup_path"] == limits["cgroup_path"]
+    )
+    if own_scope:
+        hint = (
+            "memory.max is set on this cgroup without memory.high -- add "
+            "memory.high (below memory.max) for graceful throttling before an "
+            "OOM kill"
+        )
+        if not defer:
+            hint += (
+                "; bound memory.swap.max (at or below host swap) too, or set "
+                "in_round_mem_terminate=false, so the throttle's PSI-full rise "
+                "doesn't trip the mid-round floor"
+            )
+        advisories.append(hint)
+    advisory = "; ".join(advisories) or None
+    if advisory is not None:
         print(f"agent-runner: {advisory}", file=sys.stderr)
     emit_host_cgroup_memory_limit(
         log_dir,
@@ -265,9 +300,4 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         memory_high=memory_high,
         advisory=advisory,
     )
-    return (
-        limits["memory_max"] is not None
-        and swap_max is not None
-        and limits["memory_max"] < metrics.mem_total_bytes()
-        and swap_max <= swap_total  # 4th guard: a >> host-swap cap can't bind -> stay armed
-    )
+    return defer
