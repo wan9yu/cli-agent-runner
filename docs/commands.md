@@ -319,10 +319,11 @@ The transforms `migrate` applies (generated from the registry):
 Read-only pre-flight: never launches the configured agent or mutates config
 (it validates the log dir is writable, creating it if missing — the same
 probe `serve` runs at boot). Prints (or `--json` emits) three sections: the
-startup-check battery — the same checks `serve` runs before its first round —
-any `[phases]` window overlaps (the `phase_window_overlap` event), and an
-N-round preview of which phase each upcoming round would select. `--rounds`
-sets the preview depth (default 3).
+startup-check battery — the same checks `serve` runs before its first round,
+including `phase_window_overlap` (a FAIL here means `serve` will refuse to
+boot) — any `[phases]` window overlaps, and an N-round preview of which
+phase each upcoming round would select. `--rounds` sets the preview depth
+(default 3).
 
 ## 中文摘要
 

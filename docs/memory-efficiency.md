@@ -165,10 +165,12 @@ The only startup-graph change this release is one new eager module,
 `agent_runner.cli.doctor_cmd` — the `doctor` verb's own imports
 (`phase_select`, `startup_check`, `cli.common`) were already on the startup
 path, so it adds no new transitive dependency, just itself. No per-round
-allocation path changed: `phase_window_overlap` is checked once at serve
-boot, not per round, and the pid `create_time` lifecycle-helper unification
-and the startup-check descriptor-table refactor are both structural, not
-allocation-path, changes.
+allocation path changed: `phase_window_overlap` is a config-time check —
+`serve` evaluates it once at boot (refusing to boot on a hit) and the
+startup-check battery re-evaluates it per round alongside the other base
+checks, but neither path allocates per round. The pid `create_time`
+lifecycle-helper unification and the startup-check descriptor-table
+refactor are both structural, not allocation-path, changes.
 `tests/invariants/test_round_alloc_growth.py` stays green unmodified,
 confirming no new per-round leak. Axes 2 (`serve` startup RSS) and 4 (cgroup
 reads/round) weren't re-measured this release since neither's code path
