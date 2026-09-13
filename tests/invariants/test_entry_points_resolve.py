@@ -49,6 +49,18 @@ def test_entry_point_names_should_match_manifest_name():
         )
 
 
+def test_legacy_claude_rate_limit_detector_alias_should_stay_removed():
+    """`claude_rate_limit_detector` alias (0.1.20-0.1.34) hard-removed in 0.1.35.
+    Consumers using the old name in `[plugins] disable/enable` must migrate.
+    Re-pinned for the `agent_runner.plugins` group after the 0.3.0 collapse
+    from `agent_runner.post_round_hooks` -- the guard was dropped in that
+    rewrite; this restores it so the alias can never quietly reappear.
+    """
+    entries = _read_plugin_entries()
+
+    assert "claude_rate_limit_detector" not in entries, "0.1.20-era alias should be gone"
+
+
 def test_declared_post_round_hooks_should_carry_after_round_when_resolved():
     entries = _read_plugin_entries()
 
