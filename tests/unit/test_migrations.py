@@ -426,3 +426,36 @@ def test_swap_sout_noise_floor_mb_should_relocate_under_memory_subtable_when_mig
         "swap_out_noise_floor_mb": 64,
         "avail_min_mb": 100,
     }
+
+
+def test_full_flat_host_health_table_should_migrate_to_all_three_subtables_when_run():
+    text = (
+        "[monitor.host_health]\n"
+        "mem_avail_min_mb = 150\n"
+        "disk_warning_pct = 85.0\n"
+        "disk_critical_pct = 92.0\n"
+        "swap_sout_noise_floor_mb = 40\n"
+        "mem_free_low_mb = 20\n"
+        "psi_full_avg10_critical = 55.0\n"
+        "psi_some_avg10_warning = 4.0\n"
+        "mem_critical_consecutive_samples = 2\n"
+        "in_round_mem_terminate = false\n"
+    )
+
+    r = _run(text)
+
+    parsed = tomllib.loads(r.new_text)
+    assert set(parsed["monitor"]["host_health"]) == {"disk", "memory", "pressure"}
+    assert parsed["monitor"]["host_health"]["disk"] == {"warning_pct": 85.0, "critical_pct": 92.0}
+    assert parsed["monitor"]["host_health"]["memory"] == {
+        "avail_min_mb": 150,
+        "free_low_mb": 20,
+        "swap_out_noise_floor_mb": 40,
+    }
+    assert parsed["monitor"]["host_health"]["pressure"] == {
+        "full_avg10_critical": 55.0,
+        "some_avg10_warning": 4.0,
+        "critical_consecutive_samples": 2,
+        "in_round_terminate": False,
+    }
+    assert r.manual == []
