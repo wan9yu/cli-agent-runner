@@ -63,7 +63,7 @@ def test_dry_run_should_write_nothing_when_deprecated_key_present(tmp_path, caps
 
 
 def test_migrate_should_be_noop_when_config_has_no_deprecated_keys(tmp_path):
-    cfg = _write(tmp_path, '[runtime]\ntransient_error_action = "back_off"\n')
+    cfg = _write(tmp_path, 'schema_version = 1\n[runtime]\ntransient_error_action = "back_off"\n')
 
     rc = migrate_cmd.cmd(_args(cfg))
 
@@ -79,20 +79,21 @@ def test_migrate_should_exit_1_when_removed_key_needs_manual_transform(tmp_path)
     assert rc == 1  # human action still needed
 
 
-def test_migrate_should_exit_1_and_leave_file_untouched_when_rename_would_duplicate_key(
+def test_migrate_should_exit_1_and_leave_deprecated_key_untouched_when_rename_would_duplicate_key(
     tmp_path,
 ):
     # Both the deprecated and target keys present: the rename would duplicate a
-    # key, so it must NOT be applied — migrate reports the manual step (exit 1)
-    # and writes nothing (no rewrite, no .bak).
+    # key, so it must NOT be applied — migrate reports the manual step (exit 1).
+    # The terminal schema_version stamp still lands (it's unconditional), so the
+    # file IS rewritten and backed up, but the unsafe rename itself is not.
     original = '[vcs]\norphan_action = "ignore"\ndirty_action = "stash"\n'
     cfg = _write(tmp_path, original)
 
     rc = migrate_cmd.cmd(_args(cfg))
 
     assert rc == 1
-    assert cfg.read_text() == original  # untouched
-    assert not (tmp_path / "agent-runner.toml.bak").exists()
+    assert "orphan_action" in cfg.read_text()  # the unsafe rename was not applied
+    assert (tmp_path / "agent-runner.toml.bak").read_text() == original
 
 
 def test_migrate_should_exit_2_when_toml_is_broken(tmp_path):

@@ -9,6 +9,18 @@ def _run(text: str) -> migrations.MigrationResult:
     return migrations.run_migrations(text, tomllib.loads(text))
 
 
+# migrate's terminal step always stamps schema_version = 1 onto the config
+# (see test_migrate_should_stamp_schema_version_one_when_absent below) — every
+# other test in this file exercises a config that has no schema_version yet
+# (that's the whole point: these are pre-0.3 configs being migrated), so the
+# stamp shows up in `applied` and at the front of `new_text` for all of them.
+_STAMP_APPLIED = "stamped schema_version = 1"
+
+
+def _stamped(text: str) -> str:
+    return f"schema_version = 1\n{text}"
+
+
 def test_rate_limit_action_rename_should_preserve_value_and_comment():
     text = '[runtime]\nrate_limit_action = "stop"   # keep on quota\n'
 
@@ -16,7 +28,10 @@ def test_rate_limit_action_rename_should_preserve_value_and_comment():
 
     assert 'transient_error_action = "stop"   # keep on quota' in r.new_text
     assert "rate_limit_action" not in r.new_text
-    assert r.applied == ["runtime.rate_limit_action → runtime.transient_error_action"]
+    assert r.applied == [
+        "runtime.rate_limit_action → runtime.transient_error_action",
+        _STAMP_APPLIED,
+    ]
     assert r.manual == []
 
 
@@ -27,7 +42,7 @@ def test_orphan_action_rename_should_replace_key_with_dirty_action():
 
     assert 'dirty_action = "ignore"' in r.new_text
     assert "orphan_action" not in r.new_text
-    assert r.applied == ["vcs.orphan_action → vcs.dirty_action"]
+    assert r.applied == ["vcs.orphan_action → vcs.dirty_action", _STAMP_APPLIED]
 
 
 def test_commented_out_key_should_stay_untouched_when_live_key_is_renamed():
@@ -37,7 +52,10 @@ def test_commented_out_key_should_stay_untouched_when_live_key_is_renamed():
 
     r = _run(text)
 
-    assert r.applied == ["runtime.rate_limit_action → runtime.transient_error_action"]
+    assert r.applied == [
+        "runtime.rate_limit_action → runtime.transient_error_action",
+        _STAMP_APPLIED,
+    ]
     assert '# rate_limit_action = "old"  historical note' in r.new_text  # comment untouched
     assert 'transient_error_action = "stop"' in r.new_text
 
@@ -47,9 +65,9 @@ def test_round_timeout_per_phase_should_be_routed_to_manual_when_given_as_inline
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert len(r.manual) == 1 and "round_timeout_per_phase" in r.manual[0]
-    assert r.new_text == text  # manual transforms never touch the text
+    assert r.new_text == _stamped(text)  # manual transforms never touch the text itself
 
 
 def test_orphan_action_rename_should_be_rejected_when_dirty_action_already_present():
@@ -60,9 +78,9 @@ def test_orphan_action_rename_should_be_rejected_when_dirty_action_already_prese
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert len(r.manual) == 1 and "remove the deprecated" in r.manual[0]
-    assert r.new_text == text  # invalid rewrite was not adopted
+    assert r.new_text == _stamped(text)  # invalid rewrite was not adopted
 
 
 def test_up_to_date_config_should_be_a_noop():
@@ -70,7 +88,7 @@ def test_up_to_date_config_should_be_a_noop():
 
     r = _run(text)
 
-    assert r.applied == [] and r.manual == [] and r.new_text == text
+    assert r.applied == [_STAMP_APPLIED] and r.manual == [] and r.new_text == _stamped(text)
 
 
 @pytest.mark.parametrize(
@@ -88,10 +106,10 @@ def test_flat_phase_override_should_be_advisory_when_set_directly(override_line:
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert r.manual == []
     assert len(r.advisory) == 1 and "[phases.<name>.runtime]" in r.advisory[0]
-    assert r.new_text == text  # advisory transforms never touch the text
+    assert r.new_text == _stamped(text)  # advisory transforms never touch the text itself
 
 
 def test_nested_phase_runtime_table_should_not_be_flagged():
@@ -99,7 +117,7 @@ def test_nested_phase_runtime_table_should_not_be_flagged():
 
     r = _run(text)
 
-    assert r.applied == [] and r.manual == [] and r.new_text == text
+    assert r.applied == [_STAMP_APPLIED] and r.manual == [] and r.new_text == _stamped(text)
 
 
 def test_rate_limit_action_rename_should_be_table_scoped_when_key_is_in_other_tables():
@@ -111,7 +129,10 @@ def test_rate_limit_action_rename_should_be_table_scoped_when_key_is_in_other_ta
 
     assert 'transient_error_action = "stop"' in r.new_text
     assert '[plugins.foo]\nrate_limit_action = "keep"' in r.new_text  # untouched
-    assert r.applied == ["runtime.rate_limit_action → runtime.transient_error_action"]
+    assert r.applied == [
+        "runtime.rate_limit_action → runtime.transient_error_action",
+        _STAMP_APPLIED,
+    ]
 
 
 def test_bare_single_token_command_should_be_wrapped_into_argv_list():
@@ -129,9 +150,9 @@ def test_command_with_spaces_should_be_reported_manual_not_auto_split():
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert any("argv list" in m for m in r.manual)
-    assert r.new_text == text  # never auto-split quoted argv
+    assert r.new_text == _stamped(text)  # never auto-split quoted argv
 
 
 @pytest.mark.parametrize(
@@ -168,7 +189,7 @@ def test_empty_command_should_be_reported_manual():
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert any("command" in m and "empty" in m for m in r.manual)  # no auto-fix: real value needed
 
 
@@ -177,7 +198,7 @@ def test_empty_top_level_prompt_files_should_be_reported_manual():
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert any("[prompt] files" in m for m in r.manual)
 
 
@@ -240,9 +261,9 @@ def test_empty_per_phase_command_should_be_reported_manual():
 
     r = _run(text)
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert any("phases.<name>.agent" in m and "empty" in m for m in r.manual)
-    assert r.new_text == text
+    assert r.new_text == _stamped(text)
 
 
 def test_bare_per_phase_command_should_be_wrapped_without_touching_sibling_space_command():
@@ -285,9 +306,9 @@ def test_scalar_table_value_should_be_reported_manual_without_crashing(table: st
 
     r = _run(text)  # must not raise
 
-    assert r.applied == []
+    assert r.applied == [_STAMP_APPLIED]
     assert any(table in m for m in r.manual)
-    assert r.new_text == text
+    assert r.new_text == _stamped(text)
 
 
 def test_monitor_scalar_value_should_not_crash_other_monitor_detectors():
@@ -360,7 +381,7 @@ def test_unknown_key_should_be_reported_manual_when_present(text, check, check_n
 
     assert any(check(m) for m in r.manual)
     if check_new_text:
-        assert r.new_text == text  # unknown-key rejections never rewrite the text
+        assert r.new_text == _stamped(text)  # unknown-key rejections never rewrite the text itself
 
 
 def test_phases_scalar_key_should_be_reported_manual():
@@ -467,7 +488,7 @@ def test_round_timeout_s_should_rename_in_runtime_table_when_migrated():
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert "round_budget_s = 3600" in r.new_text
-    assert r.applied == ["runtime.round_timeout_s → runtime.round_budget_s"]
+    assert r.applied == ["runtime.round_timeout_s → runtime.round_budget_s", _STAMP_APPLIED]
 
 
 def test_round_timeout_s_should_rename_in_every_phase_flat_override_when_migrated():
@@ -498,3 +519,21 @@ def test_old_hook_level_disable_name_should_be_flagged_manual_when_migrated():
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert any("claude_rate_limit" in m for m in r.manual)
+
+
+def test_migrate_should_stamp_schema_version_one_when_absent():
+    text = '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert r.new_text.splitlines()[0] == "schema_version = 1"
+    assert tomllib.loads(r.new_text)["schema_version"] == 1
+
+
+def test_migrate_should_be_a_no_op_when_schema_version_already_one():
+    text = 'schema_version = 1\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert r.new_text == text
+    assert r.applied == []

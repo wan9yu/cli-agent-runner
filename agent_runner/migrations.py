@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from agent_runner.config import (
     _AGENT_ALLOWED_FIELDS,
+    _CURRENT_SCHEMA_VERSION,
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_PROMPT_ALLOWED_FIELDS,
@@ -879,8 +880,11 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
         rewritten, pass_applied, manual, advisory = _run_migrations_pass(new_text, cur)
         applied.extend(pass_applied)
         if rewritten == new_text:
+            stamped, version_applied = _stamp_schema_version(new_text, cur)
+            if version_applied:
+                applied.append(version_applied)
             return MigrationResult(
-                new_text=new_text, applied=applied, manual=manual, advisory=advisory
+                new_text=stamped, applied=applied, manual=manual, advisory=advisory
             )
         new_text = rewritten
         cur = tomllib.loads(rewritten)  # each rewrite was TOML-validated in the pass
@@ -888,3 +892,13 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
         f"config migration did not converge after {_MAX_MIGRATION_PASSES} passes — "
         "two migrations appear to undo each other; please file a bug"
     )
+
+
+def _stamp_schema_version(text: str, parsed: dict) -> tuple[str, str | None]:
+    """Stamp ``schema_version = 1`` as the file's first line if absent or not
+    already current. A no-op (returns text unchanged, None) when already
+    stamped — migrate must be idempotent on an already-current config."""
+    if parsed.get("schema_version") == _CURRENT_SCHEMA_VERSION:
+        return text, None
+    new_text = f"schema_version = {_CURRENT_SCHEMA_VERSION}\n{text}"
+    return new_text, f"stamped schema_version = {_CURRENT_SCHEMA_VERSION}"
