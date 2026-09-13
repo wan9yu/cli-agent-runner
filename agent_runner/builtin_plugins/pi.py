@@ -62,6 +62,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api import (
     emit_agent_auth_error_detected,
     emit_agent_usage_recorded,
@@ -74,7 +75,7 @@ from agent_runner.builtin_plugins._constants import (
     json_events,
 )
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.hooks import HookContext, register_post_round_hook
+from agent_runner.hooks import HookContext
 
 _STATUS_RE = re.compile(r"^\s*(\d{3})\b")
 """pi prefixes provider errors with the HTTP status (``429 status code ...``,
@@ -279,4 +280,4 @@ def _is_auth_error(text: str | None) -> bool:
     return bool(match) and match.group(1) == "401"
 
 
-register_post_round_hook(PiErrorDetector())
+PLUGIN = PluginManifest(name="pi", post_round_hooks=(PiErrorDetector(),))

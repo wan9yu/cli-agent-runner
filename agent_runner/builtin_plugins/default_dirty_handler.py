@@ -5,10 +5,11 @@ Ships enabled; disable via [plugins] disable = ["default_dirty_handler"]."""
 from __future__ import annotations
 
 from agent_runner import api, context_store, events
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api import AutoCommitError, StashError
 from agent_runner.api_types import DirtyOutcome
 from agent_runner.events import now_iso_ms  # match the helper runner.py uses
-from agent_runner.hooks import HookContext, register_dirty_handler
+from agent_runner.hooks import HookContext
 
 
 class DefaultDirtyHandler:
@@ -88,4 +89,4 @@ class DefaultDirtyHandler:
         return DirtyOutcome(kind="stashed", ref=ref.sha)
 
 
-register_dirty_handler(DefaultDirtyHandler())
+PLUGIN = PluginManifest(name="default_dirty_handler", dirty_handlers=(DefaultDirtyHandler(),))

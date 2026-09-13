@@ -19,6 +19,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api import (
     emit_agent_usage_recorded,
     emit_anomaly_repetitive_tool,
@@ -31,7 +32,7 @@ from agent_runner.builtin_plugins._constants import (
     json_events,
 )
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.hooks import HookContext, register_post_round_hook
+from agent_runner.hooks import HookContext
 
 
 class ClaudeErrorDetector:
@@ -290,4 +291,4 @@ def _classify(classification: str, raw: str) -> dict[str, Any]:
     }
 
 
-register_post_round_hook(ClaudeErrorDetector())
+PLUGIN = PluginManifest(name="claude_rate_limit", post_round_hooks=(ClaudeErrorDetector(),))

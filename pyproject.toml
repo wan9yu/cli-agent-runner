@@ -44,15 +44,13 @@ Changelog = "https://github.com/wan9yu/cli-agent-runner/blob/main/CHANGELOG.md"
 [project.scripts]
 agent-runner = "agent_runner.cli:main"
 
-[project.entry-points."agent_runner.post_round_hooks"]
-claude_error_detector = "agent_runner.builtin_plugins.claude_rate_limit:ClaudeErrorDetector"
-gemini_error_detector = "agent_runner.builtin_plugins.gemini:GeminiErrorDetector"
-codewhale_error_detector = "agent_runner.builtin_plugins.codewhale:CodewhaleErrorDetector"
-kimi_error_detector = "agent_runner.builtin_plugins.kimi:KimiErrorDetector"
-pi_error_detector = "agent_runner.builtin_plugins.pi:PiErrorDetector"
-
-[project.entry-points."agent_runner.dirty_handler_hooks"]
-default_dirty_handler = "agent_runner.builtin_plugins.default_dirty_handler:DefaultDirtyHandler"
+[project.entry-points."agent_runner.plugins"]
+claude_rate_limit = "agent_runner.builtin_plugins.claude_rate_limit:PLUGIN"
+gemini = "agent_runner.builtin_plugins.gemini:PLUGIN"
+codewhale = "agent_runner.builtin_plugins.codewhale:PLUGIN"
+kimi = "agent_runner.builtin_plugins.kimi:PLUGIN"
+pi = "agent_runner.builtin_plugins.pi:PLUGIN"
+default_dirty_handler = "agent_runner.builtin_plugins.default_dirty_handler:PLUGIN"
 
 [project.optional-dependencies]
 dev = [
@@ -123,6 +121,10 @@ ignore_names = [
     # SSOT: plugin-extension naming convention. Every register_* is invoked by
     # external plugins via entry_points, invisible to static analysis.
     "register_*",
+    # SSOT: plugin ABI convention. Every builtin_plugins/*.py module-level
+    # PLUGIN attribute is resolved by entry_points (agent_runner.plugins
+    # group) via getattr(module, "PLUGIN"), invisible to static analysis.
+    "PLUGIN",
     # SSOT: http.server dispatch convention. BaseHTTPRequestHandler calls
     # do_<VERB> (do_GET) by name; never from project code.
     "do_*",

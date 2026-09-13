@@ -33,6 +33,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api import emit_transient_error_detected
 from agent_runner.builtin_plugins._constants import (
     _BACK_OFF_DEFAULTS,
@@ -41,7 +42,7 @@ from agent_runner.builtin_plugins._constants import (
     json_events,
 )
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.hooks import HookContext, register_post_round_hook
+from agent_runner.hooks import HookContext
 
 
 class KimiErrorDetector:
@@ -92,4 +93,4 @@ def _parse_kimi_log(log_path: Path) -> dict[str, Any] | None:
     }
 
 
-register_post_round_hook(KimiErrorDetector())
+PLUGIN = PluginManifest(name="kimi", post_round_hooks=(KimiErrorDetector(),))

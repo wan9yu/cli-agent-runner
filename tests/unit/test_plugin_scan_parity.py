@@ -14,7 +14,7 @@ from importlib.metadata import entry_points
 
 import pytest
 
-from agent_runner import _HOOK_GROUPS, _plugin_scan
+from agent_runner import _plugin_scan
 
 
 def _md(group: str) -> list[tuple[str, str]]:
@@ -22,9 +22,10 @@ def _md(group: str) -> list[tuple[str, str]]:
 
 
 def test_scanner_should_match_importlib_metadata_per_group():
-    """scanner(sys.path, group) == entry_points(group) for every group we load --
-    run on the dev venv's real (possibly stale) dist-info + in CI."""
-    groups = (*_HOOK_GROUPS, "agent_runner.event_kinds", "agent_runner.detectors")
+    """scanner(sys.path, group) == entry_points(group) for the one plugin
+    group agent_runner loads -- run on the dev venv's real (possibly stale)
+    dist-info + in CI."""
+    groups = ("agent_runner.plugins",)
 
     for group in groups:
         scanned = sorted(_plugin_scan.scan_entry_points(sys.path, group))
@@ -38,9 +39,9 @@ def test_scanner_should_fall_back_to_metadata_when_parse_fails(monkeypatch):
     monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", boom)
 
     # must not raise -- falls back to importlib.metadata
-    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.plugins")
 
-    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
+    assert ("pi", "agent_runner.builtin_plugins.pi:PLUGIN") in out
 
 
 def test_scanner_should_skip_file_scan_when_env_override_is_metadata(monkeypatch):
@@ -53,9 +54,9 @@ def test_scanner_should_skip_file_scan_when_env_override_is_metadata(monkeypatch
 
     monkeypatch.setattr(_plugin_scan, "_parse_entry_points_files", must_not_run)
 
-    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks")
+    out = _plugin_scan.scan_entry_points(sys.path, "agent_runner.plugins")
 
-    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
+    assert ("pi", "agent_runner.builtin_plugins.pi:PLUGIN") in out
 
 
 def test_scanner_should_use_file_scan_when_env_override_is_absent(monkeypatch):
@@ -63,9 +64,9 @@ def test_scanner_should_use_file_scan_when_env_override_is_absent(monkeypatch):
     path IS exercised (and still agrees with importlib.metadata)."""
     monkeypatch.delenv("AGENT_RUNNER_PLUGIN_DISCOVERY", raising=False)
 
-    scanned = sorted(_plugin_scan.scan_entry_points(sys.path, "agent_runner.post_round_hooks"))
+    scanned = sorted(_plugin_scan.scan_entry_points(sys.path, "agent_runner.plugins"))
 
-    assert scanned == _md("agent_runner.post_round_hooks")
+    assert scanned == _md("agent_runner.plugins")
 
 
 def _write_dup_dist_info(tmp_path, name="dup_name", group="agent_runner.post_round_hooks"):
@@ -199,6 +200,6 @@ def test_scanner_should_fall_back_to_metadata_when_entry_points_txt_is_malformed
     (dist_info / "entry_points.txt").write_text("this is not ini content\nno section header\n")
     sys_path = [str(tmp_path), *sys.path]
 
-    out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.post_round_hooks")
+    out = _plugin_scan.scan_entry_points(sys_path, "agent_runner.plugins")
 
-    assert ("pi_error_detector", "agent_runner.builtin_plugins.pi:PiErrorDetector") in out
+    assert ("pi", "agent_runner.builtin_plugins.pi:PLUGIN") in out

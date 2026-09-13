@@ -41,10 +41,16 @@ _LOADED_MANIFESTS: list[PluginManifest] = []
 def register_manifest(manifest: PluginManifest) -> None:
     """Register every capability a manifest declares into its own registry.
     No import-time side effects — the loader calls this explicitly after
-    resolving a plugin's `PLUGIN` attribute."""
+    resolving a plugin's `PLUGIN` attribute.
+
+    Appends to ``_LOADED_MANIFESTS`` only after every sub-registration
+    succeeds — a duplicate-name registration (e.g. a stray double-scan)
+    raises via the underlying registries' own ``ensure_unique`` checks
+    before the manifest is recorded, so a failed call leaves no partial
+    trace for ``unregister_by_name`` to later find and no-op against.
+    """
     from agent_runner import events, hooks, monitor
 
-    _LOADED_MANIFESTS.append(manifest)
     for h in manifest.pre_round_hooks:
         hooks.register_pre_round_hook(h)
     for e in manifest.context_enrichers:
@@ -59,6 +65,7 @@ def register_manifest(manifest: PluginManifest) -> None:
         monitor.register_detector(det)
     for kind in manifest.event_kinds:
         events.register_event_kind(kind, source=manifest.name)
+    _LOADED_MANIFESTS.append(manifest)
 
 
 def _remove_by_identity(registry: list, items: tuple) -> None:

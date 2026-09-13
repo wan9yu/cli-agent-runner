@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api import (
     emit_agent_usage_recorded,
     emit_transient_error_detected,
@@ -26,7 +27,7 @@ from agent_runner.builtin_plugins._constants import (
     json_events,
 )
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.hooks import HookContext, register_post_round_hook
+from agent_runner.hooks import HookContext
 
 
 class CodewhaleErrorDetector:
@@ -113,4 +114,4 @@ def _classify_codewhale_error(error_event: dict[str, Any]) -> str | None:
     return None
 
 
-register_post_round_hook(CodewhaleErrorDetector())
+PLUGIN = PluginManifest(name="codewhale", post_round_hooks=(CodewhaleErrorDetector(),))
