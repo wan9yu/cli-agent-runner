@@ -18,6 +18,7 @@ import pytest
 from agent_runner import events as _events
 from agent_runner import hooks as _hooks
 from agent_runner import monitor as _monitor
+from agent_runner._plugin_manifest import PluginManifest
 from tests._test_helpers import isolating
 
 _reset = isolating(
@@ -26,6 +27,15 @@ _reset = isolating(
     _hooks._POST_ROUND_HOOKS,
     _events._PLUGIN_KINDS,
     _monitor._PLUGIN_DETECTORS,
+)
+
+# A real, importable PluginManifest that is NEVER scanned via the real
+# agent_runner.plugins group -- so it stays "fresh" (not already loaded)
+# for test_load_plugin_manifests_should_strip_extras_marker_and_register_when_resolved
+# to resolve and register from scratch.
+_FRESH_MANIFEST_FOR_LOADER_TEST = PluginManifest(
+    name="test_init_entry_points_fresh_plugin",
+    event_kinds=("test_init_entry_points_fresh_kind",),
 )
 
 
@@ -50,29 +60,39 @@ def test_load_plugin_manifests_should_warn_when_plugin_import_fails() -> None:
         assert any("bad-plugin" in str(w.message) for w in caught)
 
 
-def test_load_plugin_manifests_should_register_manifest_when_resolved() -> None:
+def test_load_plugin_manifests_should_strip_extras_marker_and_register_when_resolved() -> None:
+    """A well-formed target can carry a trailing extras marker
+    (``module:attr [extra1,extra2]``, per importlib.metadata.EntryPoint's own
+    grammar) -- the loader must strip it before resolving, then actually
+    register the resolved manifest's declared capabilities. Uses a manifest
+    that is never scanned via the real entry-point group, so this proves a
+    genuine first-time registration, not the already-loaded no-op re-scan
+    that a real builtin's name would exercise instead."""
     from agent_runner import _load_plugin_manifests
     from agent_runner._plugin_manifest import _LOADED_MANIFESTS
 
     before = len(_LOADED_MANIFESTS)
-    scanned = [
-        ("default_dirty_handler", "agent_runner.builtin_plugins.default_dirty_handler:PLUGIN")
-    ]
+    target = "tests.unit.test_init_entry_points:_FRESH_MANIFEST_FOR_LOADER_TEST [extra1,extra2]"
+    scanned = [("fresh-plugin", target)]
 
     with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        _load_plugin_manifests()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _load_plugin_manifests()
 
-    # Already loaded once at package import; idempotent re-scan doesn't
-    # grow the registry further (no assertion on that here — see the
-    # warn-on-import-failure test above for the failure-isolation contract).
-    assert len(_LOADED_MANIFESTS) == before
+    assert not caught, (
+        f"expected the extras marker to be stripped and the plugin to load clean; "
+        f"got {[str(w.message) for w in caught]}"
+    )
+    assert len(_LOADED_MANIFESTS) == before + 1
+    assert "test_init_entry_points_fresh_kind" in _events.KNOWN_EVENT_KINDS
 
 
 def test_apply_plugin_disable_should_remove_named_pre_round_hook() -> None:
     """Disable keys on the PluginManifest's own `name`, not the hook's `.name` —
     the hook must be registered via a manifest for disable to find it."""
     from agent_runner import apply_plugin_disable, hooks
-    from agent_runner._plugin_manifest import PluginManifest, register_manifest
+    from agent_runner._plugin_manifest import register_manifest
 
     pre_count_before = len(hooks._PRE_ROUND_HOOKS)
 
@@ -109,7 +129,7 @@ def test_apply_plugin_disable_should_prune_serve_startup_hooks(
 ) -> None:
     """[plugins] disable must filter _SERVE_STARTUP_HOOKS, just like other hook registries."""
     from agent_runner import apply_plugin_disable, hooks
-    from agent_runner._plugin_manifest import PluginManifest, register_manifest
+    from agent_runner._plugin_manifest import register_manifest
 
     monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
 
@@ -137,7 +157,7 @@ def test_apply_plugin_disable_should_prune_serve_startup_hooks(
 
 def test_disabled_plugin_names_should_return_names_from_last_apply_plugin_disable_call() -> None:
     from agent_runner import apply_plugin_disable, disabled_plugin_names
-    from agent_runner._plugin_manifest import PluginManifest, register_manifest
+    from agent_runner._plugin_manifest import register_manifest
 
     class _TestHook2:
         name = "for_visibility_check"

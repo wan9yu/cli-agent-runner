@@ -7,7 +7,7 @@ relying on import-time register_*() side effects. One entry-point group,
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from agent_runner.api_types import Detector
 from agent_runner.hooks import (
@@ -31,7 +31,7 @@ class PluginManifest:
     post_round_hooks: tuple[PostRoundHook, ...] = ()
     serve_startup_hooks: tuple[ServeStartupHook, ...] = ()
     dirty_handlers: tuple[DirtyHandler, ...] = ()
-    detectors: tuple[Detector, ...] = field(default_factory=tuple)
+    detectors: tuple[Detector, ...] = ()
     event_kinds: tuple[str, ...] = ()
 
 
@@ -48,6 +48,12 @@ def register_manifest(manifest: PluginManifest) -> None:
     raises via the underlying registries' own ``ensure_unique`` checks
     before the manifest is recorded, so a failed call leaves no partial
     trace for ``unregister_by_name`` to later find and no-op against.
+    This guarantee covers ``_LOADED_MANIFESTS`` only: a failure partway
+    through the loop below (e.g. the 3rd of 5 declared post_round_hooks
+    raises) still leaves the first 2 registered in their own per-family
+    registry — matching the prior import-time register_*() semantics,
+    where a mid-module exception left every earlier top-level call's
+    side effect in place too.
     """
     from agent_runner import events, hooks, monitor
 
