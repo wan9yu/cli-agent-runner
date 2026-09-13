@@ -88,7 +88,7 @@ def _scalar_tables(p: dict) -> list[str]:
 
 # Flat override fields that also live under a nested [phases.<name>.runtime]
 # sub-table. The flat form is a permanent alias, so this is guidance only.
-_PHASE_RUNTIME_FLAT_FIELDS = ("round_timeout_s", "disable_pre_round_hooks")
+_PHASE_RUNTIME_FLAT_FIELDS = ("round_budget_s", "disable_pre_round_hooks")
 
 
 def _has_flat_phase_override(parsed: dict) -> bool:
@@ -144,14 +144,18 @@ def _phases_scalar_keys(p: dict) -> list[str]:
 _TABLE_HEADER = re.compile(r"^\s*\[(?P<name>[^\]]+)\]")
 
 
-def _rename_key(old: str, new: str, table: str) -> Callable[[str], str]:
-    """Rename `old = ...` to `new = ...` but ONLY inside the [table] section.
-    Tracks the current `[header]` while scanning line-by-line, so a same-named
-    key in another table (e.g. a `[plugins.*]` sub-table) is left alone. If the
-    assignment resolves to anything other than exactly one line in the target
-    table, the rewrite is refused (text returned unchanged) and run_migrations
-    routes it to manual."""
+def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], str]:
+    """Rename `old = ...` to `new = ...` inside [table]. `table` may be a
+    compiled pattern fullmatched against the current `[header]` name (e.g.
+    `re.compile(r"phases\\.[^.\\]]+")` for a per-phase walker) — every matching
+    table's hit is rewritten. A literal str `table` keeps the original
+    exactly-one-hit-or-refuse discipline."""
     assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=)")
+
+    def _table_matches(name: str) -> bool:
+        if isinstance(table, re.Pattern):
+            return bool(table.fullmatch(name))
+        return name == table
 
     def _apply(text: str) -> str:
         lines = text.splitlines(keepends=True)
@@ -162,11 +166,14 @@ def _rename_key(old: str, new: str, table: str) -> Callable[[str], str]:
             if h:
                 cur = h.group("name").strip()
                 continue
-            if cur == table and assign.match(line):
+            if cur is not None and _table_matches(cur) and assign.match(line):
                 hits.append(i)
-        if len(hits) != 1:
+        if not hits:
             return text
-        lines[hits[0]] = assign.sub(rf"\g<indent>{new}\g<sp>", lines[hits[0]], count=1)
+        if not isinstance(table, re.Pattern) and len(hits) != 1:
+            return text
+        for i in hits:
+            lines[i] = assign.sub(rf"\g<indent>{new}\g<sp>", lines[i], count=1)
         return "".join(lines)
 
     return _apply
@@ -374,14 +381,35 @@ MIGRATIONS: list[Migration] = [
         apply=None,
         describe=(
             "runtime.round_timeout_per_phase (removed 0.1.16) must be moved "
-            "manually to [phases.<name>] round_timeout_s"
+            "manually to [phases.<name>] round_budget_s"
         ),
+    ),
+    # --- 0.3.0: [runtime]/[phases.<name>] round_timeout_s → round_budget_s ---
+    Migration(
+        detect=lambda p: "round_timeout_s" in _table(p, "runtime"),
+        apply=_rename_key("round_timeout_s", "round_budget_s", "runtime"),
+        describe="runtime.round_timeout_s → runtime.round_budget_s",
+    ),
+    Migration(
+        detect=lambda p: any("round_timeout_s" in sub for sub in _phase_subtables(p)),
+        apply=_rename_key("round_timeout_s", "round_budget_s", re.compile(r"phases\.[^.\]]+")),
+        describe="phases.<name>.round_timeout_s → phases.<name>.round_budget_s",
+    ),
+    Migration(
+        detect=lambda p: any(
+            isinstance(sub.get("runtime"), dict) and "round_timeout_s" in sub["runtime"]
+            for sub in _phase_subtables(p)
+        ),
+        apply=_rename_key(
+            "round_timeout_s", "round_budget_s", re.compile(r"phases\.[^.\]]+\.runtime")
+        ),
+        describe=("phases.<name>.runtime.round_timeout_s → phases.<name>.runtime.round_budget_s"),
     ),
     Migration(
         detect=_has_flat_phase_override,
         apply=None,
         describe=(
-            "flat round_timeout_s/disable_pre_round_hooks under [phases.<name>] "
+            "flat round_budget_s/disable_pre_round_hooks under [phases.<name>] "
             "should move under a nested [phases.<name>.runtime] sub-table "
             "(the flat form still works as an alias)"
         ),

@@ -149,10 +149,10 @@ def test_bare_command_config_should_load_when_migrated(tmp_path):
 
 
 def test_flat_phase_alias_should_exit_0_with_guidance_when_present(tmp_path, capsys):
-    # The flat [phases.<name>] round_timeout_s/disable_pre_round_hooks alias is
+    # The flat [phases.<name>] round_budget_s/disable_pre_round_hooks alias is
     # a PERMANENT, still-valid form — reporting it as `manual` (exit 1 forever)
     # was the bug: `migrate` must surface it as guidance without blocking.
-    cfg = _write(tmp_path, 'phases.list = ["a"]\n[phases.a]\nround_timeout_s = 900\n')
+    cfg = _write(tmp_path, 'phases.list = ["a"]\n[phases.a]\nround_budget_s = 900\n')
 
     rc = migrate_cmd.cmd(_args(cfg))
 

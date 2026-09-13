@@ -75,8 +75,8 @@ def test_up_to_date_config_should_be_a_noop():
 
 @pytest.mark.parametrize(
     "override_line",
-    ["round_timeout_s = 900", "disable_pre_round_hooks = true"],
-    ids=["round_timeout_s", "disable_pre_round_hooks"],
+    ["round_budget_s = 900", "disable_pre_round_hooks = true"],
+    ids=["round_budget_s", "disable_pre_round_hooks"],
 )
 def test_flat_phase_override_should_be_advisory_when_set_directly(override_line: str):
     # A flat override directly under [phases.a] is guidance, not a rejection
@@ -95,7 +95,7 @@ def test_flat_phase_override_should_be_advisory_when_set_directly(override_line:
 
 
 def test_nested_phase_runtime_table_should_not_be_flagged():
-    text = 'phases.list = ["a"]\n[phases.a.runtime]\nround_timeout_s = 900\n'
+    text = 'phases.list = ["a"]\n[phases.a.runtime]\nround_budget_s = 900\n'
 
     r = _run(text)
 
@@ -458,4 +458,35 @@ def test_full_flat_host_health_table_should_migrate_to_all_three_subtables_when_
         "critical_consecutive_samples": 2,
         "in_round_terminate": False,
     }
+
+
+def test_round_timeout_s_should_rename_in_runtime_table_when_migrated():
+    text = "[runtime]\nround_timeout_s = 3600\n"
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert "round_budget_s = 3600" in r.new_text
+    assert r.applied == ["runtime.round_timeout_s → runtime.round_budget_s"]
+
+
+def test_round_timeout_s_should_rename_in_every_phase_flat_override_when_migrated():
+    text = (
+        '[phases]\nlist = ["a", "b"]\n'
+        "[phases.a]\nround_timeout_s = 100\n"
+        "[phases.b]\nround_timeout_s = 200\n"
+    )
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    parsed = tomllib.loads(r.new_text)
+    assert parsed["phases"]["a"]["round_budget_s"] == 100
+    assert parsed["phases"]["b"]["round_budget_s"] == 200
+
+
+def test_round_timeout_s_should_rename_in_nested_phase_runtime_table_when_migrated():
+    text = '[phases]\nlist = ["a"]\n[phases.a.runtime]\nround_timeout_s = 300\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert tomllib.loads(r.new_text)["phases"]["a"]["runtime"]["round_budget_s"] == 300
     assert r.manual == []

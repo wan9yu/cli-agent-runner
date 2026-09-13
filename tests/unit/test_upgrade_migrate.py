@@ -103,7 +103,7 @@ def test_flat_phase_alias_should_not_be_treated_as_manual_remainder(tmp_path):
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + '[prompt]\nfile = "p.md"\n'
-        + '[phases]\nlist = ["a"]\n[phases.a]\nround_timeout_s = 900\n'
+        + '[phases]\nlist = ["a"]\n[phases.a]\nround_budget_s = 900\n'
     )
     cfg = _cfg(tmp_path, body)
     (tmp_path / "p.md").write_text("hi")
