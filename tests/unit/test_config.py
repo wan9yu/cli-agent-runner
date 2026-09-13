@@ -47,7 +47,7 @@ file = "./prompts/main.md"
     cfg = load_config(toml)
 
     assert cfg.agent.command == ["my-agent", "--model", "x"]
-    assert cfg.runtime.round_timeout_s == 1800  # default
+    assert cfg.runtime.round_budget_s == 1800  # default
     assert cfg.runtime.restart_delay_s == 3
     assert cfg.prompt.inject_context is True  # default
     assert cfg.phases.list is None
@@ -555,10 +555,10 @@ def test_runtime_config_should_have_no_round_timeout_per_phase_field() -> None:
     assert "round_timeout_per_phase" not in field_names
 
 
-def test_round_timeout_s_bool_should_raise_value_error_when_loaded(
+def test_round_budget_s_bool_should_raise_value_error_when_loaded(
     tmp_path: Path,
 ) -> None:
-    """Apply same type-guard to runtime.round_timeout_s (was silently coercing)."""
+    """Apply same type-guard to runtime.round_budget_s (was silently coercing)."""
     toml = _write_toml(
         tmp_path,
         """
@@ -568,13 +568,13 @@ prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "."
 log_dir = "/tmp/logs"
-round_timeout_s = true
+round_budget_s = true
 [prompt]
 file = "prompts/main.md"
 """,
     )
 
-    with pytest.raises(ValueError, match="round_timeout_s.*must be an integer"):
+    with pytest.raises(ValueError, match="round_budget_s.*must be an integer"):
         load_config(toml)
 
 
@@ -964,7 +964,7 @@ def test_phases_list_only_should_yield_empty_overrides_when_loaded(
     assert cfg.phases.overrides == {}
 
 
-def test_phase_sub_table_round_timeout_should_be_recorded_as_override_when_loaded(
+def test_phase_sub_table_round_budget_should_be_recorded_as_override_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
@@ -980,12 +980,12 @@ def test_phase_sub_table_round_timeout_should_be_recorded_as_override_when_loade
         "[phases]\n"
         'list = ["dev", "qa"]\n'
         "[phases.dev]\n"
-        "round_timeout_s = 3600\n"
+        "round_budget_s = 3600\n"
     )
 
     cfg = load_config(tmp_path / "agent-runner.toml")
 
-    assert cfg.phases.overrides["dev"].round_timeout_s == 3600
+    assert cfg.phases.overrides["dev"].round_budget_s == 3600
     assert cfg.phases.overrides["dev"].disable_pre_round_hooks is None
     assert cfg.phases.overrides["dev"].prompt_files is None
 
@@ -1008,7 +1008,7 @@ def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
         "[phases]\n"
         'list = ["dev"]\n'
         "[phases.dev]\n"
-        "round_timeout_s = 3600\n"
+        "round_budget_s = 3600\n"
         "disable_pre_round_hooks = true\n"
         'prompt.files = ["a.md", "b.md"]\n'
     )
@@ -1016,7 +1016,7 @@ def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
     cfg = load_config(tmp_path / "agent-runner.toml")
 
     o = cfg.phases.overrides["dev"]
-    assert o.round_timeout_s == 3600
+    assert o.round_budget_s == 3600
     assert o.disable_pre_round_hooks is True
     assert o.prompt_files == [tmp_path / "a.md", tmp_path / "b.md"]
 
@@ -1037,7 +1037,7 @@ def test_phase_name_not_in_list_should_raise_config_error_when_loaded(
         "[phases]\n"
         'list = ["dev"]\n'
         "[phases.foo]\n"
-        "round_timeout_s = 3600\n"
+        "round_budget_s = 3600\n"
     )
 
     with pytest.raises(ValueError, match=r"\[phases\.foo\].*not in phases\.list"):
@@ -2333,10 +2333,7 @@ def test_load_config_should_parse_round_budget_s_in_all_three_forms_when_present
     toml = make_toml_with_sections(
         tmp_path,
         runtime_extra="round_budget_s = 900\n",
-        phases_block=(
-            "[phases]\nlist = [\"dev\"]\n"
-            "[phases.dev]\nround_budget_s = 1200\n"
-        ),
+        phases_block=('[phases]\nlist = ["dev"]\n[phases.dev]\nround_budget_s = 1200\n'),
     )
 
     cfg = load_config(toml)

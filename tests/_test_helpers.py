@@ -88,7 +88,7 @@ def make_toml_with_sections(
     - prompt_block: replaces the default ``file = "<prompt.md>"`` line.
       e.g. ``'files = ["a.md"]'``
     - runtime_extra: additional keys appended inside the ``[runtime]`` section.
-      e.g. ``'round_timeout_s = 1800\\n'``
+      e.g. ``'round_budget_s = 1800\\n'``
     - phases_block: appended after the ``[prompt]`` section.
       e.g. ``'[phases]\\nlist = ["dev"]\\n'``
 

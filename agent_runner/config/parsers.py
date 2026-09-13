@@ -163,11 +163,11 @@ def _parse_phase_overrides(
         if unknown:
             raise ConfigError(
                 f"unknown per-phase field(s) under [phases.{phase_name}]: {sorted(unknown)}; "
-                f"allowed: round_timeout_s, disable_pre_round_hooks, prompt.files, "
+                f"allowed: round_budget_s, disable_pre_round_hooks, prompt.files, "
                 f"agent, runtime, schedule"
             )
 
-        # runtime: flat aliases (round_timeout_s/disable_pre_round_hooks) and/or
+        # runtime: flat aliases (round_budget_s/disable_pre_round_hooks) and/or
         # a nested [phases.<name>.runtime] sub-table. Setting both twins raises.
         runtime_sub = value.get("runtime")
         if runtime_sub is not None and not isinstance(runtime_sub, dict):
@@ -177,7 +177,7 @@ def _parse_phase_overrides(
         if unknown_rt:
             raise ConfigError(
                 f"unknown field(s) under [phases.{phase_name}.runtime]: {sorted(unknown_rt)}; "
-                f"allowed: round_timeout_s, disable_pre_round_hooks"
+                f"allowed: round_budget_s, disable_pre_round_hooks"
             )
         for fld in _PHASE_RUNTIME_ALLOWED_FIELDS:
             if fld in value and fld in runtime_sub:
@@ -188,14 +188,14 @@ def _parse_phase_overrides(
 
         # A field resolves from the nested [...runtime] sub-table, else the flat
         # alias (the twin case already raised above), so nested-first is safe.
-        round_timeout_s = None
-        if "round_timeout_s" in runtime_sub:
-            round_timeout_s = _require_positive_int(
-                runtime_sub["round_timeout_s"], field=f"phases.{phase_name}.runtime.round_timeout_s"
+        round_budget_s = None
+        if "round_budget_s" in runtime_sub:
+            round_budget_s = _require_positive_int(
+                runtime_sub["round_budget_s"], field=f"phases.{phase_name}.runtime.round_budget_s"
             )
-        elif "round_timeout_s" in value:
-            round_timeout_s = _require_positive_int(
-                value["round_timeout_s"], field=f"phases.{phase_name}.round_timeout_s"
+        elif "round_budget_s" in value:
+            round_budget_s = _require_positive_int(
+                value["round_budget_s"], field=f"phases.{phase_name}.round_budget_s"
             )
         disable_hooks = None
         if "disable_pre_round_hooks" in runtime_sub:
@@ -247,7 +247,7 @@ def _parse_phase_overrides(
             phase_schedule = _parse_schedule(sched_sub, label=f"phases.{phase_name}.schedule")
 
         overrides[phase_name] = PhaseOverride(
-            round_timeout_s=round_timeout_s,
+            round_budget_s=round_budget_s,
             disable_pre_round_hooks=disable_hooks,
             prompt_files=prompt_files,
             agent=phase_agent,
@@ -315,7 +315,7 @@ def _parse_runtime(runtime_d: dict, *, project_name: str, work_dir: Path) -> Run
     if "round_timeout_per_phase" in runtime_d:
         raise ConfigError(
             "runtime.round_timeout_per_phase removed in 0.1.16; "
-            "use [phases.<name>] round_timeout_s = X. Run `agent-runner migrate`."
+            "use [phases.<name>] round_budget_s = X. Run `agent-runner migrate`."
         )
 
     if runtime_d.get("rate_limit_action") is not None:
@@ -349,8 +349,8 @@ def _parse_runtime(runtime_d: dict, *, project_name: str, work_dir: Path) -> Run
     return RuntimeConfig(
         work_dir=work_dir,
         log_dir=log_dir,
-        round_timeout_s=_require_positive_int(
-            runtime_d.get("round_timeout_s", 1800), field="runtime.round_timeout_s"
+        round_budget_s=_require_positive_int(
+            runtime_d.get("round_budget_s", 1800), field="runtime.round_budget_s"
         ),
         restart_delay_s=_require_positive_int(
             runtime_d.get("restart_delay_s", 3), field="runtime.restart_delay_s"
