@@ -40,6 +40,6 @@ for evt in stream_events_jsonl(log_dir):
 ## Catalog of built-in event kinds
 
 See the `gen:event-kinds` auto-generated region in `docs/architecture.md` for the
-current list. Plugin event kinds register via the
-`agent_runner.event_kinds` entry_points group; their schemas are documented by
-their plugin authors.
+current list. Plugin event kinds are declared on a plugin's
+`PluginManifest.event_kinds` (loaded via the `agent_runner.plugins` entry_points
+group); their schemas are documented by their plugin authors.

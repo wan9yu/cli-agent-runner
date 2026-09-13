@@ -1,27 +1,43 @@
 """Invariant: docs/plugins.md's built-in post_round_hooks section is complete.
 
-pyproject's entry-points table is the SSOT for what ships. The section's count
-and its per-plugin subsections both drifted when codewhale landed in 0.1.41 —
-a plugin author reading this page cannot know codewhale_error_detector exists,
-nor that `[plugins] disable` accepts its name.
+The `agent_runner.plugins` entry-points table (resolved to live PluginManifests)
+is the SSOT for what ships. The section's count and its per-plugin subsections
+both drifted when codewhale landed in 0.1.41 -- a plugin author reading this
+page cannot know codewhale_error_detector exists, nor that `[plugins] disable`
+accepts its name.
 """
 
 from __future__ import annotations
 
+import importlib
 import re
 import tomllib
 from pathlib import Path
 
+from agent_runner._plugin_manifest import PluginManifest
+
 REPO = Path(__file__).resolve().parents[2]
 
 
-def _builtin_post_round_hook_names() -> set[str]:
+def _builtin_post_round_hook_plugin_names() -> set[str]:
+    """Names of the manifests in agent_runner.plugins that declare at least
+    one post_round_hook (e.g. default_dirty_handler ships a dirty_handler,
+    not a post_round_hook, so it is correctly excluded from this set)."""
     data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    return set(data["project"]["entry-points"]["agent_runner.post_round_hooks"])
+    entries = data["project"]["entry-points"]["agent_runner.plugins"]
+
+    names = set()
+    for name, target in entries.items():
+        module_path, _, attr = target.partition(":")
+        manifest = getattr(importlib.import_module(module_path), attr)
+        assert isinstance(manifest, PluginManifest), f"{name}: {target} is not a PluginManifest"
+        if manifest.post_round_hooks:
+            names.add(name)
+    return names
 
 
 def test_plugins_doc_should_list_every_builtin_post_round_hook_when_scanned() -> None:
-    names = _builtin_post_round_hook_names()
+    names = _builtin_post_round_hook_plugin_names()
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
     section = text.split("## Built-in post_round_hooks", 1)[-1].split("\n## ", 1)[0]
     m = re.search(r"ships (\d+) built-in", section)

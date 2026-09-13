@@ -104,18 +104,17 @@ Each round run under claude, gemini, codewhale, or pi emits an
 `agent_usage_recorded` event with token breakdown + cost (where the
 underlying CLI exposes it). kimi's built-in plugin does not emit it: its
 stream-json output carries no token counters at all (see `docs/plugins.md`
-§ `kimi_error_detector`).
+§ `kimi`).
 
 ```toml
 # No config needed — events emit automatically when a built-in plugin
-# (claude_error_detector / gemini_error_detector / codewhale_error_detector /
-# pi_error_detector) is registered.
-# To suppress: [plugins] disable = ["claude_error_detector", "gemini_error_detector",
-#   "codewhale_error_detector", "pi_error_detector"]
+# (claude_rate_limit / gemini / codewhale / pi) is registered.
+# To suppress: [plugins] disable = ["claude_rate_limit", "gemini",
+#   "codewhale", "pi"]
 ```
 
 Use as input to a cost-tracking detector or external billing reconciler.
-See `docs/plugins.md` (§ `claude_error_detector`) for the current payload
+See `docs/plugins.md` (§ `claude_rate_limit`) for the current payload
 schema (includes `cache_creation_tokens`, `tool_call_count`, `phase`,
 `success`). Aggregation (rollups, budget warnings)
 is the consumer's responsibility — agent-runner emits raw per-round

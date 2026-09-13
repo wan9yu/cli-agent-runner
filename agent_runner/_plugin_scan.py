@@ -26,14 +26,15 @@ def _metadata_entry_points(group: str) -> list[tuple[str, str]]:
 
 
 # Parsed entry_points.txt contents, memoized per dist-info file for the life
-# of the process: {ep_file_path: {group: [(name, value), ...]}}. Package
-# import calls _parse_entry_points_files once per plugin group (7x today,
-# _HOOK_GROUPS + event_kinds + detectors) across the SAME sys.path, so every
-# call after the first re-walks the identical dist-info directories --
-# without this cache each one would re-open and re-parse (configparser) every
-# entry_points.txt found, 7x over, just to pull out a different [group]
-# section each time. Keyed by the file's path only (not mtime) -- a dist-info
-# is not expected to change under a running process.
+# of the process: {ep_file_path: {group: [(name, value), ...]}}. A caller
+# asking about more than one group over the SAME sys.path (the scanner is
+# group-agnostic; agent_runner's own package-import loads just the one
+# agent_runner.plugins group today, but tests and other callers exercise
+# several) re-walks the identical dist-info directories -- without this
+# cache each such call would re-open and re-parse (configparser) every
+# entry_points.txt found, just to pull out a different [group] section each
+# time. Keyed by the file's path only (not mtime) -- a dist-info is not
+# expected to change under a running process.
 _PARSED_DIST_INFO_CACHE: dict[Path, dict[str, list[tuple[str, str]]]] = {}
 
 

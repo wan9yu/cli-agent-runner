@@ -156,9 +156,10 @@ To disable this path: `[prompt] inject_context = false`.
 
 ### Path 2: PreRoundHook mutation (controlled by `[runtime] disable_pre_round_hooks`)
 
-Before each round, the supervisor invokes every registered PreRoundHook (from plugin
-entry_points in `agent_runner.pre_round_hooks` group). These hooks receive a HookContext
-and can read OR mutate `cfg.prompt.file` (or its contents directly).
+Before each round, the supervisor invokes every registered PreRoundHook (declared on a
+plugin's `PluginManifest.pre_round_hooks`, loaded via the `agent_runner.plugins`
+entry-point group). These hooks receive a HookContext and can read OR mutate
+`cfg.prompt.file` (or its contents directly).
 
 To disable this path: `[runtime] disable_pre_round_hooks = true`.
 
@@ -172,7 +173,8 @@ Setting `inject_context = false` does NOT disable PreRoundHooks. Setting
 `disable_pre_round_hooks = true` does NOT disable the round-context.json prepend.
 
 If you want neither injection: set both. If you want to disable a specific plugin
-hook (vs ALL pre-round hooks), use `[plugins] disable = ["that_entry_point_name"]`.
+(vs ALL pre-round hooks), use `[plugins] disable = ["that_plugin_name"]` — the
+name is the plugin's own `PluginManifest.name`, not an individual hook's `.name`.
 
 ## Dirty-handler seam (0.2.0+)
 

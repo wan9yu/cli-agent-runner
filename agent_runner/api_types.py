@@ -132,9 +132,10 @@ class Detector(Protocol):
     """Public plugin contract for monitor detectors.
 
     Plugins implementing this Protocol can be registered via
-    ``monitor.register_detector`` (or auto-loaded via entry_points group
-    ``agent_runner.detectors``) and will be invoked alongside built-in
-    detectors during each monitor poll.
+    ``monitor.register_detector`` (or declared on a ``PluginManifest``'s
+    ``detectors`` field and auto-loaded via the ``agent_runner.plugins``
+    entry_points group) and will be invoked alongside built-in detectors
+    during each monitor poll.
 
     ``auto_action="stop_service"`` is honored only if the plugin's ``name``
     appears in ``cfg.monitor.auto_stop_on`` — operators must explicitly

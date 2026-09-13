@@ -1,64 +1,88 @@
 # Plugin Authoring
 
-agent-runner extends via setuptools `entry_points`. Each extension point is a
-separate group; plugins declare entries in their `pyproject.toml` and are
-discovered automatically at package import when installed alongside
-`cli-agent-runner`.
+agent-runner extends via one setuptools `entry_points` group,
+`agent_runner.plugins`. Each entry resolves to a module-level
+`PLUGIN = PluginManifest(...)` that declares every capability the plugin
+provides; plugins are discovered automatically at package import when
+installed alongside `cli-agent-runner`.
 
 Plugins run in the supervisor process, not inside the agent. This is intentional:
 plugin code is observability/coordination glue, not workflow logic.
 
 ## Trust boundary
 
-Plugins load via setuptools entry_points at supervisor import time and run in the
-supervisor's Python process with full access to its environment, filesystem, and
-network. There is no sandbox. Treat `pip install <agent-runner-plugin>` with the
-same trust you give any pip install — a malicious plugin can do anything the
-supervisor user can do.
+Plugins load via the `agent_runner.plugins` entry_points group at supervisor
+import time and run in the supervisor's Python process with full access to its
+environment, filesystem, and network. There is no sandbox. Treat
+`pip install <agent-runner-plugin>` with the same trust you give any pip
+install — a malicious plugin can do anything the supervisor user can do.
 
 `auto_action="stop_service"` from plugin detectors is gated separately via
 `cfg.monitor.auto_stop_on` (allow-list); plugins cannot self-elevate to
 auto-stop.
 
-## Entry-points groups
+## The `agent_runner.plugins` entry-point group
 
-> **Entry-point semantics:** agent-runner imports the target module when it
-> loads a plugin. It does **not** call the target as a function — registration
-> must happen as a module-top side effect (the `register_*` call at module
-> level). A `def _register():` wrapper around the call will NOT fire; the
-> loader only imports.
+> **Entry-point semantics:** agent-runner imports the target module and reads
+> its declared `PLUGIN` attribute — it does **not** call anything as a
+> function. Registration is data, not a side effect: the loader hands your
+> `PluginManifest` to `register_manifest()`, which registers each declared
+> capability into the right internal registry itself.
 
-| Group | Purpose | Available in |
+```toml
+# my_plugin/pyproject.toml
+[project.entry-points."agent_runner.plugins"]
+my_plugin = "my_plugin:PLUGIN"
+```
+
+```python
+# my_plugin/__init__.py
+from agent_runner._plugin_manifest import PluginManifest
+
+PLUGIN = PluginManifest(name="my_plugin", ...)
+```
+
+`PluginManifest` (`agent_runner._plugin_manifest`) is a frozen dataclass with
+one field per capability family, every field optional and defaulting to
+empty:
+
+| Field | Type | Registers as |
 |---|---|---|
-| `agent_runner.event_kinds` | Register custom event kind names | 0.1.3+ |
-| `agent_runner.pre_round_hooks` | Run logic before each agent round | 0.1.4+ |
-| `agent_runner.context_enrichers` | Inject namespaced fields into round-context | 0.1.4+ |
-| `agent_runner.post_round_hooks` | Run logic after each agent round | 0.1.4+ |
-| `agent_runner.detectors` | Ship custom monitor detectors | 0.1.5+ |
-| `agent_runner.serve_startup_hooks` | Run once per serve boot, before the round loop | 0.1.14+ |
-| `agent_runner.dirty_handler_hooks` | Own the dirty-tree policy after a clean-exit round | 0.2.0+ |
+| `name` | `str` | The plugin's own identity — `[plugins] disable` keys on this, not on any individual hook's own `.name`. |
+| `pre_round_hooks` | `tuple[PreRoundHook, ...]` | Runs before each agent round. |
+| `context_enrichers` | `tuple[ContextEnricher, ...]` | Injects a namespaced slice into round-context. |
+| `post_round_hooks` | `tuple[PostRoundHook, ...]` | Runs after each agent round. |
+| `serve_startup_hooks` | `tuple[ServeStartupHook, ...]` | Runs once per serve boot, before the round loop. |
+| `dirty_handlers` | `tuple[DirtyHandler, ...]` | Owns the dirty-tree policy after a clean-exit round. |
+| `detectors` | `tuple[Detector, ...]` | Ships a custom monitor detector. |
+| `event_kinds` | `tuple[str, ...]` | Registers custom event kind names (source = the manifest's own `name`). |
+
+A plugin that provides more than one capability just fills in more than one
+field on the same manifest — there is nothing to register per-capability.
 
 Plugin-owned VCS paths (the `register_plugin_owned_paths()` API added in
-0.1.8) are not an entry-point group — see [Declaring plugin-owned paths](#declaring-plugin-owned-paths-018) below.
+0.1.8) are not a manifest field — see [Declaring plugin-owned paths](#declaring-plugin-owned-paths-018) below.
 
 ## Registering a custom event kind (§3.1)
 
 ```toml
 # my_plugin/pyproject.toml
-[project.entry-points."agent_runner.event_kinds"]
-my_workflow_stage_advanced = "my_plugin.events"
+[project.entry-points."agent_runner.plugins"]
+my_plugin = "my_plugin:PLUGIN"
 ```
 
 ```python
-# my_plugin/events.py
-from agent_runner.events import register_event_kind
+# my_plugin/__init__.py
+from agent_runner._plugin_manifest import PluginManifest
 
 STAGE_ADVANCED = "my_workflow_stage_advanced"
 
-register_event_kind(STAGE_ADVANCED, source="my-plugin@1.0")
+PLUGIN = PluginManifest(name="my_plugin", event_kinds=(STAGE_ADVANCED,))
 ```
 
-After installation, the registered kind:
+The manifest's own `name` becomes the kind's `source` label automatically —
+no separate `register_event_kind()` call needed. After installation, the
+registered kind:
 
 - Passes `events.emit()` validation in plugin code
 - Surfaces in `agent-runner peek --json` under `plugins.event_kinds`
@@ -66,24 +90,25 @@ After installation, the registered kind:
 
 ## Conflict handling
 
-- A name that collides with a built-in event kind raises `ValueError` on `register_event_kind` call
-- Two plugins registering the same name from different sources raises `ValueError`
-- The same source re-registering its own name is idempotent (no-op) — safe under repeated package imports
+- A name that collides with a built-in event kind raises `ValueError` when the manifest registers
+- Two plugins (two different manifest names) registering the same event kind name raises `ValueError`
+- The same plugin re-registering its own name is idempotent (no-op) — safe under repeated package imports
 
 ## Failure isolation
 
-If a plugin's entry point fails to import (broken plugin module, missing dependency, etc.),
-the supervisor logs a `UserWarning` and continues. A broken plugin must never crash core.
+If a plugin's entry point fails to import, or its `PLUGIN` attribute is missing or
+malformed, the supervisor logs a `UserWarning` and continues loading the rest.
+A broken plugin must never crash core.
 
 ## Pre/Post round hooks + context enrichers (§3.2)
 
-0.1.4 adds three Protocol-typed extension points loaded from these entry_points groups:
+Three Protocol-typed extension points, declared as `PluginManifest` fields:
 
-| Group | Protocol | Called |
+| Field | Protocol | Called |
 |---|---|---|
-| `agent_runner.pre_round_hooks` | `PreRoundHook` | after lock acquired, before round-context written |
-| `agent_runner.context_enrichers` | `ContextEnricher` | between base context assembly and prompt write |
-| `agent_runner.post_round_hooks` | `PostRoundHook` | after agent exits, after `round_end` event |
+| `pre_round_hooks` | `PreRoundHook` | after lock acquired, before round-context written |
+| `context_enrichers` | `ContextEnricher` | between base context assembly and prompt write |
+| `post_round_hooks` | `PostRoundHook` | after agent exits, after `round_end` event |
 
 All three receive a `HookContext`:
 
@@ -108,7 +133,7 @@ in 0.1.30 — strict `agent_name` check silently suppressed events when
 operators set custom names).
 
 `PostRoundHook` additionally receives a `RoundResult` (`from agent_runner.api_types import RoundResult`).
-Its field set is stable across 0.1.x (additions only).
+Its field set is stable across releases (additions only).
 
 ### ContextEnricher
 
@@ -117,7 +142,8 @@ each return value into the round's context dict under the enricher's own `name`,
 so two enrichers can never collide:
 
 ```python
-from agent_runner.hooks import HookContext, register_context_enricher
+from agent_runner._plugin_manifest import PluginManifest
+from agent_runner.hooks import HookContext
 
 
 class CurrentBranchEnricher:
@@ -127,13 +153,11 @@ class CurrentBranchEnricher:
         return {"branch": _current_branch(ctx.work_dir)}
 
 
-register_context_enricher(CurrentBranchEnricher())
+PLUGIN = PluginManifest(name="my_plugin", context_enrichers=(CurrentBranchEnricher(),))
 ```
 
-Register the module under the `agent_runner.context_enrichers` entry-point group
-(see [Entry-points groups](#entry-points-groups)). The merged context then carries
-a `current_branch` key whose value is `{"branch": "main"}`, alongside every other
-enricher's namespaced slice.
+The merged context then carries a `current_branch` key whose value is
+`{"branch": "main"}`, alongside every other enricher's namespaced slice.
 
 Runnable reference: `tests/integration/test_context_enricher_namespacing.py::test_two_enrichers_should_both_be_namespaced_when_stitched`
 registers two enrichers and asserts the exact namespaced shape of the merged dict.
@@ -198,7 +222,7 @@ class ServeStartupHook(Protocol):
 Registration (in your plugin package's `__init__.py`):
 
 ```python
-from agent_runner.hooks import register_serve_startup_hook
+from agent_runner._plugin_manifest import PluginManifest
 
 
 class MySeederHook:
@@ -210,14 +234,14 @@ class MySeederHook:
             seed_path.write_text(_default_state())
 
 
-register_serve_startup_hook(MySeederHook())
+PLUGIN = PluginManifest(name="my_plugin", serve_startup_hooks=(MySeederHook(),))
 ```
 
 Entry point declaration (in your plugin's `pyproject.toml`):
 
 ```toml
-[project.entry-points."agent_runner.serve_startup_hooks"]
-my_seeder = "my_plugin_pkg"
+[project.entry-points."agent_runner.plugins"]
+my_plugin = "my_plugin:PLUGIN"
 ```
 
 ### Failure semantics
@@ -266,7 +290,7 @@ interprets these keys, so a plugin can ship new config without a core release.
 
 ```toml
 [plugins]
-disable = ["gemini_error_detector"]   # consumed by agent-runner
+disable = ["gemini"]   # consumed by agent-runner — names a PLUGIN, not a hook
 
 [plugins.myproject]                   # passed through untouched
 threshold = 3
@@ -295,22 +319,23 @@ under your plugin's name — the dict is shared across every installed plugin.
 ## Built-in post_round_hooks
 
 agent-runner ships 5 built-in `post_round_hooks` plugins registered
-automatically via their own entry-points: `claude_error_detector` (below),
-`gemini_error_detector` (0.1.24+, parallel for gemini CLI),
-`codewhale_error_detector` (0.1.41+, parallel for codewhale CLI),
-`kimi_error_detector` (parallel for Kimi Code CLI), and `pi_error_detector`
-(parallel for Pi Coding Agent).
+automatically via `agent_runner.plugins`: `claude_rate_limit` (below),
+`gemini` (0.1.24+, parallel for gemini CLI), `codewhale` (0.1.41+, parallel
+for codewhale CLI), `kimi` (parallel for Kimi Code CLI), and `pi` (parallel
+for Pi Coding Agent).
 
-### `claude_error_detector` (0.1.23+)
+### `claude_rate_limit` (0.1.23+)
 
-**Entry-point group:** `agent_runner.post_round_hooks`
+**Entry-point name:** `claude_rate_limit` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.claude_rate_limit`
 
-Renamed from `claude_rate_limit_detector` in 0.1.23 when the detector
-was generalized from single-rate-limit to multi-classification. The
-old-name alias was kept as a `pyproject.toml` entry-point through 0.1.34
-and removed in 0.1.35. Operators still using `[plugins] disable =
-["claude_rate_limit_detector"]` must switch to `claude_error_detector`.
+The detector's identifier has moved twice as its scope grew: `claude_rate_limit_detector`
+(single-purpose rate-limit detection) → `claude_error_detector` (0.1.23, generalized
+to multi-classification) → `claude_rate_limit` (the plugin's `PluginManifest.name`,
+matching the module it has always lived in). Operators still using
+`[plugins] disable = ["claude_error_detector"]` or the older
+`["claude_rate_limit_detector"]` must switch to `["claude_rate_limit"]`
+(`agent-runner migrate` flags this as a manual rename).
 
 After each round, scans the last 200 JSON lines of the round's log (non-JSON
 stderr chatter is filtered out before windowing) for transient errors and
@@ -355,28 +380,28 @@ No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.
 
 Non-claude agents: the detector returns early when `ctx.agent_binary != "claude"`.
-Third-party plugin authors may use the same `register_post_round_hook` API
-to ship equivalent detectors for other agent CLIs — the bundled
-`gemini_error_detector` and `codewhale_error_detector` are working references.
+Third-party plugin authors may declare an equivalent `PluginManifest(post_round_hooks=(...))`
+to ship the same event families for other agent CLIs — the bundled `gemini`
+and `codewhale` plugins are working references.
 
-### `codewhale_error_detector` (0.1.41+)
+### `codewhale` (0.1.41+)
 
-**Entry-point group:** `agent_runner.post_round_hooks`
+**Entry-point name:** `codewhale` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.codewhale`
 
-Parallel to `claude_error_detector` for the codewhale CLI. Returns early when
+Parallel to `claude_rate_limit` for the codewhale CLI. Returns early when
 `ctx.agent_binary != "codewhale"`, so it costs nothing on other projects.
 Scans the round's JSONL log tail for transient errors and emits
 `transient_error_detected` with the same 4-bucket `classification` contract.
 
-Disable with `[plugins] disable = ["codewhale_error_detector"]`.
+Disable with `[plugins] disable = ["codewhale"]`.
 
-### `kimi_error_detector`
+### `kimi`
 
-**Entry-point group:** `agent_runner.post_round_hooks`
+**Entry-point name:** `kimi` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.kimi`
 
-Parallel to `claude_error_detector` for the Kimi Code CLI. Returns early when
+Parallel to `claude_rate_limit` for the Kimi Code CLI. Returns early when
 `ctx.agent_binary != "kimi"`, so it costs nothing on other projects. Requires
 the preset's `--output-format stream-json`.
 
@@ -396,14 +421,14 @@ a round that cost nothing. Errors kimi does not retry — auth, unknown model �
 never produce a retry record; they arrive as plain text on stderr and are
 matched by the monitor's `oauth_fail` detector instead.
 
-Disable with `[plugins] disable = ["kimi_error_detector"]`.
+Disable with `[plugins] disable = ["kimi"]`.
 
-### `pi_error_detector`
+### `pi`
 
-**Entry-point group:** `agent_runner.post_round_hooks`
+**Entry-point name:** `pi` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.pi`
 
-Parallel to `claude_error_detector` for the Pi Coding Agent. Returns early when
+Parallel to `claude_rate_limit` for the Pi Coding Agent. Returns early when
 `ctx.agent_binary != "pi"`, so it costs nothing on other projects. Requires the
 preset's `--mode json`.
 
@@ -439,24 +464,24 @@ directly, without the nonzero-exit gate its text heuristic needs. That gate is
 why pi's auth loops were previously invisible — pi exits 0. 403 would qualify
 on the same reasoning but has not been observed from pi, so it is not parsed.
 
-Disable with `[plugins] disable = ["pi_error_detector"]`.
+Disable with `[plugins] disable = ["pi"]`.
 
 ## Custom monitor detectors (§3.3)
 
 0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
 detectors that run alongside the 13 builtins on every monitor poll.
 
-### Group + Protocol
+### Manifest field + Protocol
 
 ```toml
-[project.entry-points."agent_runner.detectors"]
-my_detector = "my_plugin.detectors"
+[project.entry-points."agent_runner.plugins"]
+my_plugin = "my_plugin:PLUGIN"
 ```
 
 ```python
-# my_plugin/detectors.py
+# my_plugin/__init__.py
+from agent_runner._plugin_manifest import PluginManifest
 from agent_runner.api_types import Alert, ProjectState
-from agent_runner.monitor import register_detector
 
 
 class MyDetector:
@@ -477,7 +502,7 @@ class MyDetector:
         )
 
 
-register_detector(MyDetector())
+PLUGIN = PluginManifest(name="my_plugin", detectors=(MyDetector(),))
 ```
 
 `Detector` is a `@runtime_checkable` Protocol — `isinstance(obj, Detector)` returns
@@ -538,11 +563,11 @@ class RoundLogCounter:
         ...
 ```
 
-Register it with `register_post_round_hook(RoundLogCounter())` (or a
-`agent_runner.post_round_hooks` entry point). A runnable, tested reference —
-the minimal plugin plus a test asserting `after_round` fires with a real
-`HookContext` — lives in `tests/unit/test_example_plugin.py`; copy from there
-rather than from a snippet that never runs.
+Declare it on your `PLUGIN = PluginManifest(post_round_hooks=(RoundLogCounter(),))`.
+A runnable, tested reference — the minimal plugin plus a test asserting
+`after_round` fires with a real `HookContext` — lives in
+`tests/unit/test_example_plugin.py`; copy from there rather than from a
+snippet that never runs.
 
 `ctx.agent_log_path` is the round's **merged stdout+stderr** (auth/network
 errors on stderr stay parseable); parse it as JSONL that may contain non-JSON
@@ -558,8 +583,8 @@ the plugin — agent-runner core stays agent-agnostic.
 ## DirtyHandler — custom dirty-tree policy (0.2.0+)
 
 0.2.0 adds a fourth lifecycle-hook extension point: `DirtyHandler`. Plugins
-that register on this group take over what happens when a round exits cleanly
-but leaves the working tree dirty.
+that declare `dirty_handlers` on their manifest take over what happens when a
+round exits cleanly but leaves the working tree dirty.
 
 The bundled `default_dirty_handler` plugin ships enabled (priority 1000) and
 implements the existing `stash` / `ignore` / `auto_commit` behavior driven by
@@ -601,8 +626,7 @@ DirtyOutcome(kind="committed", ref="<commit-sha>")
 
 ### Override recipe
 
-Disable the bundled default, then register your own handler under the
-`agent_runner.dirty_handler_hooks` entry-point group (see [Entry-points groups](#entry-points-groups)):
+Disable the bundled default, then declare your own handler's `PluginManifest(dirty_handlers=(...))`:
 
 ```toml
 # agent-runner.toml

@@ -3,8 +3,9 @@
 Event kinds live in a two-tier registry:
 - ``_BUILTIN_KINDS`` — frozen set of names emitted by core supervisor code.
 - ``_PLUGIN_KINDS`` — mutable dict (name -> source label) populated by plugins
-  via ``register_event_kind``. Loaded once at package import from setuptools
-  ``entry_points`` group ``agent_runner.event_kinds``.
+  via ``register_event_kind``, called for each name in a loaded
+  ``PluginManifest.event_kinds`` (source = the manifest's own name). Loaded
+  once at package import via the ``agent_runner.plugins`` entry_points group.
 
 Public API:
 - ``KNOWN_EVENT_KINDS`` — read-only union view; supports ``in`` and iteration.
