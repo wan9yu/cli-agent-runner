@@ -62,8 +62,23 @@ class WindowOverlap:
     window_b: str
 
 
-def _windows_collide(a: schedule.Window, b: schedule.Window) -> bool:
-    """Two windows collide iff some (weekday, minute) is inside BOTH. Delegates
+def _effectively_open(w: schedule.Window, pause_windows: tuple, d: int, m: int) -> bool:
+    """True at (weekday d, minute m) iff `w` covers it AND no pause_window
+    carves it back out — mirrors schedule.should_run's `in_run and not
+    in_pause` shape for a single candidate window."""
+    return w.contains(d, m) and not any(p.contains(d, m) for p in pause_windows)
+
+
+def _windows_collide(
+    a: schedule.Window,
+    b: schedule.Window,
+    pause_a: tuple = (),
+    pause_b: tuple = (),
+) -> bool:
+    """Two windows collide iff some (weekday, minute) is inside BOTH AND
+    neither phase's own pause_windows carves that instant back out — a
+    pause that fully covers one side's run_window means that phase never
+    actually runs there, so it is not a real rotation footgun. Delegates
     to ``Window.contains`` — the scheduler's own day-shift/midnight-wrap
     semantics — instead of re-deriving interval/day math, so this can't drift
     from what actually decides whether a round runs (a wrapped window's
@@ -73,16 +88,18 @@ def _windows_collide(a: schedule.Window, b: schedule.Window) -> bool:
     once per boot, over a handful of windows; ``any`` short-circuits, so the
     O(7*1440) scan per pair is negligible.
     """
-    return any(a.contains(d, m) and b.contains(d, m) for d in range(7) for m in range(1440))
+    return any(
+        _effectively_open(a, pause_a, d, m) and _effectively_open(b, pause_b, d, m)
+        for d in range(7)
+        for m in range(1440)
+    )
 
 
 def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
     """Pure config check: pairs of phases that BOTH override ``agent`` AND BOTH
     define their own non-empty ``run_windows`` AND share an effective timezone AND
-    whose windows intersect. Timezone-mismatched pairs are skipped (no cross-tz
-    math in a warning). ``pause_windows`` are ignored for now — a pause that carves
-    out the overlap can over-warn, acceptable for a warning; the eventual
-    hard-error form must model pauses before rejecting.
+    whose windows intersect once each phase's own ``pause_windows`` are subtracted.
+    Timezone-mismatched pairs are skipped (no cross-tz math in a check).
     """
     phases = cfg.phases
     if phases is None:
@@ -102,7 +119,7 @@ def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
                 (wa, wb)
                 for wa in sa.run_windows
                 for wb in sb.run_windows
-                if _windows_collide(wa, wb)
+                if _windows_collide(wa, wb, sa.pause_windows, sb.pause_windows)
             ),
             None,
         )

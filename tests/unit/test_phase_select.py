@@ -246,6 +246,13 @@ def _run_windows_toml(windows: list[str]) -> str:
     return f"run_windows = [{items}]\n"
 
 
+def _pause_windows_toml(windows: list[str] | None) -> str:
+    if not windows:
+        return ""
+    items = ", ".join(f'"{w}"' for w in windows)
+    return f"pause_windows = [{items}]\n"
+
+
 def _cfg_two_agent_phases(
     tmp_path,
     *,
@@ -254,6 +261,8 @@ def _cfg_two_agent_phases(
     tz: str | None = None,
     tz_a: str | None = None,
     tz_b: str | None = None,
+    pause_windows_a: list[str] | None = None,
+    pause_windows_b: list[str] | None = None,
 ):
     tz_a = tz_a or tz
     tz_b = tz_b or tz
@@ -263,10 +272,12 @@ def _cfg_two_agent_phases(
         "[phases.a.schedule]\n"
         + (f'timezone = "{tz_a}"\n' if tz_a else "")
         + _run_windows_toml(windows_a)
+        + _pause_windows_toml(pause_windows_a)
         + '[phases.b.agent]\nname = "agent-b"\n'
         + "[phases.b.schedule]\n"
         + (f'timezone = "{tz_b}"\n' if tz_b else "")
         + _run_windows_toml(windows_b)
+        + _pause_windows_toml(pause_windows_b)
     )
     return _cfg(tmp_path, block)
 
@@ -338,6 +349,22 @@ def test_overlap_should_not_flag_pair_when_mon_only_wrapping_windows_never_coinc
     )
 
     assert phase_select.find_phase_window_overlaps(cfg) == []
+
+
+def test_overlap_should_ignore_pair_when_one_sides_run_window_is_fully_carved_out_by_its_own_pause(
+    tmp_path,
+):
+    cfg = _cfg_two_agent_phases(
+        tmp_path,
+        windows_a=["00:00-24:00"],
+        windows_b=["00:00-24:00"],
+        pause_windows_b=["00:00-24:00"],
+        tz="UTC",
+    )
+
+    overlaps = phase_select.find_phase_window_overlaps(cfg)
+
+    assert overlaps == []
 
 
 def test_overlap_should_flag_pair_when_windows_overlap_across_midnight_on_adjacent_days(tmp_path):
