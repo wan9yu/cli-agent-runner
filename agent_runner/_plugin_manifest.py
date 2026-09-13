@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agent_runner._registry import ensure_unique
 from agent_runner.api_types import Detector
 from agent_runner.hooks import (
     ContextEnricher,
@@ -65,10 +66,7 @@ def register_manifest(manifest: PluginManifest) -> None:
     semantics, where a mid-module exception left every earlier top-level
     call's side effect in place too.
     """
-    if manifest.name in {m.name for m in _LOADED_MANIFESTS}:
-        raise ValueError(
-            f"plugin manifest {manifest.name!r} already registered; refusing to add a second"
-        )
+    ensure_unique(manifest.name, _LOADED_MANIFESTS, "plugin manifest")
 
     from agent_runner import events, hooks, monitor
 

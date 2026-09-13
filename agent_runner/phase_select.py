@@ -129,6 +129,11 @@ def find_phase_window_overlaps(cfg) -> list[WindowOverlap]:
     return overlaps
 
 
+def describe_overlaps(overlaps: list[WindowOverlap]) -> str:
+    """Human-readable one-line summary of phase-window overlaps."""
+    return "; ".join(f"{o.phase_a} ({o.window_a}) vs {o.phase_b} ({o.window_b})" for o in overlaps)
+
+
 def candidate_phases(cfg, round_num: int) -> list[str | None]:
     """Phases to consider this round, in preference order.
 

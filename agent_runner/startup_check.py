@@ -228,9 +228,7 @@ def _check_phase_window_overlap(cfg: Config) -> CheckResult:
     overlaps = phase_select.find_phase_window_overlaps(cfg)
     if not overlaps:
         return CheckResult("phase_window_overlap", ok=True)
-    detail = "; ".join(
-        f"{o.phase_a} ({o.window_a}) vs {o.phase_b} ({o.window_b})" for o in overlaps
-    )
+    detail = phase_select.describe_overlaps(overlaps)
     return CheckResult(
         "phase_window_overlap",
         ok=False,

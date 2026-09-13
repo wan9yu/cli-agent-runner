@@ -388,6 +388,21 @@ def _unknown_key_desc_nested(
     return _describe
 
 
+# 0.3.0: [monitor.host_health] regroup — (old flat key, new key, destination
+# sub-table) for each of the 9 keys relocated into disk/memory/pressure.
+_HOST_HEALTH_RELOCATIONS = (
+    ("mem_avail_min_mb", "avail_min_mb", "memory"),
+    ("disk_warning_pct", "warning_pct", "disk"),
+    ("disk_critical_pct", "critical_pct", "disk"),
+    ("swap_sout_noise_floor_mb", "swap_out_noise_floor_mb", "memory"),
+    ("mem_free_low_mb", "free_low_mb", "memory"),
+    ("psi_full_avg10_critical", "full_avg10_critical", "pressure"),
+    ("psi_some_avg10_warning", "some_avg10_warning", "pressure"),
+    ("mem_critical_consecutive_samples", "critical_consecutive_samples", "pressure"),
+    ("in_round_mem_terminate", "in_round_terminate", "pressure"),
+)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         detect=lambda p: "rate_limit_action" in _table(p, "runtime"),
@@ -690,101 +705,14 @@ MIGRATIONS: list[Migration] = [
     # disk/memory/pressure sub-tables. Each targets a different old key, so
     # they are order-insensitive and converge in a single run_migrations pass
     # (see _relocate_key's docstring). ---
-    Migration(
-        detect=lambda p: "mem_avail_min_mb" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "mem_avail_min_mb", "avail_min_mb", "monitor.host_health", "monitor.host_health.memory"
-        ),
-        describe="monitor.host_health.mem_avail_min_mb → monitor.host_health.memory.avail_min_mb",
-    ),
-    Migration(
-        detect=lambda p: "disk_warning_pct" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "disk_warning_pct", "warning_pct", "monitor.host_health", "monitor.host_health.disk"
-        ),
-        describe="monitor.host_health.disk_warning_pct → monitor.host_health.disk.warning_pct",
-    ),
-    Migration(
-        detect=lambda p: "disk_critical_pct" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "disk_critical_pct", "critical_pct", "monitor.host_health", "monitor.host_health.disk"
-        ),
-        describe="monitor.host_health.disk_critical_pct → monitor.host_health.disk.critical_pct",
-    ),
-    Migration(
-        detect=lambda p: "swap_sout_noise_floor_mb" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "swap_sout_noise_floor_mb",
-            "swap_out_noise_floor_mb",
-            "monitor.host_health",
-            "monitor.host_health.memory",
-        ),
-        describe=(
-            "monitor.host_health.swap_sout_noise_floor_mb → "
-            "monitor.host_health.memory.swap_out_noise_floor_mb"
-        ),
-    ),
-    Migration(
-        detect=lambda p: "mem_free_low_mb" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "mem_free_low_mb", "free_low_mb", "monitor.host_health", "monitor.host_health.memory"
-        ),
-        describe="monitor.host_health.mem_free_low_mb → monitor.host_health.memory.free_low_mb",
-    ),
-    Migration(
-        detect=lambda p: "psi_full_avg10_critical" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "psi_full_avg10_critical",
-            "full_avg10_critical",
-            "monitor.host_health",
-            "monitor.host_health.pressure",
-        ),
-        describe=(
-            "monitor.host_health.psi_full_avg10_critical → "
-            "monitor.host_health.pressure.full_avg10_critical"
-        ),
-    ),
-    Migration(
-        detect=lambda p: "psi_some_avg10_warning" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "psi_some_avg10_warning",
-            "some_avg10_warning",
-            "monitor.host_health",
-            "monitor.host_health.pressure",
-        ),
-        describe=(
-            "monitor.host_health.psi_some_avg10_warning → "
-            "monitor.host_health.pressure.some_avg10_warning"
-        ),
-    ),
-    Migration(
-        detect=lambda p: (
-            "mem_critical_consecutive_samples" in _table(_table(p, "monitor"), "host_health")
-        ),
-        apply=_relocate_key(
-            "mem_critical_consecutive_samples",
-            "critical_consecutive_samples",
-            "monitor.host_health",
-            "monitor.host_health.pressure",
-        ),
-        describe=(
-            "monitor.host_health.mem_critical_consecutive_samples → "
-            "monitor.host_health.pressure.critical_consecutive_samples"
-        ),
-    ),
-    Migration(
-        detect=lambda p: "in_round_mem_terminate" in _table(_table(p, "monitor"), "host_health"),
-        apply=_relocate_key(
-            "in_round_mem_terminate",
-            "in_round_terminate",
-            "monitor.host_health",
-            "monitor.host_health.pressure",
-        ),
-        describe=(
-            "monitor.host_health.in_round_mem_terminate → "
-            "monitor.host_health.pressure.in_round_terminate"
-        ),
-    ),
+    *[
+        Migration(
+            detect=lambda p, old=old: old in _table(_table(p, "monitor"), "host_health"),
+            apply=_relocate_key(old, new, "monitor.host_health", f"monitor.host_health.{sub}"),
+            describe=f"monitor.host_health.{old} → monitor.host_health.{sub}.{new}",
+        )
+        for old, new, sub in _HOST_HEALTH_RELOCATIONS
+    ],
     # --- Strictness completion: [monitor.host_health] unknown keys (any key
     # that isn't one of the three sub-tables above, or wasn't one of the 9
     # relocated names either). MANUAL like every sibling above — auto-deleting
