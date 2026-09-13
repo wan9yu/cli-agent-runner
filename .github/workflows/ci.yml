@@ -82,7 +82,12 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: install
-        run: pip install -e ".[dev]"
+        # [sandbox] pulls the pure-Python Landlock/seccomp bindings only on
+        # Linux (their sys_platform=='linux' markers make this a no-op on
+        # macOS), so the Linux legs exercise real seccomp enforcement in the
+        # kill-tests; test_kill_tests_not_skipped.py fails loudly if a
+        # capable runner ever skips them instead of asserting the denial.
+        run: pip install -e ".[dev,sandbox]"
       - name: ruff
         run: |
           ruff check .
