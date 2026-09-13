@@ -220,6 +220,73 @@ confirming no new eager import and no new per-round leak.
 roughly 80s off the test suite's wall-clock time — a test-only change, not
 reflected in any of the runtime numbers above.
 
+## 0.2.24 → 0.3.0
+
+Measured the same way as the table above (see Methodology), same machine,
+comparing **v0.2.24** = `ecd8cf6` against **0.3.0**, the tip of this branch at
+close-out.
+
+### Import/startup RSS
+
+| | v0.2.24 | 0.3.0 | delta |
+|---|---|---|---|
+| RSS (avg of 5 runs) | 23.95 MB | 23.92 MB | −0.03 MB (flat, within noise) |
+| RSS range | 23.88–24.02 MB | 23.77–24.05 MB | |
+| `sys.modules` count | 222 | 222 | +0 |
+
+### Module count, source LOC, largest module
+
+Tracked source only (`git ls-tree`, same convention as the rows above).
+
+| | v0.2.24 | 0.3.0 | delta |
+|---|---|---|---|
+| `.py` files | 75 | 79 | +4 |
+| total LOC | 18,333 | 18,826 | +493 |
+| largest module | `api.py`, 990 | `migrations.py`, 904 | n/a — different module |
+
+### Why this release moves the numbers it moves, and not others
+
+**Import/startup RSS and `sys.modules` count are flat.** The plugin-loading
+rewrite (seven `importlib.metadata.entry_points()` group scans collapsed into
+one `agent_runner.plugins` group resolved through the existing
+`_plugin_scan` file-parse fast path) replaces work that already ran at
+startup with equivalent work under one group instead of seven — no new
+eager import, same module set loaded. `agent_runner._plugin_manifest`,
+`agent_runner._install`, `agent_runner._lifecycle`, and `agent_runner._observe`
+are all on the startup path already (the pre-split `api.py` and the
+pre-manifest plugin loader were too) — they replace code that was there
+before, they don't add a new import edge. `tests/invariants/test_import_footprint.py`
+carries all four in its frozen `EXPECTED_STARTUP_PKG_MODULES` allowlist and
+is green; `tests/invariants/test_round_alloc_growth.py` (no per-round reader
+changed shape this release) is green unmodified — no new per-round leak.
+
+**`.py` file count and total LOC grow, structurally.** `+4` files:
+`_plugin_manifest.py` (new — the typed manifest ABI), and `api.py`'s split
+into `_install.py`/`_lifecycle.py`/`_observe.py` behind an unchanged
+re-export facade (`api.py` itself: 990 → 180 lines). `migrations.py` grew
+676 → 904 lines from the ~15 new host_health-regroup and
+`round_timeout_s`→`round_budget_s` transforms plus the `schema_version`
+stamping step — all executable migration logic, not narrative. None of this
+is a runtime cost: it is the same objects reachable through the same
+import-graph shape, confirmed by the flat RSS/module-count numbers above.
+
+**Axis 2 (`serve` startup RSS) and axis 4 (cgroup reads/round) were not
+re-measured this release** — neither code path moved (the split modules are
+the same functions under new names; the cgroup pressure spine is untouched),
+so re-running that harness would report the same number as 0.2.19/0.2.22 for
+a path this release didn't touch, not new signal. Axis 3 (per-round
+allocation growth) stays covered by
+`tests/invariants/test_round_alloc_growth.py`, green, same as every prior
+release.
+
+**Constrained-host (Pi/Linux) figures were not independently re-measured
+this release.** Every number above is the same macOS dev-machine methodology
+this page has used since 0.2.17 (see Caveats) — not a run on the ~462 MB
+field host. Given the flat RSS/module-count result and the load-bearing
+neutrality argument above (same objects, same import-graph shape, no new
+per-round allocation), no regression is expected on that host either, but
+that claim is unverified pending whoever runs the next prerelease build there.
+
 ## Methodology
 
 Machine: macOS 26.6.2, arm64, 16 KB pages. Python 3.11.3 (CPython, pyenv),
