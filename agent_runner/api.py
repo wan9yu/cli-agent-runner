@@ -670,11 +670,7 @@ def _poll_once(
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,
         phases_overrides=cfg.phases.overrides if cfg.phases.overrides else None,
-        mem_avail_min_mb=cfg.monitor.host_health.mem_avail_min_mb,
-        disk_warning_pct=cfg.monitor.host_health.disk_warning_pct,
-        disk_critical_pct=cfg.monitor.host_health.disk_critical_pct,
-        swap_sout_noise_floor_mb=cfg.monitor.host_health.swap_sout_noise_floor_mb,
-        mem_free_low_mb=cfg.monitor.host_health.mem_free_low_mb,
+        host_health_cfg=cfg.monitor.host_health,
         log_dir=cfg.runtime.log_dir,
     )
     if not monitor._PLUGIN_DETECTORS:

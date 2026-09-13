@@ -261,7 +261,8 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         advisories.append(
             "cgroup memory.swap.max is far below host swap; the mid-round floor may "
             "terminate rounds the kernel would have contained -- consider bounding "
-            "both memory.max and memory.swap.max, or set in_round_mem_terminate=false"
+            "both memory.max and memory.swap.max, or set "
+            "[monitor.host_health.pressure] in_round_terminate=false"
         )
     defer = (
         limits["memory_max"] is not None
@@ -283,8 +284,8 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         if not defer:
             hint += (
                 "; bound memory.swap.max (at or below host swap) too, or set "
-                "in_round_mem_terminate=false, so the throttle's PSI-full rise "
-                "doesn't trip the mid-round floor"
+                "[monitor.host_health.pressure] in_round_terminate=false, so the "
+                "throttle's PSI-full rise doesn't trip the mid-round floor"
             )
         advisories.append(hint)
     advisory = "; ".join(advisories) or None

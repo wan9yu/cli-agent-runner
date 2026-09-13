@@ -330,7 +330,9 @@ _MONITOR_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(MonitorCo
 # Keys allowed under [monitor.host_health]'s three sub-tables — the strictness
 # completion (the exact footgun class an operator's typo'd threshold silently
 # dropped).
-_HOST_HEALTH_DISK_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(_HostHealthDiskConfig))
+_HOST_HEALTH_DISK_ALLOWED_FIELDS = frozenset(
+    f.name for f in dataclasses.fields(_HostHealthDiskConfig)
+)
 _HOST_HEALTH_MEMORY_ALLOWED_FIELDS = frozenset(
     f.name for f in dataclasses.fields(_HostHealthMemoryConfig)
 )

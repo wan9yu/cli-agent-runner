@@ -276,7 +276,7 @@ def detect_mem_pressure_gate_inert(
 ) -> Alert | None:
     """Fail-loud self-check: fires when a cache-poor-valid signal (PSI or
     swap-out rate) shows real pressure WHILE ``mem_available_mb`` stays at or
-    above ``cfg.mem_avail_min_mb`` -- i.e. the configured gate is provably
+    above ``cfg.memory.avail_min_mb`` -- i.e. the configured gate is provably
     inert on this host. Does NOT fire on "MemAvailable >> MemFree" alone,
     which is true on every healthy warm-cache host."""
     cfg = cfg if cfg is not None else MonitorHostHealthConfig()
@@ -286,11 +286,11 @@ def detect_mem_pressure_gate_inert(
     return _alert(
         "mem_pressure_gate_inert",
         "warning",
-        f"mem_avail_min_mb={cfg.mem_avail_min_mb} cannot fire on this host: a "
+        f"mem_avail_min_mb={cfg.memory.avail_min_mb} cannot fire on this host: a "
         f"cache-poor-valid signal shows real pressure while mem_available_mb="
         f"{cur.get('mem_available_mb')} stays >= threshold",
         {
-            "mem_avail_min_mb": cfg.mem_avail_min_mb,
+            "mem_avail_min_mb": cfg.memory.avail_min_mb,
             "mem_available_mb": cur.get("mem_available_mb"),
             "hint": "MemAvailable is inflated on this host -- lower mem_avail_min_mb "
             "won't help; rely on the mem_pressure alert itself instead",

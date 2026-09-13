@@ -6,7 +6,7 @@ host_health roughly every ~10s.
 0.2.16 requires SUSTAINED critical pressure before _terminate_round's the
 round: a `critical_streak` counter increments on a critical verdict and
 resets to 0 on any non-critical one, and only crossing
-`mem_critical_consecutive_samples` (3 by default) in a row terminates -- a
+`pressure.critical_consecutive_samples` (3 by default) in a row terminates -- a
 single spike must not kill a round; only sustained coma-onset does.
 
 0.2.16 also fixed the swap leg's `prev` sample. 0.2.15 pinned the round-start
@@ -24,7 +24,7 @@ fall back below the noise floor -- see
 below covers the original field bug (a PSI-off host has no other path to
 critical) under the new per-tick semantics: a slow, sustained trickle no
 longer crosses the floor at all (that host now relies on Task 1's
-config-tunable PSI thresholds, or a lowered `swap_sout_noise_floor_mb`,
+config-tunable PSI thresholds, or a lowered `memory.swap_out_noise_floor_mb`,
 instead of the reverted cumulative accounting).
 
 Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
@@ -39,7 +39,11 @@ from pathlib import Path
 import pytest
 
 from agent_runner.cli import _serve_round, serve_cmd
-from agent_runner.config import MonitorHostHealthConfig
+from agent_runner.config import (
+    MonitorHostHealthConfig,
+    _HostHealthMemoryConfig,
+    _HostHealthPressureConfig,
+)
 from tests._test_helpers import read_events_for_current_month
 
 
@@ -94,7 +98,7 @@ _HEALTHY_SAMPLE = {
 
 def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
     """PSI unreadable, MemAvailable inflated at 82MB (comfortably above
-    mem_avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
+    avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
     alone), MemFree critically low (~5MB -- the "actively dying" condition
     critical is gated on), swap_sout climbing only ~10MB per ~10s tick -- a
     realistic SLOW SD/USB swap trickle whose PER-INTERVAL delta never crosses
@@ -175,7 +179,7 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
     assert terminated[0]["context"]["psi_full_avg10"] == 70.0
 
     # The calibration signal: every critical tick emits round_mem_critical_sample
-    # up to the 2x mem_critical_consecutive_samples cap (0.2.17); this terminate
+    # up to the 2x pressure.critical_consecutive_samples cap (0.2.17); this terminate
     # path stops at streak 3, well under the cap, so the full 1 -> 2 -> 3 build-up
     # is visible before the terminate threshold is crossed.
     samples = [e for e in events if e.get("event") == "round_mem_critical_sample"]
@@ -192,7 +196,7 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
     tmp_path,
 ):
     """The original field-bug shape under the 0.2.16 per-tick fix: PSI
-    unreadable, MemAvailable inflated at 82MB well above mem_avail_min_mb=40
+    unreadable, MemAvailable inflated at 82MB well above avail_min_mb=40
     (combined-low genuinely cannot fire), MemFree critically low (~5MB),
     swap_out climbing only ~10MB per ~10s tick -- a SLOW SD/USB swap trickle
     whose PER-TICK delta stays below the 32 MiB floor on every single tick.
@@ -200,7 +204,7 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
     CUMULATIVELY over enough ticks; 0.2.16 reverted that (a transient-spike
     argument, not an unresponsiveness one) so this host now never reaches
     critical via the swap leg at all -- it relies on PSI (Task 1) or a
-    lowered swap_sout_noise_floor_mb instead."""
+    lowered memory.swap_out_noise_floor_mb instead."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     # stop_after=6 (in _slow_swap_sample_fn) is comfortably past the 5th
@@ -218,7 +222,7 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
+        host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
         clock=_TickingClock(),
         sample_fn=_slow_swap_sample_fn(sentinel),
     )
@@ -253,7 +257,7 @@ def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(t
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=40),
+        host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
@@ -298,7 +302,7 @@ def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followe
     tmp_path,
 ):
     """Hysteresis: one critical tick then healthy forever after must NOT
-    terminate -- the default mem_critical_consecutive_samples=3 means a
+    terminate -- the default pressure.critical_consecutive_samples=3 means a
     transient spike (the exact false-positive this floor must not produce)
     never reaches the streak. But the near-miss is still visible: the single
     critical tick emits round_mem_critical_sample with consecutive=1 -- the
@@ -352,7 +356,7 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
     sentinel = tmp_path / "exit.sentinel"
     argv = _sentinel_child_argv(sentinel)
 
-    jump = MonitorHostHealthConfig().swap_sout_noise_floor_mb * 1024 * 1024 + 1
+    jump = MonitorHostHealthConfig().memory.swap_out_noise_floor_mb * 1024 * 1024 + 1
     calls = {"n": 0}
 
     def _sample_fn():
@@ -361,7 +365,7 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
             sentinel.touch()
         # tick 1: baseline (0). tick 2: one big jump (delta vs tick 1's
         # baseline crosses the noise floor). tick 3+: flat at the jumped
-        # value (per-tick delta back to 0). mem_avail_min_mb is set below the
+        # value (per-tick delta back to 0). avail_min_mb is set below the
         # mem_available reading so tier 3 (combined-low) can't fire either --
         # PSI unreadable, so tier 2 (swap) is the only path to a verdict.
         sout = jump if calls["n"] >= 2 else 0
@@ -379,7 +383,7 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(mem_avail_min_mb=1),
+        host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=1)),
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
@@ -391,8 +395,8 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
     assert "round_mem_terminated" not in kinds
 
 
-def test_spawn_round_should_not_terminate_when_in_round_mem_terminate_is_disabled(tmp_path):
-    """in_round_mem_terminate=False: sustained critical pressure must NEVER
+def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(tmp_path):
+    """in_round_terminate=False: sustained critical pressure must NEVER
     _terminate_round -- the loop keeps sampling (so a future re-enable or
     observability layer still sees the signal) but the kill switch is off."""
     log_dir = tmp_path / "logs"
@@ -413,7 +417,9 @@ def test_spawn_round_should_not_terminate_when_in_round_mem_terminate_is_disable
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
+        host_health_cfg=MonitorHostHealthConfig(
+            pressure=_HostHealthPressureConfig(in_round_terminate=False)
+        ),
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
@@ -427,7 +433,7 @@ def test_spawn_round_should_not_terminate_when_in_round_mem_terminate_is_disable
 
 def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset(tmp_path):
     """0.2.17: round_mem_critical_sample is capped at
-    2 * mem_critical_consecutive_samples (1..6 at the default 3) -- a
+    2 * pressure.critical_consecutive_samples (1..6 at the default 3) -- a
     sustained-critical don't-terminate run (here: the off switch) must not
     keep writing an event on EVERY tick for up to a whole round_timeout_s on
     a permanently-deferred/off host. The streak itself (critical_streak, and
@@ -468,7 +474,9 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
+        host_health_cfg=MonitorHostHealthConfig(
+            pressure=_HostHealthPressureConfig(in_round_terminate=False)
+        ),
         clock=_TickingClock(),
         sample_fn=_sample_fn,
     )
@@ -493,14 +501,14 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
 
 def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(tmp_path):
     """The one cell _mid_round_action's own unit test proves structurally but
-    no integration test drove end to end: in_round_mem_terminate=False AND
+    no integration test drove end to end: in_round_terminate=False AND
     defer_to_cgroup=True at once. The off switch wins over cgroup-defer (see
     _mid_round_action's docstring: "count_only" is returned before
     defer_to_cgroup is even consulted), so sustained critical pressure here
     must produce NEITHER round_mem_terminated NOR
     mem_pressure_deferred_to_cgroup -- unlike
     test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded
-    (defer_to_cgroup=True alone, default in_round_mem_terminate=True), which
+    (defer_to_cgroup=True alone, default in_round_terminate=True), which
     DOES emit mem_pressure_deferred_to_cgroup. If count_only's off-switch
     check were ever weakened to fall through to the defer/terminate branch
     when defer_to_cgroup is True, this test would start seeing
@@ -523,7 +531,9 @@ def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
         {},
         timeout_s=300,
         round_num=1,
-        host_health_cfg=MonitorHostHealthConfig(in_round_mem_terminate=False),
+        host_health_cfg=MonitorHostHealthConfig(
+            pressure=_HostHealthPressureConfig(in_round_terminate=False)
+        ),
         clock=_TickingClock(),
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
@@ -546,7 +556,7 @@ def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tm
     host's MemoryMax=320M + MemorySwapMax=160M), kernel cgroup-OOM WILL fire
     and contain the agent while the host stays responsive, so the cruder
     host-wide floor steps back: sustained critical pressure (even with the
-    default in_round_mem_terminate=True) emits mem_pressure_deferred_to_cgroup
+    default in_round_terminate=True) emits mem_pressure_deferred_to_cgroup
     instead of terminating -- defer_to_cgroup OVERRIDES the off switch's
     normal True meaning. 0.2.16 Task 4: round_mem_critical_sample still fires
     per critical tick in this mode -- the streak/context stays useful

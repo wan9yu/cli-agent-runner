@@ -156,11 +156,12 @@ def test_detect_mem_pressure_should_return_alert_when_available_and_free_are_bot
     # mem_free_mb low alongside mem_available_mb low is a genuine combined-low
     # signal; a bare mem_available_mb (the old dumb gate) now reports
     # mem_signal_unavailable instead -- see test_host_health.py for the ladder.
-    from agent_runner.config import MonitorHostHealthConfig
+    from agent_runner.config import MonitorHostHealthConfig, _HostHealthMemoryConfig
 
     metrics = [{"event": "round_end", "mem_available_mb": 150, "mem_free_mb": 5}]
 
-    a = detect_mem_pressure(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=200))
+    cfg = MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=200))
+    a = detect_mem_pressure(metrics, cfg=cfg)
 
     assert a is not None
     assert a.detector == "mem_pressure"
@@ -191,14 +192,15 @@ def test_detect_mem_pressure_should_return_none_when_metrics_entry_predates_new_
 
 
 def test_detect_mem_pressure_gate_inert_should_fire_when_swap_climbs_with_available_high() -> None:
-    from agent_runner.config import MonitorHostHealthConfig
+    from agent_runner.config import MonitorHostHealthConfig, _HostHealthMemoryConfig
 
     metrics = [
         {"event": "round_end", "mem_available_mb": 150, "swap_sout": 0},
         {"event": "round_end", "mem_available_mb": 150, "swap_sout": 50 * 1024 * 1024},
     ]
 
-    a = detect_mem_pressure_gate_inert(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=40))
+    cfg = MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40))
+    a = detect_mem_pressure_gate_inert(metrics, cfg=cfg)
 
     assert a is not None
     assert a.detector == "mem_pressure_gate_inert"
@@ -209,7 +211,7 @@ def test_detect_mem_pressure_gate_inert_should_return_none_when_host_is_healthy_
 ):
     """MemAvailable >> MemFree alone (every healthy warm-cache host) must not
     trip the self-check."""
-    from agent_runner.config import MonitorHostHealthConfig
+    from agent_runner.config import MonitorHostHealthConfig, _HostHealthMemoryConfig
 
     metrics = [
         {
@@ -221,7 +223,8 @@ def test_detect_mem_pressure_gate_inert_should_return_none_when_host_is_healthy_
         }
     ]
 
-    a = detect_mem_pressure_gate_inert(metrics, cfg=MonitorHostHealthConfig(mem_avail_min_mb=40))
+    cfg = MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40))
+    a = detect_mem_pressure_gate_inert(metrics, cfg=cfg)
 
     assert a is None
 
@@ -481,6 +484,20 @@ def test_run_all_detectors_should_derive_stale_threshold_from_round_timeout() ->
     )
 
     assert any(a.detector == "supervisor_stale" for a in alerts)
+
+
+def test_run_all_detectors_should_accept_grouped_host_health_config_when_called() -> None:
+    from agent_runner.config import MonitorHostHealthConfig, _HostHealthDiskConfig
+    from agent_runner.monitor import run_all_detectors
+
+    alerts = run_all_detectors(
+        events=[],
+        metrics=[{"disk_used_pct": 96.0}],
+        log_tails={},
+        host_health_cfg=MonitorHostHealthConfig(disk=_HostHealthDiskConfig(critical_pct=95.0)),
+    )
+
+    assert any(a.detector == "disk_critical" for a in alerts)
 
 
 def test_run_all_detectors_should_prefer_explicit_stale_threshold_over_derived() -> None:

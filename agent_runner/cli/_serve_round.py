@@ -254,13 +254,13 @@ def _mid_round_action(
     ``round_mem_critical_sample`` for it. ``cfg`` is the round's
     ``host_health_cfg``.
 
-    - ``"count_only"`` — either the off switch (``cfg.in_round_mem_terminate``
+    - ``"count_only"`` — either the off switch (``cfg.pressure.in_round_terminate``
       False) or the streak hasn't yet reached
-      ``cfg.mem_critical_consecutive_samples``: keep sampling, no action.
+      ``cfg.pressure.critical_consecutive_samples``: keep sampling, no action.
       **The off switch wins even when ``defer_to_cgroup`` is True** — it means
       no action at all, not "defer instead of terminate", matching the
       pre-extraction nesting where the defer branch sat INSIDE the
-      ``in_round_mem_terminate`` guard and so was never reachable when it was
+      ``in_round_terminate`` guard and so was never reachable when it was
       False (no ``mem_pressure_deferred_to_cgroup`` emit either).
     - ``"defer"`` — sustained critical pressure, but the cgroup's own
       (mem+swap) budget is bounded end to end, so kernel cgroup-OOM will
@@ -270,7 +270,10 @@ def _mid_round_action(
       defer to: the caller ``_terminate_round``s and emits
       ``round_mem_terminated``.
     """
-    if not (cfg.in_round_mem_terminate and critical_streak >= cfg.mem_critical_consecutive_samples):
+    if not (
+        cfg.pressure.in_round_terminate
+        and critical_streak >= cfg.pressure.critical_consecutive_samples
+    ):
         return "count_only"
     return "defer" if defer_to_cgroup else "terminate"
 
@@ -300,20 +303,20 @@ def _spawn_round(
     behavior) arms the mid-round hard floor: every ~``_MEM_CHECK_INTERVAL_S``
     seconds this resamples host_health. On CRITICAL pressure it increments a
     ``critical_streak`` counter (reset to 0 on any non-critical verdict) and,
-    once the streak reaches ``host_health_cfg.mem_critical_consecutive_samples``
+    once the streak reaches ``host_health_cfg.pressure.critical_consecutive_samples``
     (3 by default), ``_terminate_round``s the round and emits
     ``round_mem_terminated`` — the actual coma-preventer for a single round
     that balloons mid-flight (the pre-round gate in ``_select_and_gate`` only
     samples at round boundaries). Requiring SUSTAINED critical pressure (not
     a single sample) matches the north star: this floor prevents
     unresponsiveness, not swapping, so a transient spike must not kill a
-    round. ``host_health_cfg.in_round_mem_terminate`` is the off switch: when
+    round. ``host_health_cfg.pressure.in_round_terminate`` is the off switch: when
     False the streak still counts (an operator may still want the signal
     surfaced) but ``_terminate_round`` is never called.
 
     ``defer_to_cgroup`` (from ``metrics.cgroup_memory_limits``;
     True only when memory.max AND memory.swap.max are BOTH finite) OVERRIDES
-    ``in_round_mem_terminate=True`` at the same crossing: cgroup-OOM will
+    ``in_round_terminate=True`` at the same crossing: cgroup-OOM will
     contain the agent on its own, so the host-wide kill emits
     ``mem_pressure_deferred_to_cgroup`` once per episode instead. The streak
     still counts either way -- only terminate-vs-defer changes.
@@ -329,7 +332,7 @@ def _spawn_round(
     Every critical tick also emits ``round_mem_critical_sample`` for
     near-miss calibration (capped -- see below); ``round_mem_terminated``
     now carries the streak + ``Pressure.context`` too. The cap:
-    ``2 * host_health_cfg.mem_critical_consecutive_samples`` consecutive
+    ``2 * host_health_cfg.pressure.critical_consecutive_samples`` consecutive
     ticks (1..6 at the default 3) -- a sustained-critical don't-terminate
     run (cgroup-defer, or the off switch) would otherwise write one event
     per ~10s tick for up to a whole ``round_timeout_s``. The streak still
@@ -403,7 +406,10 @@ def _spawn_round(
                         cg_peak_swap = max(cg_peak_swap, cg_now.get("memory_swap_current", 0))
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
-                        if critical_streak <= 2 * host_health_cfg.mem_critical_consecutive_samples:
+                        if (
+                            critical_streak
+                            <= 2 * host_health_cfg.pressure.critical_consecutive_samples
+                        ):
                             emit_round_mem_critical_sample(
                                 log_dir,
                                 round_num=round_num,

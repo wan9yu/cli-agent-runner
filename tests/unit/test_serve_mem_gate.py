@@ -80,9 +80,10 @@ def _real_cfg(tmp_path, mem_avail_min_mb: int | None = None):
     if mem_avail_min_mb is not None:
         import dataclasses
 
-        host_health_cfg = dataclasses.replace(
-            cfg.monitor.host_health, mem_avail_min_mb=mem_avail_min_mb
+        memory_cfg = dataclasses.replace(
+            cfg.monitor.host_health.memory, avail_min_mb=mem_avail_min_mb
         )
+        host_health_cfg = dataclasses.replace(cfg.monitor.host_health, memory=memory_cfg)
         monitor_cfg = dataclasses.replace(cfg.monitor, host_health=host_health_cfg)
         cfg = dataclasses.replace(cfg, monitor=monitor_cfg)
     return cfg
