@@ -9,7 +9,7 @@ from agent_runner.config import load_config
 
 def _write_toml(tmp_path: Path, body: str) -> Path:
     p = tmp_path / "agent-runner.toml"
-    p.write_text(body)
+    p.write_text("schema_version = 1\n" + body)
     return p
 
 
@@ -525,6 +525,7 @@ def test_round_timeout_per_phase_dict_should_raise_config_error_with_migration_h
     """Old runtime.round_timeout_per_phase = {...} syntax → ConfigError with migration path."""
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -837,6 +838,7 @@ def test_default_runtime_should_have_round_log_retention_zero_when_loaded(
     """Pruning is opt-in: round_log_retention defaults to 0 (never prune)."""
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -862,6 +864,7 @@ def test_explicit_zero_round_log_retention_should_be_accepted_when_loaded(
     """
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -884,6 +887,7 @@ def test_negative_round_log_retention_should_be_rejected_when_loaded(
     """Negative is still meaningless — rejected at load, not silently coerced."""
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -904,6 +908,7 @@ def test_explicit_round_log_retention_should_be_used_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -925,6 +930,7 @@ def test_explicit_narrative_file_should_resolve_to_path_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -946,6 +952,7 @@ def test_phases_list_only_should_yield_empty_overrides_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -969,6 +976,7 @@ def test_phase_sub_table_round_budget_should_be_recorded_as_override_when_loaded
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -997,6 +1005,7 @@ def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
     (tmp_path / "a.md").write_text("a")
     (tmp_path / "b.md").write_text("b")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1026,6 +1035,7 @@ def test_phase_name_not_in_list_should_raise_config_error_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1049,6 +1059,7 @@ def test_unknown_field_in_phase_sub_table_should_raise_config_error_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1072,6 +1083,7 @@ def test_no_phases_section_should_yield_none_list_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1094,6 +1106,7 @@ def test_prompt_files_list_should_set_files_attribute_when_loaded(
     (tmp_path / "a.md").write_text("a")
     (tmp_path / "b.md").write_text("b")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1117,6 +1130,7 @@ def test_prompt_file_single_should_be_accepted_for_back_compat_when_loaded(
 ) -> None:
     (tmp_path / "x.md").write_text("x")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1138,6 +1152,7 @@ def test_both_prompt_file_and_files_set_should_raise_config_error_when_loaded(
 ) -> None:
     (tmp_path / "x.md").write_text("x")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1156,6 +1171,7 @@ def test_both_prompt_file_and_files_set_should_raise_config_error_when_loaded(
 def test_custom_concat_separator_should_be_used_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("a")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1177,6 +1193,7 @@ def test_strip_yaml_frontmatter_false_should_be_honored_when_loaded(
 ) -> None:
     (tmp_path / "a.md").write_text("a")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1197,6 +1214,7 @@ def test_strip_yaml_frontmatter_false_should_be_honored_when_loaded(
 def test_dirty_action_valid_value_should_set_field_when_loaded(tmp_path: Path, value: str) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1219,6 +1237,7 @@ def test_dirty_action_invalid_value_should_raise_config_error_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1244,6 +1263,7 @@ def test_orphan_action_in_toml_should_raise_with_migration_hint_when_loaded(
     cfg_path = tmp_path / "agent-runner.toml"
     (tmp_path / "p.md").write_text("hi")
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1271,6 +1291,7 @@ def test_relative_work_dir_should_anchor_to_config_parent_when_loaded_from_other
     (proj / "prompts" / "main.md").write_text("p")
     cfg_path = proj / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1300,6 +1321,7 @@ def test_absolute_work_dir_should_remain_unchanged_when_loaded_from_other_cwd(
     (proj / "prompt.md").write_text("p")
     cfg_path = tmp_path / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1324,6 +1346,7 @@ def test_relative_log_dir_should_resolve_to_absolute_when_loaded(
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1343,6 +1366,7 @@ def test_relative_log_dir_should_resolve_to_absolute_when_loaded(
 def test_relative_narrative_file_should_resolve_to_absolute_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1364,6 +1388,7 @@ def test_relative_narrative_file_should_resolve_to_absolute_when_loaded(tmp_path
 def test_relative_prompt_file_should_resolve_to_absolute_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1387,6 +1412,7 @@ def test_relative_prompt_files_list_should_all_resolve_to_absolute_when_loaded(
     (tmp_path / "a.md").write_text("a")
     (tmp_path / "b.md").write_text("b")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1411,6 +1437,7 @@ def test_relative_per_phase_prompt_files_should_resolve_to_absolute_when_loaded(
     (tmp_path / "p.md").write_text("p")
     (tmp_path / "x.md").write_text("x")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1436,6 +1463,7 @@ def test_relative_per_phase_prompt_files_should_resolve_to_absolute_when_loaded(
 def test_no_narrative_file_should_remain_none_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -1457,6 +1485,7 @@ def test_rate_limit_action_in_toml_should_raise_config_error_with_migration_hint
 
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["claude"]\n'
         'name = "claude"\n'
@@ -1483,6 +1512,7 @@ def test_transient_error_action_should_still_be_accepted(tmp_path):
     """Sanity: canonical key still works post-alias-removal."""
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["claude"]\n'
         'name = "claude"\n'
@@ -1507,6 +1537,7 @@ def test_runtime_dry_run_should_load_from_toml(tmp_path):
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("x" * 800, encoding="utf-8")
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["claude"]\n'
         'name = "claude"\n'
@@ -1530,6 +1561,7 @@ def test_runtime_dry_run_should_default_to_false(tmp_path):
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("x" * 800, encoding="utf-8")
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["claude"]\n'
         'name = "claude"\n'
@@ -1608,6 +1640,7 @@ def test_monitor_host_health_toml_section_should_apply_overrides_when_loaded(
     prompt_file.write_text("x" * 800, encoding="utf-8")
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand = ["claude"]\nname = "claude"\n'
         'prompt_arg_template = ["-p", "{prompt}"]\n\n'
         f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
@@ -1641,6 +1674,7 @@ def test_host_health_floors_should_parse_from_toml(tmp_path: Path) -> None:
     prompt_file.write_text("x" * 800, encoding="utf-8")
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand = ["claude"]\nname = "claude"\n'
         'prompt_arg_template = ["-p", "{prompt}"]\n\n'
         f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
@@ -1828,6 +1862,7 @@ def test_supervisor_stale_threshold_should_be_loaded_when_set(tmp_path: Path) ->
 def test_grace_kill_ignore_patterns_should_default_to_empty(tmp_path: Path) -> None:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
         '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
         '[prompt]\nfile="p.md"\n'
@@ -1841,6 +1876,7 @@ def test_grace_kill_ignore_patterns_should_default_to_empty(tmp_path: Path) -> N
 def test_grace_kill_ignore_patterns_should_be_parsed_from_toml(tmp_path: Path) -> None:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
         '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
         "grace_kill_ignore_patterns = ['\\.claude/shell-snapshots/']\n"
@@ -1855,6 +1891,7 @@ def test_grace_kill_ignore_patterns_should_be_parsed_from_toml(tmp_path: Path) -
 def test_grace_kill_ignore_patterns_should_raise_when_regex_invalid(tmp_path: Path) -> None:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand=["true"]\nprompt_arg_template=["-p","{prompt}"]\n'
         '[runtime]\nwork_dir="."\nlog_dir="logs"\n'
         'grace_kill_ignore_patterns = ["[unclosed"]\n'
@@ -2087,6 +2124,7 @@ def test_removed_field_error_should_point_to_migrate_command(tmp_path):
 
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["claude"]\n'
         'prompt_arg_template = ["-p", "{prompt}"]\n\n'
@@ -2116,6 +2154,7 @@ def _min_config_lines(
     tests inline repeatedly, with room to inject an extra raw line into
     [agent]/[runtime]. Callers append their own trailing [table] blocks."""
     return [
+        "schema_version = 1\n",
         "[agent]\n",
         'command = ["true"]\n',
         'prompt_arg_template = ["{prompt}"]\n',
@@ -2340,3 +2379,60 @@ def test_load_config_should_parse_round_budget_s_in_all_three_forms_when_present
 
     assert cfg.runtime.round_budget_s == 900
     assert cfg.phases.overrides["dev"].round_budget_s == 1200
+
+
+def test_load_config_should_reject_config_missing_schema_version_when_loaded(tmp_path):
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text('[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n')
+
+    with pytest.raises(ConfigError, match="run 'agent-runner migrate'"):
+        load_config(toml)
+
+
+def test_load_config_should_accept_schema_version_one_when_loaded(tmp_path):
+    from agent_runner.config import load_config
+    from tests._test_helpers import make_toml
+
+    toml = make_toml(tmp_path)
+
+    cfg = load_config(toml)
+
+    assert cfg is not None
+
+
+def test_load_config_should_reject_newer_schema_version_when_loaded(tmp_path):
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        'schema_version = 2\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+    )
+
+    with pytest.raises(ConfigError, match="upgrade agent-runner"):
+        load_config(toml)
+
+
+def test_load_config_should_reject_older_schema_version_when_loaded(tmp_path):
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        'schema_version = 0\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+    )
+
+    with pytest.raises(ConfigError, match="run 'agent-runner migrate'"):
+        load_config(toml)
+
+
+def test_load_config_should_reject_non_integer_schema_version_when_loaded(tmp_path):
+    from agent_runner.config import ConfigError, load_config
+
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        'schema_version = "1"\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+    )
+
+    with pytest.raises(ConfigError, match="schema_version must be an integer"):
+        load_config(toml)

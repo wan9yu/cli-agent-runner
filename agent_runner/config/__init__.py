@@ -13,7 +13,10 @@ time for whichever module reaches for it.
 from __future__ import annotations
 
 from agent_runner.config.errors import ConfigError
-from agent_runner.config.loader import load_config
+from agent_runner.config.loader import (  # noqa: F401 — public re-export
+    _CURRENT_SCHEMA_VERSION,
+    load_config,
+)
 from agent_runner.config.models import (  # noqa: F401 — public re-export
     _AGENT_ALLOWED_FIELDS,
     _DEFAULT_AUTH_HINT,

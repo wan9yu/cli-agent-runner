@@ -63,6 +63,7 @@ def make_toml(tmp_path: Path) -> Path:
     prompt_file.write_text(_VALID_PROMPT)
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -104,6 +105,7 @@ def make_toml_with_sections(
     if prompt_block is None:
         prompt_block = f'file = "{prompt_file}"'
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
@@ -148,6 +150,7 @@ def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
     agent_lines = "\n".join(f"{k} = {_format_toml_value(v)}" for k, v in agent.items())
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         f"{agent_lines}\n"
         "[runtime]\n"

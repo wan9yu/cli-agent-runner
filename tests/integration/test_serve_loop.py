@@ -18,7 +18,7 @@ def _write_toml(
     prompt.write_text("Body content for serve loop test. " * 50)
     log_dir = tmp_git_repo / "logs"
     toml.write_text(
-        f"""
+        f"""schema_version = 1
 [agent]
 command = ["{fake_agent}"]
 prompt_arg_template = ["{{prompt}}"]

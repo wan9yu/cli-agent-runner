@@ -29,6 +29,31 @@ from agent_runner.config.validators import (
     _require_table,
 )
 
+_CURRENT_SCHEMA_VERSION = 1
+
+
+def _check_schema_version(raw: dict) -> None:
+    """Boot gate: a config's ``schema_version`` decouples the on-disk config
+    shape from the installed package version, so a config can be migrated
+    once and stay loadable across many package releases. Absent or behind
+    the version this build expects means the config was never migrated;
+    ahead means an operator downgraded the package under a newer config."""
+    version = raw.get("schema_version")
+    if version is None:
+        raise ConfigError("config predates schema_version — run 'agent-runner migrate'")
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ConfigError(f"schema_version must be an integer, got {version!r}")
+    if version > _CURRENT_SCHEMA_VERSION:
+        raise ConfigError(
+            f"config schema_version {version} is newer than this agent-runner "
+            f"supports (max {_CURRENT_SCHEMA_VERSION}) — upgrade agent-runner"
+        )
+    if version < _CURRENT_SCHEMA_VERSION:
+        raise ConfigError(
+            f"config schema_version {version} is older than this agent-runner "
+            "supports — run 'agent-runner migrate'"
+        )
+
 
 def load_config(toml_path: Path) -> Config:
     _reject_control_chars(str(toml_path), "config path")
@@ -36,6 +61,8 @@ def load_config(toml_path: Path) -> Config:
         raise FileNotFoundError(f"config not found: {toml_path}")
     with toml_path.open("rb") as f:
         raw = tomllib.load(f)
+
+    _check_schema_version(raw)
 
     agent_d = _require_table(raw, "agent")
     agent = _parse_agent(agent_d, field_prefix="[agent]")
