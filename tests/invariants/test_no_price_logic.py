@@ -1,4 +1,4 @@
-"""Tenet-3: the framework is price-blind. No module outside builtin_plugins/
+"""Tenet-3: the framework is price-agnostic. No module outside builtin_plugins/
 reads cost_usd except _emit's verbatim pass-through, and no price/pricing/
 per_token/usd_rate identifier or arithmetic-on-cost appears in core. Call-graph
 form (AST), NOT a cost|price|window token grep (which false-hits run_windows)."""

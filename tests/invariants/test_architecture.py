@@ -353,3 +353,12 @@ def test_known_alert_kinds_should_be_well_formed_when_inspected() -> None:
 
     assert len(KNOWN_ALERT_KINDS) == 13
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", k) for k in KNOWN_ALERT_KINDS)
+
+
+def test_public_docs_should_say_price_agnostic_not_price_blind_when_read() -> None:
+    """Tenet-3 wording check: public docs must say 'price-agnostic' not
+    the deprecated 'price-blind'."""
+    arch = (Path(__file__).resolve().parents[2] / "docs" / "architecture.md").read_text()
+
+    assert "price-blind" not in arch.lower()
+    assert "price-agnostic" in arch.lower()
