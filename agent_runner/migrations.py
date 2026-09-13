@@ -498,7 +498,10 @@ MIGRATIONS: list[Migration] = [
         describe=lambda p: (
             "[plugins] disable names a 0.2.x hook-level name; 0.3.0's PluginManifest "
             "ABI disables by plugin name instead — rewrite manually: "
-            f"{_old_plugin_disable_names(p)}"
+            # No config in hand (docgen renders against {}) degrades to the
+            # full rename table, same fallback shape as _scalar_tables(p) or
+            # '<table>' above -- never a dangling "{}".
+            f"{_old_plugin_disable_names(p) or _OLD_PLUGIN_DISABLE_NAMES}"
         ),
     ),
     Migration(
