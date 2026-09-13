@@ -85,10 +85,6 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
         "agent_runner._observe",
-        # _plugin_manifest: the plugin ABI module. _load_plugin_manifests()
-        # (called at package import, same as the scanner it pairs with)
-        # imports it to resolve and register every discovered PluginManifest.
-        "agent_runner._plugin_manifest",
         "agent_runner._plugin_scan",
         "agent_runner._redact",
         "agent_runner._registry",
@@ -102,14 +98,15 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner.agent_runtime",
         "agent_runner.api",
         "agent_runner.api_types",
+        # builtin_plugins package + _constants: imported directly by
+        # _monitor_state.py/_throttle.py for shared tuning constants. The
+        # concrete plugin modules (kimi/pi/codewhale/gemini/claude_rate_limit/
+        # default_dirty_handler) are NOT here -- the loader split (discover
+        # scans entry_points.txt only; load_and_register_plugins imports each
+        # module) defers their import to config-load time, so a bare
+        # `import agent_runner.cli` no longer pulls them in.
         "agent_runner.builtin_plugins",
         "agent_runner.builtin_plugins._constants",
-        "agent_runner.builtin_plugins.claude_rate_limit",
-        "agent_runner.builtin_plugins.codewhale",
-        "agent_runner.builtin_plugins.default_dirty_handler",
-        "agent_runner.builtin_plugins.gemini",
-        "agent_runner.builtin_plugins.kimi",
-        "agent_runner.builtin_plugins.pi",
         "agent_runner.cli",
         "agent_runner.cli._serve_cgroup",
         "agent_runner.cli._serve_round",

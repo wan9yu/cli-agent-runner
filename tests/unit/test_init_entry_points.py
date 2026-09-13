@@ -1,10 +1,12 @@
-"""Tests for agent_runner package plugin-manifest loading.
+"""Tests for agent_runner package plugin discovery + loading.
 
 Discovery itself (scan == importlib.metadata.entry_points per group, the
 malformed-file fallback, the env override) is pinned by
-tests/unit/test_plugin_scan_parity.py. These tests cover the loader built on
-top of the scanner: per-plugin failure isolation, the single group queried,
-and apply_plugin_disable's observable behavior.
+tests/unit/test_plugin_scan_parity.py. These tests cover the two-phase
+loader built on top of the scanner: `_discover_plugin_manifests` (import-time,
+scan-only) and `load_and_register_plugins` (config-load-time, verify+import) --
+per-plugin failure isolation, the single group queried, and
+apply_plugin_disable's observable behavior.
 """
 
 from __future__ import annotations
@@ -15,10 +17,12 @@ from unittest.mock import patch
 
 import pytest
 
+import agent_runner
 from agent_runner import events as _events
 from agent_runner import hooks as _hooks
 from agent_runner import monitor as _monitor
 from agent_runner._plugin_manifest import PluginManifest
+from agent_runner.config.models import PluginsConfig
 from tests._test_helpers import isolating
 
 _reset = isolating(
@@ -31,7 +35,7 @@ _reset = isolating(
 
 # A real, importable PluginManifest that is NEVER scanned via the real
 # agent_runner.plugins group -- so it stays "fresh" (not already loaded)
-# for test_load_plugin_manifests_should_strip_extras_marker_and_register_when_resolved
+# for test_load_and_register_should_strip_extras_marker_and_register_when_resolved
 # to resolve and register from scratch.
 _FRESH_MANIFEST_FOR_LOADER_TEST = PluginManifest(
     name="test_init_entry_points_fresh_plugin",
@@ -39,28 +43,29 @@ _FRESH_MANIFEST_FOR_LOADER_TEST = PluginManifest(
 )
 
 
-def test_load_plugin_manifests_should_query_the_single_plugins_group() -> None:
-    from agent_runner import _load_plugin_manifests
+def test_discover_should_query_the_single_plugins_group_when_called(monkeypatch) -> None:
+    monkeypatch.setattr(agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", [])
 
     with patch("agent_runner._plugin_scan.scan_entry_points", return_value=[]) as mock_scan:
-        _load_plugin_manifests()
+        agent_runner._discover_plugin_manifests()
 
     mock_scan.assert_called_once_with(sys.path, "agent_runner.plugins")
 
 
-def test_load_plugin_manifests_should_warn_when_plugin_import_fails() -> None:
-    from agent_runner import _load_plugin_manifests
-
+def test_load_and_register_should_warn_when_plugin_import_fails(monkeypatch) -> None:
     scanned = [("bad-plugin", "definitely_not_a_real_module_xyz:PLUGIN")]
+    monkeypatch.setattr(agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", scanned)
 
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_plugin_manifests()
-        assert any("bad-plugin" in str(w.message) for w in caught)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        agent_runner.load_and_register_plugins(PluginsConfig(disable=[]))
+
+    assert any("bad-plugin" in str(w.message) for w in caught)
 
 
-def test_load_plugin_manifests_should_strip_extras_marker_and_register_when_resolved() -> None:
+def test_load_and_register_should_strip_extras_marker_and_register_when_resolved(
+    monkeypatch,
+) -> None:
     """A well-formed target can carry a trailing extras marker
     (``module:attr [extra1,extra2]``, per importlib.metadata.EntryPoint's own
     grammar) -- the loader must strip it before resolving, then actually
@@ -68,17 +73,16 @@ def test_load_plugin_manifests_should_strip_extras_marker_and_register_when_reso
     that is never scanned via the real entry-point group, so this proves a
     genuine first-time registration, not the already-loaded no-op re-scan
     that a real builtin's name would exercise instead."""
-    from agent_runner import _load_plugin_manifests
     from agent_runner._plugin_manifest import _LOADED_MANIFESTS
 
     before = len(_LOADED_MANIFESTS)
     target = "tests.unit.test_init_entry_points:_FRESH_MANIFEST_FOR_LOADER_TEST [extra1,extra2]"
     scanned = [("fresh-plugin", target)]
+    monkeypatch.setattr(agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", scanned)
 
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_plugin_manifests()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        agent_runner.load_and_register_plugins(PluginsConfig(disable=[]))
 
     assert not caught, (
         f"expected the extras marker to be stripped and the plugin to load clean; "

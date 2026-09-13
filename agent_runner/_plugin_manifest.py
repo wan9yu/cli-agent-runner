@@ -1,6 +1,6 @@
 """The plugin ABI: one typed, declared capability manifest per plugin, read
-by the loader (agent_runner/__init__.py::_load_plugin_manifests) instead of
-relying on import-time register_*() side effects. One entry-point group,
+by the loader (agent_runner/__init__.py::load_and_register_plugins) instead
+of relying on import-time register_*() side effects. One entry-point group,
 `agent_runner.plugins`, each entry resolving to a module-level
 `PLUGIN = PluginManifest(...)`.
 """
@@ -37,6 +37,13 @@ class PluginManifest:
 
 
 _LOADED_MANIFESTS: list[PluginManifest] = []
+
+
+def loaded_manifest_names() -> list[str]:
+    """Names of every currently-registered manifest (order-preserving).
+    Mirrors the ``list(_LOADED_MANIFESTS)`` pattern; used by the loader for
+    idempotent re-load skipping and by doctor for third-party hash listing."""
+    return [m.name for m in _LOADED_MANIFESTS]
 
 
 def register_manifest(manifest: PluginManifest) -> None:

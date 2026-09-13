@@ -124,11 +124,13 @@ def load_config(toml_path: Path) -> Config:
         schedule=schedule_cfg,
     )
 
-    # Honor [plugins] disable — must happen after registries are populated by
-    # import-time plugin load. One-way operation; test isolation via isolating().
-    if plugins.disable:
-        from agent_runner import apply_plugin_disable
+    # Verify + import discovered agent_runner.plugins entry points now that
+    # [plugins] is parsed -- gating the import on config, which package-import
+    # time never could. Then honor disable (belt-and-suspenders unregister).
+    from agent_runner import apply_plugin_disable, load_and_register_plugins
 
+    load_and_register_plugins(plugins)
+    if plugins.disable:
         apply_plugin_disable(plugins.disable)
 
     return cfg

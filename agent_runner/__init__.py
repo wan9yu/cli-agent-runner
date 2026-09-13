@@ -14,27 +14,47 @@ _PLUGIN_GROUP = "agent_runner.plugins"
 _DISABLED_PLUGIN_NAMES: list[str] = []
 
 
-def _load_plugin_manifests() -> None:
-    """Discover agent_runner.plugins entry points, resolve each to a
-    module-level PluginManifest, and register its declared capabilities.
+_DISCOVERED_PLUGIN_ENTRIES: list[tuple[str, str]] = []  # (name, "module:attr"), populated once
 
-    Called at package import. A broken plugin (bad import, missing PLUGIN
-    attribute, malformed manifest) must never crash the supervisor — isolated
-    as a UserWarning.
+
+def _discover_plugin_manifests() -> None:
+    """Package-import-time step. Scans entry_points.txt ONLY (scan_entry_points) —
+    imports nothing, executes no plugin code.
 
     Discovery goes through the ``entry_points.txt`` scanner (cheaper than a
     fresh ``importlib.metadata.entry_points()`` scan per process; see
     ``_plugin_scan``), with a hard fallback to ``importlib.metadata`` on any
     parse failure.
     """
-    import importlib
     import sys
-    import warnings
 
-    from agent_runner._plugin_manifest import register_manifest
     from agent_runner._plugin_scan import scan_entry_points
 
-    for name, value in scan_entry_points(sys.path, _PLUGIN_GROUP):
+    global _DISCOVERED_PLUGIN_ENTRIES
+    _DISCOVERED_PLUGIN_ENTRIES = scan_entry_points(sys.path, _PLUGIN_GROUP)
+
+
+_discover_plugin_manifests()
+
+
+def load_and_register_plugins(plugins_cfg) -> None:
+    """Called from config.loader.load_config once [plugins] is parsed — the
+    load-bearing fix: verification now has a Config to gate on. For each
+    discovered (name, value) NOT in plugins_cfg.disable and not already
+    registered, resolve module_path/attr_path, import + register_manifest. A
+    disabled name is never imported. A per-plugin failure isolates as a
+    UserWarning and skips that ONE plugin; it never aborts the whole load.
+    """
+    import importlib
+    import warnings
+
+    from agent_runner._plugin_manifest import loaded_manifest_names, register_manifest
+
+    disable = set(plugins_cfg.disable)
+    already = set(loaded_manifest_names())
+    for name, value in _DISCOVERED_PLUGIN_ENTRIES:
+        if name in disable or name in already:
+            continue
         try:
             # An entry-point value may carry a trailing extras marker
             # (``module:attr [extra1,extra2]``); importlib.metadata.EntryPoint's
@@ -47,14 +67,8 @@ def _load_plugin_manifests() -> None:
             for attr in filter(None, attr_path.split(".")):
                 target = getattr(target, attr)
             register_manifest(target)
-        except Exception as e:
-            warnings.warn(
-                f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}",
-                stacklevel=3,
-            )
-
-
-_load_plugin_manifests()
+        except Exception as e:  # noqa: BLE001 — a broken plugin must never crash the supervisor
+            warnings.warn(f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}", stacklevel=3)
 
 
 def apply_plugin_disable(names: list[str]) -> None:
@@ -65,9 +79,10 @@ def apply_plugin_disable(names: list[str]) -> None:
     already-removed names. Emits a UserWarning for names that match no
     loaded manifest (typo catcher; tolerates cross-env config drift).
 
-    Plugin packages still load at import time — this removes from the registries
-    that the runner and peek consult. Side effects from loading (module-level
-    imports, etc.) have already happened by the time this runs.
+    A disabled name is never imported by ``load_and_register_plugins`` in the
+    first place, so this is belt-and-suspenders cleanup for anything that
+    reached the registries another way (e.g. a manifest registered directly
+    via ``register_manifest``, not through entry-point discovery).
 
     Known limitation: vcs_state._PLUGIN_OWNED_PATHS lacks per-plugin name
     attribution today, so owned-paths are NOT filtered here. Disabled plugin's
