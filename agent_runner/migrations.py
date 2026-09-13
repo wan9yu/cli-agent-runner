@@ -894,11 +894,39 @@ def run_migrations(text: str, parsed: dict) -> MigrationResult:
     )
 
 
+_SCHEMA_VERSION_ASSIGN = re.compile(r"^(?P<indent>[ \t]*)schema_version[ \t]*=.*")
+
+
 def _stamp_schema_version(text: str, parsed: dict) -> tuple[str, str | None]:
-    """Stamp ``schema_version = 1`` as the file's first line if absent or not
-    already current. A no-op (returns text unchanged, None) when already
-    stamped — migrate must be idempotent on an already-current config."""
-    if parsed.get("schema_version") == _CURRENT_SCHEMA_VERSION:
+    """Stamp ``schema_version = <_CURRENT_SCHEMA_VERSION>``. A no-op (returns
+    text unchanged, None) only when a top-level INTEGER ``schema_version`` is
+    already current (``type(v) is int`` -- a bool is never "current" even
+    though ``True == 1`` in Python) or already NEWER (never downgrade a
+    config stamped by a future agent-runner).
+
+    Any other pre-existing top-level ``schema_version`` line (a stale int, a
+    string, a bool, ...) is REPLACED in place, mirroring ``_rename_key``'s
+    discipline -- never blindly prepended, or a non-canonical existing line
+    would leave two top-level ``schema_version`` keys behind (a duplicate key
+    is invalid TOML, so the next load would raise instead of the migrate run
+    reporting success). Only truly absent does this prepend a fresh line."""
+    version = parsed.get("schema_version")
+    if type(version) is int and version >= _CURRENT_SCHEMA_VERSION:
         return text, None
-    new_text = f"schema_version = {_CURRENT_SCHEMA_VERSION}\n{text}"
+    stamp = f"schema_version = {_CURRENT_SCHEMA_VERSION}"
+    lines = text.splitlines(keepends=True)
+    hit: int | None = None
+    for i, line in enumerate(lines):
+        if _TABLE_HEADER.match(line):
+            # A top-level key can only precede every table header (TOML
+            # syntax) -- once we see one, no top-level schema_version follows.
+            break
+        if _SCHEMA_VERSION_ASSIGN.match(line):
+            hit = i
+            break
+    if hit is None:
+        new_text = f"{stamp}\n{text}"
+    else:
+        lines[hit] = _SCHEMA_VERSION_ASSIGN.sub(rf"\g<indent>{stamp}", lines[hit], count=1)
+        new_text = "".join(lines)
     return new_text, f"stamped schema_version = {_CURRENT_SCHEMA_VERSION}"

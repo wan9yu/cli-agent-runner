@@ -537,3 +537,47 @@ def test_migrate_should_be_a_no_op_when_schema_version_already_one():
 
     assert r.new_text == text
     assert r.applied == []
+
+
+def test_migrate_should_replace_string_schema_version_with_int_one_when_non_canonical():
+    # A pre-existing but non-canonical schema_version (here a string "1", not
+    # the int 1) must be REPLACED in place, never prepended — prepending would
+    # leave two top-level `schema_version` keys, which is invalid TOML and
+    # would corrupt the config on its next load despite `migrate` reporting
+    # success.
+    text = 'schema_version = "1"\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    parsed = tomllib.loads(r.new_text)  # raises on a duplicate top-level key
+    assert parsed["schema_version"] == 1
+    assert type(parsed["schema_version"]) is int
+    assert r.new_text.count("schema_version") == 1
+
+
+def test_migrate_should_replace_bool_schema_version_with_int_one_when_true():
+    # `True == 1` in Python, so a naive `== _CURRENT_SCHEMA_VERSION` check
+    # would wrongly treat `schema_version = true` as already-current and skip
+    # normalizing it to the real int.
+    text = (
+        'schema_version = true\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+    )
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    parsed = tomllib.loads(r.new_text)
+    assert parsed["schema_version"] == 1
+    assert type(parsed["schema_version"]) is int
+    assert r.new_text.count("schema_version") == 1
+
+
+def test_migrate_should_leave_newer_schema_version_unchanged_when_already_ahead():
+    # A config already stamped by a NEWER agent-runner must not be downgraded,
+    # and must not gain a duplicate top-level `schema_version` key either.
+    text = 'schema_version = 2\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert r.new_text == text
+    assert r.applied == []
+    assert r.new_text.count("schema_version") == 1
