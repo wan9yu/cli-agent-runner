@@ -39,7 +39,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 |---|---|---|
 | `work_dir` | `Path` | — |
 | `log_dir` | `Path` | — |
-| `round_timeout_s` | `int` | 1800 |
+| `round_budget_s` | `int` | 1800 |
 | `restart_delay_s` | `int` | 3 |
 | `disable_pre_round_hooks` | `bool` | False |
 | `round_log_retention` | `int` | 0 |

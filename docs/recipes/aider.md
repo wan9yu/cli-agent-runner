@@ -51,7 +51,7 @@ name = "aider"
 [runtime]
 work_dir = "."
 log_dir = "~/.agent-runner/{project}/logs"
-round_timeout_s = 1800
+round_budget_s = 1800
 restart_delay_s = 3
 
 [prompt]
