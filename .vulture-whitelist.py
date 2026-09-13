@@ -248,6 +248,7 @@ full_avg10_critical
 some_avg10_warning
 critical_consecutive_samples
 in_round_terminate
+cgroup_growth_rate_warning_mb_per_min
 
 # agent_runner.context_store.OrphanState
 round_num

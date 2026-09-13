@@ -29,6 +29,7 @@ from agent_runner._emit.agent import (  # noqa: F401 — public re-export
     emit_transient_error_recovered,
 )
 from agent_runner._emit.memory import (  # noqa: F401 — public re-export
+    emit_cgroup_growth_rate_warning,
     emit_host_cgroup_memory_limit,
     emit_mem_pressure_deferred_to_cgroup,
     emit_round_cgroup_memory,
@@ -69,6 +70,7 @@ __all__ = [
     "emit_agent_auth_error_detected",
     "emit_agent_usage_recorded",
     "emit_anomaly_repetitive_tool",
+    "emit_cgroup_growth_rate_warning",
     "emit_config_broken",
     "emit_config_migrated",
     "emit_crash_loop",

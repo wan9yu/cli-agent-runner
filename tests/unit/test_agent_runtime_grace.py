@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import psutil
 import pytest
 
 from agent_runner import agent_runtime
@@ -282,6 +283,68 @@ def test_live_children_should_return_empty_when_process_already_exited():
     p.wait()
 
     assert _live_children(p) == ([], [])  # NoSuchProcess swallowed
+
+
+def test_children_rss_sum_bytes_should_return_none_when_process_already_exited():
+    from agent_runner.agent_runtime import children_rss_sum_bytes
+
+    p = subprocess.Popen(["true"])
+    p.wait()
+
+    assert children_rss_sum_bytes(p) is None  # NoSuchProcess swallowed, mirrors _live_children
+
+
+def test_children_rss_sum_bytes_should_sum_parent_and_child_rss_when_tree_alive():
+    from agent_runner.agent_runtime import children_rss_sum_bytes
+
+    p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
+    box: dict = {}
+
+    def _ready() -> bool:
+        box["total"] = children_rss_sum_bytes(p)
+        return box["total"] is not None and box["total"] > 0
+
+    try:
+        assert poll_until(_ready, timeout_s=5.0), "rss sum never became positive"
+        assert box["total"] > 0
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
+
+
+def test_children_rss_sum_bytes_should_skip_a_vanished_child_when_others_remain(monkeypatch):
+    """A child that raises NoSuchProcess mid-walk (PID race) must not abort the
+    whole sum -- the remaining process(es) still contribute."""
+    from agent_runner.agent_runtime import children_rss_sum_bytes
+
+    p = subprocess.Popen(["sleep", "3"], start_new_session=True)
+
+    class _FailingChild:
+        def memory_info(self):
+            raise psutil.NoSuchProcess(pid=99999)
+
+    real_process = psutil.Process
+
+    class _FakeParent:
+        def __init__(self, pid):
+            self._real = real_process(pid)
+
+        def memory_info(self):
+            return self._real.memory_info()
+
+        def children(self, recursive=True):
+            return [_FailingChild()]
+
+    try:
+        monkeypatch.setattr(agent_runtime.psutil, "Process", lambda pid: _FakeParent(pid))
+
+        total = children_rss_sum_bytes(p)
+
+        assert total is not None
+        assert total > 0  # parent's own RSS still counted
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
 
 
 def test_run_should_extend_grace_when_child_still_live_after_result(tmp_path, monkeypatch):

@@ -245,3 +245,45 @@ def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg() -> No
     comaing = {"psi_some_avg10": 90.0, "psi_full_avg10": 70.0}  # 70 >= 60 -- critical
     p = host_health.memory_pressure(comaing, {}, cfg)
     assert p is not None and p.severity == "critical" and p.signal == "psi"
+
+
+def test_cgroup_growth_rate_pressure_should_return_none_when_rate_is_none() -> None:
+
+    result = host_health.cgroup_growth_rate_pressure(None, MonitorHostHealthConfig())
+
+    assert result is None
+
+
+def test_cgroup_growth_rate_pressure_should_return_none_when_rate_below_threshold() -> None:
+    cfg = MonitorHostHealthConfig(
+        pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=512.0)
+    )
+
+    result = host_health.cgroup_growth_rate_pressure(400.0, cfg)
+
+    assert result is None
+
+
+def test_cgroup_growth_rate_pressure_should_warn_when_rate_at_or_above_threshold() -> None:
+    cfg = MonitorHostHealthConfig(
+        pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=512.0)
+    )
+
+    result = host_health.cgroup_growth_rate_pressure(512.0, cfg)
+
+    assert result is not None
+    assert result.severity == "warning"
+    assert result.signal == "cgroup_growth_rate"
+    assert result.context == {"rate_mb_per_min": 512.0, "threshold_mb_per_min": 512.0}
+
+
+def test_cgroup_growth_rate_pressure_should_read_threshold_from_cfg_not_hardcoded_constant() -> (
+    None
+):
+    cfg = MonitorHostHealthConfig(
+        pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=100.0)
+    )
+
+    result = host_health.cgroup_growth_rate_pressure(150.0, cfg)
+
+    assert result is not None

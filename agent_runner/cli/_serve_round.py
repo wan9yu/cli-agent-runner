@@ -44,8 +44,13 @@ from agent_runner._throttle import (
     pending_recovered,
     round_had_no_progress,
 )
-from agent_runner.agent_runtime import _kill_stray_descendants, _snapshot_stray_descendants
+from agent_runner.agent_runtime import (
+    _kill_stray_descendants,
+    _snapshot_stray_descendants,
+    children_rss_sum_bytes,
+)
 from agent_runner.api import (
+    emit_cgroup_growth_rate_warning,
     emit_config_broken,
     emit_crash_loop,
     emit_mem_loop,
@@ -337,7 +342,14 @@ def _spawn_round(
     run (cgroup-defer, or the off switch) would otherwise write one event
     per ~10s tick for up to a whole ``round_budget_s``. The streak still
     resets to 0 on any non-critical tick, so the cap is per streak-episode:
-    sampling resumes from 1 the next time critical pressure recurs."""
+    sampling resumes from 1 the next time critical pressure recurs.
+
+    A second, independent derivative rides the SAME mem-check tick: growth
+    RATE (MB/min) of the round's own memory (cgroup memory.current when a
+    finite bound exists, else a psutil RSS-sum over the process tree),
+    evaluated by host_health.cgroup_growth_rate_pressure and, on a crossing,
+    emitting cgroup_growth_rate_warning once per episode -- observability
+    only, no termination action."""
     log_dir = round_log_path.parent
     with round_log_path.open("w") as f:
         proc = subprocess.Popen(
@@ -362,6 +374,9 @@ def _spawn_round(
             prev_tick_sample: dict | None = None
             critical_streak = 0
             cgroup_defer_notified = False
+            prev_mem_bytes: int | None = None
+            prev_mem_mono: float | None = None
+            growth_warned = False
             # cgroup pressure spine (round_cgroup_memory): baseline read
             # once at spawn start, empty ({}) when this host has no finite
             # cgroup bound -- cg_base then stays falsy and _stash_cgroup
@@ -404,6 +419,50 @@ def _spawn_round(
                         cg_now = metrics.cgroup_memory_usage(bounding_cgroup=cg_bounding)
                         cg_peak_current = max(cg_peak_current, cg_now.get("memory_current", 0))
                         cg_peak_swap = max(cg_peak_swap, cg_now.get("memory_swap_current", 0))
+                        cur_mem_bytes = cg_now.get("memory_current") if cg_now else None
+                        mem_source = "cgroup"
+                    else:
+                        cur_mem_bytes = children_rss_sum_bytes(proc)
+                        mem_source = "rss_sum"
+                    now_mono = clock.monotonic()
+                    if cur_mem_bytes is not None:
+                        rate_mb_per_min = None
+                        if prev_mem_bytes is not None and prev_mem_mono is not None:
+                            elapsed_s = max(now_mono - prev_mem_mono, 0.0)
+                            rate_mb_per_min = (
+                                0.0
+                                if elapsed_s == 0
+                                else max(
+                                    (cur_mem_bytes - prev_mem_bytes)
+                                    / 1024
+                                    / 1024
+                                    / (elapsed_s / 60),
+                                    0.0,
+                                )
+                            )
+                        growth_pressure = host_health.cgroup_growth_rate_pressure(
+                            rate_mb_per_min, host_health_cfg
+                        )
+                        if growth_pressure is not None:
+                            if not growth_warned:
+                                growth_warned = True
+                                emit_cgroup_growth_rate_warning(
+                                    log_dir,
+                                    round_num=round_num,
+                                    rate_mb_per_min=rate_mb_per_min,
+                                    threshold_mb_per_min=(
+                                        host_health_cfg.pressure.cgroup_growth_rate_warning_mb_per_min
+                                    ),
+                                    source=mem_source,
+                                    context=growth_pressure.context,
+                                )
+                        else:
+                            growth_warned = False
+                        prev_mem_bytes, prev_mem_mono = cur_mem_bytes, now_mono
+                    # else: fail-open -- cur_mem_bytes unavailable this tick
+                    # (a {}/None source read). Keep prev_mem_bytes/prev_mem_mono
+                    # untouched so the NEXT successful tick still diffs against
+                    # the last real reading, not a spurious reset.
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
                         if (

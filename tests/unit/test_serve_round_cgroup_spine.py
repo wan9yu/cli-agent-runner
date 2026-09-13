@@ -199,3 +199,171 @@ def test_emit_round_cgroup_memory_should_consume_state_once_when_called_twice(
     second = _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-2.log", 2)
 
     assert second == ({}, None)
+
+
+def _growth_pressure(rate=999.0, threshold=512.0):
+    from agent_runner import host_health
+
+    return host_health.Pressure(
+        severity="warning",
+        signal="cgroup_growth_rate",
+        message=f"memory growing {rate:.0f} MB/min (>= {threshold:.0f})",
+        context={"rate_mb_per_min": rate, "threshold_mb_per_min": threshold},
+    )
+
+
+def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_cgroup_source_used(
+    tmp_path, monkeypatch
+):
+    """host_health.cgroup_growth_rate_pressure is patched to fire on ticks 2-3
+    (one sustained episode) then clear on tick 4 -- exactly one emit, not one
+    per critical tick."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+
+    usages = iter([_usage(0, 0), _usage(1, 0), _usage(2, 0), _usage(3, 0), _usage(4, 0)])
+    monkeypatch.setattr(
+        _serve_round.metrics, "cgroup_memory_usage", lambda **k: next(usages, _usage(4, 0))
+    )
+    verdicts = iter([None, _growth_pressure(), _growth_pressure(), None])
+    monkeypatch.setattr(
+        _serve_round.host_health,
+        "cgroup_growth_rate_pressure",
+        lambda rate, cfg: next(verdicts, None),
+    )
+
+    _serve_round._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 4000,
+            "mem_available_mb": 4000,
+            "swap_sout": 0,
+        },
+    )
+
+    warnings = [e for e in _events(log_dir) if e["event"] == "cgroup_growth_rate_warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["source"] == "cgroup"
+    assert warnings[0]["round_num"] == 1
+
+
+def test_spawn_round_should_use_rss_sum_source_when_no_finite_cgroup_bound(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+
+    monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: {})
+    rss_readings = iter([100_000_000, 800_000_000, 1_500_000_000])
+    monkeypatch.setattr(
+        _serve_round, "children_rss_sum_bytes", lambda proc: next(rss_readings, 1_500_000_000)
+    )
+
+    _serve_round._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 4000,
+            "mem_available_mb": 4000,
+            "swap_sout": 0,
+        },
+    )
+
+    warnings = [e for e in _events(log_dir) if e["event"] == "cgroup_growth_rate_warning"]
+    assert warnings
+    assert all(w["source"] == "rss_sum" for w in warnings)
+
+
+def test_spawn_round_should_never_pass_a_negative_rate_when_memory_drops_between_ticks(
+    tmp_path, monkeypatch
+):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+
+    usages = iter([_usage(0, 0), _usage(500_000_000, 0), _usage(100_000_000, 0)])
+    monkeypatch.setattr(
+        _serve_round.metrics,
+        "cgroup_memory_usage",
+        lambda **k: next(usages, _usage(100_000_000, 0)),
+    )
+    rates_seen: list = []
+
+    def _spy(rate, cfg):
+        rates_seen.append(rate)
+        return None
+
+    monkeypatch.setattr(_serve_round.host_health, "cgroup_growth_rate_pressure", _spy)
+
+    _serve_round._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 4000,
+            "mem_available_mb": 4000,
+            "swap_sout": 0,
+        },
+    )
+
+    real_rates = [r for r in rates_seen if r is not None]
+    assert real_rates, "growth-rate derivative never ran"
+    assert all(r >= 0 for r in real_rates)
+
+
+def test_spawn_round_should_not_crash_when_cgroup_source_fails_open_mid_round(
+    tmp_path, monkeypatch
+):
+    """A `{}` cgroup read mid-round (bounding cgroup vanished) must be treated
+    as 'cannot compute this tick', never as a real 0-byte reading, and must
+    never raise out of the tick loop."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+
+    usages = iter([_usage(0, 0), _usage(500_000_000, 0), {}, _usage(600_000_000, 0)])
+    monkeypatch.setattr(
+        _serve_round.metrics,
+        "cgroup_memory_usage",
+        lambda **k: next(usages, _usage(600_000_000, 0)),
+    )
+
+    rc = _serve_round._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=lambda: {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 4000,
+            "mem_available_mb": 4000,
+            "swap_sout": 0,
+        },
+    )
+
+    assert rc == 0  # clean exit -- the {} tick did not crash the round

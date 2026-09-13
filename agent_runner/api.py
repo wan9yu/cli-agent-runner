@@ -31,6 +31,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_agent_auth_error_detected,
     emit_agent_usage_recorded,
     emit_anomaly_repetitive_tool,
+    emit_cgroup_growth_rate_warning,
     emit_config_broken,
     emit_config_migrated,
     emit_crash_loop,

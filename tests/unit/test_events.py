@@ -154,6 +154,33 @@ def test_builtin_kinds_should_include_monitor_started() -> None:
     assert "monitor_started" in KNOWN_EVENT_KINDS
 
 
+def test_builtin_kinds_should_include_cgroup_growth_rate_warning() -> None:
+    """The mid-round growth-rate detector's WARNING-crossing event."""
+    assert "cgroup_growth_rate_warning" in events._BUILTIN_KINDS
+
+
+def test_emit_cgroup_growth_rate_warning_should_write_structured_payload(tmp_path):
+    from agent_runner._emit import emit_cgroup_growth_rate_warning
+    from agent_runner.events import CGROUP_GROWTH_RATE_WARNING
+
+    emit_cgroup_growth_rate_warning(
+        tmp_path,
+        round_num=3,
+        rate_mb_per_min=900.0,
+        threshold_mb_per_min=512.0,
+        source="cgroup",
+        context={"rate_mb_per_min": 900.0, "threshold_mb_per_min": 512.0},
+    )
+
+    payload = _read_jsonl(sorted(tmp_path.glob("events-*.jsonl"))[-1])[-1]
+    assert payload["event"] == CGROUP_GROWTH_RATE_WARNING
+    assert payload["round_num"] == 3
+    assert payload["rate_mb_per_min"] == 900.0
+    assert payload["threshold_mb_per_min"] == 512.0
+    assert payload["source"] == "cgroup"
+    assert payload["context"] == {"rate_mb_per_min": 900.0, "threshold_mb_per_min": 512.0}
+
+
 def test_emit_agent_auth_error_detected_should_write_structured_payload(tmp_path):
     """The agent's own output reported an auth failure — certain evidence, so the
     monitor's oauth_fail detector counts the round without an exit-code shield.

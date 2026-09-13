@@ -238,3 +238,33 @@ def emit_mem_pressure_deferred_to_cgroup(
     from agent_runner.events import MEM_PRESSURE_DEFERRED_TO_CGROUP, emit
 
     emit(log_dir, MEM_PRESSURE_DEFERRED_TO_CGROUP, pid=pid, signal=signal, message=message)
+
+
+def emit_cgroup_growth_rate_warning(
+    log_dir: Path,
+    *,
+    round_num: int,
+    rate_mb_per_min: float,
+    threshold_mb_per_min: float,
+    source: str,
+    context: dict,
+) -> None:
+    """Emit on a False->True crossing of _spawn_round's mid-round growth-rate
+    derivative (host_health.cgroup_growth_rate_pressure) -- observability
+    only, no action path. ``source`` names which per-tick reading the
+    derivative used: "cgroup" (a finite cgroup memory.max bound exists,
+    memory.current is read) or "rss_sum" (no finite bound -- the psutil
+    children_rss_sum_bytes tree sum is used instead). Edge-triggered: fires
+    once per crossing episode, not once per tick, so a sustained climb does
+    not spam the event stream."""
+    from agent_runner.events import CGROUP_GROWTH_RATE_WARNING, emit
+
+    emit(
+        log_dir,
+        CGROUP_GROWTH_RATE_WARNING,
+        round_num=round_num,
+        rate_mb_per_min=rate_mb_per_min,
+        threshold_mb_per_min=threshold_mb_per_min,
+        source=source,
+        context=context,
+    )

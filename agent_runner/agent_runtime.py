@@ -247,6 +247,26 @@ def _live_children(
     return live, ignored
 
 
+def children_rss_sum_bytes(proc: subprocess.Popen) -> int | None:
+    """Sum RSS (bytes) across the process tree (self + all recursive children)
+    -- the no-finite-cgroup-bound fallback for the mid-round growth-rate
+    derivative (see cli/_serve_round.py). Uncapped, unlike _live_children
+    (a 5-child cap would undercount a wider tree); fail-open on the same
+    PID-race guards _live_children uses: None when the leader itself is gone
+    or unreadable, per-child skip (not abort) when a child vanishes mid-walk."""
+    try:
+        parent = psutil.Process(proc.pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+    total = 0
+    for p in [parent, *parent.children(recursive=True)]:
+        try:
+            total += p.memory_info().rss
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return total
+
+
 # Decoupled from the 0.2s poll tick: the marker scan only needs to notice the
 # result within max_grace_after_result_s (seconds, integer), so scanning more
 # often than this buys nothing but re-read cost on a growing round log.

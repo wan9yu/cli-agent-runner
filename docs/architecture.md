@@ -211,6 +211,7 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `agent_spawn`
 - `agent_usage_recorded`
 - `anomaly_repetitive_tool`
+- `cgroup_growth_rate_warning`
 - `config_broken`
 - `config_migrated`
 - `crash_loop`

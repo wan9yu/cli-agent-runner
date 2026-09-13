@@ -93,7 +93,10 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
 }
 ALLOWED_SERVE_ROUND_FROM = [
     ("agent_runner", {"host_health", "metrics"}),
-    ("agent_runner.agent_runtime", {"_kill_stray_descendants", "_snapshot_stray_descendants"}),
+    (
+        "agent_runner.agent_runtime",
+        {"_kill_stray_descendants", "_snapshot_stray_descendants", "children_rss_sum_bytes"},
+    ),
     (
         "agent_runner._serve_policy",
         {
@@ -118,6 +121,7 @@ ALLOWED_SERVE_ROUND_FROM = [
     (
         "agent_runner.api",
         {
+            "emit_cgroup_growth_rate_warning",
             "emit_config_broken",
             "emit_crash_loop",
             "emit_mem_loop",

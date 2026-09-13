@@ -183,3 +183,25 @@ def configured_gate_inert(sample: dict[str, Any], prev_sample: dict[str, Any], c
         return False  # the gate would fire (or we can't evaluate it) -- not inert
     pressure = memory_pressure(sample, prev_sample, cfg)
     return pressure is not None and pressure.signal in ("psi", "swap_out_rate")
+
+
+def cgroup_growth_rate_pressure(rate_mb_per_min: float | None, cfg: Any) -> Pressure | None:
+    """WARNING when the round's memory-growth rate (MB/min) meets/exceeds the
+    configured warning floor. Independent of the memory_pressure ladder above
+    (NOT a 5th fall-through tier -- PSI's early return there would mask an
+    otherwise-live growth-rate signal). Observability only -- never returns
+    "critical" in this release; a growth-driven termination path needs
+    calibration on a constrained host before it can safely exist.
+    ``rate_mb_per_min`` is None when no prior-tick sample pair is available
+    yet (the first tick of a round) -- returns None (no signal), not warning."""
+    if rate_mb_per_min is None:
+        return None
+    warn = cfg.pressure.cgroup_growth_rate_warning_mb_per_min
+    if rate_mb_per_min >= warn:
+        return Pressure(
+            severity="warning",
+            signal="cgroup_growth_rate",
+            message=f"memory growing {rate_mb_per_min:.0f} MB/min (>= {warn:.0f})",
+            context={"rate_mb_per_min": round(rate_mb_per_min, 1), "threshold_mb_per_min": warn},
+        )
+    return None
