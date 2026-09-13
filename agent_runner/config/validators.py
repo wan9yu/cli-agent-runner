@@ -174,7 +174,7 @@ def _require_positive_float(value: Any, *, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
     v = float(value)
-    if v <= 0.0:
+    if not v > 0.0:
         raise ConfigError(f"{field}: must be positive, got {v}")
     return v
 

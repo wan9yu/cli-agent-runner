@@ -2072,7 +2072,7 @@ def test_in_round_terminate_should_reject_non_bool_value(tmp_path: Path, bad: st
         load_config(toml)
 
 
-@pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
+@pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true", "nan"])
 def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_or_bool_values(
     tmp_path: Path, bad: str
 ) -> None:
