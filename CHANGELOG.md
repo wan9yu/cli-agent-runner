@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+**The one breaking release of the 0.3 line.** Run `agent-runner migrate` before upgrading — it rewrites everything below in one pass.
+
+### Changed
+- `[monitor.host_health]`'s 9 flat keys regroup into `.disk`/`.memory`/`.pressure` sub-tables (defaults unchanged).
+- `round_timeout_s` renamed to `round_budget_s` in `[runtime]` and `[phases.*]` (flat and nested forms).
+- The plugin ABI collapses from 7 entry-point groups to one (`agent_runner.plugins`), each resolving a typed `PluginManifest` instead of an import-time side effect. External plugins need a manual port — see `docs/migrations/0.3.md`.
+- A phase-window overlap now refuses `serve` boot (was a warning); `doctor` reports it as a failing check.
+- `peek --json` schema bumps to `2.0`.
+- Config now carries a top-level `schema_version`; a pre-0.3 or unversioned config is rejected with a pointed `agent-runner migrate` instruction.
+- `api.py` split into `_install`/`_lifecycle`/`_observe` behind an unchanged public facade — no external-surface change.
+
+### Renamed
+- Tenet-3 terminology: "price-blind" → "price-agnostic" (no logic change).
+
 ## [0.2.24] - 2026-09-12
 
 ### Added
