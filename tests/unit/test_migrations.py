@@ -490,3 +490,11 @@ def test_round_timeout_s_should_rename_in_nested_phase_runtime_table_when_migrat
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert tomllib.loads(r.new_text)["phases"]["a"]["runtime"]["round_budget_s"] == 300
+
+
+def test_old_hook_level_disable_name_should_be_flagged_manual_when_migrated():
+    text = '[plugins]\ndisable = ["claude_error_detector"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert any("claude_rate_limit" in m for m in r.manual)

@@ -27,6 +27,28 @@ from agent_runner.config import (
 _RUNTIME_LEGACY_FIELDS = frozenset({"round_timeout_per_phase", "rate_limit_action"})
 _VCS_LEGACY_FIELDS = frozenset({"orphan_action"})
 
+# [plugins] disable used to key on a hook's OWN .name (e.g. the PostRoundHook
+# class's `name` attribute); the PluginManifest ABI disables by the owning
+# plugin's manifest name instead. Renaming this automatically would mean
+# guessing operator intent from an arbitrary list-value string -- the same
+# reasoning that keeps unknown-key rejection manual elsewhere in this file --
+# so this is a MANUAL-only instruction (see the Migration below).
+_OLD_PLUGIN_DISABLE_NAMES = {
+    "claude_error_detector": "claude_rate_limit",
+    "gemini_error_detector": "gemini",
+    "codewhale_error_detector": "codewhale",
+    "kimi_error_detector": "kimi",
+    "pi_error_detector": "pi",
+}
+
+
+def _old_plugin_disable_names(p: dict) -> dict[str, str]:
+    """Old->new name mapping for any 0.2.x hook-level name found in
+    ``[plugins] disable``; empty when none are present."""
+    disable = _table(p, "plugins").get("disable")
+    listed = disable if isinstance(disable, list) else []
+    return {k: v for k, v in _OLD_PLUGIN_DISABLE_NAMES.items() if k in listed}
+
 
 @dataclass(frozen=True)
 class Migration:
@@ -469,6 +491,15 @@ MIGRATIONS: list[Migration] = [
         detect=lambda p: _bare_str(p, "plugins", "disable") is not None,
         apply=_wrap_bare_string_list("disable", "plugins"),
         describe='plugins.disable "x" → ["x"]',
+    ),
+    Migration(
+        detect=lambda p: bool(_old_plugin_disable_names(p)),
+        apply=None,
+        describe=lambda p: (
+            "[plugins] disable names a 0.2.x hook-level name; 0.3.0's PluginManifest "
+            "ABI disables by plugin name instead — rewrite manually: "
+            f"{_old_plugin_disable_names(p)}"
+        ),
     ),
     Migration(
         detect=lambda p: _table(p, "agent").get("command") == [],
