@@ -57,6 +57,7 @@ from agent_runner.config.validators import (
     _require_bool,
     _require_non_negative_int,
     _require_pct,
+    _require_positive_float,
     _require_positive_int,
     _require_positive_pct,
     _require_str_list,
@@ -514,6 +515,10 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
             in_round_terminate=_require_bool(
                 pres_d.get("in_round_terminate", True),
                 field="monitor.host_health.pressure.in_round_terminate",
+            ),
+            cgroup_growth_rate_warning_mb_per_min=_require_positive_float(
+                pres_d.get("cgroup_growth_rate_warning_mb_per_min", 512.0),
+                field="monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min",
             ),
         ),
     )

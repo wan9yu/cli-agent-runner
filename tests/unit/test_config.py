@@ -2072,6 +2072,44 @@ def test_in_round_terminate_should_reject_non_bool_value(tmp_path: Path, bad: st
         load_config(toml)
 
 
+@pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
+def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_or_bool_values(
+    tmp_path: Path, bad: str
+) -> None:
+
+    toml = _write_toml(
+        tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"cgroup_growth_rate_warning_mb_per_min = {bad}\n"
+    )
+
+    with pytest.raises(
+        ValueError, match="monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min"
+    ):
+        load_config(toml)
+
+
+@pytest.mark.parametrize(("literal", "expected"), [("256", 256.0), ("128.5", 128.5)])
+def test_cgroup_growth_rate_warning_mb_per_min_should_accept_int_or_float_when_positive(
+    tmp_path: Path, literal: str, expected: float
+) -> None:
+
+    toml = _write_toml(
+        tmp_path,
+        _HOST_HEALTH_PRESSURE_BASE + f"cgroup_growth_rate_warning_mb_per_min = {literal}\n",
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min == expected
+
+
+def test_cgroup_growth_rate_warning_mb_per_min_should_default_to_512() -> None:
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig()
+
+    assert cfg.pressure.cgroup_growth_rate_warning_mb_per_min == 512.0
+
+
 _INJECT_CONTEXT_BASE = """\
 [agent]
 command = ["true"]

@@ -166,6 +166,19 @@ def _require_positive_pct(value: Any, *, field: str) -> float:
     return v
 
 
+def _require_positive_float(value: Any, *, field: str) -> float:
+    """Validate a TOML value is a positive float (int accepted too -- TOML's
+    bare integer form). Sibling of ``_require_positive_pct`` for a raw-unit
+    threshold (e.g. MB/min) that has no natural [0, 100] percent ceiling.
+    Rejects bool (subclass of int, would silently coerce ``true`` -> 1.0)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{field}: must be a number, got {type(value).__name__} ({value!r})")
+    v = float(value)
+    if v <= 0.0:
+        raise ConfigError(f"{field}: must be positive, got {v}")
+    return v
+
+
 def _validate_regex_list(value: Any, *, field: str) -> list[str]:
     """Validate a list of regex pattern strings (each must compile). Returns the
     raw strings unchanged; callers compile when they need ``re.Pattern`` objects."""
