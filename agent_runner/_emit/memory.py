@@ -78,7 +78,7 @@ def emit_round_mem_critical_sample(
     sample-level signal, distinct from mem_pressure_deferred_to_cgroup's
     once-per-episode terminate-vs-defer notice).
 
-    The caller caps this at ``2 * mem_critical_consecutive_samples``
+    The caller caps this at ``2 * pressure.critical_consecutive_samples``
     consecutive ticks (1..6 at the default 3) -- a sustained-critical
     don't-terminate run (cgroup-defer, or the off switch) would otherwise
     write one event per ~10s tick for up to a whole ``round_timeout_s`` on a
@@ -233,7 +233,7 @@ def emit_mem_pressure_deferred_to_cgroup(
     (both memory.max and memory.swap.max finite) -- kernel cgroup-OOM will
     contain the agent and keep the host responsive on its own, so the
     cruder host-wide round-kill steps back instead of firing
-    round_mem_terminated. This OVERRIDES in_round_mem_terminate=True: a
+    round_mem_terminated. This OVERRIDES in_round_terminate=True: a
     bounded cgroup makes the host floor strictly worse, not just redundant."""
     from agent_runner.events import MEM_PRESSURE_DEFERRED_TO_CGROUP, emit
 

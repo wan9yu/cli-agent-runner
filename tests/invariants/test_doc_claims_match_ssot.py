@@ -73,12 +73,12 @@ def test_doc_counts_should_match_ssot(tmp_path) -> None:
         (
             "docs/migrations/0.2.md",
             r"below (\d+) MiB",
-            MonitorHostHealthConfig().mem_free_low_mb,
+            MonitorHostHealthConfig().memory.free_low_mb,
         ),
         (
             "docs/migrations/0.2.md",
             r"exceeds `(\d+) MiB`",
-            MonitorHostHealthConfig().swap_sout_noise_floor_mb,
+            MonitorHostHealthConfig().memory.swap_out_noise_floor_mb,
         ),
     ]
 

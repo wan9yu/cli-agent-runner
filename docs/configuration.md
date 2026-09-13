@@ -81,7 +81,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `remote_failure_tolerance_s` | `int` | 90 |
 | `anomaly_repetitive_window` | `int` | 0 |
 | `anomaly_repetitive_threshold` | `int` | 0 |
-| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(mem_avail_min_mb=200, disk_warning_pct=90.0, disk_critical_pct=95.0, swap_sout_noise_floor_mb=32, mem_free_low_mb=16, psi_full_avg10_critical=60.0, psi_some_avg10_warning=5.0, mem_critical_consecutive_samples=3, in_round_mem_terminate=True) |
+| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(disk=_HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0), memory=_HostHealthMemoryConfig(avail_min_mb=200, free_low_mb=16, swap_out_noise_floor_mb=32), pressure=_HostHealthPressureConfig(full_avg10_critical=60.0, some_avg10_warning=5.0, critical_consecutive_samples=3, in_round_terminate=True)) |
 | `round_progress_interval_s` | `int` | 0 |
 | `supervisor_stale_threshold_s` | `int \| None` | None |
 
@@ -89,15 +89,33 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `mem_avail_min_mb` | `int` | 200 |
-| `disk_warning_pct` | `float` | 90.0 |
-| `disk_critical_pct` | `float` | 95.0 |
-| `swap_sout_noise_floor_mb` | `int` | 32 |
-| `mem_free_low_mb` | `int` | 16 |
-| `psi_full_avg10_critical` | `float` | 60.0 |
-| `psi_some_avg10_warning` | `float` | 5.0 |
-| `mem_critical_consecutive_samples` | `int` | 3 |
-| `in_round_mem_terminate` | `bool` | True |
+| `disk` | `_HostHealthDiskConfig` | _HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0) |
+| `memory` | `_HostHealthMemoryConfig` | _HostHealthMemoryConfig(avail_min_mb=200, free_low_mb=16, swap_out_noise_floor_mb=32) |
+| `pressure` | `_HostHealthPressureConfig` | _HostHealthPressureConfig(full_avg10_critical=60.0, some_avg10_warning=5.0, critical_consecutive_samples=3, in_round_terminate=True) |
+
+#### `[monitor.host_health.disk]`
+
+| Field | Type | Default |
+|---|---|---|
+| `warning_pct` | `float` | 90.0 |
+| `critical_pct` | `float` | 95.0 |
+
+#### `[monitor.host_health.memory]`
+
+| Field | Type | Default |
+|---|---|---|
+| `avail_min_mb` | `int` | 200 |
+| `free_low_mb` | `int` | 16 |
+| `swap_out_noise_floor_mb` | `int` | 32 |
+
+#### `[monitor.host_health.pressure]`
+
+| Field | Type | Default |
+|---|---|---|
+| `full_avg10_critical` | `float` | 60.0 |
+| `some_avg10_warning` | `float` | 5.0 |
+| `critical_consecutive_samples` | `int` | 3 |
+| `in_round_terminate` | `bool` | True |
 
 ### `[phases]`
 
@@ -457,13 +475,27 @@ auto_stop_on = ["oauth_fail", "disk_critical"]
 round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress heartbeat events
 # supervisor_stale_threshold_s = 2700  # unset = round_timeout_s * 1.5; 0 = disable
 
-[monitor.host_health]
-# Thresholds for mem_pressure / disk_warning / disk_critical. Defaults are
-# authoritative in the config-schema table above — set a field here only to
-# override. (mem_avail_min_mb: mem_pressure when mem_available_mb below it;
-# disk_warning_pct / disk_critical_pct: fire when disk_used_pct at/above.)
-# swap_sout_noise_floor_mb = 32   # lower on a tiny host (e.g. 8 on a 512MB Pi)
-# mem_free_low_mb = 16            # raise if a larger host comas above 16 MiB free
+# Thresholds for mem_pressure / disk_warning / disk_critical, grouped into
+# three sub-tables by mechanism. Defaults are authoritative in the
+# config-schema table above — set a field here only to override.
+
+[monitor.host_health.disk]
+# disk_warning / disk_critical fire when disk_used_pct is at/above these.
+# warning_pct = 90.0
+# critical_pct = 95.0
+
+[monitor.host_health.memory]
+# mem_pressure fires when mem_available_mb is below avail_min_mb.
+# avail_min_mb = 200
+# free_low_mb = 16              # raise if a larger host comas above 16 MiB free
+# swap_out_noise_floor_mb = 32  # lower on a tiny host (e.g. 8 on a 512MB Pi)
+
+[monitor.host_health.pressure]
+# Linux-PSI mid-round hard floor thresholds + its hysteresis/off-switch.
+# full_avg10_critical = 60.0
+# some_avg10_warning = 5.0
+# critical_consecutive_samples = 3
+# in_round_terminate = true
 ```
 
 Set `auto_stop_on = []` *uncommented* to disable all auto-stop behaviour and

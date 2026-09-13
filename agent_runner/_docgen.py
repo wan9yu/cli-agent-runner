@@ -29,6 +29,9 @@ from agent_runner.config import (
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _HostHealthDiskConfig,
+    _HostHealthMemoryConfig,
+    _HostHealthPressureConfig,
 )
 from agent_runner.defenses import catalog
 from agent_runner.events import (
@@ -55,7 +58,16 @@ _SECTIONS: list[tuple[str, type, list[tuple[str, type]]]] = [
     ("runtime", RuntimeConfig, []),
     ("prompt", PromptConfig, []),
     ("vcs", VcsConfig, []),
-    ("monitor", MonitorConfig, [("monitor.host_health", MonitorHostHealthConfig)]),
+    (
+        "monitor",
+        MonitorConfig,
+        [
+            ("monitor.host_health", MonitorHostHealthConfig),
+            ("monitor.host_health.disk", _HostHealthDiskConfig),
+            ("monitor.host_health.memory", _HostHealthMemoryConfig),
+            ("monitor.host_health.pressure", _HostHealthPressureConfig),
+        ],
+    ),
     ("phases", PhasesConfig, []),
     ("plugins", PluginsConfig, []),
     ("schedule", ScheduleConfig, []),

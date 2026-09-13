@@ -206,7 +206,7 @@ class _HostHealthPressureConfig:
 class MonitorHostHealthConfig:
     """Thresholds for the host-health detectors, grouped by mechanism:
     disk usage, the mem_pressure signal ladder, and the Linux-PSI mid-round
-    floor. Defaults match the pre-0.3 flat table — existing deployments run
+    floor. Defaults match the earlier flat table — existing deployments run
     `agent-runner migrate` once to relocate to this shape."""
 
     disk: _HostHealthDiskConfig = field(default_factory=_HostHealthDiskConfig)

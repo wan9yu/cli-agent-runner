@@ -298,7 +298,16 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [phases.<name>.prompt] key(s) rejected in 0.2.13; delete them (allowed: ['files'])
 - [agent] prompt_arg_template has no {prompt} placeholder; the prompt is never delivered to the agent — add {prompt} to one of the argv tokens
 - a [phases.<name>.agent] prompt_arg_template has no {prompt} placeholder; add one, or set that phase's prompt.files = [] if it truly sends no prompt
-- unknown [monitor.host_health] key(s) rejected in 0.2.14; delete them (allowed: ['disk_critical_pct', 'disk_warning_pct', 'in_round_mem_terminate', 'mem_avail_min_mb', 'mem_critical_consecutive_samples', 'mem_free_low_mb', 'psi_full_avg10_critical', 'psi_some_avg10_warning', 'swap_sout_noise_floor_mb'])
+- monitor.host_health.mem_avail_min_mb → monitor.host_health.memory.avail_min_mb
+- monitor.host_health.disk_warning_pct → monitor.host_health.disk.warning_pct
+- monitor.host_health.disk_critical_pct → monitor.host_health.disk.critical_pct
+- monitor.host_health.swap_sout_noise_floor_mb → monitor.host_health.memory.swap_out_noise_floor_mb
+- monitor.host_health.mem_free_low_mb → monitor.host_health.memory.free_low_mb
+- monitor.host_health.psi_full_avg10_critical → monitor.host_health.pressure.full_avg10_critical
+- monitor.host_health.psi_some_avg10_warning → monitor.host_health.pressure.some_avg10_warning
+- monitor.host_health.mem_critical_consecutive_samples → monitor.host_health.pressure.critical_consecutive_samples
+- monitor.host_health.in_round_mem_terminate → monitor.host_health.pressure.in_round_terminate
+- unknown [monitor.host_health] key(s) rejected in 0.3.0; delete them (allowed: ['disk', 'memory', 'pressure'])
 <!-- /gen:migrate-transforms -->
 
 ### `agent-runner doctor [--rounds N]`

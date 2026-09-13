@@ -1596,9 +1596,9 @@ def test_monitor_host_health_defaults_should_match_detector_defaults(
 
     cfg = MonitorHostHealthConfig()
 
-    assert cfg.mem_avail_min_mb == 200
-    assert cfg.disk_warning_pct == 90.0
-    assert cfg.disk_critical_pct == 95.0
+    assert cfg.memory.avail_min_mb == 200
+    assert cfg.disk.warning_pct == 90.0
+    assert cfg.disk.critical_pct == 95.0
 
 
 def test_monitor_host_health_toml_section_should_apply_overrides_when_loaded(
@@ -1612,15 +1612,16 @@ def test_monitor_host_health_toml_section_should_apply_overrides_when_loaded(
         'prompt_arg_template = ["-p", "{prompt}"]\n\n'
         f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
         f'[prompt]\nfile = "{prompt_file}"\n\n'
-        "[monitor.host_health]\nmem_avail_min_mb = 1000\ndisk_warning_pct = 85.0\n",
+        "[monitor.host_health.memory]\navail_min_mb = 1000\n"
+        "[monitor.host_health.disk]\nwarning_pct = 85.0\n",
         encoding="utf-8",
     )
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.mem_avail_min_mb == 1000
-    assert cfg.monitor.host_health.disk_warning_pct == 85.0
-    assert cfg.monitor.host_health.disk_critical_pct == 95.0  # still default
+    assert cfg.monitor.host_health.memory.avail_min_mb == 1000
+    assert cfg.monitor.host_health.disk.warning_pct == 85.0
+    assert cfg.monitor.host_health.disk.critical_pct == 95.0  # still default
 
 
 def test_host_health_floor_defaults_should_match_hardcoded_constants() -> None:
@@ -1631,8 +1632,8 @@ def test_host_health_floor_defaults_should_match_hardcoded_constants() -> None:
 
     hh = MonitorHostHealthConfig()
 
-    assert hh.swap_sout_noise_floor_mb == 32
-    assert hh.mem_free_low_mb == 16
+    assert hh.memory.swap_out_noise_floor_mb == 32
+    assert hh.memory.free_low_mb == 16
 
 
 def test_host_health_floors_should_parse_from_toml(tmp_path: Path) -> None:
@@ -1644,17 +1645,17 @@ def test_host_health_floors_should_parse_from_toml(tmp_path: Path) -> None:
         'prompt_arg_template = ["-p", "{prompt}"]\n\n'
         f'[runtime]\nwork_dir = "."\nlog_dir = "{tmp_path}/logs"\n\n'
         f'[prompt]\nfile = "{prompt_file}"\n\n'
-        "[monitor.host_health]\nswap_sout_noise_floor_mb = 8\nmem_free_low_mb = 4\n",
+        "[monitor.host_health.memory]\nswap_out_noise_floor_mb = 8\nfree_low_mb = 4\n",
         encoding="utf-8",
     )
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.swap_sout_noise_floor_mb == 8
-    assert cfg.monitor.host_health.mem_free_low_mb == 4
+    assert cfg.monitor.host_health.memory.swap_out_noise_floor_mb == 8
+    assert cfg.monitor.host_health.memory.free_low_mb == 4
 
 
-@pytest.mark.parametrize("field", ["swap_sout_noise_floor_mb", "mem_free_low_mb"])
+@pytest.mark.parametrize("field", ["swap_out_noise_floor_mb", "free_low_mb"])
 def test_host_health_floors_should_reject_zero_and_non_int_values(
     tmp_path: Path, field: str
 ) -> None:
@@ -1667,10 +1668,10 @@ def test_host_health_floors_should_reject_zero_and_non_int_values(
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
-        f"[monitor.host_health]\n{field} = 0\n",
+        f"[monitor.host_health.memory]\n{field} = 0\n",
     )
 
-    with pytest.raises(ConfigError, match=f"monitor.host_health.{field}"):
+    with pytest.raises(ConfigError, match=f"monitor.host_health.memory.{field}"):
         load_config(toml_zero)
 
     toml_str = _write_toml(
@@ -1678,20 +1679,24 @@ def test_host_health_floors_should_reject_zero_and_non_int_values(
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
-        f'[monitor.host_health]\n{field} = "x"\n',
+        f'[monitor.host_health.memory]\n{field} = "x"\n',
     )
 
-    with pytest.raises(ConfigError, match=f"monitor.host_health.{field}"):
+    with pytest.raises(ConfigError, match=f"monitor.host_health.memory.{field}"):
         load_config(toml_str)
 
 
 def test_custom_mem_threshold_in_config_should_be_used_when_detect_mem_pressure_runs(
     tmp_path: Path,
 ) -> None:
-    from agent_runner.config import MonitorConfig, MonitorHostHealthConfig
+    from agent_runner.config import (
+        MonitorConfig,
+        MonitorHostHealthConfig,
+        _HostHealthMemoryConfig,
+    )
     from agent_runner.monitor import detect_mem_pressure
 
-    host_health = MonitorHostHealthConfig(mem_avail_min_mb=500)
+    host_health = MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=500))
     monitor_cfg = MonitorConfig(host_health=host_health)
     metrics = [{"mem_available_mb": 300, "mem_free_mb": 5}]
 
@@ -1709,9 +1714,14 @@ def test_host_health_overrides_should_apply_thresholds_when_run_all_detectors_ru
     Pre-fix, the config was defined but never passed into run_all_detectors, so the
     TOML override silently no-op'd in production. This test exercises the wired path.
     """
+    from agent_runner.config import (
+        MonitorHostHealthConfig,
+        _HostHealthDiskConfig,
+        _HostHealthMemoryConfig,
+    )
     from agent_runner.monitor import run_all_detectors
 
-    # mem_available_mb=300: below custom mem_avail_min_mb=500 but above default 200;
+    # mem_available_mb=300: below custom avail_min_mb=500 but above default 200;
     # mem_free_mb=5 (low) makes it a genuine combined-low signal, not silence.
     metrics = [{"mem_available_mb": 300, "mem_free_mb": 5, "disk_used_pct": 92.0}]
 
@@ -1719,9 +1729,10 @@ def test_host_health_overrides_should_apply_thresholds_when_run_all_detectors_ru
         events=[],
         metrics=metrics,
         log_tails={},
-        mem_avail_min_mb=500,
-        disk_warning_pct=85.0,
-        disk_critical_pct=95.0,
+        host_health_cfg=MonitorHostHealthConfig(
+            memory=_HostHealthMemoryConfig(avail_min_mb=500),
+            disk=_HostHealthDiskConfig(warning_pct=85.0, critical_pct=95.0),
+        ),
     )
 
     kinds = {a.detector for a in alerts}
@@ -1739,19 +1750,20 @@ def test_host_health_overrides_should_apply_thresholds_when_run_all_detectors_ru
 def test_run_all_detectors_should_thread_custom_floors_into_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression: run_all_detectors must plumb swap_sout_noise_floor_mb and
-    mem_free_low_mb into the MonitorHostHealthConfig it builds and passes to
+    """Regression: run_all_detectors must plumb swap_out_noise_floor_mb and
+    free_low_mb into the MonitorHostHealthConfig it builds and passes to
     detect_mem_pressure -- pre-fix these floors were config-tunable in TOML but
-    silently ignored on this path (mirrors the mem_avail_min_mb/disk_* wiring
+    silently ignored on this path (mirrors the avail_min_mb/disk_* wiring
     regression test above)."""
     from agent_runner import host_health, monitor
+    from agent_runner.config import MonitorHostHealthConfig, _HostHealthMemoryConfig
 
     seen: dict[str, int] = {}
     real = host_health.memory_pressure
 
     def spy(sample, prev, cfg):
-        seen["swap_floor"] = cfg.swap_sout_noise_floor_mb
-        seen["mem_free"] = cfg.mem_free_low_mb
+        seen["swap_floor"] = cfg.memory.swap_out_noise_floor_mb
+        seen["mem_free"] = cfg.memory.free_low_mb
         return real(sample, prev, cfg)
 
     monkeypatch.setattr(host_health, "memory_pressure", spy)
@@ -1761,8 +1773,9 @@ def test_run_all_detectors_should_thread_custom_floors_into_config(
         events=[],
         metrics=metrics,
         log_tails={},
-        swap_sout_noise_floor_mb=8,
-        mem_free_low_mb=4,
+        host_health_cfg=MonitorHostHealthConfig(
+            memory=_HostHealthMemoryConfig(swap_out_noise_floor_mb=8, free_low_mb=4)
+        ),
     )
 
     assert seen == {"swap_floor": 8, "mem_free": 4}
@@ -1854,7 +1867,7 @@ def test_grace_kill_ignore_patterns_should_raise_when_regex_invalid(tmp_path: Pa
     assert "grace_kill_ignore_patterns" in str(exc.value)
 
 
-_HOST_HEALTH_BASE = """\
+_HOST_HEALTH_DISK_BASE = """\
 [agent]
 command = ["true"]
 prompt_arg_template = ["-p", "{prompt}"]
@@ -1863,11 +1876,15 @@ work_dir = "."
 log_dir = "logs"
 [prompt]
 file = "p.md"
-[monitor.host_health]
+[monitor.host_health.disk]
 """
 
+_HOST_HEALTH_PRESSURE_BASE = _HOST_HEALTH_DISK_BASE.replace(
+    "[monitor.host_health.disk]", "[monitor.host_health.pressure]"
+)
 
-@pytest.mark.parametrize("field", ["disk_warning_pct", "disk_critical_pct"])
+
+@pytest.mark.parametrize("field", ["warning_pct", "critical_pct"])
 @pytest.mark.parametrize(
     "literal",
     [
@@ -1885,15 +1902,15 @@ def test_host_health_pct_field_should_raise_when_value_invalid(
     """A percent threshold outside [0, 100] silently disables its detector —
     disk_critical carries auto_action='stop_service'. Both fields are parametrised:
     guarding only one lets the other's validation be deleted with the suite green."""
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_DISK_BASE + f"{field} = {literal}\n")
 
     with pytest.raises(ValueError) as exc:
         load_config(toml)
 
-    assert f"monitor.host_health.{field}" in str(exc.value)
+    assert f"monitor.host_health.disk.{field}" in str(exc.value)
 
 
-@pytest.mark.parametrize("field", ["disk_warning_pct", "disk_critical_pct"])
+@pytest.mark.parametrize("field", ["warning_pct", "critical_pct"])
 @pytest.mark.parametrize(
     ("literal", "expected"),
     [
@@ -1906,18 +1923,18 @@ def test_host_health_pct_field_should_raise_when_value_invalid(
 def test_host_health_pct_field_should_accept_valid_values(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_DISK_BASE + f"{field} = {literal}\n")
 
-    assert getattr(load_config(toml).monitor.host_health, field) == expected
+    assert getattr(load_config(toml).monitor.host_health.disk, field) == expected
 
 
 def test_host_health_defaults_should_be_used_when_section_absent(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE)
+    toml = _write_toml(tmp_path, _HOST_HEALTH_DISK_BASE)
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.disk_warning_pct == 90.0
-    assert cfg.monitor.host_health.disk_critical_pct == 95.0
+    assert cfg.monitor.host_health.disk.warning_pct == 90.0
+    assert cfg.monitor.host_health.disk.critical_pct == 95.0
 
 
 def test_psi_thresholds_should_have_expected_defaults() -> None:
@@ -1926,20 +1943,20 @@ def test_psi_thresholds_should_have_expected_defaults() -> None:
     coma-onset rather than a swap hiccup)."""
     from agent_runner.config import MonitorHostHealthConfig
 
-    assert MonitorHostHealthConfig().psi_full_avg10_critical == 60.0
-    assert MonitorHostHealthConfig().psi_some_avg10_warning == 5.0
+    assert MonitorHostHealthConfig().pressure.full_avg10_critical == 60.0
+    assert MonitorHostHealthConfig().pressure.some_avg10_warning == 5.0
 
 
 def test_psi_thresholds_should_apply_custom_critical_override_when_set(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + "psi_full_avg10_critical = 75\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + "full_avg10_critical = 75\n")
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.psi_full_avg10_critical == 75.0
-    assert cfg.monitor.host_health.psi_some_avg10_warning == 5.0  # still default
+    assert cfg.monitor.host_health.pressure.full_avg10_critical == 75.0
+    assert cfg.monitor.host_health.pressure.some_avg10_warning == 5.0  # still default
 
 
-@pytest.mark.parametrize("field", ["psi_full_avg10_critical", "psi_some_avg10_warning"])
+@pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
 @pytest.mark.parametrize("bad", ["0", "101", '"x"'])
 def test_host_health_psi_threshold_should_reject_out_of_range_value(
     tmp_path: Path, field: str, bad: str
@@ -1948,20 +1965,20 @@ def test_host_health_psi_threshold_should_reject_out_of_range_value(
     a PSI threshold of 0 fires on any measurable reading (psi_full/some >= 0
     is always true) -- the same hiccup-not-coma footgun this release exists
     to fix, at the opposite extreme. See _require_positive_pct."""
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {bad}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {bad}\n")
 
-    with pytest.raises(ValueError, match=f"monitor.host_health.{field}"):
+    with pytest.raises(ValueError, match=f"monitor.host_health.pressure.{field}"):
         load_config(toml)
 
 
-@pytest.mark.parametrize("field", ["psi_full_avg10_critical", "psi_some_avg10_warning"])
+@pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
 @pytest.mark.parametrize(("literal", "expected"), [("100", 100.0), ("0.5", 0.5), ("60", 60.0)])
 def test_host_health_psi_threshold_should_accept_in_range_value(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"{field} = {literal}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {literal}\n")
 
-    assert getattr(load_config(toml).monitor.host_health, field) == expected
+    assert getattr(load_config(toml).monitor.host_health.pressure, field) == expected
 
 
 def test_mid_round_hysteresis_should_default_to_three_samples_with_terminate_enabled() -> None:
@@ -1971,16 +1988,16 @@ def test_mid_round_hysteresis_should_default_to_three_samples_with_terminate_ena
 
     cfg = MonitorHostHealthConfig()
 
-    assert cfg.mem_critical_consecutive_samples == 3
-    assert cfg.in_round_mem_terminate is True
+    assert cfg.pressure.critical_consecutive_samples == 3
+    assert cfg.pressure.in_round_terminate is True
 
 
 def test_mem_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + "mem_critical_consecutive_samples = 5\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + "critical_consecutive_samples = 5\n")
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.mem_critical_consecutive_samples == 5
+    assert cfg.monitor.host_health.pressure.critical_consecutive_samples == 5
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
@@ -1989,9 +2006,13 @@ def test_mem_critical_consecutive_samples_should_reject_invalid_values(
 ) -> None:
     """Must be a positive int -- 0 or negative would terminate on the very
     first (or never) sample, defeating the hysteresis this field exists for."""
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"mem_critical_consecutive_samples = {bad}\n")
+    toml = _write_toml(
+        tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"critical_consecutive_samples = {bad}\n"
+    )
 
-    with pytest.raises(ValueError, match="monitor.host_health.mem_critical_consecutive_samples"):
+    with pytest.raises(
+        ValueError, match="monitor.host_health.pressure.critical_consecutive_samples"
+    ):
         load_config(toml)
 
 
@@ -1999,18 +2020,18 @@ def test_mem_critical_consecutive_samples_should_reject_invalid_values(
 def test_in_round_mem_terminate_should_parse_bool_value(
     tmp_path: Path, literal: str, expected: bool
 ) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"in_round_mem_terminate = {literal}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {literal}\n")
 
     cfg = load_config(toml)
 
-    assert cfg.monitor.host_health.in_round_mem_terminate is expected
+    assert cfg.monitor.host_health.pressure.in_round_terminate is expected
 
 
 @pytest.mark.parametrize("bad", ["1", '"true"'])
 def test_in_round_mem_terminate_should_reject_non_bool_value(tmp_path: Path, bad: str) -> None:
-    toml = _write_toml(tmp_path, _HOST_HEALTH_BASE + f"in_round_mem_terminate = {bad}\n")
+    toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {bad}\n")
 
-    with pytest.raises(ValueError, match="monitor.host_health.in_round_mem_terminate"):
+    with pytest.raises(ValueError, match="monitor.host_health.pressure.in_round_terminate"):
         load_config(toml)
 
 

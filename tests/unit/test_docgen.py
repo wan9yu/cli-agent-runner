@@ -247,15 +247,19 @@ def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line
 
 
 def test_render_config_schema_table_should_list_host_health_subsection_fields() -> None:
-    """[monitor.host_health] is a real TOML sub-table; the parent row is an opaque repr."""
+    """[monitor.host_health] is a real TOML sub-table, itself grouped into
+    disk/memory/pressure sub-tables (0.3.0); each parent row is an opaque repr."""
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
 
     assert "#### `[monitor.host_health]`" in md
-    assert "| `mem_avail_min_mb` | `int` | 200 |" in md
-    assert "| `disk_warning_pct` | `float` | 90.0 |" in md
-    assert "| `disk_critical_pct` | `float` | 95.0 |" in md
+    assert "#### `[monitor.host_health.disk]`" in md
+    assert "#### `[monitor.host_health.memory]`" in md
+    assert "#### `[monitor.host_health.pressure]`" in md
+    assert "| `warning_pct` | `float` | 90.0 |" in md
+    assert "| `critical_pct` | `float` | 95.0 |" in md
+    assert "| `avail_min_mb` | `int` | 200 |" in md
 
 
 def test_render_giveup_exit_codes_table_should_list_five_verdicts_with_four_distinct_codes() -> (
