@@ -43,18 +43,33 @@ def register_manifest(manifest: PluginManifest) -> None:
     No import-time side effects — the loader calls this explicitly after
     resolving a plugin's `PLUGIN` attribute.
 
+    Raises ``ValueError`` up front if ``manifest.name`` collides with an
+    already-registered manifest's ``.name`` — this is checked HERE, not by
+    the underlying registries' own ``ensure_unique`` calls below, which only
+    catch two manifests sharing one of THEIR sub-capabilities' ``.name``
+    (e.g. two different plugins each declaring a detector named ``"foo"``);
+    they have no visibility into the manifest's own top-level name, so two
+    manifests named e.g. ``"codewhale"`` with disjoint capability names would
+    otherwise both register, and ``unregister_by_name``/``[plugins] disable``
+    would then strip both when the operator meant to disable one.
+
     Appends to ``_LOADED_MANIFESTS`` only after every sub-registration
-    succeeds — a duplicate-name registration (e.g. a stray double-scan)
-    raises via the underlying registries' own ``ensure_unique`` checks
-    before the manifest is recorded, so a failed call leaves no partial
-    trace for ``unregister_by_name`` to later find and no-op against.
-    This guarantee covers ``_LOADED_MANIFESTS`` only: a failure partway
-    through the loop below (e.g. the 3rd of 5 declared post_round_hooks
-    raises) still leaves the first 2 registered in their own per-family
-    registry — matching the prior import-time register_*() semantics,
-    where a mid-module exception left every earlier top-level call's
-    side effect in place too.
+    succeeds — a duplicate CAPABILITY-name registration (e.g. a stray
+    double-scan) raises via the underlying registries' own ``ensure_unique``
+    checks before the manifest is recorded, so a failed call leaves no
+    partial trace for ``unregister_by_name`` to later find and no-op
+    against. This guarantee covers ``_LOADED_MANIFESTS`` only: a failure
+    partway through the loop below (e.g. the 3rd of 5 declared
+    post_round_hooks raises) still leaves the first 2 registered in their
+    own per-family registry — matching the prior import-time register_*()
+    semantics, where a mid-module exception left every earlier top-level
+    call's side effect in place too.
     """
+    if manifest.name in {m.name for m in _LOADED_MANIFESTS}:
+        raise ValueError(
+            f"plugin manifest {manifest.name!r} already registered; refusing to add a second"
+        )
+
     from agent_runner import events, hooks, monitor
 
     for h in manifest.pre_round_hooks:
