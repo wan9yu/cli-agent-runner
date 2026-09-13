@@ -287,6 +287,17 @@ neutrality argument above (same objects, same import-graph shape, no new
 per-round allocation), no regression is expected on that host either, but
 that claim is unverified pending whoever runs the next prerelease build there.
 
+## 0.3.0 → 0.3.1
+
+Not independently re-measured this release. No import-time work changed:
+`children_rss_sum_bytes` and `cgroup_growth_rate_pressure` are plain
+functions added beside existing ones in already-imported modules, not new
+imports. The mid-round tick loop's existing ~10s cadence gains a few extra
+local-variable holders and, at most, one more psutil (or reused cgroup)
+read on that SAME already-scheduled tick — no new per-round allocation
+growth pattern. `tests/invariants/test_round_alloc_growth.py` stays green
+unmodified.
+
 ## Methodology
 
 Machine: macOS 26.6.2, arm64, 16 KB pages. Python 3.11.3 (CPython, pyenv),
