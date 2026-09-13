@@ -97,10 +97,15 @@ def main(argv: list[str] | None = None) -> int:
         # 78" — round_cmd routes through it directly; this catch is what gives
         # serve (and every other command whose ConfigError isn't caught closer
         # to its raise site) the same verdict.
-        return fail(
-            f"config error: {e}\nRun `agent-runner migrate` then retry.",
-            code=classify_round_exit(e),
-        )
+        msg = f"config error: {e}"
+        # Only append the generic migrate hint when the error doesn't already
+        # name its own remedy command (e.g. the phase-window-overlap
+        # ConfigError says "run `agent-runner doctor`" — migrate can't fix an
+        # overlap, so appending the generic suffix there would contradict the
+        # error's own advice).
+        if "agent-runner " not in str(e):
+            msg += "\nRun `agent-runner migrate` then retry."
+        return fail(msg, code=classify_round_exit(e))
     except KeyboardInterrupt as e:
         # A Ctrl-C landing before round/serve's own SIGTERM/SIGINT handling is
         # armed (argument parsing, config load) — 130 is the shell's SIGINT

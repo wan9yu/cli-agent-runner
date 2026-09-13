@@ -7,6 +7,7 @@ import pytest
 
 from agent_runner.api import PERMANENT_CONFIG_EXIT
 from agent_runner.cli import main
+from tests._test_helpers import make_toml_with_sections
 
 
 def _broken_toml(tmp_path: Path) -> Path:
@@ -56,6 +57,47 @@ def test_main_round_should_exit_78_not_traceback_when_toml_syntax_broken(
     rc = main(["round", "--config", str(bad_toml)])
 
     assert rc == PERMANENT_CONFIG_EXIT
+
+
+def test_main_serve_should_not_name_migrate_in_stderr_when_phase_windows_overlap(
+    tmp_path: Path,
+) -> None:
+    # The phase-window-overlap ConfigError already names its OWN remedy
+    # ("run `agent-runner doctor`") -- migrate cannot carve out an overlap, so
+    # main()'s generic migrate suffix must not also be appended (which would
+    # contradict the error's own advice).
+    phases_block = (
+        '[phases]\nlist = ["a", "b"]\n'
+        '[phases.a.agent]\nname = "agent-a"\n'
+        '[phases.a.schedule]\ntimezone = "UTC"\nrun_windows = ["09:00-12:00"]\n'
+        '[phases.b.agent]\nname = "agent-b"\n'
+        '[phases.b.schedule]\ntimezone = "UTC"\nrun_windows = ["11:00-14:00"]\n'
+    )
+    toml = make_toml_with_sections(tmp_path, phases_block=phases_block)
+
+    rc = main(["serve", "--config", str(toml)])
+
+    assert rc == PERMANENT_CONFIG_EXIT
+
+
+def test_main_serve_stderr_should_omit_migrate_suffix_when_phase_windows_overlap(
+    tmp_path: Path, capsys
+) -> None:
+    phases_block = (
+        '[phases]\nlist = ["a", "b"]\n'
+        '[phases.a.agent]\nname = "agent-a"\n'
+        '[phases.a.schedule]\ntimezone = "UTC"\nrun_windows = ["09:00-12:00"]\n'
+        '[phases.b.agent]\nname = "agent-b"\n'
+        '[phases.b.schedule]\ntimezone = "UTC"\nrun_windows = ["11:00-14:00"]\n'
+    )
+    toml = make_toml_with_sections(tmp_path, phases_block=phases_block)
+
+    main(["serve", "--config", str(toml)])
+
+    err = capsys.readouterr().err
+    assert "phase-window overlap" in err
+    assert "agent-runner doctor" in err
+    assert "Run `agent-runner migrate` then retry." not in err
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file perms")
