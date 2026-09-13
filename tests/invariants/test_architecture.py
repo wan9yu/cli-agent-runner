@@ -21,6 +21,7 @@ ALLOWED_SERVE_IMPORTS = {
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"metrics", "phase_select", "schedule"}),
+    ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.agent_runtime", {"_detect_container_run"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),
@@ -41,7 +42,6 @@ ALLOWED_SERVE_FROM = [
             "check_self_terminated_sentinel",
             "emit_config_broken",
             "emit_max_rounds_reached",
-            "emit_phase_window_overlap",
             "emit_rate_limit_stop",
             "emit_round_logs_prune_deferred",
             "emit_stop_file_detected",

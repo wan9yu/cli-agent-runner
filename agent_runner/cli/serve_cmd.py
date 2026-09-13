@@ -20,6 +20,7 @@ from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
 from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
+from agent_runner.config import ConfigError
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
     _active_throttles,
@@ -35,7 +36,6 @@ from agent_runner.api import (
     emit_config_broken,
     emit_fresh_eyes_round_triggered,
     emit_max_rounds_reached,
-    emit_phase_window_overlap,
     emit_rate_limit_stop,
     emit_round_logs_prune_deferred,
     emit_round_substrate_after,
@@ -618,14 +618,13 @@ def cmd(args) -> int:
     cgroup_probe_defer = _probe_and_emit_cgroup_defer(log_dir)
     # Static config check -- phase-window collisions can't change mid-lifetime, so
     # (like the cgroup probe above) this runs once at boot, not once per round.
-    for ov in phase_select.find_phase_window_overlaps(cfg):
-        emit_phase_window_overlap(
-            log_dir,
-            phase_a=ov.phase_a,
-            phase_b=ov.phase_b,
-            window_a=ov.window_a,
-            window_b=ov.window_b,
+    overlaps = phase_select.find_phase_window_overlaps(cfg)
+    if overlaps:
+        detail = "; ".join(
+            f"{o.phase_a} ({o.window_a}) vs {o.phase_b} ({o.window_b})" for o in overlaps
         )
+        _release_serve_lock(serve_lock_fd)
+        raise ConfigError(f"phase-window overlap: {detail}; run `agent-runner doctor` for details")
     rounds_completed = 0
     # Three independent consecutive-failure counters, one per breaker: b12
     # crash-loop (unknown short crashes), mem-loop (mem-terminated

@@ -102,14 +102,13 @@ def test_serve_should_exit_after_current_round_when_sigterm_received(
             proc.wait()
 
 
-def test_serve_should_emit_phase_window_overlap_once_when_two_rounds_run(
+def test_serve_should_refuse_to_boot_when_phase_windows_overlap(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
     # Two agent-overriding phases sharing an always-open window: a guaranteed
-    # config-level collision. serve's own process (not a `round` child) owns the
-    # boot-once detection, so the warning must appear exactly once regardless of
-    # how many round subprocesses follow.
+    # config-level collision. serve refuses to boot rather than warn-and-run --
+    # no round subprocess ever gets a chance to start.
     phases_block = """
 [phases]
 list = ["a", "b"]
@@ -143,10 +142,6 @@ run_windows = ["00:00-24:00"]
         timeout=30,
     )
 
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == 78, r.stderr
     log_dir = tmp_git_repo / "logs"
-    status = json.loads((log_dir / "status.json").read_text())
-    overlaps = [e for e in _all_events(log_dir) if e["event"] == "phase_window_overlap"]
-    assert status["round_num"] == 2  # two round subprocesses actually ran
-    assert len(overlaps) == 1
-    assert {overlaps[0]["phase_a"], overlaps[0]["phase_b"]} == {"a", "b"}
+    assert not (log_dir / "status.json").exists()  # no round ever ran
