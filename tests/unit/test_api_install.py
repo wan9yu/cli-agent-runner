@@ -8,7 +8,8 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner import api
-from agent_runner.api import _agent_runner_script_path, _check_user_systemd_available
+from agent_runner._install import _agent_runner_script_path
+from agent_runner._lifecycle import _check_user_systemd_available
 
 # ---------------------------------------------------------------------------
 # Task 1: _agent_runner_script_path
@@ -19,7 +20,7 @@ def test_agent_runner_script_path_should_return_which_result_when_shutil_which_f
     fake_script = tmp_path / "agent-runner"
     fake_script.write_text("#!/bin/sh\n")
 
-    with patch("agent_runner.api.shutil.which", return_value=str(fake_script)):
+    with patch("agent_runner._install.shutil.which", return_value=str(fake_script)):
         result = _agent_runner_script_path()
 
     assert result == fake_script
@@ -34,8 +35,8 @@ def test_agent_runner_script_path_should_return_sysconfig_fallback_when_shutil_w
     fake_script.write_text("#!/bin/sh\n")
 
     with (
-        patch("agent_runner.api.shutil.which", return_value=None),
-        patch("agent_runner.api.sysconfig.get_path", return_value=str(fake_scripts)),
+        patch("agent_runner._install.shutil.which", return_value=None),
+        patch("agent_runner._install.sysconfig.get_path", return_value=str(fake_scripts)),
     ):
         result = _agent_runner_script_path()
 
@@ -49,8 +50,8 @@ def test_agent_runner_script_path_should_raise_filenotfounderror_when_neither_so
     empty.mkdir()
 
     with (
-        patch("agent_runner.api.shutil.which", return_value=None),
-        patch("agent_runner.api.sysconfig.get_path", return_value=str(empty)),
+        patch("agent_runner._install.shutil.which", return_value=None),
+        patch("agent_runner._install.sysconfig.get_path", return_value=str(empty)),
     ):
         with pytest.raises(FileNotFoundError, match=r"agent-runner script not found"):
             _agent_runner_script_path()
@@ -72,7 +73,7 @@ def test_check_user_systemd_available_should_raise_when_dbus_session_unreachable
     fake_runtime.mkdir()
 
     with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(fake_runtime)}):
-        with patch("agent_runner.api.subprocess.run") as mock_run:
+        with patch("agent_runner._lifecycle.subprocess.run") as mock_run:
             mock_run.return_value.stderr = "Failed to connect to bus: No medium found\n"
             with pytest.raises(RuntimeError, match=r"D-Bus session"):
                 _check_user_systemd_available()
@@ -83,7 +84,7 @@ def test_check_user_systemd_available_should_return_none_when_systemd_is_ok(tmp_
     fake_runtime.mkdir()
 
     with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(fake_runtime)}):
-        with patch("agent_runner.api.subprocess.run") as mock_run:
+        with patch("agent_runner._lifecycle.subprocess.run") as mock_run:
             mock_run.return_value.stderr = ""
             mock_run.return_value.returncode = 0
 
@@ -101,7 +102,7 @@ def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
         "[runtime]\nwork_dir = '.'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
 
-    with patch("agent_runner.api.os.geteuid", return_value=1000):
+    with patch("agent_runner._install.os.geteuid", return_value=1000):
         with pytest.raises(RuntimeError, match=r"--system requires sudo"):
             api.install(tmp_path, system=True)
 
@@ -113,7 +114,7 @@ def test_install_should_raise_when_system_mode_used_without_sudo_user_env(tmp_pa
     )
 
     with (
-        patch("agent_runner.api.os.geteuid", return_value=0),
+        patch("agent_runner._install.os.geteuid", return_value=0),
         patch.dict(os.environ, {}, clear=True),
     ):
         with pytest.raises(RuntimeError, match=r"SUDO_USER"):
@@ -142,11 +143,11 @@ def test_install_should_write_unit_to_etc_and_not_start_when_system_mode_succeed
         return m
 
     with (
-        patch("agent_runner.api.os.geteuid", return_value=0),
+        patch("agent_runner._install.os.geteuid", return_value=0),
         patch.dict(os.environ, {"SUDO_USER": "dietpi"}),
-        patch("agent_runner.api.shutil.which", return_value="/fake/agent-runner"),
-        patch("agent_runner.api.subprocess.run", side_effect=fake_subprocess_run),
-        patch("agent_runner.api._SYSTEM_UNITS_DIR", fake_etc),
+        patch("agent_runner._install.shutil.which", return_value="/fake/agent-runner"),
+        patch("agent_runner._install.subprocess.run", side_effect=fake_subprocess_run),
+        patch("agent_runner._install._SYSTEM_UNITS_DIR", fake_etc),
     ):
         result = api.install(work_dir, system=True)
 
@@ -177,10 +178,10 @@ def _write_project(work_dir, *, log_dir="logs"):
 
 def _patch_user_install(monkeypatch, units_dir):
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: units_dir)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
-    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._install._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
-        "agent_runner.api._agent_runner_script_path", lambda: units_dir / "fake-agent-runner"
+        "agent_runner._install._agent_runner_script_path", lambda: units_dir / "fake-agent-runner"
     )
 
 

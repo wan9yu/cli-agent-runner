@@ -1,7 +1,7 @@
 """Invariant: TimeoutStopSec (systemd's SIGKILL deadline after `systemctl
 stop`) must always clear the in-process outer round-wall ceiling
 (api.outer_round_ceiling_s) by enough margin for a SIGTERM to reach and drain
-the round -- mirrors the api._ROUND_TERM_GRACE_S / _serve_round._ROUND_TERM_GRACE_S
+the round -- mirrors the _lifecycle._ROUND_TERM_GRACE_S / _serve_round._ROUND_TERM_GRACE_S
 grace-pair guard (test_round_kill_grace_should_match_serve_cmd_grace).
 
 _serve_policy.timeout_budget is the single source for both numbers (Group C,
@@ -12,8 +12,8 @@ outer_round_ceiling_s derivation both call it, so they cannot drift apart.
 from __future__ import annotations
 
 from agent_runner import _serve_policy
+from agent_runner._lifecycle import _ROUND_TERM_GRACE_S
 from agent_runner.agent_runtime import REAP_GRACE_S
-from agent_runner.api import _ROUND_TERM_GRACE_S
 from agent_runner.cli._serve_cgroup import _ROUND_UNREAPED_RC as _SERVE_CGROUP_UNREAPED_RC
 from agent_runner.cli._serve_round import _ROUND_TERM_GRACE_S as _SERVE_ROUND_TERM_GRACE_S
 from agent_runner.cli._serve_round import _ROUND_UNREAPED_RC as _SERVE_ROUND_UNREAPED_RC

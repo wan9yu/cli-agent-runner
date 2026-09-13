@@ -87,7 +87,7 @@ def test_monitor_loop_should_yield_each_distinct_episode_once_when_polled_repeat
 
     with (
         patch("agent_runner.clock.SYSTEM_CLOCK.sleep", return_value=None),
-        patch("agent_runner.api._poll_once", side_effect=lambda *_a, **_k: next(polls)),
+        patch("agent_runner._observe._poll_once", side_effect=lambda *_a, **_k: next(polls)),
     ):
         gen = api.monitor_loop(tmp_git_repo)
         try:
@@ -126,7 +126,7 @@ def test_seen_set_should_evict_oldest_episode_when_bound_exceeded(
 
     with (
         patch("agent_runner.clock.SYSTEM_CLOCK.sleep", return_value=None),
-        patch("agent_runner.api._poll_once", side_effect=lambda *_a, **_k: next(polls)),
+        patch("agent_runner._observe._poll_once", side_effect=lambda *_a, **_k: next(polls)),
     ):
         gen = api.monitor_loop(tmp_git_repo)
         try:

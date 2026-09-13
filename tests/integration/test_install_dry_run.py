@@ -16,10 +16,10 @@ def test_install_should_write_both_unit_files_when_monitor_requested(
     api.init(tmp_git_repo, force=False, commit=False)
     fake_systemd = tmp_git_repo / "systemd"
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
-    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._install._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
-        "agent_runner.api._agent_runner_script_path",
+        "agent_runner._install._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
 

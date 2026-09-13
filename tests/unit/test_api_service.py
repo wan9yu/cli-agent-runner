@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_runner import api
+from agent_runner import _install, api
 from agent_runner.api_types import InitResult, ServiceMode, ServiceStatus
 from agent_runner.config import PhaseOverride, PhasesConfig, load_config
 from tests._clock import FakeClock
@@ -78,7 +78,7 @@ def test_pid_file_should_send_sigterm_when_api_stop(
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
 
-    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
+    with patch("agent_runner._lifecycle.send_signal_to_pid", return_value=True) as send:
         api.stop(tmp_git_repo)
 
         send.assert_called_with(12345, signal.SIGTERM)
@@ -94,19 +94,19 @@ def test_pid_file_should_send_sigterm_then_sigkill_when_api_kill(
     log_dir = cfg.runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     # The pid stays alive through the whole SIGTERM grace window, so api.kill
     # escalates to SIGKILL -- the branch the name promises. Without this the pid
     # would report dead right after SIGTERM and SIGKILL would never be sent (nor
     # asserted). FakeClock lets the grace deadline expire with no real sleep.
-    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: True)
+    monkeypatch.setattr("agent_runner._lifecycle.pid_alive", lambda pid: True)
     sent: list[tuple[int, int]] = []
 
     def fake_send(pid: int, sig: int) -> bool:
         sent.append((pid, sig))
         return True
 
-    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    monkeypatch.setattr("agent_runner._lifecycle.send_signal_to_pid", fake_send)
 
     api.kill(tmp_git_repo)
 
@@ -123,10 +123,10 @@ def test_install_with_no_systemctl_should_return_install_result_when_called(
     monkeypatch.setattr(
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
     )
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
-    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._install._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
-        "agent_runner.api._agent_runner_script_path",
+        "agent_runner._install._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
 
@@ -144,10 +144,10 @@ def test_install_with_monitor_should_write_two_units_when_called(
     monkeypatch.setattr(
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "fake-systemd"
     )
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
-    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._install._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
-        "agent_runner.api._agent_runner_script_path",
+        "agent_runner._install._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
 
@@ -165,12 +165,12 @@ def test_installed_unit_should_be_removed_when_uninstall(
     api.init(tmp_git_repo, force=False, commit=False)
     fake_systemd = tmp_git_repo / "fake-systemd"
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", lambda *a: None)
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: None)
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_is_active", lambda u: "inactive")
-    monkeypatch.setattr("agent_runner.api._check_user_systemd_available", lambda: None)
+    monkeypatch.setattr("agent_runner._install._check_user_systemd_available", lambda: None)
     monkeypatch.setattr(
-        "agent_runner.api._agent_runner_script_path",
+        "agent_runner._install._agent_runner_script_path",
         lambda: tmp_git_repo / "fake-agent-runner",
     )
     api.install(tmp_git_repo, system=False, with_monitor=True)
@@ -197,14 +197,14 @@ def test_draining_unit_should_not_raise_when_uninstall(
     unit_name = f"agent-runner@{tmp_git_repo.name}.service"
     (fake_systemd / unit_name).write_text("[Unit]\n")
     monkeypatch.setattr("agent_runner.lifecycle._user_systemd_dir", lambda: fake_systemd)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._install.SYSTEM_CLOCK", FakeClock())
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
     )
     calls: list[tuple[str, ...]] = []
     stub = _draining_systemctl_user(calls)
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", stub)
 
     result = api.uninstall(tmp_git_repo)  # must not raise TimeoutExpired
 
@@ -234,7 +234,7 @@ def test_per_phase_override_should_be_forwarded_to_monitor_when_poll_once(
             ),
         )
 
-    monkeypatch.setattr("agent_runner.api.load_config", patched_load)
+    monkeypatch.setattr("agent_runner._observe.load_config", patched_load)
 
     captured: list[dict] = []
 
@@ -266,7 +266,7 @@ def test_systemd_failed_should_be_inactive_when_status(
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "failed")
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_is_active", lambda u: "failed")
 
     s = api.status(tmp_git_repo)
 
@@ -279,7 +279,7 @@ def test_systemd_activating_should_be_active_when_status(
 ) -> None:
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: "activating")
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_is_active", lambda u: "activating")
 
     s = api.status(tmp_git_repo)
 
@@ -295,7 +295,7 @@ def test_systemctl_absent_should_fall_back_to_pid_when_status(
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text(str(os.getpid()))
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", lambda u: None)
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_is_active", lambda u: None)
 
     s = api.status(tmp_git_repo)
 
@@ -326,7 +326,7 @@ def test_pid_file_should_refuse_before_stopping_when_restart(
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
 
-    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
+    with patch("agent_runner._lifecycle.send_signal_to_pid", return_value=True) as send:
         with pytest.raises(RuntimeError, match="systemd"):
             api.restart(tmp_git_repo)
 
@@ -340,7 +340,7 @@ def test_system_unit_should_refuse_with_systemctl_command_when_restart(
     must refuse naming the exact `sudo systemctl restart ...` remedy instead of
     falling through to the PID_FILE/NONE "start it by hand" message."""
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+    monkeypatch.setattr("agent_runner._lifecycle._system_unit_exists", lambda project: True)
 
     with pytest.raises(RuntimeError, match="sudo systemctl restart"):
         api.restart(tmp_git_repo)
@@ -354,13 +354,13 @@ def test_system_unit_should_refuse_without_user_teardown_when_uninstall(
     """uninstall against a `--system` install must not touch user-scope units at
     all -- it refuses and prints the `sudo systemctl disable --now ...` remedy."""
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+    monkeypatch.setattr("agent_runner._install._system_unit_exists", lambda project: True)
 
     def _boom(*a, **k):
         raise AssertionError("user-scope teardown must not run for a system-managed unit")
 
     monkeypatch.setattr("agent_runner.lifecycle.stop_unit_draining", _boom)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", _boom)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", _boom)
 
     result = api.uninstall(tmp_git_repo)
 
@@ -385,7 +385,8 @@ def test_system_unit_should_include_monitor_remedy_when_both_units_installed_and
     monitor_unit = f"agent-runner-monitor@{project}.service"
     (fake_system / serve_unit).write_text("[Unit]\n")
     (fake_system / monitor_unit).write_text("[Unit]\n")
-    monkeypatch.setattr("agent_runner.api._SYSTEM_UNITS_DIR", fake_system)
+    monkeypatch.setattr("agent_runner._lifecycle._SYSTEM_UNITS_DIR", fake_system)
+    monkeypatch.setattr("agent_runner._install._SYSTEM_UNITS_DIR", fake_system)
 
     result = api.uninstall(tmp_git_repo)
 
@@ -403,7 +404,7 @@ def test_no_user_bus_should_not_raise_when_uninstall(
     no-op -- but the final `daemon-reload` ran unconditionally and crashed with
     an uncaught CalledProcessError. It must now be swallowed."""
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr(api, "_system_unit_exists", lambda project: False)
+    monkeypatch.setattr(_install, "_system_unit_exists", lambda project: False)
     monkeypatch.setattr(
         "agent_runner.lifecycle._user_systemd_dir", lambda: tmp_git_repo / "no-such-systemd-dir"
     )
@@ -411,7 +412,7 @@ def test_no_user_bus_should_not_raise_when_uninstall(
     def _boom(*args: str) -> None:
         raise subprocess.CalledProcessError(1, "systemctl")
 
-    monkeypatch.setattr("agent_runner.api._systemctl_user", _boom)
+    monkeypatch.setattr("agent_runner._install._systemctl_user", _boom)
 
     result = api.uninstall(tmp_git_repo)
 
@@ -432,7 +433,7 @@ def test_system_unit_should_set_system_managed_when_status_and_pid_file_mode(
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text(str(os.getpid()))
-    monkeypatch.setattr("agent_runner.api._system_unit_exists", lambda project: True)
+    monkeypatch.setattr("agent_runner._lifecycle._system_unit_exists", lambda project: True)
 
     s = api.status(tmp_git_repo)
 
@@ -451,7 +452,7 @@ def test_pid_file_should_recheck_alive_after_sigkill_when_kill(
     log_dir = load_config(tmp_git_repo / "agent-runner.toml").runtime.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     killed = {"sent": False}
 
     def fake_send(pid: int, sig: int) -> bool:
@@ -460,8 +461,8 @@ def test_pid_file_should_recheck_alive_after_sigkill_when_kill(
             killed["sent"] = True
         return True
 
-    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
-    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: not killed["sent"])
+    monkeypatch.setattr("agent_runner._lifecycle.send_signal_to_pid", fake_send)
+    monkeypatch.setattr("agent_runner._lifecycle.pid_alive", lambda pid: not killed["sent"])
 
     with patch("os.killpg", side_effect=AssertionError("killpg in PID_FILE mode")):
         s = api.kill(tmp_git_repo)
@@ -578,14 +579,14 @@ def test_kill_should_send_sigterm_to_serve_before_round_holder(
         calls["n"] += 1
         return calls["n"] == 1
 
-    monkeypatch.setattr("agent_runner.api.pid_alive", fake_pid_alive)
+    monkeypatch.setattr("agent_runner._lifecycle.pid_alive", fake_pid_alive)
     sent: list[tuple[int, int]] = []
 
     def fake_send(pid: int, sig: int) -> bool:
         sent.append((pid, sig))
         return True
 
-    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    monkeypatch.setattr("agent_runner._lifecycle.send_signal_to_pid", fake_send)
 
     with patch("os.killpg", side_effect=AssertionError("killpg must never be used here")):
         api.kill(tmp_git_repo)
@@ -613,17 +614,17 @@ def test_kill_should_escalate_round_holder_to_sigkill_when_term_ignored(
     (log_dir / "serve.pid").write_text("12345")
     (log_dir / "agent-runner.lock.holder").write_text(json.dumps({"pid": 54321}))
 
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     # Both pids report alive forever (fully wedged) -- the round's own grace
     # window must still expire and escalate.
-    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: True)
+    monkeypatch.setattr("agent_runner._lifecycle.pid_alive", lambda pid: True)
     sent: list[tuple[int, int]] = []
 
     def fake_send(pid: int, sig: int) -> bool:
         sent.append((pid, sig))
         return True
 
-    monkeypatch.setattr("agent_runner.api.send_signal_to_pid", fake_send)
+    monkeypatch.setattr("agent_runner._lifecycle.send_signal_to_pid", fake_send)
 
     api.kill(tmp_git_repo)
 
@@ -670,16 +671,18 @@ def test_systemd_stop_should_not_raise_and_report_active_when_draining(
     confirms within a bounded poll, and reports active=True while still draining."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     # Draining: the unit stays in an active state throughout the confirm window.
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("activating"))
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("activating")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
     )
     calls: list[tuple[str, ...]] = []
     stub = _draining_systemctl_user(calls)
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", stub)
 
     s = api.stop(tmp_git_repo)  # must not raise TimeoutExpired
 
@@ -695,13 +698,15 @@ def test_systemd_stop_draining_should_confirm_when_unit_goes_inactive(
     active=False (a genuinely confirmed stop, not just requested)."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
     )
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: None)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: None)
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", lambda *a: None)
 
     s = api.stop(tmp_git_repo)
 
@@ -717,15 +722,17 @@ def test_systemd_restart_should_still_start_when_stop_is_draining(
     drain) instead of a blocking start() that would itself TimeoutExpired."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("activating"))
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("activating")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("activating")
     )
     calls: list[tuple[str, ...]] = []
     stub = _draining_systemctl_user(calls)
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", stub)
-    monkeypatch.setattr("agent_runner.api._systemctl_user", stub)
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", stub)
 
     api.restart(tmp_git_repo)  # must not raise; must issue a start
 
@@ -741,16 +748,18 @@ def test_systemd_restart_should_use_blocking_start_when_stop_confirmed(
     (confirming the respawn), not the --no-block fallback."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     # Fully stopped throughout, so both the stop confirm and restart's post-stop
     # is-active check see an inactive unit.
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
     )
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr("agent_runner.lifecycle._systemctl_user", lambda *a: calls.append(a))
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", lambda *a: calls.append(a))
 
     api.restart(tmp_git_repo)
 
@@ -768,14 +777,16 @@ def test_kill_systemd_should_escalate_to_sigkill_when_still_active(
     reap a wedged unit, unlike PID_FILE kill()."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
     # Never goes inactive -- both the pre-grace and post-grace check see it.
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("active"))
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("active")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("active")
     )
     calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", lambda *a: calls.append(a))
 
     s = api.kill(tmp_git_repo)
 
@@ -793,13 +804,15 @@ def test_kill_systemd_should_not_escalate_when_sigterm_already_stopped_it(
     a unit still active past the grace window."""
     api.init(tmp_git_repo, force=False, commit=False)
     _fake_systemd_unit(tmp_git_repo, monkeypatch)
-    monkeypatch.setattr("agent_runner.api.SYSTEM_CLOCK", FakeClock())
-    monkeypatch.setattr("agent_runner.api._systemctl_is_active", _draining_is_active("inactive"))
+    monkeypatch.setattr("agent_runner._lifecycle.SYSTEM_CLOCK", FakeClock())
+    monkeypatch.setattr(
+        "agent_runner._lifecycle._systemctl_is_active", _draining_is_active("inactive")
+    )
     monkeypatch.setattr(
         "agent_runner.lifecycle._systemctl_is_active", _draining_is_active("inactive")
     )
     calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr("agent_runner.api._systemctl_user", lambda *a: calls.append(a))
+    monkeypatch.setattr("agent_runner._lifecycle._systemctl_user", lambda *a: calls.append(a))
 
     s = api.kill(tmp_git_repo)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agent_runner import api
+from agent_runner import _observe, api
 from agent_runner.api_types import Alert
 
 
@@ -18,7 +18,7 @@ def _disk(v: float) -> Alert:
 def test_alert_should_fire_twice_when_recovered_then_recurred(tmp_path, monkeypatch) -> None:
     # poll 1: firing; poll 2: cleared (empty); poll 3: firing again -> should re-yield.
     polls = iter([[_disk(91.0)], [], [_disk(92.0)]])
-    monkeypatch.setattr(api, "_poll_once", lambda _wd, **_kwargs: next(polls))
+    monkeypatch.setattr(_observe, "_poll_once", lambda _wd, **_kwargs: next(polls))
     sleeps = {"n": 0}
 
     def _fake_sleep(_s) -> None:
@@ -29,7 +29,7 @@ def test_alert_should_fire_twice_when_recovered_then_recurred(tmp_path, monkeypa
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", _fake_sleep)
     mon = type("M", (), {"auto_stop_on": ()})()
     cfg = type("C", (), {"runtime": type("R", (), {"log_dir": tmp_path})(), "monitor": mon})()
-    monkeypatch.setattr(api, "load_config", lambda _p: cfg)
+    monkeypatch.setattr(_observe, "load_config", lambda _p: cfg)
     tmp_path.mkdir(exist_ok=True)
 
     with patch.object(api.monitor, "on_alert"):
@@ -56,7 +56,7 @@ def _run_loop_over_persisting_alert(tmp_path, monkeypatch, *, on_alert_returns: 
     verdict (must stay suppressed by the normal dedup)."""
     alert = _oauth_fail()
     polls = iter([[alert], [alert], [alert]])
-    monkeypatch.setattr(api, "_poll_once", lambda _wd, **_kwargs: next(polls))
+    monkeypatch.setattr(_observe, "_poll_once", lambda _wd, **_kwargs: next(polls))
     sleeps = {"n": 0}
 
     def _fake_sleep(_s) -> None:
@@ -67,7 +67,7 @@ def _run_loop_over_persisting_alert(tmp_path, monkeypatch, *, on_alert_returns: 
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", _fake_sleep)
     mon = type("M", (), {"auto_stop_on": ()})()
     cfg = type("C", (), {"runtime": type("R", (), {"log_dir": tmp_path})(), "monitor": mon})()
-    monkeypatch.setattr(api, "load_config", lambda _p: cfg)
+    monkeypatch.setattr(_observe, "load_config", lambda _p: cfg)
     tmp_path.mkdir(exist_ok=True)
     calls = {"n": 0}
 

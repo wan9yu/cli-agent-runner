@@ -12,7 +12,7 @@ import itertools
 
 import pytest
 
-from agent_runner import api, monitor
+from agent_runner import _observe, api, monitor
 from agent_runner.api_types import Alert
 
 
@@ -50,7 +50,7 @@ def test_loop_should_survive_when_on_alert_raises(tmp_path, monkeypatch) -> None
         polls["n"] += 1
         return [alert]
 
-    monkeypatch.setattr(api, "_poll_once", fake_poll)
+    monkeypatch.setattr(_observe, "_poll_once", fake_poll)
 
     calls = {"n": 0}
 
@@ -68,7 +68,7 @@ def test_loop_should_survive_when_on_alert_raises(tmp_path, monkeypatch) -> None
             raise _StopError
 
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", stop_after_two)
-    monkeypatch.setattr(api, "load_config", lambda _p: _fake_cfg(tmp_path))
+    monkeypatch.setattr(_observe, "load_config", lambda _p: _fake_cfg(tmp_path))
     tmp_path.mkdir(exist_ok=True)
 
     gen = api._monitor_loop_iter(tmp_path, interval_s=0)
@@ -92,7 +92,7 @@ def test_startup_should_survive_when_monitor_started_emit_fails(tmp_path, monkey
         raise OSError("ENOSPC")
 
     monkeypatch.setattr(api.events, "emit", poisoned_emit)
-    monkeypatch.setattr(api, "_poll_once", lambda *a, **k: [])
+    monkeypatch.setattr(_observe, "_poll_once", lambda *a, **k: [])
 
     sleeps = {"n": 0}
 
@@ -101,7 +101,7 @@ def test_startup_should_survive_when_monitor_started_emit_fails(tmp_path, monkey
         raise _StopError
 
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", stop_after_one)
-    monkeypatch.setattr(api, "load_config", lambda _p: _fake_cfg(tmp_path))
+    monkeypatch.setattr(_observe, "load_config", lambda _p: _fake_cfg(tmp_path))
     tmp_path.mkdir(exist_ok=True)
 
     gen = api._monitor_loop_iter(tmp_path, interval_s=0)
@@ -129,7 +129,7 @@ def test_loop_should_survive_when_poll_raises(tmp_path, monkeypatch) -> None:
         calls["n"] += 1
         raise RuntimeError("poll exploded")
 
-    monkeypatch.setattr(api, "_poll_once", boom)
+    monkeypatch.setattr(_observe, "_poll_once", boom)
 
     sleeps = {"n": 0}
 
@@ -139,7 +139,7 @@ def test_loop_should_survive_when_poll_raises(tmp_path, monkeypatch) -> None:
             raise _StopError
 
     monkeypatch.setattr(api.SYSTEM_CLOCK, "sleep", stop_after_two)
-    monkeypatch.setattr(api, "load_config", lambda _p: _fake_cfg(tmp_path))
+    monkeypatch.setattr(_observe, "load_config", lambda _p: _fake_cfg(tmp_path))
     tmp_path.mkdir(exist_ok=True)
 
     gen = api._monitor_loop_iter(tmp_path, interval_s=0)

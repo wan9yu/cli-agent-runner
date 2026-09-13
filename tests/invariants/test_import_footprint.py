@@ -74,9 +74,17 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._emit.memory",
         "agent_runner._emit.rounds",
         "agent_runner._emit.serve",
+        # _install/_lifecycle/_observe: api.py's split into a thin re-export
+        # facade over three slices (systemd install/uninstall, service
+        # lifecycle, observation) — api.py already imported everything
+        # transitively at module scope, so this adds three module names, not
+        # a new transitive dependency.
+        "agent_runner._install",
+        "agent_runner._lifecycle",
         "agent_runner._monitor_detectors",
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
+        "agent_runner._observe",
         # _plugin_manifest: the plugin ABI module. _load_plugin_manifests()
         # (called at package import, same as the scanner it pairs with)
         # imports it to resolve and register every discovered PluginManifest.

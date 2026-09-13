@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_runner import api, defenses
+from agent_runner import _observe, api, defenses
 from agent_runner.api_types import Alert, ProjectState
 from agent_runner.config import load_config
 
@@ -37,7 +37,7 @@ def _drive_monitor_loop_once(
     """Drive monitor_loop through one iteration without hanging on time.sleep."""
     with (
         patch("agent_runner.clock.SYSTEM_CLOCK.sleep", side_effect=_StopLoopError),
-        patch("agent_runner.api._poll_once", return_value=[]),
+        patch("agent_runner._observe._poll_once", return_value=[]),
     ):
         gen = api.monitor_loop(work_dir, host=host, interval_s=interval_s)
         try:
@@ -131,7 +131,7 @@ def test_poll_once_should_return_empty_when_no_alerts(
             monitor=dataclasses.replace(cfg.monitor, supervisor_stale_threshold_s=0),
         )
 
-    monkeypatch.setattr("agent_runner.api.load_config", patched_load)
+    monkeypatch.setattr("agent_runner._observe.load_config", patched_load)
 
     alerts = api._poll_once(tmp_git_repo)
 
@@ -322,7 +322,7 @@ def test_monitor_loop_should_raise_before_first_poll_when_host_given(
     def never_polls(*_args, **_kwargs):
         raise AssertionError("remote monitor must not poll")
 
-    monkeypatch.setattr(api, "_poll_once", never_polls)
+    monkeypatch.setattr(_observe, "_poll_once", never_polls)
 
     with pytest.raises(MonitorRemoteUnsupportedError) as exc_info:
         api.monitor_loop(work_dir, host="pi", interval_s=60)

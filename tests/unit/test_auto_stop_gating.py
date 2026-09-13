@@ -120,7 +120,9 @@ def test_monitor_loop_should_pass_work_dir_path_not_bare_name_to_on_alert(
     """
     monkeypatch.setenv("HOME", str(tmp_git_repo))
     api.init(tmp_git_repo, force=False, commit=False)
-    monkeypatch.setattr("agent_runner.api._poll_once", lambda *a, **k: [_make_alert("oauth_fail")])
+    monkeypatch.setattr(
+        "agent_runner._observe._poll_once", lambda *a, **k: [_make_alert("oauth_fail")]
+    )
     captured: dict[str, object] = {}
 
     def fake_on_alert(_alert, *, project, log_dir, allowed_stop_names):
@@ -166,9 +168,10 @@ def test_on_alert_should_resolve_real_log_dir_when_cwd_differs_from_work_dir(
     monkeypatch.chdir(foreign)
     sent: list[tuple[int, int]] = []
     monkeypatch.setattr(
-        "agent_runner.api.send_signal_to_pid", lambda pid, sig: sent.append((pid, sig)) or True
+        "agent_runner._lifecycle.send_signal_to_pid",
+        lambda pid, sig: sent.append((pid, sig)) or True,
     )
-    monkeypatch.setattr("agent_runner.api.pid_alive", lambda pid: False)
+    monkeypatch.setattr("agent_runner._lifecycle.pid_alive", lambda pid: False)
 
     on_alert(
         _make_alert("oauth_fail"),
