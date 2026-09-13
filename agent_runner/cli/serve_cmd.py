@@ -594,6 +594,15 @@ def cmd(args) -> int:
         _release_serve_lock(serve_lock_fd)
         return PERMANENT_CONFIG_EXIT
 
+    from agent_runner._sandbox_probe import gate_serve_boot
+
+    if not gate_serve_boot(cfg, log_dir):
+        # sandbox = "require" and the Tier-B trampoline can't fully confine --
+        # same fail-closed shape as the startup-hook refusal above: loud,
+        # deterministic, no restart-loop.
+        _release_serve_lock(serve_lock_fd)
+        return PERMANENT_CONFIG_EXIT
+
     pid_file = PIDFile(log_dir / "serve.pid")
     stop = {"requested": False}
 

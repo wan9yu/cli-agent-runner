@@ -9,8 +9,9 @@ trampoline child's job (``_plugin_sandbox.py``), never this probe's.
 
 Reports the best tier this host can actually achieve, so every caller --
 the fail-closed load gate (``agent_runner.__init__._admit_third_party``),
-``doctor``, and the spawn-seam degrade path -- reports the SAME number
-instead of each re-deriving platform logic.
+``doctor``, the serve-boot gate (``gate_serve_boot``), and the spawn-seam
+degrade path -- reports the SAME number instead of each re-deriving
+platform logic.
 
 The ``[sandbox]`` extra (``py-landlock``/``pyseccomp``) is Linux-only and
 imported LAZILY inside the two ``_probe_*`` helpers below -- never at module
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 AchievedTier = Literal["landlock+seccomp", "landlock", "seccomp", "unconfined"]
@@ -110,3 +112,44 @@ def probe_sandbox_capability() -> SandboxProbe:
         seccomp=False,
         unconfined_reason=seccomp_reason or landlock_reason or "sandbox capability unavailable",
     )
+
+
+def gate_serve_boot(cfg, log_dir: Path) -> bool:
+    """Called ONCE at serve boot, before the round loop starts. Returns False
+    to abort serve (the caller releases the serve lock and exits with
+    ``_serve_policy.PERMANENT_CONFIG_EXIT`` -- a permanent config error, not a
+    transient one, so systemd/day-2 doesn't restart-loop on it).
+
+    Gates confinement for the Tier-B (Landlock + seccomp) trampoline that
+    isolates ``spawn_hooks``/``dirty_handlers`` (see ``TIER_B_PROTOCOLS``)
+    ONLY. Tier-A hooks (detectors, context enrichers, pre/post-round,
+    serve-startup) run in-process today regardless of this gate's outcome --
+    whole-supervisor Landlock confinement is deferred, not delivered by this
+    gate. ``achieved_tier == "landlock+seccomp"`` therefore means "the Tier-B
+    trampoline can fully confine," never "the whole supervisor is sandboxed."
+
+    Tri-state ``[plugins] sandbox``:
+    - ``"off"``: no probe, no event -- always proceeds.
+    - ``"require"``: the Tier-B trampoline MUST be able to fully confine.
+      When it can't, emits ``plugin_sandbox_degraded`` and returns False --
+      loud, deterministic, fail-closed (never silently serves unconfined).
+    - ``"prefer"``: proceeds either way; when confinement can't fully
+      engage, emits ``plugin_sandbox_degraded`` exactly once (this call is
+      the only emit site for the mechanism itself -- once per serve boot,
+      never per round) and continues serving unconfined.
+
+    A single call site, run once before the round loop, is what makes "once
+    per serve boot" true by construction -- there is no per-round re-probe.
+    """
+    from agent_runner.api import emit_plugin_sandbox_degraded
+
+    if cfg.plugins.sandbox == "off":
+        return True
+    probe = probe_sandbox_capability()
+    if probe.achieved_tier == "landlock+seccomp":
+        return True
+    reason = probe.unconfined_reason or f"achieved {probe.achieved_tier}"
+    emit_plugin_sandbox_degraded(
+        log_dir, requested=cfg.plugins.sandbox, achieved_tier=probe.achieved_tier, reason=reason
+    )
+    return cfg.plugins.sandbox != "require"

@@ -162,6 +162,26 @@ def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
     return toml
 
 
+def make_cfg(tmp_path: Path, *, plugins: Any = None) -> Any:
+    """Minimal in-memory ``Config`` for tests that need a real ``Config``
+    object without going through TOML parsing (e.g. a boot-gate function
+    reading ``cfg.plugins.sandbox`` directly). ``work_dir`` and ``log_dir``
+    both default to ``tmp_path``; pass ``plugins`` to exercise a non-default
+    ``PluginsConfig``.
+    """
+    from agent_runner.config import AgentConfig, Config, PromptConfig, RuntimeConfig
+
+    overrides: dict[str, Any] = {}
+    if plugins is not None:
+        overrides["plugins"] = plugins
+    return Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path),
+        prompt=PromptConfig(file=tmp_path / "prompt.md"),
+        **overrides,
+    )
+
+
 def poll_until(predicate: Any, *, timeout_s: float = 5.0, interval_s: float = 0.02) -> bool:
     """Poll ``predicate()`` until truthy or ``timeout_s`` elapses; return the last result.
 

@@ -55,6 +55,7 @@ ALLOWED_SERVE_FROM = [
         },
     ),
     ("agent_runner._serve_policy", {"PERMANENT_CONFIG_EXIT"}),
+    ("agent_runner._sandbox_probe", {"gate_serve_boot"}),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args_or_config_error"}),
     ("agent_runner.lifecycle", {"PIDFile"}),
