@@ -220,6 +220,7 @@ def test_all_check_kinds_should_equal_unique_spec_kinds_in_order() -> None:
         "work_dir_is_git_repo",
         "prompt_file_exists",
         "prompt_smoke_passes",
+        "phase_window_overlap",
         "agent_cli_in_path",
         "stdin_container_interactive",
         "control_plane_outside_container",
@@ -233,19 +234,20 @@ def test_run_battery_should_preserve_base_then_profile_then_phase_order_when_con
 
     names = [r.name for r in startup_check.run_battery(cfg)]
 
-    assert names[:5] == [
+    assert names[:6] == [
         "config_loaded",
         "log_dir_writable",
         "work_dir_is_git_repo",
         "prompt_file_exists",
         "prompt_smoke_passes",
+        "phase_window_overlap",
     ]
-    assert names[5:8] == [
+    assert names[6:9] == [
         "agent_cli_in_path",
         "stdin_container_interactive",
         "control_plane_outside_container",
     ]
-    assert any(n.startswith("prompt_smoke_passes:") for n in names[8:])
+    assert any(n.startswith("prompt_smoke_passes:") for n in names[9:])
 
 
 def test_checkresult_permanent_should_default_to_false(tmp_git_repo: Path) -> None:

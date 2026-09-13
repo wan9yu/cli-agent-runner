@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent_runner import agent_runtime
+from agent_runner import agent_runtime, phase_select
 from agent_runner.config import AgentConfig, Config
 
 ESCAPE_HATCH_ENV = "AGENT_RUNNER_SKIP_STARTUP_CHECK"
@@ -224,6 +224,22 @@ def _check_config_loaded(cfg: Config) -> CheckResult:
     return CheckResult("config_loaded", True)
 
 
+def _check_phase_window_overlap(cfg: Config) -> CheckResult:
+    overlaps = phase_select.find_phase_window_overlaps(cfg)
+    if not overlaps:
+        return CheckResult("phase_window_overlap", ok=True)
+    detail = "; ".join(
+        f"{o.phase_a} ({o.window_a}) vs {o.phase_b} ({o.window_b})" for o in overlaps
+    )
+    return CheckResult(
+        "phase_window_overlap",
+        ok=False,
+        reason=f"overlapping agent-phase run_windows: {detail}",
+        how_to_fix="separate the phases' run_windows, or add a pause_window that fully carves out the overlap",
+        permanent=True,
+    )
+
+
 def _phase_qualified(base: str, phase: str | None) -> str:
     """A check's name, suffixed `:<phase>` for an overriding phase profile."""
     return base if phase is None else f"{base}:{phase}"
@@ -245,6 +261,7 @@ _CHECK_SPECS: tuple[CheckSpec, ...] = (
     CheckSpec("work_dir_is_git_repo", "base", _check_work_dir_is_git),
     CheckSpec("prompt_file_exists", "base", _check_prompt_file),
     CheckSpec("prompt_smoke_passes", "base", _check_prompt_smoke),
+    CheckSpec("phase_window_overlap", "base", _check_phase_window_overlap),
     CheckSpec(
         "agent_cli_in_path",
         "per_profile",

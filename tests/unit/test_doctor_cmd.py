@@ -59,6 +59,19 @@ def _write_paused_config(tmp_path: Path) -> Path:
     )
 
 
+def _cfg_with_colliding_phases(tmp_path: Path):
+    """Two agent-overriding phases sharing an always-open, never-paused
+    window -- a guaranteed config-level overlap."""
+    phases_block = (
+        '[phases]\nlist = ["a", "b"]\n'
+        '[phases.a.agent]\nname = "phase-a"\n'
+        '[phases.a.schedule]\nrun_windows = ["00:00-24:00"]\n'
+        '[phases.b.agent]\nname = "phase-b"\n'
+        '[phases.b.schedule]\nrun_windows = ["00:00-24:00"]\n'
+    )
+    return load_config(make_toml_with_sections(tmp_path, phases_block=phases_block))
+
+
 def _write_never_opens_config(tmp_path: Path) -> Path:
     """A global pause window covering the whole day -- paused with no opening
     candidate in the horizon, so Selection.resume_at stays None."""
@@ -141,3 +154,14 @@ def test_doctor_should_not_render_resume_when_paused_round_has_no_resume_at(tmp_
     out = capsys.readouterr().out
     assert "resumes None" not in out
     assert "at None" not in out
+
+
+def test_doctor_should_report_phase_window_overlap_as_a_failing_check_when_present(tmp_path):
+    from agent_runner import startup_check
+
+    cfg = _cfg_with_colliding_phases(tmp_path)
+
+    results = startup_check.run_battery(cfg)
+
+    overlap_check = next(r for r in results if r.name == "phase_window_overlap")
+    assert overlap_check.ok is False
