@@ -191,5 +191,3 @@ def emit_schedule_resumed(log_dir: Path, *, paused_for_s: int) -> None:
     from agent_runner.events import SCHEDULE_RESUMED, emit
 
     emit(log_dir, SCHEDULE_RESUMED, paused_for_s=paused_for_s)
-
-

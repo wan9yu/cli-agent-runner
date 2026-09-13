@@ -235,7 +235,10 @@ def _check_phase_window_overlap(cfg: Config) -> CheckResult:
         "phase_window_overlap",
         ok=False,
         reason=f"overlapping agent-phase run_windows: {detail}",
-        how_to_fix="separate the phases' run_windows, or add a pause_window that fully carves out the overlap",
+        how_to_fix=(
+            "separate the phases' run_windows, or add a pause_window "
+            "that fully carves out the overlap"
+        ),
         permanent=True,
     )
 

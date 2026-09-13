@@ -20,7 +20,6 @@ from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
 from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
-from agent_runner.config import ConfigError
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
     _active_throttles,
@@ -56,6 +55,7 @@ from agent_runner.cli._serve_round import (
 )
 from agent_runner.cli.common import cfg_from_args_or_config_error
 from agent_runner.clock import SYSTEM_CLOCK, Clock
+from agent_runner.config import ConfigError
 from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
