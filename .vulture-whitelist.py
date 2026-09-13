@@ -169,7 +169,7 @@ memory
 pressure
 
 # agent_runner.config.models.PhaseOverride
-round_timeout_s
+round_budget_s
 disable_pre_round_hooks
 prompt_files
 agent
@@ -201,7 +201,7 @@ strip_yaml_frontmatter
 # agent_runner.config.models.RuntimeConfig
 work_dir
 log_dir
-round_timeout_s
+round_budget_s
 restart_delay_s
 disable_pre_round_hooks
 round_log_retention

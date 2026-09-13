@@ -435,7 +435,7 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
     """0.2.17: round_mem_critical_sample is capped at
     2 * pressure.critical_consecutive_samples (1..6 at the default 3) -- a
     sustained-critical don't-terminate run (here: the off switch) must not
-    keep writing an event on EVERY tick for up to a whole round_timeout_s on
+    keep writing an event on EVERY tick for up to a whole round_budget_s on
     a permanently-deferred/off host. The streak itself (critical_streak, and
     _mid_round_action's threshold check) is untouched by the cap -- only
     whether the calibration event fires. A non-critical tick still resets

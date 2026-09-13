@@ -144,7 +144,7 @@ def pi_config(pi_workdir: str, pi_fake_agent: str) -> str:
         "[runtime]\n"
         f'work_dir = "{pi_workdir}"\n'
         f'log_dir = "{log_dir}"\n'
-        "round_timeout_s = 10\n"
+        "round_budget_s = 10\n"
         "[prompt]\n"
         f'file = "{prompt_path}"\n'
     )

@@ -6,7 +6,7 @@ Two units per project:
 
 Install command writes these to ~/.config/systemd/user/. The graceful-stop
 contract relies on KillMode=mixed + KillSignal=SIGTERM + TimeoutStopSec
-(derived from max(round_timeout_s, *per_phase) via
+(derived from max(round_budget_s, *per_phase) via
 ``_serve_policy.timeout_budget`` — see that function for the margin
 breakdown): SIGTERM must reach ONLY the serve process (which traps it and
 drains the current round). systemd's default KillMode=control-group would
@@ -72,11 +72,11 @@ def render_serve_unit(
     _validate_unit_paths(cfg, config_path)
     # TimeoutStopSec covers the maximum possible round budget so `systemctl stop`
     # doesn't SIGKILL a mid-flight round in any phase.
-    max_timeout = cfg.runtime.round_timeout_s
+    max_timeout = cfg.runtime.round_budget_s
     if cfg.phases is not None:
         for override in cfg.phases.overrides.values():
-            if override.round_timeout_s is not None:
-                max_timeout = max(max_timeout, override.round_timeout_s)
+            if override.round_budget_s is not None:
+                max_timeout = max(max_timeout, override.round_budget_s)
     timeout_total, _ = timeout_budget(max_timeout)
     user_lines, wanted_by = _unit_mode_lines(user)
     return (

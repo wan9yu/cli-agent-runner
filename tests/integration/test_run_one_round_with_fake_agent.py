@@ -22,7 +22,7 @@ from agent_runner.config import (
 from agent_runner.runner import run_one_round
 
 
-def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_timeout_s: int = 30) -> Config:
+def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_budget_s: int = 30) -> Config:
     """Build a Config rooted in ``tmp_git_repo`` with prompt + .gitignore committed.
 
     Why commit before run: ``git stash push -u`` (used by the dirty path) sweeps
@@ -34,7 +34,7 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_timeout_s: int = 
     repo already has its config + prompt tracked and only agent-generated work is
     ever orphan-stashed.
 
-    round_timeout_s defaults to a generous 30s that the "succeed"/"dirty"/"crash"
+    round_budget_s defaults to a generous 30s that the "succeed"/"dirty"/"crash"
     rounds (which exit in milliseconds) never legitimately approach. History: this
     used to be a single shared 5s baked in here for every caller including the
     "hang" test. Under `-n auto` parallel contention (fork/exec scheduling delay,
@@ -59,7 +59,7 @@ def _cfg(tmp_git_repo: Path, fake_agent_script: Path, *, round_timeout_s: int = 
     return Config(
         agent=AgentConfig(command=[str(fake_agent_script)], prompt_arg_template=[]),
         runtime=RuntimeConfig(
-            work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=round_timeout_s
+            work_dir=tmp_git_repo, log_dir=log_dir, round_budget_s=round_budget_s
         ),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
@@ -110,16 +110,16 @@ def test_round_should_be_killed_within_grace_when_fake_agent_hangs_past_timeout(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "hang")
-    # This is the one caller that WANTS a small round_timeout_s -- it's the
+    # This is the one caller that WANTS a small round_budget_s -- it's the
     # only test in this file actually exercising the timeout-kill path.
-    cfg = _cfg(tmp_git_repo, fake_agent_script, round_timeout_s=5)
+    cfg = _cfg(tmp_git_repo, fake_agent_script, round_budget_s=5)
 
     start = time.time()
     result = run_one_round(cfg)
     elapsed = time.time() - start
 
     assert result.timed_out is True
-    # Baseline ~5s (round_timeout_s=5; REAP_GRACE_S is never paid -- SIGTERM
+    # Baseline ~5s (round_budget_s=5; REAP_GRACE_S is never paid -- SIGTERM
     # kills bash+sleep immediately). Widened from 15 to 30 (2x, matching the
     # analogous pi e2e bound in test_e2e_round_lifecycle.py) after a real
     # one-off flake under `-n auto` parallel contention: fork/exec + scheduler
@@ -152,7 +152,7 @@ def test_round_should_apply_phase_override_timeout_when_phase_has_override(
     fake_agent_script: Path,
     monkeypatch,
 ) -> None:
-    """[phases.dev] round_timeout_s = 3600 controls subprocess kill timing, not the default."""
+    """[phases.dev] round_budget_s = 3600 controls subprocess kill timing, not the default."""
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
     cfg = _cfg(tmp_git_repo, fake_agent_script)
     # Rebuild cfg with per-phase override: global=30 (the _cfg() default), dev override=3600
@@ -162,7 +162,7 @@ def test_round_should_apply_phase_override_timeout_when_phase_has_override(
         cfg,
         phases=PhasesConfig(
             list=["dev"],
-            overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+            overrides={"dev": PhaseOverride(round_budget_s=3600)},
         ),
     )
 
@@ -218,7 +218,7 @@ def test_round_should_pass_agent_env_to_subprocess_when_cfg_has_env(
             prompt_arg_template=[],
             env={"MY_FLAG": "passed-through"},
         ),
-        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=30),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_budget_s=30),
         prompt=PromptConfig(file=prompt, inject_context=False),
         vcs=VcsConfig(),
         phases=PhasesConfig(),

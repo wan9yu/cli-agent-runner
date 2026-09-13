@@ -32,8 +32,8 @@ def catalog(cfg: Config) -> list[Defense]:
     check_kinds = startup_check.all_check_kinds()
     return [
         Defense(
-            name="round_timeout_s",
-            value=cfg.runtime.round_timeout_s,
+            name="round_budget_s",
+            value=cfg.runtime.round_budget_s,
             codifies="R1128 — TaskOutput polling loop 60min, scheduler grace fails to trigger",
             guarded_by=Path("tests/unit/test_agent_runtime.py"),
             current_state="active",

@@ -25,7 +25,7 @@ prompt_arg_template = ["{{prompt}}"]
 [runtime]
 work_dir = "{tmp_git_repo}"
 log_dir = "{log_dir}"
-round_timeout_s = {round_timeout}
+round_budget_s = {round_timeout}
 restart_delay_s = 1
 [prompt]
 file = "{prompt}"

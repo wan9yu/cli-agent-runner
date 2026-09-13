@@ -52,19 +52,19 @@ def test_phase_schedule_should_inherit_global_timezone_when_phase_omits_it(tmp_p
     assert cfg.profile_for("a").schedule.timezone == "Asia/Shanghai"  # tz falls back to global
 
 
-def test_flat_runtime_alias_should_set_round_timeout_s_on_profile(tmp_path):
-    cfg = _cfg(tmp_path, '[phases]\nlist = ["a"]\n[phases.a]\nround_timeout_s = 3600\n')
+def test_flat_runtime_alias_should_set_round_budget_s_on_profile(tmp_path):
+    cfg = _cfg(tmp_path, '[phases]\nlist = ["a"]\n[phases.a]\nround_budget_s = 3600\n')
 
-    assert cfg.profile_for("a").runtime.round_timeout_s == 3600
+    assert cfg.profile_for("a").runtime.round_budget_s == 3600
 
 
-def test_nested_runtime_sub_table_should_set_round_timeout_s_on_profile(tmp_path):
+def test_nested_runtime_sub_table_should_set_round_budget_s_on_profile(tmp_path):
     cfg = _cfg(
         tmp_path,
-        '[phases]\nlist = ["a"]\n[phases.a.runtime]\nround_timeout_s = 900\n',
+        '[phases]\nlist = ["a"]\n[phases.a.runtime]\nround_budget_s = 900\n',
     )
 
-    assert cfg.profile_for("a").runtime.round_timeout_s == 900
+    assert cfg.profile_for("a").runtime.round_budget_s == 900
 
 
 def test_flat_and_nested_runtime_twin_should_error(tmp_path):
@@ -72,8 +72,8 @@ def test_flat_and_nested_runtime_twin_should_error(tmp_path):
         _cfg(
             tmp_path,
             '[phases]\nlist = ["a"]\n'
-            "[phases.a]\nround_timeout_s = 3600\n"
-            "[phases.a.runtime]\nround_timeout_s = 900\n",
+            "[phases.a]\nround_budget_s = 3600\n"
+            "[phases.a.runtime]\nround_budget_s = 900\n",
         )
 
 

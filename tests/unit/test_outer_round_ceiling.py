@@ -20,7 +20,7 @@ def _cfg(tmp_path: Path, extra: str = "") -> api.Config:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
         "[agent]\ncommand = ['true']\nprompt_arg_template = ['{prompt}']\n"
-        "[runtime]\nwork_dir = '.'\nlog_dir = './logs'\nround_timeout_s = 100\n"
+        "[runtime]\nwork_dir = '.'\nlog_dir = './logs'\nround_budget_s = 100\n"
         "[prompt]\nfile = 'prompt.md'\n" + extra
     )
     return load_config(toml)
@@ -37,7 +37,7 @@ def test_outer_round_ceiling_should_add_derived_margin_for_base_timeout(tmp_path
 def test_outer_round_ceiling_should_use_phase_timeout_for_explicit_and_rotated_calls(tmp_path):
     cfg = _cfg(
         tmp_path,
-        "[phases]\nlist = ['fast', 'slow']\n[phases.slow.runtime]\nround_timeout_s = 900\n",
+        "[phases]\nlist = ['fast', 'slow']\n[phases.slow.runtime]\nround_budget_s = 900\n",
     )
 
     _, expected_ceiling = _serve_policy.timeout_budget(900)
@@ -45,3 +45,19 @@ def test_outer_round_ceiling_should_use_phase_timeout_for_explicit_and_rotated_c
     assert api.outer_round_ceiling_s(cfg, "slow") == expected_ceiling
     # rotation (phase_arg None) must not under-budget a phase that overrides larger
     assert api.outer_round_ceiling_s(cfg, None) == expected_ceiling
+
+
+def test_outer_round_ceiling_s_should_read_round_budget_s_when_no_phase_override(tmp_path):
+    from agent_runner.api import outer_round_ceiling_s
+    from agent_runner.config import AgentConfig, Config, PhasesConfig, PromptConfig, RuntimeConfig
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path, round_budget_s=42),
+        prompt=PromptConfig(),
+        phases=PhasesConfig(),
+    )
+
+    ceiling = outer_round_ceiling_s(cfg, None)
+
+    assert ceiling > 42  # ceiling adds reap/git/hook margin on top of the budget

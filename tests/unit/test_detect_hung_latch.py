@@ -22,14 +22,14 @@ def test_ancient_unclosed_round_should_not_latch_hung_after_later_rounds_complet
     ]
 
     # Old round 1 is weeks stale but must NOT alert; only round 3 is a live candidate.
-    assert detect_hung(events, now=now, round_timeout_s=1800) is None
+    assert detect_hung(events, now=now, round_budget_s=1800) is None
 
 
 def test_newest_open_round_should_still_alert_when_past_threshold() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
     events = [_ev("round_start", 7, "2026-08-30T10:00:00Z")]  # 2h old, threshold 45m
 
-    a = detect_hung(events, now=now, round_timeout_s=1800)
+    a = detect_hung(events, now=now, round_budget_s=1800)
 
     assert a is not None and a.context["round_num"] == 7
 
@@ -51,7 +51,7 @@ def test_crashed_round_should_stop_latching_once_next_round_closes() -> None:
         _ev("round_end", 2, "2026-08-30T11:05:00Z"),  # round 2 completed normally
     ]
 
-    assert detect_hung(events, now=now, round_timeout_s=1800) is None
+    assert detect_hung(events, now=now, round_budget_s=1800) is None
 
 
 def test_pre_round_event_for_next_round_should_not_suppress_a_real_hang() -> None:
@@ -70,6 +70,6 @@ def test_pre_round_event_for_next_round_should_not_suppress_a_real_hang() -> Non
         _ev("prompt_overwritten", 2, "2026-08-30T11:59:59Z"),
     ]
 
-    a = detect_hung(events, now=now, round_timeout_s=1800)
+    a = detect_hung(events, now=now, round_budget_s=1800)
 
     assert a is not None and a.context["round_num"] == 1

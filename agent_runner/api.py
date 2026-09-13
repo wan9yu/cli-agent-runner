@@ -78,12 +78,12 @@ def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
     from agent_runner._serve_policy import timeout_budget
 
     if phase_arg is not None:
-        inner = cfg.profile_for(phase_arg).runtime.round_timeout_s
+        inner = cfg.profile_for(phase_arg).runtime.round_budget_s
     else:
         # rotation/legacy: any phase can override larger, so budget the max
         inner = max(
-            (cfg.profile_for(p).runtime.round_timeout_s for p in (cfg.phases.list or [])),
-            default=cfg.runtime.round_timeout_s,
+            (cfg.profile_for(p).runtime.round_budget_s for p in (cfg.phases.list or [])),
+            default=cfg.runtime.round_budget_s,
         )
     _, outer_ceiling = timeout_budget(inner)
     return outer_ceiling
@@ -665,7 +665,7 @@ def _poll_once(
         events=events,
         metrics=metrics,
         log_tails=log_tails,
-        round_timeout_s=cfg.runtime.round_timeout_s,
+        round_budget_s=cfg.runtime.round_budget_s,
         supervisor_stale_threshold_s=cfg.monitor.supervisor_stale_threshold_s,
         auth_fail_patterns=cfg.monitor.auth_fail_patterns,
         auth_fail_hint=cfg.monitor.auth_fail_hint,

@@ -163,7 +163,7 @@ def test_hook_context_should_receive_dry_run_when_runtime_config_sets_it(tmp_pat
         runtime=RuntimeConfig(
             work_dir=tmp_path,
             log_dir=log_dir,
-            round_timeout_s=10,
+            round_budget_s=10,
             dry_run=True,
         ),
         prompt=PromptConfig(file=prompt, inject_context=False),

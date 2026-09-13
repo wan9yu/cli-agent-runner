@@ -48,7 +48,7 @@ def _make_config(
     script_copy.chmod(0o755)
     return Config(
         agent=AgentConfig(command=[str(script_copy)], prompt_arg_template=[]),
-        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=30),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_budget_s=30),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(),
         phases=phases_cfg if phases_cfg is not None else PhasesConfig(list=phases),
@@ -161,7 +161,7 @@ def test_run_one_round_should_exit_without_spawning_agent_when_smoke_check_fails
 def _unit_cfg(
     tmp_path: Path,
     *,
-    round_timeout_s: int = 1800,
+    round_budget_s: int = 1800,
     phases: list[str] | None = None,
 ) -> Config:
     """Minimal Config for unit-level helper tests (no sandbox/script setup)."""
@@ -170,7 +170,7 @@ def _unit_cfg(
         runtime=RuntimeConfig(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
-            round_timeout_s=round_timeout_s,
+            round_budget_s=round_budget_s,
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -183,15 +183,15 @@ def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_is_no
 ) -> None:
     cfg = _unit_cfg(tmp_path)
 
-    assert resolve_runtime_for_phase(cfg, None).round_timeout_s == 1800
+    assert resolve_runtime_for_phase(cfg, None).round_budget_s == 1800
 
 
 def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_has_no_override(
     tmp_path: Path,
 ) -> None:
-    cfg = _unit_cfg(tmp_path, round_timeout_s=3600, phases=["dev"])
+    cfg = _unit_cfg(tmp_path, round_budget_s=3600, phases=["dev"])
 
-    assert resolve_runtime_for_phase(cfg, "dev").round_timeout_s == 3600
+    assert resolve_runtime_for_phase(cfg, "dev").round_budget_s == 3600
 
 
 def test_scan_round_log_for_network_blip_should_emit_blip_when_log_contains_connection_refused(

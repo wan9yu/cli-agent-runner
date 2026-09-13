@@ -303,13 +303,13 @@ _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-requ
 _ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
 
 
-def timeout_budget(round_timeout_s: int) -> tuple[int, int]:
+def timeout_budget(round_budget_s: int) -> tuple[int, int]:
     """Single source for the round-timeout safety budget.
 
     Returns ``(timeout_stop_sec, outer_ceiling_s)``:
 
     - ``outer_ceiling_s`` — the in-process outer wall-clock ceiling for the
-      round subprocess (``api.outer_round_ceiling_s``): ``round_timeout_s``
+      round subprocess (``api.outer_round_ceiling_s``): ``round_budget_s``
       plus reap grace + git-commit ceiling + hook allowance, so it only trips
       when the round supervisor itself is wedged, never during its own
       bounded post-round cleanup.
@@ -319,6 +319,6 @@ def timeout_budget(round_timeout_s: int) -> tuple[int, int]:
       stop-request overhead pad, so `systemctl stop` never SIGKILLs a round
       that is draining normally.
     """
-    outer_ceiling_s = round_timeout_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
+    outer_ceiling_s = round_budget_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
     timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + _STOP_GRACE_MARGIN_S
     return timeout_stop_sec, outer_ceiling_s

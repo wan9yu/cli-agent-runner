@@ -56,7 +56,7 @@ def _systemctl_user(*args: str) -> None:
     (enable/start/kill/daemon-reload). The draining ``stop`` verb goes through
     ``stop_unit_draining`` instead: a plain blocking ``systemctl --user stop``
     waits for the unit to go inactive, and serve DRAINS its in-flight round on
-    SIGTERM (up to round_timeout_s), so a blocking stop under this timeout would
+    SIGTERM (up to round_budget_s), so a blocking stop under this timeout would
     raise ``TimeoutExpired`` for a stop systemd is completing normally."""
     subprocess.run(["systemctl", "--user", *args], check=True, timeout=_SYSTEMCTL_TIMEOUT_S)
 
@@ -66,7 +66,7 @@ def stop_unit_draining(unit_name: str, *, clock: Clock, confirm_s: float) -> boo
     until it reaches an inactive state or ``confirm_s`` elapses.
 
     A plain ``systemctl --user stop`` blocks until the unit is inactive, but
-    serve DRAINS its in-flight round on SIGTERM (up to round_timeout_s), so a
+    serve DRAINS its in-flight round on SIGTERM (up to round_budget_s), so a
     blocking stop under a subprocess timeout raises ``TimeoutExpired`` for a stop
     systemd is completing normally — the half-execution that leaves a healthy
     serve stopped. ``--no-block`` returns once the stop job is enqueued; this

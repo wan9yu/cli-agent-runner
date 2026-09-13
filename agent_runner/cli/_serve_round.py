@@ -235,7 +235,7 @@ def _terminate_round(proc: subprocess.Popen) -> int:
 # production keeps the same value (1) it always had, so this changes no
 # behavior: proc.wait(timeout=_ROUND_POLL_TICK_S) still just bounds how
 # promptly a round's own exit is noticed, unrelated to the coarser cadences
-# below (host_health resampling, round_timeout_s) which run off
+# below (host_health resampling, round_budget_s) which run off
 # clock.monotonic() and are unaffected by this constant either way.
 _ROUND_POLL_TICK_S = 1
 
@@ -335,7 +335,7 @@ def _spawn_round(
     ``2 * host_health_cfg.pressure.critical_consecutive_samples`` consecutive
     ticks (1..6 at the default 3) -- a sustained-critical don't-terminate
     run (cgroup-defer, or the off switch) would otherwise write one event
-    per ~10s tick for up to a whole ``round_timeout_s``. The streak still
+    per ~10s tick for up to a whole ``round_budget_s``. The streak still
     resets to 0 on any non-critical tick, so the cap is per streak-episode:
     sampling resumes from 1 the next time critical pressure recurs."""
     log_dir = round_log_path.parent

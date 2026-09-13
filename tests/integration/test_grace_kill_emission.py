@@ -47,11 +47,11 @@ def _make_grace_config(work_dir: Path, script_path: Path, grace_s: int) -> Confi
             # ~= 2s ideal. Measured under `-n auto` on a busy host, this
             # occasionally starved for several seconds of real CPU time before
             # ever getting scheduled to run its scan/grace check, so a trimmed
-            # round_timeout_s=4 raced (and lost to) the round's own wall clock
+            # round_budget_s=4 raced (and lost to) the round's own wall clock
             # before the grace path ever fired -- 30s gives headroom for a
             # host-wide spawn stall on top of that floor (measured up to ~12s
             # under 2x-oversubscribed concurrent gates).
-            round_timeout_s=30,
+            round_budget_s=30,
             max_grace_after_result_s=grace_s,
         ),
         prompt=PromptConfig(file=prompt, inject_context=False),
@@ -101,7 +101,7 @@ def _make_grace_config_with_patterns(
         runtime=RuntimeConfig(
             work_dir=work_dir,
             log_dir=log_dir,
-            round_timeout_s=30,  # see _make_grace_config: reliable floor under real contention
+            round_budget_s=30,  # see _make_grace_config: reliable floor under real contention
             max_grace_after_result_s=grace_s,
             grace_kill_ignore_patterns=patterns,
         ),
@@ -117,7 +117,7 @@ def test_round_grace_extended_should_fire_when_worker_still_alive(tmp_path: Path
     _init_git(tmp_path)
 
     script = tmp_path / "agent.sh"
-    # Backgrounded worker outlives round_timeout_s=30 by a wide margin (90 >>
+    # Backgrounded worker outlives round_budget_s=30 by a wide margin (90 >>
     # 30) so the round's own wall clock -- not the worker's natural exit --
     # is what reaps it, even under scheduling delay.
     script.write_text(
@@ -157,7 +157,7 @@ def test_round_grace_extended_should_carry_ignored_children_when_ignore_patterns
     script = tmp_path / "agent.sh"
     # Emit result, then background both a snapshot-like helper and a 'real' sleep.
     # exec -a renames the subprocess's argv[0] so the pattern can match it.
-    # Both outlive round_timeout_s=30 by a wide margin (90 >> 30) so the
+    # Both outlive round_budget_s=30 by a wide margin (90 >> 30) so the
     # round's own wall clock is what reaps it, even under scheduling delay.
     script.write_text(
         "#!/bin/bash\n"

@@ -230,7 +230,7 @@ def test_per_phase_override_should_be_forwarded_to_monitor_when_poll_once(
             cfg,
             phases=PhasesConfig(
                 list=["dev"],
-                overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+                overrides={"dev": PhaseOverride(round_budget_s=3600)},
             ),
         )
 
@@ -251,7 +251,7 @@ def test_per_phase_override_should_be_forwarded_to_monitor_when_poll_once(
     assert "phases_overrides" in call_kwargs, (
         "phases_overrides kwarg missing from run_all_detectors call"
     )
-    assert call_kwargs["phases_overrides"] == {"dev": PhaseOverride(round_timeout_s=3600)}
+    assert call_kwargs["phases_overrides"] == {"dev": PhaseOverride(round_budget_s=3600)}
 
 
 def _fake_systemd_unit(tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:

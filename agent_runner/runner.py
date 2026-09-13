@@ -426,7 +426,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     phase, phase_idx = _phase_for(round_num, cfg.phases.list, override=phase_override)
     profile = cfg.profile_for(phase)
     resolved_rt = profile.runtime  # profile already merged the per-phase runtime override
-    timeout_s = resolved_rt.round_timeout_s
+    timeout_s = resolved_rt.round_budget_s
     started_at = now_iso_ms()
 
     orphan = context_store.read_orphan_state(log_dir)
@@ -628,7 +628,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             log_dir,
             events.ROUND_TIMEOUT_KILL,
             round_num=round_num,
-            reason=f"exceeded round_timeout_s={timeout_s}",
+            reason=f"exceeded round_budget_s={timeout_s}",
         )
 
     completed_at = now_iso_ms()

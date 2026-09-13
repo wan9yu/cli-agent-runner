@@ -40,7 +40,7 @@ def _make_auto_commit_cfg(tmp_git_repo: Path, agent_script: Path) -> Config:
         runtime=RuntimeConfig(
             work_dir=tmp_git_repo,
             log_dir=log_dir,
-            # round_timeout_s=30 (widened from 10, 0.2.19): the fake agent's
+            # round_budget_s=30 (widened from 10, 0.2.19): the fake agent's
             # "dirty" behavior is trivial (write a file, exit 0) but under
             # >=2 concurrent gates (~2-3x CPU oversubscription) the real
             # subprocess spawn was occasionally starved past a 10s wall and
@@ -48,7 +48,7 @@ def _make_auto_commit_cfg(tmp_git_repo: Path, agent_script: Path) -> Config:
             # a reason unrelated to the dirty_auto_committed wiring under
             # test -- see the same mechanism in test_agent_runtime.py's
             # test_given_prompt_arg_template_....
-            round_timeout_s=30,
+            round_budget_s=30,
         ),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(dirty_action="auto_commit"),

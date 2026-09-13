@@ -99,9 +99,9 @@ def _phase_timeout(
     if phase is None or phases_overrides is None:
         return fallback
     override = phases_overrides.get(phase)
-    if override is None or override.round_timeout_s is None:
+    if override is None or override.round_budget_s is None:
         return fallback
-    return override.round_timeout_s
+    return override.round_budget_s
 
 
 def detect_hung(
@@ -109,14 +109,14 @@ def detect_hung(
     *,
     now: datetime,
     factor: float = 1.5,
-    round_timeout_s: int = 1800,
+    round_budget_s: int = 1800,
     phases_overrides: dict[str, PhaseOverride] | None = None,
 ) -> Alert | None:
     """A round_start without a matching round_end after timeout * factor.
 
     When ``phases_overrides`` is supplied and the round's ``phase`` is in it
-    with a ``round_timeout_s`` override, that value applies. Otherwise falls
-    back to ``round_timeout_s``. Rounds with no recorded phase always use the
+    with a ``round_budget_s`` override, that value applies. Otherwise falls
+    back to ``round_budget_s``. Rounds with no recorded phase always use the
     global timeout.
     """
     open_rounds: dict[int, tuple[str, str | None]] = {}
@@ -139,7 +139,7 @@ def detect_hung(
     started_ts, phase = open_rounds[rn]
     started = parse_iso_ms(started_ts)
     elapsed = (now - started).total_seconds()
-    effective_timeout = _phase_timeout(phases_overrides, phase, round_timeout_s)
+    effective_timeout = _phase_timeout(phases_overrides, phase, round_budget_s)
     threshold = effective_timeout * factor
     if elapsed > threshold:
         return _alert(

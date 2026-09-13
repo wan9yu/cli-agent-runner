@@ -108,7 +108,7 @@ def test_detect_hung_should_return_alert_when_round_has_no_end_event() -> None:
     now = datetime(2026, 5, 12, 11, 0, 0, tzinfo=UTC)  # 1h later
     events = [_ev("round_start", round_num=42, ts=started.isoformat().replace("+00:00", "Z"))]
 
-    a = detect_hung(events, now=now, factor=1.5, round_timeout_s=1800)  # 1.5 * 30min = 45min
+    a = detect_hung(events, now=now, factor=1.5, round_budget_s=1800)  # 1.5 * 30min = 45min
 
     assert a is not None
     assert a.detector == "hung"
@@ -416,12 +416,12 @@ def test_detect_hung_should_use_phase_override_when_phase_matches() -> None:
         {"event": "round_start", "round_num": 7, "phase": "warmup", "ts": started_ts},
     ]
 
-    no_override = detect_hung(events, now=now, round_timeout_s=1800)
+    no_override = detect_hung(events, now=now, round_budget_s=1800)
     with_override = detect_hung(
         events,
         now=now,
-        round_timeout_s=1800,
-        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
+        round_budget_s=1800,
+        phases_overrides={"warmup": PhaseOverride(round_budget_s=300)},
     )
 
     assert no_override is None
@@ -443,8 +443,8 @@ def test_detect_hung_should_use_global_timeout_when_phase_field_missing() -> Non
     out = detect_hung(
         events,
         now=now,
-        round_timeout_s=1800,
-        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
+        round_budget_s=1800,
+        phases_overrides={"warmup": PhaseOverride(round_budget_s=300)},
     )
 
     assert out is None
@@ -461,15 +461,15 @@ def test_detect_hung_should_use_global_timeout_when_phase_not_in_overrides() -> 
     out = detect_hung(
         events,
         now=now,
-        round_timeout_s=1800,
-        phases_overrides={"warmup": PhaseOverride(round_timeout_s=300)},
+        round_budget_s=1800,
+        phases_overrides={"warmup": PhaseOverride(round_budget_s=300)},
     )
 
     assert out is None
 
 
 def test_run_all_detectors_should_derive_stale_threshold_from_round_timeout() -> None:
-    # round_timeout_s=1000 -> derived 1500s. Last event 1800s ago -> stale.
+    # round_budget_s=1000 -> derived 1500s. Last event 1800s ago -> stale.
     from agent_runner.monitor import run_all_detectors
 
     events = [_ev("round_end", round_num=1)]  # ts 2026-05-12T10:00:00.000Z
@@ -479,7 +479,7 @@ def test_run_all_detectors_should_derive_stale_threshold_from_round_timeout() ->
         events=events,
         metrics=[],
         log_tails={},
-        round_timeout_s=1000,
+        round_budget_s=1000,
         now=now,
     )
 
@@ -512,7 +512,7 @@ def test_run_all_detectors_should_prefer_explicit_stale_threshold_over_derived()
         events=events,
         metrics=[],
         log_tails={},
-        round_timeout_s=1000,
+        round_budget_s=1000,
         supervisor_stale_threshold_s=3600,
         now=now,
     )

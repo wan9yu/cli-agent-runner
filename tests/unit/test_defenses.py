@@ -48,14 +48,14 @@ def test_catalog_entries_should_have_required_fields(tmp_path: Path) -> None:
         assert d.current_state in {"active", "degraded", "off"}
 
 
-def test_round_timeout_defense_should_reflect_configured_value(
+def test_round_budget_defense_should_reflect_configured_value(
     tmp_path: Path,
 ) -> None:
     cfg = _cfg(tmp_path)
-    object.__setattr__(cfg.runtime, "round_timeout_s", 999)
+    object.__setattr__(cfg.runtime, "round_budget_s", 999)
 
     cat = catalog(cfg)
-    rt = next(d for d in cat if d.name == "round_timeout_s")
+    rt = next(d for d in cat if d.name == "round_budget_s")
 
     assert rt.value == 999
 

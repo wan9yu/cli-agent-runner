@@ -169,7 +169,7 @@ def emit_round_grace_extended(
 ) -> None:
     """Emit when the grace-after-result timer expired but the agent still had
     live worker processes (e.g. a backgrounded build), so the round was NOT
-    killed; it continues until it finishes or hits round_timeout_s.
+    killed; it continues until it finishes or hits round_budget_s.
 
     live_children: list of ``{"name": <exe basename>, "pid": <int>}`` dicts
         (previously a list of cmdline strings).

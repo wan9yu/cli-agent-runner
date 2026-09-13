@@ -286,7 +286,7 @@ def test_live_children_should_return_empty_when_process_already_exited():
 
 def test_run_should_extend_grace_when_child_still_live_after_result(tmp_path, monkeypatch):
     """Agent emits result then backgrounds a long child -> live worker -> NOT
-    grace-killed; round_timeout_s (wall) reaps it instead; extended fired once.
+    grace-killed; round_budget_s (wall) reaps it instead; extended fired once.
 
     timeout_s must give the extend-check at least one real chance to run
     before the wall clock fires: measured under `-n auto` contention on a
@@ -316,7 +316,7 @@ def test_run_should_extend_grace_when_child_still_live_after_result(tmp_path, mo
     )
 
     assert result.killed_for_grace is False  # spared by liveness
-    assert result.timed_out is True  # round_timeout_s backstop reaped it
+    assert result.timed_out is True  # round_budget_s backstop reaped it
     assert len(extended) == 1  # emitted once, not per-tick
     live, ignored = extended[0]
     assert any(c["name"] == "sleep" for c in live)
@@ -428,7 +428,7 @@ def test_live_children_should_treat_all_children_as_live_when_no_ignore_patterns
 def test_run_should_kill_for_grace_when_only_ignored_helper_remains_alive(tmp_path, monkeypatch):
     """The 0.1.38 'persistent-helper caveat' fix: with a matching pattern, a round
     whose only live descendant is the ignored helper is reaped at grace, not
-    deferred to round_timeout_s.
+    deferred to round_budget_s.
 
     timeout_s/the duration bound are widened for measured `-n auto`
     contention headroom (see

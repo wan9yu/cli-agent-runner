@@ -81,7 +81,7 @@ def emit_round_mem_critical_sample(
     The caller caps this at ``2 * pressure.critical_consecutive_samples``
     consecutive ticks (1..6 at the default 3) -- a sustained-critical
     don't-terminate run (cgroup-defer, or the off switch) would otherwise
-    write one event per ~10s tick for up to a whole ``round_timeout_s`` on a
+    write one event per ~10s tick for up to a whole ``round_budget_s`` on a
     permanently-deferred/off host. The cap is per streak-episode, not a
     lifetime limit: any non-critical tick still resets the streak to 0, and
     sampling resumes from 1 the next time critical pressure recurs."""

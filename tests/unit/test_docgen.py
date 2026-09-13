@@ -64,7 +64,7 @@ def test_render_defenses_table_should_list_one_row_per_catalog_entry() -> None:
     ]
     assert len(rows) == len(defenses.catalog(_default_cfg()))
     # Spot-check one well-known defense
-    assert "round_timeout_s" in md
+    assert "round_budget_s" in md
 
 
 def test_render_defenses_table_should_render_paths_as_repo_relative() -> None:
@@ -90,7 +90,7 @@ def test_render_should_write_table_when_docs_dir_has_marker(
     assert arch in out
     rewritten = arch.read_text()
     assert "PLACEHOLDER" not in rewritten
-    assert "round_timeout_s" in rewritten
+    assert "round_budget_s" in rewritten
     assert "<!-- gen:defenses-table -->" in rewritten
     assert "<!-- /gen:defenses-table -->" in rewritten
 
@@ -107,7 +107,7 @@ def test_render_should_not_touch_disk_when_write_false(
     out = render(docs_dir=tmp_path, write=False)
 
     assert arch.read_text() == original  # disk unchanged
-    assert "round_timeout_s" in out[arch]  # but rendered text returned
+    assert "round_budget_s" in out[arch]  # but rendered text returned
 
 
 def test_render_should_raise_when_gen_name_unknown(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_render_config_schema_table_should_list_all_sections() -> None:
     assert "### `[vcs]`" in md
     # Spot-check fields
     assert "command" in md
-    assert "round_timeout_s" in md
+    assert "round_budget_s" in md
     assert "stash_idempotency_s" in md
     # Defaults are shown for fields that have them
     assert "1800" in md

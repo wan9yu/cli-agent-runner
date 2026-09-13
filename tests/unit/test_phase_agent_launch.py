@@ -34,7 +34,7 @@ def _cfg(tmp_git_repo: Path, base_cmd: list[str], phase_b_cmd: list[str]) -> Con
     prompt.write_text("Test prompt body. " * 50)
     return Config(
         agent=AgentConfig(command=base_cmd, prompt_arg_template=["{prompt}"]),
-        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_timeout_s=10),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir, round_budget_s=10),
         prompt=PromptConfig(file=prompt, inject_context=True),
         vcs=VcsConfig(dirty_action="ignore"),
         phases=PhasesConfig(

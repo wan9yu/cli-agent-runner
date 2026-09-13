@@ -114,7 +114,7 @@ def test_clean_history_should_have_no_alerts_when_run_all_detectors(
         events=events,
         metrics=metrics,
         log_tails=log_tails,
-        round_timeout_s=1800,
+        round_budget_s=1800,
         supervisor_stale_threshold_s=0,  # disable: seeded events use a fixed old timestamp
     )
 
@@ -136,7 +136,7 @@ def test_disk_at_98_pct_should_be_critical_with_auto_stop_when_run_all_detectors
         events=[],
         metrics=metrics,
         log_tails={},
-        round_timeout_s=1800,
+        round_budget_s=1800,
     )
 
     crit = [a for a in alerts if a.detector == "disk_critical"]

@@ -24,7 +24,7 @@ from agent_runner.service_unit import (
 def _cfg(
     tmp_path: Path,
     *,
-    round_timeout_s: int = 600,
+    round_budget_s: int = 600,
     phases: list[str] | None = None,
 ) -> Config:
     return Config(
@@ -32,7 +32,7 @@ def _cfg(
         runtime=RuntimeConfig(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
-            round_timeout_s=round_timeout_s,
+            round_budget_s=round_budget_s,
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -112,15 +112,15 @@ def test_render_serve_unit_should_restrict_restart_prevention_to_giveup_exits_wh
 
 
 @pytest.mark.parametrize(
-    "round_timeout_s,expected",
+    "round_budget_s,expected",
     [(600, 810), (1800, 2010)],
     ids=["timeout-600", "timeout-1800"],
 )
 def test_render_serve_unit_should_add_grace_budget_to_timeout_when_rendered(
-    tmp_path: Path, round_timeout_s: int, expected: int
+    tmp_path: Path, round_budget_s: int, expected: int
 ) -> None:
-    """TimeoutStopSec = round_timeout_s + 210 budget (_serve_policy.timeout_budget)."""
-    cfg = _cfg(tmp_path, round_timeout_s=round_timeout_s)
+    """TimeoutStopSec = round_budget_s + 210 budget (_serve_policy.timeout_budget)."""
+    cfg = _cfg(tmp_path, round_budget_s=round_budget_s)
 
     body = render_serve_unit(
         cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner", config_path=_toml(tmp_path)
@@ -170,7 +170,7 @@ def test_render_units_should_use_real_toml_config_path_when_work_dir_differs_fro
         runtime=RuntimeConfig(
             work_dir=repo_dir,  # deliberately NOT real_toml.parent
             log_dir=repo_dir / "logs",
-            round_timeout_s=600,
+            round_budget_s=600,
         ),
         prompt=PromptConfig(file=repo_dir / "p.md", inject_context=True),
         vcs=VcsConfig(),
@@ -201,19 +201,19 @@ def test_render_monitor_unit_should_run_monitor_command_when_rendered(tmp_path: 
 def test_render_serve_unit_should_use_max_round_timeout_across_phases_when_phase_override_present(
     tmp_path: Path,
 ) -> None:
-    """Per-phase round_timeout_s influences systemd TimeoutStopSec via max()."""
+    """Per-phase round_budget_s influences systemd TimeoutStopSec via max()."""
     cfg = Config(
         agent=AgentConfig(command=["x"], prompt_arg_template=["-p", "{prompt}"]),
         runtime=RuntimeConfig(
             work_dir=tmp_path,
             log_dir=tmp_path / "logs",
-            round_timeout_s=1800,
+            round_budget_s=1800,
         ),
         prompt=PromptConfig(file=tmp_path / "p.md"),
         vcs=VcsConfig(),
         phases=PhasesConfig(
             list=["dev", "qa"],
-            overrides={"dev": PhaseOverride(round_timeout_s=3600)},
+            overrides={"dev": PhaseOverride(round_budget_s=3600)},
         ),
     )
 

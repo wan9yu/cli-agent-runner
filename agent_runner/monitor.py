@@ -94,7 +94,7 @@ def run_all_detectors(
     events: list[dict[str, Any]],
     metrics: list[dict[str, Any]],
     log_tails: dict[int, str],
-    round_timeout_s: int = 1800,
+    round_budget_s: int = 1800,
     supervisor_stale_threshold_s: int | None = None,
     now: datetime | None = None,
     auth_fail_patterns: list[str] | None = None,
@@ -114,7 +114,7 @@ def run_all_detectors(
         [re.compile(p, re.IGNORECASE) for p in auth_fail_patterns] if auth_fail_patterns else None
     )
     effective_stale_s = (
-        int(round_timeout_s * 1.5)
+        int(round_budget_s * 1.5)
         if supervisor_stale_threshold_s is None
         else supervisor_stale_threshold_s
     )
@@ -123,7 +123,7 @@ def run_all_detectors(
         (
             "hung",
             lambda: detect_hung(
-                events, now=now, round_timeout_s=round_timeout_s, phases_overrides=phases_overrides
+                events, now=now, round_budget_s=round_budget_s, phases_overrides=phases_overrides
             ),
         ),
         ("orphan_chain", lambda: detect_orphan_chain(events)),
