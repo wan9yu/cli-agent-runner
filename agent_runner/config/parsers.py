@@ -19,6 +19,9 @@ from agent_runner.config.models import (
     _DEFAULT_AUTH_PATTERNS,
     _DEFAULT_AUTO_STOP_ON,
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
+    _HOST_HEALTH_DISK_ALLOWED_FIELDS,
+    _HOST_HEALTH_MEMORY_ALLOWED_FIELDS,
+    _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS,
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_OVERRIDE_ALLOWED_FIELDS,
@@ -42,6 +45,9 @@ from agent_runner.config.models import (
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _HostHealthDiskConfig,
+    _HostHealthMemoryConfig,
+    _HostHealthPressureConfig,
 )
 from agent_runner.config.validators import (
     _expand_and_resolve,
@@ -458,46 +464,57 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
 
 def _parse_monitor(monitor_d: dict) -> MonitorConfig:
     """Parse + validate the ``[monitor]`` table (incl. nested
-    ``[monitor.host_health]``) into a ``MonitorConfig``."""
+    ``[monitor.host_health]`` and its ``.disk``/``.memory``/``.pressure``
+    sub-tables) into a ``MonitorConfig``."""
     _reject_unknown_fields(monitor_d, _MONITOR_ALLOWED_FIELDS, "monitor")
     hh_d = _require_table(monitor_d, "host_health", label="monitor.host_health")
     _reject_unknown_fields(hh_d, _MONITOR_HOST_HEALTH_ALLOWED_FIELDS, "monitor.host_health")
+    disk_d = _require_table(hh_d, "disk", label="monitor.host_health.disk")
+    _reject_unknown_fields(disk_d, _HOST_HEALTH_DISK_ALLOWED_FIELDS, "monitor.host_health.disk")
+    mem_d = _require_table(hh_d, "memory", label="monitor.host_health.memory")
+    _reject_unknown_fields(mem_d, _HOST_HEALTH_MEMORY_ALLOWED_FIELDS, "monitor.host_health.memory")
+    pres_d = _require_table(hh_d, "pressure", label="monitor.host_health.pressure")
+    _reject_unknown_fields(
+        pres_d, _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS, "monitor.host_health.pressure"
+    )
     host_health = MonitorHostHealthConfig(
-        mem_avail_min_mb=_require_non_negative_int(
-            hh_d.get("mem_avail_min_mb", 200),
-            field="monitor.host_health.mem_avail_min_mb",
+        disk=_HostHealthDiskConfig(
+            warning_pct=_require_pct(
+                disk_d.get("warning_pct", 90.0), field="monitor.host_health.disk.warning_pct"
+            ),
+            critical_pct=_require_pct(
+                disk_d.get("critical_pct", 95.0), field="monitor.host_health.disk.critical_pct"
+            ),
         ),
-        disk_warning_pct=_require_pct(
-            hh_d.get("disk_warning_pct", 90.0),
-            field="monitor.host_health.disk_warning_pct",
+        memory=_HostHealthMemoryConfig(
+            avail_min_mb=_require_non_negative_int(
+                mem_d.get("avail_min_mb", 200), field="monitor.host_health.memory.avail_min_mb"
+            ),
+            free_low_mb=_require_positive_int(
+                mem_d.get("free_low_mb", 16), field="monitor.host_health.memory.free_low_mb"
+            ),
+            swap_out_noise_floor_mb=_require_positive_int(
+                mem_d.get("swap_out_noise_floor_mb", 32),
+                field="monitor.host_health.memory.swap_out_noise_floor_mb",
+            ),
         ),
-        disk_critical_pct=_require_pct(
-            hh_d.get("disk_critical_pct", 95.0),
-            field="monitor.host_health.disk_critical_pct",
-        ),
-        swap_sout_noise_floor_mb=_require_positive_int(
-            hh_d.get("swap_sout_noise_floor_mb", 32),
-            field="monitor.host_health.swap_sout_noise_floor_mb",
-        ),
-        mem_free_low_mb=_require_positive_int(
-            hh_d.get("mem_free_low_mb", 16),
-            field="monitor.host_health.mem_free_low_mb",
-        ),
-        psi_full_avg10_critical=_require_positive_pct(
-            hh_d.get("psi_full_avg10_critical", 60.0),
-            field="monitor.host_health.psi_full_avg10_critical",
-        ),
-        psi_some_avg10_warning=_require_positive_pct(
-            hh_d.get("psi_some_avg10_warning", 5.0),
-            field="monitor.host_health.psi_some_avg10_warning",
-        ),
-        mem_critical_consecutive_samples=_require_positive_int(
-            hh_d.get("mem_critical_consecutive_samples", 3),
-            field="monitor.host_health.mem_critical_consecutive_samples",
-        ),
-        in_round_mem_terminate=_require_bool(
-            hh_d.get("in_round_mem_terminate", True),
-            field="monitor.host_health.in_round_mem_terminate",
+        pressure=_HostHealthPressureConfig(
+            full_avg10_critical=_require_positive_pct(
+                pres_d.get("full_avg10_critical", 60.0),
+                field="monitor.host_health.pressure.full_avg10_critical",
+            ),
+            some_avg10_warning=_require_positive_pct(
+                pres_d.get("some_avg10_warning", 5.0),
+                field="monitor.host_health.pressure.some_avg10_warning",
+            ),
+            critical_consecutive_samples=_require_positive_int(
+                pres_d.get("critical_consecutive_samples", 3),
+                field="monitor.host_health.pressure.critical_consecutive_samples",
+            ),
+            in_round_terminate=_require_bool(
+                pres_d.get("in_round_terminate", True),
+                field="monitor.host_health.pressure.in_round_terminate",
+            ),
         ),
     )
     monitor = MonitorConfig(

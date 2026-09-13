@@ -1563,6 +1563,31 @@ def test_monitor_host_health_config_should_expose_grouped_defaults_when_construc
     assert cfg.pressure.in_round_terminate is True
 
 
+def test_load_config_should_parse_grouped_host_health_tables_when_present(
+    tmp_path: Path,
+) -> None:
+    from tests._test_helpers import make_toml_with_sections
+
+    toml = make_toml_with_sections(
+        tmp_path,
+        runtime_extra=(
+            "[monitor.host_health.disk]\n"
+            "warning_pct = 80.0\n"
+            "[monitor.host_health.memory]\n"
+            "avail_min_mb = 100\n"
+            "[monitor.host_health.pressure]\n"
+            "in_round_terminate = false\n"
+        ),
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.monitor.host_health.disk.warning_pct == 80.0
+    assert cfg.monitor.host_health.memory.avail_min_mb == 100
+    assert cfg.monitor.host_health.pressure.in_round_terminate is False
+    assert cfg.monitor.host_health.disk.critical_pct == 95.0  # untouched default
+
+
 def test_monitor_host_health_defaults_should_match_detector_defaults(
     tmp_path: Path,
 ) -> None:
