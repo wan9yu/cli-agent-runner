@@ -77,6 +77,10 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._monitor_detectors",
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
+        # _plugin_manifest: the plugin ABI module. _load_plugin_manifests()
+        # (called at package import, same as the scanner it pairs with)
+        # imports it to resolve and register every discovered PluginManifest.
+        "agent_runner._plugin_manifest",
         "agent_runner._plugin_scan",
         "agent_runner._redact",
         "agent_runner._registry",

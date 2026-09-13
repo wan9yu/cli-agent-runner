@@ -13,6 +13,16 @@ log_dir
 offsets
 buffer
 
+# agent_runner._plugin_manifest.PluginManifest
+name
+pre_round_hooks
+context_enrichers
+post_round_hooks
+serve_startup_hooks
+dirty_handlers
+detectors
+event_kinds
+
 # agent_runner._round_outcome.RoundOutcome
 mem_terminated
 usage_capable
