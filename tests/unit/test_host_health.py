@@ -277,6 +277,17 @@ def test_cgroup_growth_rate_pressure_should_warn_when_rate_at_or_above_threshold
     assert result.context == {"rate_mb_per_min": 512.0, "threshold_mb_per_min": 512.0}
 
 
+def test_cgroup_growth_rate_pressure_should_carry_unrounded_rate_in_context_when_warning() -> None:
+    cfg = MonitorHostHealthConfig(
+        pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=512.0)
+    )
+
+    result = host_health.cgroup_growth_rate_pressure(623.456789, cfg)
+
+    assert result is not None
+    assert result.context["rate_mb_per_min"] == 623.456789
+
+
 def test_cgroup_growth_rate_pressure_should_read_threshold_from_cfg_not_hardcoded_constant() -> (
     None
 ):

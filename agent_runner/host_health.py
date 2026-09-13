@@ -202,6 +202,6 @@ def cgroup_growth_rate_pressure(rate_mb_per_min: float | None, cfg: Any) -> Pres
             severity="warning",
             signal="cgroup_growth_rate",
             message=f"memory growing {rate_mb_per_min:.0f} MB/min (>= {warn:.0f})",
-            context={"rate_mb_per_min": round(rate_mb_per_min, 1), "threshold_mb_per_min": warn},
+            context={"rate_mb_per_min": rate_mb_per_min, "threshold_mb_per_min": warn},
         )
     return None
