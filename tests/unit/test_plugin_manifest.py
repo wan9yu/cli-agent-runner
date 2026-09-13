@@ -35,3 +35,28 @@ def test_register_manifest_should_populate_every_declared_registry_when_called()
 
     assert any(h.name == "test_post_round_hook" for h in hooks.post_round_hooks())
     assert "test_kind" in _events.KNOWN_EVENT_KINDS
+
+
+def test_unregister_by_name_should_remove_only_the_named_manifests_capabilities_when_called():
+    from agent_runner._plugin_manifest import PluginManifest, register_manifest, unregister_by_name
+
+    class _Hook:
+        name = "keep_me"
+
+        def after_round(self, ctx, result):
+            pass
+
+    class _OtherHook:
+        name = "drop_me"
+
+        def after_round(self, ctx, result):
+            pass
+
+    register_manifest(PluginManifest(name="plugin_a", post_round_hooks=(_Hook(),)))
+    register_manifest(PluginManifest(name="plugin_b", post_round_hooks=(_OtherHook(),)))
+
+    found = unregister_by_name({"plugin_b"})
+
+    assert found == {"plugin_b"}
+    assert any(h.name == "keep_me" for h in hooks.post_round_hooks())
+    assert not any(h.name == "drop_me" for h in hooks.post_round_hooks())
