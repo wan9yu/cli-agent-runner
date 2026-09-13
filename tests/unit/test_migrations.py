@@ -410,3 +410,19 @@ def test_phase_agent_missing_prompt_placeholder_should_not_be_flagged_when_files
     r = _run(text)
 
     assert r.manual == []
+
+
+def test_swap_sout_noise_floor_mb_should_relocate_under_memory_subtable_when_migrated():
+    text = "[monitor.host_health]\nswap_sout_noise_floor_mb = 64\nmem_avail_min_mb = 100\n"
+
+    r = _run(text)
+
+    assert "[monitor.host_health.memory]" in r.new_text
+    assert "swap_out_noise_floor_mb = 64" in r.new_text
+    assert "avail_min_mb = 100" in r.new_text
+    assert "swap_sout_noise_floor_mb" not in r.new_text
+    assert "mem_avail_min_mb" not in r.new_text
+    assert tomllib.loads(r.new_text)["monitor"]["host_health"]["memory"] == {
+        "swap_out_noise_floor_mb": 64,
+        "avail_min_mb": 100,
+    }

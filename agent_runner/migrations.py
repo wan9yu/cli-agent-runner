@@ -172,6 +172,58 @@ def _rename_key(old: str, new: str, table: str) -> Callable[[str], str]:
     return _apply
 
 
+def _relocate_key(old: str, new: str, from_table: str, to_table: str) -> Callable[[str], str]:
+    """Move `old = value` out of [from_table] into [to_table] as `new = value`,
+    creating [to_table] (appended at EOF) if it doesn't already exist. Refuses
+    (returns text unchanged, routing to manual) unless the source line is a
+    single unambiguous hit in [from_table] — same refusal discipline as
+    _rename_key."""
+    assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=[ \t]*)(?P<rest>.*)$")
+
+    def _apply(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        cur: str | None = None
+        hit: int | None = None
+        for i, line in enumerate(lines):
+            h = _TABLE_HEADER.match(line)
+            if h:
+                cur = h.group("name").strip()
+                continue
+            if cur == from_table and assign.match(line):
+                if hit is not None:
+                    return text
+                hit = i
+        if hit is None:
+            return text
+        m = assign.match(lines[hit])
+        trailing_nl = "\n" if lines[hit].endswith("\n") else ""
+        new_line = f"{new}{m.group('sp')}{m.group('rest').rstrip(chr(10))}{trailing_nl}"
+        del lines[hit]
+        dest_idx: int | None = None
+        cur = None
+        for i, line in enumerate(lines):
+            h = _TABLE_HEADER.match(line)
+            if h:
+                if dest_idx is not None and cur == to_table:
+                    break
+                cur = h.group("name").strip()
+                if cur == to_table:
+                    dest_idx = i
+                continue
+            if cur == to_table:
+                dest_idx = i
+        if dest_idx is None:
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += "\n"
+            lines.append(f"[{to_table}]\n")
+            lines.append(new_line)
+        else:
+            lines.insert(dest_idx + 1, new_line)
+        return "".join(lines)
+
+    return _apply
+
+
 def _wrap_bare_string_list(
     key: str, table: str | re.Pattern, *, skip_space: bool = False
 ) -> Callable[[str], str]:
@@ -571,10 +623,110 @@ MIGRATIONS: list[Migration] = [
             "add one, or set that phase's prompt.files = [] if it truly sends no prompt"
         ),
     ),
-    # --- Strictness completion: [monitor.host_health] unknown keys.
-    # MANUAL like every sibling above — auto-deleting an unknown threshold key
-    # would silently discard the operator's intended value, the exact harm
-    # this rejection exists to prevent. ---
+    # --- 0.3.0: [monitor.host_health] regroup — 9 flat keys relocate into
+    # disk/memory/pressure sub-tables. Each targets a different old key, so
+    # they are order-insensitive and converge in a single run_migrations pass
+    # (see _relocate_key's docstring). ---
+    Migration(
+        detect=lambda p: "mem_avail_min_mb" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "mem_avail_min_mb", "avail_min_mb", "monitor.host_health", "monitor.host_health.memory"
+        ),
+        describe="monitor.host_health.mem_avail_min_mb → monitor.host_health.memory.avail_min_mb",
+    ),
+    Migration(
+        detect=lambda p: "disk_warning_pct" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "disk_warning_pct", "warning_pct", "monitor.host_health", "monitor.host_health.disk"
+        ),
+        describe="monitor.host_health.disk_warning_pct → monitor.host_health.disk.warning_pct",
+    ),
+    Migration(
+        detect=lambda p: "disk_critical_pct" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "disk_critical_pct", "critical_pct", "monitor.host_health", "monitor.host_health.disk"
+        ),
+        describe="monitor.host_health.disk_critical_pct → monitor.host_health.disk.critical_pct",
+    ),
+    Migration(
+        detect=lambda p: "swap_sout_noise_floor_mb" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "swap_sout_noise_floor_mb",
+            "swap_out_noise_floor_mb",
+            "monitor.host_health",
+            "monitor.host_health.memory",
+        ),
+        describe=(
+            "monitor.host_health.swap_sout_noise_floor_mb → "
+            "monitor.host_health.memory.swap_out_noise_floor_mb"
+        ),
+    ),
+    Migration(
+        detect=lambda p: "mem_free_low_mb" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "mem_free_low_mb", "free_low_mb", "monitor.host_health", "monitor.host_health.memory"
+        ),
+        describe="monitor.host_health.mem_free_low_mb → monitor.host_health.memory.free_low_mb",
+    ),
+    Migration(
+        detect=lambda p: "psi_full_avg10_critical" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "psi_full_avg10_critical",
+            "full_avg10_critical",
+            "monitor.host_health",
+            "monitor.host_health.pressure",
+        ),
+        describe=(
+            "monitor.host_health.psi_full_avg10_critical → "
+            "monitor.host_health.pressure.full_avg10_critical"
+        ),
+    ),
+    Migration(
+        detect=lambda p: "psi_some_avg10_warning" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "psi_some_avg10_warning",
+            "some_avg10_warning",
+            "monitor.host_health",
+            "monitor.host_health.pressure",
+        ),
+        describe=(
+            "monitor.host_health.psi_some_avg10_warning → "
+            "monitor.host_health.pressure.some_avg10_warning"
+        ),
+    ),
+    Migration(
+        detect=lambda p: (
+            "mem_critical_consecutive_samples" in _table(_table(p, "monitor"), "host_health")
+        ),
+        apply=_relocate_key(
+            "mem_critical_consecutive_samples",
+            "critical_consecutive_samples",
+            "monitor.host_health",
+            "monitor.host_health.pressure",
+        ),
+        describe=(
+            "monitor.host_health.mem_critical_consecutive_samples → "
+            "monitor.host_health.pressure.critical_consecutive_samples"
+        ),
+    ),
+    Migration(
+        detect=lambda p: "in_round_mem_terminate" in _table(_table(p, "monitor"), "host_health"),
+        apply=_relocate_key(
+            "in_round_mem_terminate",
+            "in_round_terminate",
+            "monitor.host_health",
+            "monitor.host_health.pressure",
+        ),
+        describe=(
+            "monitor.host_health.in_round_mem_terminate → "
+            "monitor.host_health.pressure.in_round_terminate"
+        ),
+    ),
+    # --- Strictness completion: [monitor.host_health] unknown keys (any key
+    # that isn't one of the three sub-tables above, or wasn't one of the 9
+    # relocated names either). MANUAL like every sibling above — auto-deleting
+    # an unknown threshold key would silently discard the operator's intended
+    # value, the exact harm this rejection exists to prevent. ---
     Migration(
         detect=lambda p: bool(
             set(_table(_table(p, "monitor"), "host_health")) - _MONITOR_HOST_HEALTH_ALLOWED_FIELDS
@@ -584,7 +736,7 @@ MIGRATIONS: list[Migration] = [
             "monitor.host_health",
             ("monitor", "host_health"),
             _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
-            year="0.2.14",
+            year="0.3.0",
         ),
     ),
 ]
