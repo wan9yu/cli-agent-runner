@@ -458,6 +458,7 @@ def test_full_flat_host_health_table_should_migrate_to_all_three_subtables_when_
         "critical_consecutive_samples": 2,
         "in_round_terminate": False,
     }
+    assert r.manual == []
 
 
 def test_round_timeout_s_should_rename_in_runtime_table_when_migrated():
@@ -489,4 +490,3 @@ def test_round_timeout_s_should_rename_in_nested_phase_runtime_table_when_migrat
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert tomllib.loads(r.new_text)["phases"]["a"]["runtime"]["round_budget_s"] == 300
-    assert r.manual == []
