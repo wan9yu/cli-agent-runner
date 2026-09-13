@@ -77,7 +77,7 @@ def test_cmd_restart_should_reject_cleanly_when_service_is_pid_file_based(
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "serve.pid").write_text("12345")
 
-    with patch("agent_runner.api.send_signal_to_pid", return_value=True) as send:
+    with patch("agent_runner._lifecycle.send_signal_to_pid", return_value=True) as send:
         rc = main(["restart"])
 
     send.assert_not_called()  # service not stopped
