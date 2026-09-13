@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1]
+## [0.3.1] - 2026-09-14
 
 ### Added
 - `monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min` (default 512.0): a mid-round memory-growth-rate detector gives an earlier growth signal than the existing PSI/MemFree floors catch, ahead of a runaway climb reaching them. Observability only — no round action.
