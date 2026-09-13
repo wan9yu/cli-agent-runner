@@ -17,6 +17,19 @@ _DISABLED_PLUGIN_NAMES: list[str] = []
 _DISCOVERED_PLUGIN_ENTRIES: list[tuple[str, str]] = []  # (name, "module:attr"), populated once
 
 
+def _entry_point_module_path(value: str) -> str:
+    """The resolvable module-path portion of an entry-point ``value``
+    (``"module.path:attr [extras]"``), with any ``:attr`` suffix and trailing
+    extras marker stripped.
+
+    Shared by ``load_and_register_plugins``'s import resolution and
+    ``doctor``'s per-plugin checksum print (``cli/doctor_cmd.py``) — the
+    checksum print and the actual import MUST resolve the identical module,
+    or an operator's pinned digest would silently protect the wrong file.
+    """
+    return value.partition("[")[0].rstrip().partition(":")[0]
+
+
 def _discover_plugin_manifests() -> None:
     """Package-import-time step. Scans entry_points.txt ONLY (scan_entry_points) —
     imports nothing, executes no plugin code.
@@ -37,31 +50,53 @@ def _discover_plugin_manifests() -> None:
 _discover_plugin_manifests()
 
 
-def load_and_register_plugins(plugins_cfg) -> None:
+def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
     """Called from config.loader.load_config once [plugins] is parsed — the
     load-bearing fix: verification now has a Config to gate on. For each
     discovered (name, value) NOT in plugins_cfg.disable and not already
     registered, resolve module_path/attr_path, import + register_manifest. A
     disabled name is never imported. A per-plugin failure isolates as a
     UserWarning and skips that ONE plugin; it never aborts the whole load.
+
+    ``name`` here is always the entry-point name (the ``agent_runner.plugins``
+    pyproject.toml key) — it's the only identifier known BEFORE import, so
+    it's what ``_admit_third_party`` gates on (pin lookup, the builtin-identity
+    exemption) and what ``doctor`` prints a checksum against. It is NOT
+    necessarily ``PluginManifest.name`` (only known after import); for every
+    builtin the two are pinned equal by
+    ``test_entry_point_names_should_match_manifest_name``, but a third-party
+    plugin has no such guarantee — which is fine, since admission never reads
+    the manifest name at all.
+
+    Every third-party (non-``BUILTIN_PLUGIN_NAMES``) entry passes through
+    ``_admit_third_party`` BEFORE import — a pin mismatch or an unpinned
+    plugin under ``sandbox = "require"`` refuses to import that ONE plugin
+    (fail-closed; never loads unconfined). Builtins skip this gate entirely —
+    trusted by identity, never require a pin.
     """
     import importlib
     import warnings
 
     from agent_runner._plugin_manifest import loaded_manifest_names, register_manifest
+    from agent_runner._registry import BUILTIN_PLUGIN_NAMES
 
     disable = set(plugins_cfg.disable)
     already = set(loaded_manifest_names())
     for name, value in _DISCOVERED_PLUGIN_ENTRIES:
         if name in disable or name in already:
             continue
+        # An entry-point value may carry a trailing extras marker
+        # (``module:attr [extra1,extra2]``); importlib.metadata.EntryPoint's
+        # own module/attr grammar excludes "[", so anything from the first
+        # "[" onward is always extras, never part of the path — strip it
+        # before resolving, or it glues onto attr_path and breaks getattr().
+        module_path = _entry_point_module_path(value)
+        attr_path = value.partition("[")[0].rstrip().partition(":")[2]
+        if name not in BUILTIN_PLUGIN_NAMES and not _admit_third_party(
+            name, module_path, plugins_cfg, log_dir
+        ):
+            continue
         try:
-            # An entry-point value may carry a trailing extras marker
-            # (``module:attr [extra1,extra2]``); importlib.metadata.EntryPoint's
-            # own module/attr grammar excludes "[", so anything from the first
-            # "[" onward is always extras, never part of the path — strip it
-            # before resolving, or it glues onto attr_path and breaks getattr().
-            module_path, _, attr_path = value.partition("[")[0].rstrip().partition(":")
             mod = importlib.import_module(module_path)
             target = mod
             for attr in filter(None, attr_path.split(".")):
@@ -69,6 +104,47 @@ def load_and_register_plugins(plugins_cfg) -> None:
             register_manifest(target)
         except Exception as e:  # noqa: BLE001 — a broken plugin must never crash the supervisor
             warnings.warn(f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}", stacklevel=3)
+
+
+def _admit_third_party(name: str, module_path: str, plugins_cfg, log_dir) -> bool:
+    """Fail-closed pin/sandbox gate for a THIRD-PARTY plugin (never called for
+    a ``BUILTIN_PLUGIN_NAMES`` member). Returns False to refuse (and emit) —
+    skipping this ONE plugin; every other discovered entry still loads.
+
+    Both ``name`` and ``pins``' keys are entry-point names — see
+    ``load_and_register_plugins``'s docstring. Runs BEFORE
+    ``importlib.import_module``, so no plugin code executes for a refused
+    entry.
+    """
+    from agent_runner._plugin_checksum import compute_plugin_checksum, verify_pin
+    from agent_runner._sandbox_probe import probe_sandbox_capability
+    from agent_runner.api import emit_plugin_checksum_mismatch, emit_plugin_sandbox_degraded
+
+    try:
+        verdict = verify_pin(name, module_path, plugins_cfg.pin)
+    except Exception:  # noqa: BLE001 — unresolvable/unreadable module == refuse (fail closed)
+        verdict = "mismatch"
+    if verdict == "mismatch":
+        if log_dir is not None:
+            try:
+                actual = compute_plugin_checksum(module_path)
+            except Exception:  # noqa: BLE001 — module itself unreadable; still report, don't crash
+                actual = "sha256:unreadable"
+            emit_plugin_checksum_mismatch(
+                log_dir, name=name, expected=plugins_cfg.pin.get(name, ""), actual=actual
+            )
+        return False
+    if verdict == "unpinned" and plugins_cfg.sandbox == "require":
+        if log_dir is not None:
+            probe = probe_sandbox_capability()
+            emit_plugin_sandbox_degraded(
+                log_dir,
+                requested="require",
+                achieved_tier=probe.achieved_tier,
+                reason=f"{name}: unpinned third-party plugin under sandbox=require",
+            )
+        return False
+    return True
 
 
 def apply_plugin_disable(names: list[str]) -> None:

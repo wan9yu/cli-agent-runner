@@ -41,6 +41,8 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_mem_loop,
     emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
+    emit_plugin_checksum_mismatch,
+    emit_plugin_sandbox_degraded,
     emit_plugin_sandbox_kill,
     emit_rate_limit_stop,
     emit_round_cgroup_memory,

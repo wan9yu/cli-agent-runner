@@ -34,6 +34,12 @@ usage_capable_by_agent
 newest_usage_ts_by_agent
 backoff_exponent_by_agent
 
+# agent_runner._sandbox_probe.SandboxProbe
+achieved_tier
+landlock_abi
+seccomp
+unconfined_reason
+
 # agent_runner.agent_runtime.RunResult
 exit_code
 duration_s
@@ -143,6 +149,8 @@ phase
 checks
 overlaps
 plan
+sandbox
+plugin_checksums
 
 # agent_runner.config.models.AgentConfig
 command

@@ -15,3 +15,29 @@ def emit_plugin_sandbox_kill(
     from agent_runner.events import PLUGIN_SANDBOX_KILL, emit
 
     emit(log_dir, PLUGIN_SANDBOX_KILL, hook=hook, signal=signal, syscall=syscall)
+
+
+def emit_plugin_checksum_mismatch(log_dir: Path, *, name: str, expected: str, actual: str) -> None:
+    """Emit when a third-party plugin's computed sha256 doesn't match its
+    ``[plugins.pin]`` entry (or the pin is unreadable) -- the loader refuses
+    to import that ONE plugin when this fires; it never loads unconfined."""
+    from agent_runner.events import PLUGIN_CHECKSUM_MISMATCH, emit
+
+    emit(log_dir, PLUGIN_CHECKSUM_MISMATCH, name=name, expected=expected, actual=actual)
+
+
+def emit_plugin_sandbox_degraded(
+    log_dir: Path, *, requested: str, achieved_tier: str, reason: str
+) -> None:
+    """Emit when a plugin loads (or would run) at a WEAKER tier than
+    ``requested`` -- e.g. an unpinned third-party plugin refused under
+    ``sandbox = "require"``, or a ``"prefer"`` load proceeding unconfined."""
+    from agent_runner.events import PLUGIN_SANDBOX_DEGRADED, emit
+
+    emit(
+        log_dir,
+        PLUGIN_SANDBOX_DEGRADED,
+        requested=requested,
+        achieved_tier=achieved_tier,
+        reason=reason,
+    )

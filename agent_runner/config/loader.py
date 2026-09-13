@@ -129,7 +129,7 @@ def load_config(toml_path: Path) -> Config:
     # time never could. Then honor disable (belt-and-suspenders unregister).
     from agent_runner import apply_plugin_disable, load_and_register_plugins
 
-    load_and_register_plugins(plugins)
+    load_and_register_plugins(plugins, log_dir=cfg.runtime.log_dir)
     if plugins.disable:
         apply_plugin_disable(plugins.disable)
 

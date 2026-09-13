@@ -237,6 +237,8 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `orphan_stash_failed`
 - `orphan_stashed`
 - `package_upgraded`
+- `plugin_checksum_mismatch`
+- `plugin_sandbox_degraded`
 - `plugin_sandbox_kill`
 - `prompt_overwritten`
 - `round_cgroup_memory`
