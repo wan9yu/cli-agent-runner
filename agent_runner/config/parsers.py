@@ -572,12 +572,37 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
     return monitor
 
 
+def _require_strict_str_list(value: Any, *, field: str) -> list[str]:
+    """Stricter cousin of ``_require_str_list`` for security-gating fields: no
+    ``str()`` coercion, ever. Rejects a bare string or any other non-list, and
+    rejects any element that is not literally a ``str`` — ``bool`` included,
+    since ``isinstance(True, int)`` means a naive ``isinstance(x, str)`` skip
+    would let ``[true]`` slip through as ``[True]`` unvalidated and a permissive
+    ``str(x)`` cast would silently rewrite it to ``["True"]``. A malformed
+    entry here gates a spawn-override trust decision, so it must fail loud
+    rather than coerce into something that will never match.
+    """
+    if isinstance(value, str):
+        raise ConfigError(f"{field}: must be a list, not a bare string {value!r}")
+    if not isinstance(value, list):
+        raise ConfigError(f"{field}: must be a list, got {type(value).__name__}")
+    for i, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, str):
+            raise ConfigError(
+                f"{field}[{i}]: must be a string, got {item!r} ({type(item).__name__})"
+            )
+    return value
+
+
 def _parse_plugins(plugins_d: dict) -> PluginsConfig:
     """Parse the ``[plugins]`` table into a ``PluginsConfig``.
 
     Known keys (``disable``, ``spawn_override_allow``, ``sandbox``, ``pin``)
     are popped into first-class fields; whatever remains lands in ``.raw``
-    for plugin-author-defined sub-keys.
+    for plugin-author-defined sub-keys. ``spawn_override_allow`` and ``pin``
+    gate trust decisions (which hooks may skip a spawn, which third-party
+    plugins are checksum-pinned) so both fail closed on malformed input
+    instead of silently coercing it — see ``_require_strict_str_list`` above.
     """
     plugins_raw = dict(plugins_d)  # copy so we can pop
     disable = (
@@ -585,12 +610,8 @@ def _parse_plugins(plugins_d: dict) -> PluginsConfig:
         if "disable" in plugins_raw
         else []
     )
-    spawn_override_allow = (
-        _require_str_list(
-            plugins_raw.pop("spawn_override_allow"), field="plugins.spawn_override_allow"
-        )
-        if "spawn_override_allow" in plugins_raw
-        else []
+    spawn_override_allow = _require_strict_str_list(
+        plugins_raw.pop("spawn_override_allow", []), field="plugins.spawn_override_allow"
     )
     sandbox = str(plugins_raw.pop("sandbox", "prefer"))
     if sandbox not in _VALID_SANDBOX_MODES:
@@ -600,7 +621,16 @@ def _parse_plugins(plugins_d: dict) -> PluginsConfig:
     pin_d = plugins_raw.pop("pin", {})
     if not isinstance(pin_d, dict):
         raise ConfigError('[plugins.pin] must be a table of "<plugin>" = "sha256:<hex>"')
-    pin = {str(k): str(v) for k, v in pin_d.items()}
+    pin: dict[str, str] = {}
+    for k, v in pin_d.items():
+        if not isinstance(k, str):
+            raise ConfigError(f"[plugins.pin] key {k!r} must be a string plugin name")
+        if not isinstance(v, str):
+            raise ConfigError(
+                f'[plugins.pin] "{k}" value {v!r} must be a string checksum '
+                f'(e.g. "sha256:<hex>"), got {type(v).__name__}'
+            )
+        pin[k] = v
     return PluginsConfig(
         disable=disable,
         spawn_override_allow=spawn_override_allow,

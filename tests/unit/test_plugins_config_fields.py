@@ -38,6 +38,21 @@ def test_parse_plugins_should_raise_when_pin_not_a_table():
         _parse_plugins({"pin": ["not", "a", "table"]})
 
 
+def test_parse_plugins_should_raise_when_pin_value_not_a_string():
+    with pytest.raises(ConfigError, match=r"\[plugins\.pin\]"):
+        _parse_plugins({"pin": {"acme_dirty": 123}})
+
+
+def test_parse_plugins_should_raise_when_spawn_override_allow_not_a_list():
+    with pytest.raises(ConfigError, match="plugins.spawn_override_allow"):
+        _parse_plugins({"spawn_override_allow": {"a": 1}})
+
+
+def test_parse_plugins_should_raise_when_spawn_override_allow_has_bool_element():
+    with pytest.raises(ConfigError, match="plugins.spawn_override_allow"):
+        _parse_plugins({"spawn_override_allow": [True]})
+
+
 def test_parse_plugins_should_leave_unknown_keys_in_raw_when_present():
     cfg = _parse_plugins({"sandbox": "off", "acme_setting": 5})
 
