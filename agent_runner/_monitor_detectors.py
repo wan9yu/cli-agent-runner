@@ -286,14 +286,15 @@ def detect_mem_pressure_gate_inert(
     return _alert(
         "mem_pressure_gate_inert",
         "warning",
-        f"mem_avail_min_mb={cfg.memory.avail_min_mb} cannot fire on this host: a "
-        f"cache-poor-valid signal shows real pressure while mem_available_mb="
+        f"[monitor.host_health.memory] avail_min_mb={cfg.memory.avail_min_mb} cannot fire on "
+        f"this host: a cache-poor-valid signal shows real pressure while mem_available_mb="
         f"{cur.get('mem_available_mb')} stays >= threshold",
         {
-            "mem_avail_min_mb": cfg.memory.avail_min_mb,
+            "avail_min_mb": cfg.memory.avail_min_mb,
             "mem_available_mb": cur.get("mem_available_mb"),
-            "hint": "MemAvailable is inflated on this host -- lower mem_avail_min_mb "
-            "won't help; rely on the mem_pressure alert itself instead",
+            "hint": "MemAvailable is inflated on this host -- lowering "
+            "[monitor.host_health.memory] avail_min_mb won't help; rely on the "
+            "mem_pressure alert itself instead",
         },
     )
 
