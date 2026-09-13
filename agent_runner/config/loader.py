@@ -85,7 +85,7 @@ def load_config(toml_path: Path) -> Config:
     _reject_control_chars(str(work_dir), "runtime.work_dir")
     project_name = work_dir.name or "default"
 
-    # Phases first — needed for per-phase round_timeout validation below.
+    # Phases first — needed for per-phase round_budget validation below.
     phases_d = _require_table(raw, "phases")
     phases_list = (
         _require_str_list(phases_d["list"], field="phases.list") if "list" in phases_d else None

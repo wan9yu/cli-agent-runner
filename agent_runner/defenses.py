@@ -51,7 +51,7 @@ def catalog(cfg: Config) -> list[Defense]:
                 "serve exits only after the current round completes; systemd "
                 "KillSignal=SIGTERM + KillMode=mixed sends SIGTERM to the serve "
                 "main process only (not the round cgroup, which control-group "
-                "would), TimeoutStopSec=max(round_timeout)+60"
+                "would), TimeoutStopSec=max(round_budget)+60"
             ),
             codifies="R725 — SIGTERM-during-round dual-claude race",
             guarded_by=Path("tests/integration/test_serve_loop.py"),
