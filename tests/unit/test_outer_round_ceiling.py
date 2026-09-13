@@ -19,6 +19,7 @@ def _cfg(tmp_path: Path, extra: str = "") -> api.Config:
     (tmp_path / "prompt.md").write_text("p")
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['true']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = './logs'\nround_budget_s = 100\n"
         "[prompt]\nfile = 'prompt.md'\n" + extra

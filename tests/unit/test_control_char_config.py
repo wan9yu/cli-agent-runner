@@ -29,6 +29,7 @@ def _base(wd: Path, *, work_dir_value: str | None = None, log_dir_value: str | N
     wd_str = work_dir_value if work_dir_value is not None else str(wd)
     log_dir_str = log_dir_value if log_dir_value is not None else f"{wd}/logs"
     return (
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["-p", "{prompt}"]\n'

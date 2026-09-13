@@ -18,7 +18,7 @@ from agent_runner.config import ConfigError, load_config
 
 def _write(tmp_path: Path, body: str) -> Path:
     p = tmp_path / "agent-runner.toml"
-    p.write_text(body, encoding="utf-8")
+    p.write_text("schema_version = 1\n" + body, encoding="utf-8")
     return p
 
 

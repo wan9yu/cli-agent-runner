@@ -243,6 +243,7 @@ def test_round_command_should_succeed_when_launched_from_a_different_cwd_with_re
     # Prompt must be >= 500 bytes to pass prompt_smoke_passes startup check
     (work_dir / "prompts" / "p.md").write_text("Substantive prompt content. " * 25)
     (work_dir / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'

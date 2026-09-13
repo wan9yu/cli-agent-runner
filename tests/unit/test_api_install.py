@@ -98,6 +98,7 @@ def test_check_user_systemd_available_should_return_none_when_systemd_is_ok(tmp_
 
 def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
@@ -109,6 +110,7 @@ def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
 
 def test_install_should_raise_when_system_mode_used_without_sudo_user_env(tmp_path):
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
@@ -127,6 +129,7 @@ def test_install_should_write_unit_to_etc_and_not_start_when_system_mode_succeed
     work_dir = tmp_path / "myproject"
     work_dir.mkdir()
     (work_dir / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         f"[runtime]\nwork_dir = '{work_dir}'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
@@ -171,6 +174,7 @@ def _write_project(work_dir, *, log_dir="logs"):
     work_dir.mkdir(parents=True)
     (work_dir / "p.md").write_text("hi")
     (work_dir / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         f"[runtime]\nwork_dir = '{work_dir}'\nlog_dir = '{log_dir}'\n[prompt]\nfile = 'p.md'\n"
     )

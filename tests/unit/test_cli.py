@@ -15,7 +15,7 @@ def _write_minimal_toml(tmp_git_repo: Path, fake_agent: Path) -> Path:
     prompt = tmp_git_repo / "p.md"
     prompt.write_text("Body. " * 200)
     log_dir = tmp_git_repo / "logs"
-    toml.write_text(f"""
+    toml.write_text(f"""schema_version = 1
 [agent]
 command = ["{fake_agent}"]
 prompt_arg_template = ["{{prompt}}"]
@@ -137,6 +137,7 @@ def test_main_round_should_pass_phase_override_to_run_one_round_when_phase_flag_
     # Write minimal config with phases
     (tmp_path / "prompt.md").write_text("p")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'

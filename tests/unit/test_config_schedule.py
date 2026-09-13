@@ -10,6 +10,7 @@ def _write(tmp_path, schedule_block):
     prompt.write_text("hi", encoding="utf-8")
     p = tmp_path / "agent-runner.toml"
     p.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
         "[runtime]\n"
         f'work_dir = "{tmp_path}"\n'

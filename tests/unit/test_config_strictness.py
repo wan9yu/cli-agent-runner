@@ -20,6 +20,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 
 def _base(wd: Path, extra: str = "", *, command: str = '["true"]') -> str:
     return (
+        "schema_version = 1\n"
         "[agent]\n"
         f"command = {command}\n"
         'prompt_arg_template = ["-p", "{prompt}"]\n'
@@ -55,6 +56,7 @@ def test_bare_string_phases_list_should_be_rejected(tmp_path: Path) -> None:
 
 def test_empty_top_level_prompt_files_should_be_rejected(tmp_path: Path) -> None:
     body = (
+        "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         "[prompt]\nfiles = []\n"
@@ -81,6 +83,7 @@ def test_unknown_schedule_key_should_be_rejected(tmp_path: Path) -> None:
 
 def test_unknown_prompt_key_should_be_rejected(tmp_path: Path) -> None:
     body = (
+        "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         f'[prompt]\nfile = "{tmp_path}/p.md"\nbogus = 1\n'

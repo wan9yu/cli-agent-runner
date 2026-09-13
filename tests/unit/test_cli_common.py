@@ -67,6 +67,7 @@ def test_cfg_from_args_should_load_declared_work_dir_when_it_differs_from_toml_d
     (work_dir / "p.md").write_text("hi")
     cfg_path = toml_dir / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         f"[runtime]\nwork_dir = '{work_dir}'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
@@ -91,6 +92,7 @@ def test_cfg_from_args_should_anchor_work_dir_to_symlink_dir_when_config_symlink
     (real_dir / "p.md").write_text("hi")
     real_cfg = real_dir / "agent-runner.toml"
     real_cfg.write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )

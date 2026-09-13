@@ -53,6 +53,7 @@ def _write_minimal_toml(work_dir: Path, agent_command: str, agent_name: str) -> 
     log_dir.mkdir(exist_ok=True)
     cfg_path = work_dir / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         f"[agent]\n"
         f'command = ["{agent_command}"]\n'
         f'prompt_arg_template = ["{{prompt}}"]\n'

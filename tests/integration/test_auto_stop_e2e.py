@@ -30,7 +30,7 @@ def _write_toml(
     prompt = tmp_git_repo / "p.md"
     prompt.write_text("Body content for the auto-stop e2e test. " * 50)
     log_dir = tmp_git_repo / "logs"
-    toml.write_text(f"""
+    toml.write_text(f"""schema_version = 1
 [agent]
 command = ["{fake_agent}"]
 prompt_arg_template = ["{{prompt}}"]

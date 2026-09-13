@@ -90,6 +90,7 @@ def test_config_path_should_return_args_config_verbatim_when_work_dir_differs_fr
     (work_dir / "p.md").write_text("hi")
     cfg_path = toml_dir / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         f"[runtime]\nwork_dir = '{work_dir}'\nlog_dir = 'logs'\n[prompt]\nfile = 'p.md'\n"
     )
@@ -144,6 +145,7 @@ def test_unit_filename_should_equal_serve_unit_filename_output():
 def test_log_dir_should_read_from_config_when_toml_present(tmp_path):
     (tmp_path / "p.md").write_text("hi")
     (tmp_path / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
         "[runtime]\nwork_dir = '.'\nlog_dir = 'custom-logs'\n[prompt]\nfile = 'p.md'\n"
     )

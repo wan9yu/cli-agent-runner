@@ -56,6 +56,7 @@ def _write_minimal_monitor_toml(work_dir: Path) -> None:
     prompt_file = work_dir / "prompt.md"
     prompt_file.write_text("p")
     (work_dir / "agent-runner.toml").write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["-p", "{prompt}"]\n'

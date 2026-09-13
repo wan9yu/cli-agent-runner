@@ -30,6 +30,7 @@ def _toml_with_retention(tmp_path: Path, log_dir: Path, *, retention: int) -> Pa
     prompt_file.write_text("p")
     cfg_path = tmp_path / "agent-runner.toml"
     cfg_path.write_text(
+        "schema_version = 1\n"
         "[agent]\n"
         'command = ["true"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
