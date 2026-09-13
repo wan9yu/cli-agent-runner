@@ -72,6 +72,9 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._emit",
         "agent_runner._emit.agent",
         "agent_runner._emit.memory",
+        # plugins: emit_plugin_sandbox_kill, re-exported by the _emit facade like
+        # its siblings -- one new module, no new transitive dependency.
+        "agent_runner._emit.plugins",
         "agent_runner._emit.rounds",
         "agent_runner._emit.serve",
         # _install/_lifecycle/_observe: api.py's split into a thin re-export

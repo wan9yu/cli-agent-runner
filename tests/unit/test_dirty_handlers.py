@@ -1,4 +1,9 @@
-"""Tests for DirtyHandler seam: registry, dispatch, and failure-isolation."""
+"""Tests for DirtyHandler seam: registry, dispatch, and failure-isolation.
+
+These exercise the IN-PROCESS dispatch mechanics (priority ordering,
+fall-through, raise-isolation), so they run with ``sandbox="off"`` -- the
+Landlock+seccomp trampoline routing (owner-in/out of BUILTIN_PLUGIN_NAMES) is
+covered separately by test_dispatch_dirty_owner_branch."""
 
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ def test_dispatch_dirty_should_return_first_non_none_result_by_priority(tmp_path
     hooks.register_dirty_handler(_mk("early", 0, DirtyOutcome("committed", "C")))
     ctx = make_hook_context(work_dir=tmp_path, log_dir=tmp_path)
 
-    out = hooks.dispatch_dirty(ctx, ["a.md"], log_dir=tmp_path)
+    out = hooks.dispatch_dirty(ctx, ["a.md"], log_dir=tmp_path, sandbox="off")
 
     assert out == DirtyOutcome("committed", "C")  # priority 0 ran first
 
@@ -37,7 +42,7 @@ def test_dispatch_dirty_should_fall_through_to_next_handler_when_first_passes(
     hooks.register_dirty_handler(_mk("default", 1000, DirtyOutcome("stashed", "S")))
     ctx = make_hook_context(work_dir=tmp_path, log_dir=tmp_path)
 
-    assert hooks.dispatch_dirty(ctx, ["a"], tmp_path).kind == "stashed"
+    assert hooks.dispatch_dirty(ctx, ["a"], tmp_path, sandbox="off").kind == "stashed"
 
 
 def test_dispatch_dirty_should_treat_raising_handler_as_pass(tmp_path, monkeypatch):
@@ -52,4 +57,4 @@ def test_dispatch_dirty_should_treat_raising_handler_as_pass(tmp_path, monkeypat
     hooks.register_dirty_handler(_mk("default", 1000, DirtyOutcome("ignored")))
     ctx = make_hook_context(work_dir=tmp_path, log_dir=tmp_path)
 
-    assert hooks.dispatch_dirty(ctx, ["a"], tmp_path).kind == "ignored"
+    assert hooks.dispatch_dirty(ctx, ["a"], tmp_path, sandbox="off").kind == "ignored"

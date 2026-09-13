@@ -39,7 +39,10 @@ def test_custom_dirty_handler_should_win_over_default_stash_when_dispatched(
     hooks.register_dirty_handler(CommitEverythingHandler())  # priority 10
 
     ctx = make_hook_context(work_dir=tmp_path, log_dir=tmp_path)
-    outcome = hooks.dispatch_dirty(ctx, ["notes.md"], log_dir=tmp_path)
+    # sandbox="off" keeps this a pure priority-dispatch demonstration -- the
+    # Landlock+seccomp trampoline (which would confine a third-party handler) is
+    # an orthogonal concern covered by test_dispatch_dirty_owner_branch.
+    outcome = hooks.dispatch_dirty(ctx, ["notes.md"], log_dir=tmp_path, sandbox="off")
 
     # Priority dispatch picked the custom handler over the default's stash:
     # the default (1000) never ran, so no stash was created.

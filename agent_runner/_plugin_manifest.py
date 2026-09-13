@@ -86,7 +86,7 @@ def register_manifest(manifest: PluginManifest) -> None:
     for h in manifest.serve_startup_hooks:
         hooks.register_serve_startup_hook(h)
     for d in manifest.dirty_handlers:
-        hooks.register_dirty_handler(d)
+        hooks.register_dirty_handler(d, owner=manifest.name)
     for det in manifest.detectors:
         monitor.register_detector(det)
     for kind in manifest.event_kinds:
@@ -114,6 +114,8 @@ def unregister_by_name(names: set[str]) -> set[str]:
         _remove_by_identity(hooks._POST_ROUND_HOOKS, manifest.post_round_hooks)
         _remove_by_identity(hooks._SERVE_STARTUP_HOOKS, manifest.serve_startup_hooks)
         _remove_by_identity(hooks._DIRTY_HANDLERS, manifest.dirty_handlers)
+        for h in manifest.dirty_handlers:
+            hooks._DIRTY_HANDLER_OWNER.pop(id(h), None)
         _remove_by_identity(monitor._PLUGIN_DETECTORS, manifest.detectors)
         for kind in manifest.event_kinds:
             events._PLUGIN_KINDS.pop(kind, None)

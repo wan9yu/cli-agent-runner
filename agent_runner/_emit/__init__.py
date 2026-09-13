@@ -39,6 +39,9 @@ from agent_runner._emit.memory import (  # noqa: F401 — public re-export
     emit_round_oom_killed,
     emit_round_resumed,
 )
+from agent_runner._emit.plugins import (  # noqa: F401 — public re-export
+    emit_plugin_sandbox_kill,
+)
 from agent_runner._emit.rounds import (  # noqa: F401 — public re-export
     emit_fresh_eyes_round_triggered,
     emit_round_container_orphan_risk,
@@ -80,6 +83,7 @@ __all__ = [
     "emit_mem_loop",
     "emit_mem_loop_persistent",
     "emit_mem_pressure_deferred_to_cgroup",
+    "emit_plugin_sandbox_kill",
     "emit_rate_limit_stop",
     "emit_round_cgroup_memory",
     "emit_round_container_orphan_risk",

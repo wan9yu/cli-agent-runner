@@ -611,7 +611,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         # A grace-kill means the agent produced its result then lingered — the work
         # is done, so its dirty tree must still be dispatched (the lingering-CLI
         # users grace-kill targets are exactly who need this).
-        dirty_outcome = hooks.dispatch_dirty(hook_ctx, dirty, log_dir=log_dir)
+        dirty_outcome = hooks.dispatch_dirty(
+            hook_ctx, dirty, log_dir=log_dir, sandbox=cfg.plugins.sandbox
+        )
     elif not dirty and not dirty_check_failed:
         context_store.clear_orphan_state(log_dir)
     stashed = bool(dirty_outcome and dirty_outcome.kind == "stashed")

@@ -379,3 +379,43 @@ def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
                 reg.extend(snap)
 
     return _reset
+
+
+def install_hostile_dirty_plugin(tmp_path: Path, *, action: str) -> tuple[str, str]:
+    """Write a third-party dirty-handler plugin whose ``handle_dirty`` performs a
+    seccomp-denied network syscall, and return ``(module_name, hook_name)``.
+
+    Used by the Linux kill-tests to prove the trampoline's seccomp KILL_PROCESS
+    filter fires: on a confined child the ``socket()``/``connect()`` attempt is
+    killed by SIGSYS before the handler can return. ``action`` selects which
+    primitive the handler reaches for. The caller puts ``tmp_path`` on the
+    child's ``PYTHONPATH`` so the module is importable AFTER confinement."""
+    module_name = "hostile_dirty_plugin"
+    hook_name = "hostile_dirty"
+    if action == "socket":
+        body = (
+            "        import socket\n"
+            "        socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+            "        return None"
+        )
+    elif action == "connect":
+        body = (
+            "        import socket\n"
+            "        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+            "        s.connect(('127.0.0.1', 9))\n"
+            "        return None"
+        )
+    else:
+        raise ValueError(f"unknown hostile action {action!r}")
+
+    src = (
+        "from agent_runner._plugin_manifest import PluginManifest\n\n\n"
+        "class _H:\n"
+        f"    name = {hook_name!r}\n"
+        "    priority = 0\n\n"
+        "    def handle_dirty(self, ctx, dirty_files):\n"
+        f"{body}\n\n\n"
+        "PLUGIN = PluginManifest(name='hostile', dirty_handlers=(_H(),))\n"
+    )
+    (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
+    return module_name, hook_name

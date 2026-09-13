@@ -38,7 +38,7 @@ import sys
 import traceback as tb_mod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from agent_runner import events
 from agent_runner._redact import redact_secrets
@@ -202,6 +202,7 @@ _CONTEXT_ENRICHERS: list[ContextEnricher] = []
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
 _SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
 _DIRTY_HANDLERS: list[DirtyHandler] = []
+_DIRTY_HANDLER_OWNER: dict[int, str] = {}  # id(handler) -> manifest .name; "" = unknown/legacy
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -245,25 +246,55 @@ def plugin_context_enrichers() -> list[str]:
     return sorted(e.name for e in _CONTEXT_ENRICHERS)
 
 
-def register_dirty_handler(handler: DirtyHandler) -> None:
+def register_dirty_handler(handler: DirtyHandler, *, owner: str = "") -> None:
     ensure_unique(handler.name, _DIRTY_HANDLERS, "dirty_handler")
     _DIRTY_HANDLERS.append(handler)
+    _DIRTY_HANDLER_OWNER[id(handler)] = owner
 
 
 def dispatch_dirty(
     ctx: HookContext,
     dirty_files: list[str],
     log_dir: Path,
+    *,
+    sandbox: Literal["require", "prefer", "off"] = "prefer",
 ) -> Any | None:
     """Run registered DirtyHandlers ascending by priority; first non-None wins.
 
-    A handler that raises is isolated — emits ``hook_failed`` with
-    ``hook_kind="dirty_handler"`` and treated as pass (continue to next).
+    A third-party handler (owner not in BUILTIN_PLUGIN_NAMES; "" counts as
+    third-party — fail closed) runs inside the Landlock+seccomp trampoline
+    when ``sandbox != "off"``; builtins stay in-process. Under ``sandbox ==
+    "require"`` on a host that cannot confine (no Landlock+seccomp), the
+    handler is refused rather than run unconfined; under ``"prefer"`` it is
+    still launched (the trampoline degrades to a best-effort child there). A
+    handler that raises (or whose trampoline fails, including the require
+    refusal) is isolated — emits ``hook_failed`` and is treated as pass
+    (continue to next), so the builtin fallback still resolves the tree.
     """
+    from agent_runner._registry import BUILTIN_PLUGIN_NAMES
+
     ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
     for h in ordered:
+        owner = _DIRTY_HANDLER_OWNER.get(id(h), "")
+        third_party = owner not in BUILTIN_PLUGIN_NAMES
         try:
-            outcome = h.handle_dirty(ctx, dirty_files)
+            if sandbox != "off" and third_party:
+                from agent_runner._plugin_sandbox import (
+                    _sandbox_enforceable,
+                    run_hook_sandboxed,
+                )
+
+                if sandbox == "require" and not _sandbox_enforceable():
+                    raise RuntimeError(
+                        "sandbox=require but Landlock+seccomp confinement is "
+                        "unavailable on this platform; refusing to run "
+                        f"{h.name!r} unconfined"
+                    )
+                outcome = run_hook_sandboxed(
+                    "dirty_handler", owner, h.name, ctx, log_dir=log_dir, dirty_files=dirty_files
+                )
+            else:
+                outcome = h.handle_dirty(ctx, dirty_files)
         except Exception as exc:  # noqa: BLE001 — isolate; fall through to next
             events.emit(
                 log_dir,
