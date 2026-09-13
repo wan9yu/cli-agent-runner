@@ -2,47 +2,39 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 try:
     from agent_runner._version import __version__
 except ImportError:  # editable install before hatch-vcs has generated _version.py
     __version__ = "0.0.0+unknown"
 
-_HOOK_GROUPS = (
-    "agent_runner.pre_round_hooks",
-    "agent_runner.context_enrichers",
-    "agent_runner.post_round_hooks",
-    "agent_runner.serve_startup_hooks",
-    "agent_runner.dirty_handler_hooks",
-)
+_PLUGIN_GROUP = "agent_runner.plugins"
 
 # Tracks the names passed to the most recent ``apply_plugin_disable`` call.
 # Surfaced via peek --json `plugins.disabled` for operator visibility.
 _DISABLED_PLUGIN_NAMES: list[str] = []
 
 
-def _load_plugins_from_group(group: str) -> None:
-    """Discover and load entry_points in ``group``, isolating per-plugin failures.
+def _load_plugin_manifests() -> None:
+    """Discover agent_runner.plugins entry points, resolve each to a
+    module-level PluginManifest, and register its declared capabilities.
 
-    Called at package import. A broken plugin must not crash the supervisor;
-    each failure surfaces as a ``UserWarning``.
+    Called at package import. A broken plugin (bad import, missing PLUGIN
+    attribute, malformed manifest) must never crash the supervisor — isolated
+    as a UserWarning.
 
     Discovery goes through the ``entry_points.txt`` scanner (cheaper than a
-    fresh ``importlib.metadata.entry_points()`` scan per group per process;
-    see ``_plugin_scan``), with a hard fallback to ``importlib.metadata`` on
-    any parse failure. Loading a plugin means only importing its module and
-    resolving its attribute — same as ``EntryPoint.load()`` — since every
-    built-in plugin registers itself as a module-top side effect (documented
-    in docs/plugins.md); this loader never instantiates or calls the target.
+    fresh ``importlib.metadata.entry_points()`` scan per process; see
+    ``_plugin_scan``), with a hard fallback to ``importlib.metadata`` on any
+    parse failure.
     """
     import importlib
     import sys
     import warnings
 
+    from agent_runner._plugin_manifest import register_manifest
     from agent_runner._plugin_scan import scan_entry_points
 
-    for name, value in scan_entry_points(sys.path, group):
+    for name, value in scan_entry_points(sys.path, _PLUGIN_GROUP):
         try:
             # An entry-point value may carry a trailing extras marker
             # (``module:attr [extra1,extra2]``); importlib.metadata.EntryPoint's
@@ -54,50 +46,24 @@ def _load_plugins_from_group(group: str) -> None:
             target = mod
             for attr in filter(None, attr_path.split(".")):
                 target = getattr(target, attr)
+            register_manifest(target)
         except Exception as e:
             warnings.warn(
-                f"failed to load {group} plugin {name!r}: {e}",
+                f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}",
                 stacklevel=3,
             )
 
 
-def _load_event_kind_plugins() -> None:
-    """Load plugins that register custom event kinds via ``events.register_event_kind``."""
-    _load_plugins_from_group("agent_runner.event_kinds")
-
-
-def _load_hook_plugins() -> None:
-    """Load plugins that register pre_round / context_enricher / post_round hooks."""
-    for group in _HOOK_GROUPS:
-        _load_plugins_from_group(group)
-
-
-def _load_detector_plugins() -> None:
-    """Load plugins that register custom monitor detectors via ``monitor.register_detector``."""
-    _load_plugins_from_group("agent_runner.detectors")
-
-
-_load_event_kind_plugins()
-_load_hook_plugins()
-_load_detector_plugins()
-
-
-def _prune_by_name(registry: list[Any], desired: set[str], found: set[str]) -> None:
-    """In-place: remove items from registry whose .name is in desired.
-
-    Updates ``found`` with the names actually removed.
-    """
-    matching = [x.name for x in registry if x.name in desired]
-    found.update(matching)
-    registry[:] = [x for x in registry if x.name not in desired]
+_load_plugin_manifests()
 
 
 def apply_plugin_disable(names: list[str]) -> None:
-    """Remove plugins matching ``names`` from all in-memory registries.
+    """Remove plugins matching ``names`` (manifest names) from all in-memory
+    registries.
 
     Called after config-load to honor ``[plugins] disable``. Idempotent for
     already-removed names. Emits a UserWarning for names that match no
-    registered plugin (typo catcher; tolerates cross-env config drift).
+    loaded manifest (typo catcher; tolerates cross-env config drift).
 
     Plugin packages still load at import time — this removes from the registries
     that the runner and peek consult. Side effects from loading (module-level
@@ -109,7 +75,7 @@ def apply_plugin_disable(names: list[str]) -> None:
     """
     import warnings
 
-    from agent_runner import events, hooks, monitor
+    from agent_runner._plugin_manifest import unregister_by_name
 
     if not names:
         return
@@ -117,41 +83,12 @@ def apply_plugin_disable(names: list[str]) -> None:
     global _DISABLED_PLUGIN_NAMES
     _DISABLED_PLUGIN_NAMES = list(names)
 
-    found: set[str] = set()
-    desired = set(names)
-
-    # Pre-round hooks
-    _prune_by_name(hooks._PRE_ROUND_HOOKS, desired, found)
-
-    # Context enrichers
-    _prune_by_name(hooks._CONTEXT_ENRICHERS, desired, found)
-
-    # Post-round hooks
-    _prune_by_name(hooks._POST_ROUND_HOOKS, desired, found)
-
-    # Serve-startup hooks
-    _prune_by_name(hooks._SERVE_STARTUP_HOOKS, desired, found)
-
-    # Dirty handlers
-    _prune_by_name(hooks._DIRTY_HANDLERS, desired, found)
-
-    # Plugin event kinds
-    for name in list(events._PLUGIN_KINDS):
-        if name in desired:
-            del events._PLUGIN_KINDS[name]
-            found.add(name)
-
-    # Detectors
-    _prune_by_name(monitor._PLUGIN_DETECTORS, desired, found)
-
-    # vcs_state._PLUGIN_OWNED_PATHS has no name attribution today (see docstring above).
-    # Disabled plugin's owned paths are not filtered.
-
-    unknown = desired - found
+    found = unregister_by_name(set(names))
+    unknown = set(names) - found
     if unknown:
         warnings.warn(
-            f"[plugins] disable references unknown entry_points: {sorted(unknown)}. "
-            f"(Names matched no registered plugin; check spelling or installed packages.)",
+            f"[plugins] disable references unknown plugin name(s): {sorted(unknown)}. "
+            f"(Names matched no loaded PluginManifest; check spelling or installed packages.)",
             stacklevel=2,
         )
 

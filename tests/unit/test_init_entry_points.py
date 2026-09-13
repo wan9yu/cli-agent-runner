@@ -1,10 +1,10 @@
-"""Tests for agent_runner package entry_points loading.
+"""Tests for agent_runner package plugin-manifest loading.
 
 Discovery itself (scan == importlib.metadata.entry_points per group, the
 malformed-file fallback, the env override) is pinned by
 tests/unit/test_plugin_scan_parity.py. These tests cover the loader built on
-top of the scanner: per-plugin failure isolation, the groups queried, and a
-successful load.
+top of the scanner: per-plugin failure isolation, the single group queried,
+and apply_plugin_disable's observable behavior.
 """
 
 from __future__ import annotations
@@ -29,127 +29,50 @@ _reset = isolating(
 )
 
 
-def test_load_event_kind_plugins_should_warn_when_plugin_import_fails() -> None:
-    """A plugin import error must not crash the supervisor."""
-    from agent_runner import _load_event_kind_plugins
-
-    scanned = [("bad-plugin", "definitely_not_a_real_module_xyz:Attr")]
-
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_event_kind_plugins()
-        assert any("bad-plugin" in str(w.message) for w in caught), (
-            f"expected warning mentioning 'bad-plugin'; got {[str(w.message) for w in caught]}"
-        )
-
-
-def test_load_event_kind_plugins_should_not_warn_when_plugin_loads_cleanly() -> None:
-    """A well-formed target (module importable, attribute present) loads clean --
-    mirroring EntryPoint.load(): import the module, resolve the attribute, done."""
-    from agent_runner import _load_event_kind_plugins
-
-    scanned = [("good-plugin", "warnings:catch_warnings")]
-
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_event_kind_plugins()
-        assert not caught, (
-            f"expected no warnings for a good plugin; got {[str(w.message) for w in caught]}"
-        )
-
-
-def test_load_event_kind_plugins_should_strip_extras_marker_when_resolving_attr() -> None:
-    """An entry-point value can carry a trailing extras marker
-    (``module:attr [extra1,extra2]``, per importlib.metadata.EntryPoint's own
-    grammar). The loader must strip it before resolving -- otherwise it glues
-    onto the attribute path and getattr() fails, surfacing as a spurious
-    UserWarning for an otherwise well-formed plugin."""
-    from agent_runner import _load_event_kind_plugins
-
-    scanned = [("extras-plugin", "warnings:catch_warnings [extra1,extra2]")]
-
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_event_kind_plugins()
-        assert not caught, (
-            f"expected the extras marker to be stripped and the plugin to load clean; "
-            f"got {[str(w.message) for w in caught]}"
-        )
-
-
-def test_load_event_kind_plugins_should_query_event_kinds_group() -> None:
-    from agent_runner import _load_event_kind_plugins
+def test_load_plugin_manifests_should_query_the_single_plugins_group() -> None:
+    from agent_runner import _load_plugin_manifests
 
     with patch("agent_runner._plugin_scan.scan_entry_points", return_value=[]) as mock_scan:
-        _load_event_kind_plugins()
+        _load_plugin_manifests()
 
-    mock_scan.assert_called_once_with(sys.path, "agent_runner.event_kinds")
-
-
-def test_load_hook_plugins_should_warn_when_plugin_import_fails() -> None:
-    """Hook plugin import failures degrade to UserWarning, same as event_kinds."""
-    from agent_runner import _load_hook_plugins
-
-    scanned = [("bad-hook", "definitely_not_a_real_module_xyz:Attr")]
-
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _load_hook_plugins()
-        assert any("bad-hook" in str(w.message) for w in caught), (
-            f"expected warning mentioning 'bad-hook'; got {[str(w.message) for w in caught]}"
-        )
+    mock_scan.assert_called_once_with(sys.path, "agent_runner.plugins")
 
 
-def test_load_hook_plugins_should_query_all_five_hook_groups() -> None:
-    from agent_runner import _load_hook_plugins
+def test_load_plugin_manifests_should_warn_when_plugin_import_fails() -> None:
+    from agent_runner import _load_plugin_manifests
 
-    call_groups: list[str] = []
-
-    def fake_scan(sys_path, group):
-        call_groups.append(group)
-        return []
-
-    with patch("agent_runner._plugin_scan.scan_entry_points", side_effect=fake_scan):
-        _load_hook_plugins()
-
-    assert sorted(call_groups) == sorted(
-        [
-            "agent_runner.pre_round_hooks",
-            "agent_runner.context_enrichers",
-            "agent_runner.post_round_hooks",
-            "agent_runner.serve_startup_hooks",
-            "agent_runner.dirty_handler_hooks",
-        ]
-    )
-
-
-def test_load_detector_plugins_should_warn_when_plugin_import_fails() -> None:
-    from agent_runner import _load_detector_plugins
-
-    scanned = [("bad-detector", "definitely_not_a_real_module_xyz:Attr")]
+    scanned = [("bad-plugin", "definitely_not_a_real_module_xyz:PLUGIN")]
 
     with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _load_detector_plugins()
-        assert any("bad-detector" in str(w.message) for w in caught)
+            _load_plugin_manifests()
+        assert any("bad-plugin" in str(w.message) for w in caught)
 
 
-def test_load_detector_plugins_should_query_detectors_group() -> None:
-    from agent_runner import _load_detector_plugins
+def test_load_plugin_manifests_should_register_manifest_when_resolved() -> None:
+    from agent_runner import _load_plugin_manifests
+    from agent_runner._plugin_manifest import _LOADED_MANIFESTS
 
-    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=[]) as mock_scan:
-        _load_detector_plugins()
+    before = len(_LOADED_MANIFESTS)
+    scanned = [
+        ("default_dirty_handler", "agent_runner.builtin_plugins.default_dirty_handler:PLUGIN")
+    ]
 
-    mock_scan.assert_called_once_with(sys.path, "agent_runner.detectors")
+    with patch("agent_runner._plugin_scan.scan_entry_points", return_value=scanned):
+        _load_plugin_manifests()
+
+    # Already loaded once at package import; idempotent re-scan doesn't
+    # grow the registry further (no assertion on that here — see the
+    # warn-on-import-failure test above for the failure-isolation contract).
+    assert len(_LOADED_MANIFESTS) == before
 
 
 def test_apply_plugin_disable_should_remove_named_pre_round_hook() -> None:
+    """Disable keys on the PluginManifest's own `name`, not the hook's `.name` —
+    the hook must be registered via a manifest for disable to find it."""
     from agent_runner import apply_plugin_disable, hooks
+    from agent_runner._plugin_manifest import PluginManifest, register_manifest
 
     pre_count_before = len(hooks._PRE_ROUND_HOOKS)
 
@@ -159,7 +82,7 @@ def test_apply_plugin_disable_should_remove_named_pre_round_hook() -> None:
         def before_round(self, ctx):
             pass
 
-    hooks.register_pre_round_hook(_TestHook())
+    register_manifest(PluginManifest(name="test_disable_target", pre_round_hooks=(_TestHook(),)))
 
     assert len(hooks._PRE_ROUND_HOOKS) == pre_count_before + 1
     assert any(h.name == "test_disable_target" for h in hooks._PRE_ROUND_HOOKS)
@@ -186,6 +109,7 @@ def test_apply_plugin_disable_should_prune_serve_startup_hooks(
 ) -> None:
     """[plugins] disable must filter _SERVE_STARTUP_HOOKS, just like other hook registries."""
     from agent_runner import apply_plugin_disable, hooks
+    from agent_runner._plugin_manifest import PluginManifest, register_manifest
 
     monkeypatch.setattr(hooks, "_SERVE_STARTUP_HOOKS", [])
 
@@ -202,7 +126,7 @@ def test_apply_plugin_disable_should_prune_serve_startup_hooks(
             raise RuntimeError("would fail")
 
     hooks.register_serve_startup_hook(GoodHook())
-    hooks.register_serve_startup_hook(BadHook())
+    register_manifest(PluginManifest(name="bad_hook", serve_startup_hooks=(BadHook(),)))
 
     assert [h.name for h in hooks.serve_startup_hooks()] == ["good_hook", "bad_hook"]
 
@@ -212,7 +136,8 @@ def test_apply_plugin_disable_should_prune_serve_startup_hooks(
 
 
 def test_disabled_plugin_names_should_return_names_from_last_apply_plugin_disable_call() -> None:
-    from agent_runner import apply_plugin_disable, disabled_plugin_names, hooks
+    from agent_runner import apply_plugin_disable, disabled_plugin_names
+    from agent_runner._plugin_manifest import PluginManifest, register_manifest
 
     class _TestHook2:
         name = "for_visibility_check"
@@ -220,7 +145,7 @@ def test_disabled_plugin_names_should_return_names_from_last_apply_plugin_disabl
         def before_round(self, ctx):
             pass
 
-    hooks.register_pre_round_hook(_TestHook2())
+    register_manifest(PluginManifest(name="for_visibility_check", pre_round_hooks=(_TestHook2(),)))
     apply_plugin_disable(["for_visibility_check"])
 
     assert "for_visibility_check" in disabled_plugin_names()
