@@ -1,4 +1,5 @@
 import argparse
+import tomllib
 from pathlib import Path
 
 from agent_runner.cli import upgrade_cmd
@@ -125,3 +126,38 @@ def test_cmd_should_mention_no_migrate_flag_when_manual_transform_required(tmp_p
 
     assert rc == 1
     assert "--no-migrate" in capsys.readouterr().err
+
+
+def test_a_full_0_2_x_config_should_migrate_and_load_cleanly_under_schema_version_one(tmp_path):
+    from agent_runner import migrations
+    from agent_runner.config import load_config
+
+    old_text = (
+        "[agent]\n"
+        'command = ["claude"]\n'
+        'prompt_arg_template = ["-p", "{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{tmp_path / "logs"}"\n'
+        "round_timeout_s = 2400\n"
+        "[prompt]\n"
+        f'file = "{tmp_path / "prompt.md"}"\n'
+        "[monitor.host_health]\n"
+        "mem_avail_min_mb = 150\n"
+        "swap_sout_noise_floor_mb = 40\n"
+        "in_round_mem_terminate = false\n"
+    )
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "prompt.md").write_text("placeholder prompt body text. " * 30)
+
+    r = migrations.run_migrations(old_text, tomllib.loads(old_text))
+    assert r.manual == []
+    toml_path = tmp_path / "agent-runner.toml"
+    toml_path.write_text(r.new_text)
+
+    cfg = load_config(toml_path)  # must not raise ConfigError
+
+    assert cfg.runtime.round_budget_s == 2400
+    assert cfg.monitor.host_health.memory.avail_min_mb == 150
+    assert cfg.monitor.host_health.memory.swap_out_noise_floor_mb == 40
+    assert cfg.monitor.host_health.pressure.in_round_terminate is False
