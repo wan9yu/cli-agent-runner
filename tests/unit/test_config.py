@@ -1547,6 +1547,22 @@ def test_runtime_dry_run_should_default_to_false(tmp_path):
     assert cfg.runtime.dry_run is False
 
 
+def test_monitor_host_health_config_should_expose_grouped_defaults_when_constructed() -> None:
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig()
+
+    assert cfg.disk.warning_pct == 90.0
+    assert cfg.disk.critical_pct == 95.0
+    assert cfg.memory.avail_min_mb == 200
+    assert cfg.memory.free_low_mb == 16
+    assert cfg.memory.swap_out_noise_floor_mb == 32
+    assert cfg.pressure.full_avg10_critical == 60.0
+    assert cfg.pressure.some_avg10_warning == 5.0
+    assert cfg.pressure.critical_consecutive_samples == 3
+    assert cfg.pressure.in_round_terminate is True
+
+
 def test_monitor_host_health_defaults_should_match_detector_defaults(
     tmp_path: Path,
 ) -> None:

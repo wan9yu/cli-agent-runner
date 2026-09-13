@@ -172,33 +172,46 @@ class PluginsConfig:
 
 
 @dataclass(frozen=True)
-class MonitorHostHealthConfig:
-    """Thresholds for the host-health detectors (mem_pressure, disk_warning, disk_critical).
+class _HostHealthDiskConfig:
+    warning_pct: float = 90.0  # disk_warning fires when disk_used_pct >= this
+    critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
 
-    Defaults match the current hardcoded detector values — existing deployments are
-    unaffected unless the operator explicitly sets a [monitor.host_health] section.
-    """
 
-    mem_avail_min_mb: int = 200  # mem_pressure fires when mem_available_mb < this
-    disk_warning_pct: float = 90.0  # disk_warning fires when disk_used_pct >= this
-    disk_critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
-    swap_sout_noise_floor_mb: int = 32  # tier-2 swap-out noise floor (MiB); compare uses *1024*1024
-    mem_free_low_mb: int = 16  # tier-3 MemFree floor (MB)
+@dataclass(frozen=True)
+class _HostHealthMemoryConfig:
+    """Tier-1/2/3 signal-ladder floors (see host_health.py's module docstring)."""
+
+    avail_min_mb: int = 200  # mem_pressure fires when mem_available_mb < this
+    free_low_mb: int = 16  # tier-3 MemFree floor (MB)
+    swap_out_noise_floor_mb: int = 32  # tier-2 swap-out noise floor (MiB); compare uses *1024*1024
+
+
+@dataclass(frozen=True)
+class _HostHealthPressureConfig:
+    """Linux-PSI mid-round mechanism + its hysteresis/off-switch — they govern
+    how PSI-triggered termination behaves, so they live together."""
+
     # mid-round CRITICAL when PSI-full avg10 >= this (%). An earlier default of
     # 1.0 was a hiccup, not a coma; 60 matches systemd-oomd's DefaultMemoryPressureLimit.
-    psi_full_avg10_critical: float = 60.0
-    psi_some_avg10_warning: float = 5.0  # WARNING when PSI-some avg10 >= this (%)
+    full_avg10_critical: float = 60.0
+    some_avg10_warning: float = 5.0  # WARNING when PSI-some avg10 >= this (%)
     # Mid-round hard floor hysteresis: consecutive CRITICAL ticks (~10s apart)
-    # required before _spawn_round terminates the round. An earlier default of 1
-    # let a single transient spike kill a round; 3 requires ~30s of sustained
-    # critical pressure, matching the north star (prevent unresponsiveness,
-    # not swapping).
-    mem_critical_consecutive_samples: int = 3
-    # Off switch for the mid-round hard floor's termination action. The loop
-    # still samples and counts the streak either way (an operator who
-    # disables termination may still want the signal for a future release or
-    # external tooling) -- only the _terminate_round call is gated.
-    in_round_mem_terminate: bool = True
+    # required before _spawn_round terminates the round.
+    critical_consecutive_samples: int = 3
+    # Off switch for the mid-round hard floor's termination action only.
+    in_round_terminate: bool = True
+
+
+@dataclass(frozen=True)
+class MonitorHostHealthConfig:
+    """Thresholds for the host-health detectors, grouped by mechanism:
+    disk usage, the mem_pressure signal ladder, and the Linux-PSI mid-round
+    floor. Defaults match the pre-0.3 flat table — existing deployments run
+    `agent-runner migrate` once to relocate to this shape."""
+
+    disk: _HostHealthDiskConfig = field(default_factory=_HostHealthDiskConfig)
+    memory: _HostHealthMemoryConfig = field(default_factory=_HostHealthMemoryConfig)
+    pressure: _HostHealthPressureConfig = field(default_factory=_HostHealthPressureConfig)
 
 
 @dataclass(frozen=True)
@@ -314,11 +327,18 @@ _RUNTIME_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(RuntimeCo
 _VCS_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(VcsConfig))
 _MONITOR_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(MonitorConfig))
 
-# Keys allowed under [monitor.host_health] — the strictness completion
-# (the exact footgun class an operator's typo'd threshold silently dropped).
-_MONITOR_HOST_HEALTH_ALLOWED_FIELDS = frozenset(
-    f.name for f in dataclasses.fields(MonitorHostHealthConfig)
+# Keys allowed under [monitor.host_health]'s three sub-tables — the strictness
+# completion (the exact footgun class an operator's typo'd threshold silently
+# dropped).
+_HOST_HEALTH_DISK_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(_HostHealthDiskConfig))
+_HOST_HEALTH_MEMORY_ALLOWED_FIELDS = frozenset(
+    f.name for f in dataclasses.fields(_HostHealthMemoryConfig)
 )
+_HOST_HEALTH_PRESSURE_ALLOWED_FIELDS = frozenset(
+    f.name for f in dataclasses.fields(_HostHealthPressureConfig)
+)
+# Keys allowed under [monitor.host_health] itself — just the three sub-tables.
+_MONITOR_HOST_HEALTH_ALLOWED_FIELDS = frozenset({"disk", "memory", "pressure"})
 
 # Keys allowed under a [phases.<name>.prompt] sub-table — `files` only
 # (docs/configuration.md's per-phase table already promised this; the loader

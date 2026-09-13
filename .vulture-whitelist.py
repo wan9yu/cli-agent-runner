@@ -164,15 +164,9 @@ round_progress_interval_s
 supervisor_stale_threshold_s
 
 # agent_runner.config.models.MonitorHostHealthConfig
-mem_avail_min_mb
-disk_warning_pct
-disk_critical_pct
-swap_sout_noise_floor_mb
-mem_free_low_mb
-psi_full_avg10_critical
-psi_some_avg10_warning
-mem_critical_consecutive_samples
-in_round_mem_terminate
+disk
+memory
+pressure
 
 # agent_runner.config.models.PhaseOverride
 round_timeout_s
@@ -229,6 +223,21 @@ pause_windows
 # agent_runner.config.models.VcsConfig
 stash_idempotency_s
 dirty_action
+
+# agent_runner.config.models._HostHealthDiskConfig
+warning_pct
+critical_pct
+
+# agent_runner.config.models._HostHealthMemoryConfig
+avail_min_mb
+free_low_mb
+swap_out_noise_floor_mb
+
+# agent_runner.config.models._HostHealthPressureConfig
+full_avg10_critical
+some_avg10_warning
+critical_consecutive_samples
+in_round_terminate
 
 # agent_runner.context_store.OrphanState
 round_num

@@ -20,6 +20,9 @@ from agent_runner.config.models import (  # noqa: F401 — public re-export
     _DEFAULT_AUTH_PATTERNS,
     _DEFAULT_AUTO_STOP_ON,
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
+    _HOST_HEALTH_DISK_ALLOWED_FIELDS,
+    _HOST_HEALTH_MEMORY_ALLOWED_FIELDS,
+    _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS,
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_PROMPT_ALLOWED_FIELDS,
@@ -43,6 +46,9 @@ from agent_runner.config.models import (  # noqa: F401 — public re-export
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _HostHealthDiskConfig,
+    _HostHealthMemoryConfig,
+    _HostHealthPressureConfig,
 )
 from agent_runner.config.validators import _reject_control_chars  # noqa: F401
 
