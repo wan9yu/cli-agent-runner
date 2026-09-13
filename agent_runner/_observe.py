@@ -21,12 +21,14 @@ from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import load_config
 from agent_runner.events import (
     AGENT_NETWORK_BLIP,
+    CGROUP_GROWTH_RATE_WARNING,
     HOOK_FAILED,
     MONITOR_STARTED,
 )
 
 _RECENT_HOOK_FAILURES_LIMIT = 10
 _RECENT_BLIPS_LIMIT = 5
+_RECENT_GROWTH_LIMIT = 5
 _MONITOR_SEEN_CAP = 512
 """Bound on `_monitor_loop_iter`'s dedup set — an unbounded set of alert-identity
 keys would grow forever across a long-lived monitor process; oldest-episode
@@ -80,6 +82,9 @@ def peek(
         parsed_events, HOOK_FAILED, _RECENT_HOOK_FAILURES_LIMIT
     )
     recent_blips = _recent_events_of_kind(parsed_events, AGENT_NETWORK_BLIP, _RECENT_BLIPS_LIMIT)
+    recent_cgroup_growth_warnings = _recent_events_of_kind(
+        parsed_events, CGROUP_GROWTH_RATE_WARNING, _RECENT_GROWTH_LIMIT
+    )
 
     from agent_runner._throttle import effective_throttle_view
 
@@ -121,6 +126,7 @@ def peek(
         recent_events=recent,
         recent_hook_failures=recent_hook_failures,
         recent_blips=recent_blips,
+        recent_cgroup_growth_warnings=recent_cgroup_growth_warnings,
         schedule=monitor.latest_schedule_state(parsed_events),
     )
     return state if select is None else select_path(state, select)

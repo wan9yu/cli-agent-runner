@@ -77,6 +77,7 @@ service
 recent_events
 recent_hook_failures
 recent_blips
+recent_cgroup_growth_warnings
 schedule
 
 # agent_runner.api_types.RateLimitState

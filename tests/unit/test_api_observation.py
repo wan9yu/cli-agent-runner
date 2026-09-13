@@ -392,6 +392,39 @@ def test_peek_should_populate_recent_blips_when_events_contain_blips(
     assert rounds == [2, 3, 4, 5, 6]
 
 
+def test_peek_should_populate_recent_cgroup_growth_warnings_when_events_contain_them(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_git_repo))
+    api.init(tmp_git_repo, force=False, commit=False)
+    _seed_logs(tmp_git_repo)
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
+    log_dir = cfg.runtime.log_dir
+    warning_lines = [
+        json.dumps(
+            {
+                "ts": f"2026-05-12T11:00:0{i}.000Z",
+                "event": "cgroup_growth_rate_warning",
+                "round_num": i,
+                "rate_mb_per_min": 900.0,
+                "threshold_mb_per_min": 512.0,
+                "source": "cgroup",
+                "context": {},
+            }
+        )
+        for i in range(7)
+    ]
+    with (log_dir / "events-2026-05.jsonl").open("a", encoding="utf-8") as f:
+        f.write("\n".join(warning_lines) + "\n")
+
+    state = api.peek(tmp_git_repo)
+
+    assert len(state.recent_cgroup_growth_warnings) == 5, "default limit is 5, most-recent first"
+    rounds = [w["round_num"] for w in state.recent_cgroup_growth_warnings]
+    assert rounds == [2, 3, 4, 5, 6]
+
+
 def test_narrate_events_should_yield_formatted_lines_when_events_seeded(
     tmp_path: Path,
 ) -> None:
