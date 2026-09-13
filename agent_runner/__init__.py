@@ -59,26 +59,30 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
     UserWarning and skips that ONE plugin; it never aborts the whole load.
 
     ``name`` here is always the entry-point name (the ``agent_runner.plugins``
-    pyproject.toml key) — it's the only identifier known BEFORE import, so
-    it's what ``_admit_third_party`` gates on (pin lookup, the builtin-identity
-    exemption) and what ``doctor`` prints a checksum against. It is NOT
-    necessarily ``PluginManifest.name`` (only known after import); for every
-    builtin the two are pinned equal by
+    pyproject.toml key) — it's the identifier known BEFORE import, so it's what
+    ``_admit_third_party`` gates on (pin lookup) and what ``doctor`` prints a
+    checksum against. It is NOT necessarily ``PluginManifest.name`` (only known
+    after import); for every builtin the two are pinned equal by
     ``test_entry_point_names_should_match_manifest_name``, but a third-party
     plugin has no such guarantee — which is fine, since admission never reads
     the manifest name at all.
 
-    Every third-party (non-``BUILTIN_PLUGIN_NAMES``) entry passes through
-    ``_admit_third_party`` BEFORE import — a pin mismatch or an unpinned
-    plugin under ``sandbox = "require"`` refuses to import that ONE plugin
-    (fail-closed; never loads unconfined). Builtins skip this gate entirely —
-    trusted by identity, never require a pin.
+    Builtin trust is decided by ``is_builtin_provenance(name, module_path)`` —
+    a reserved name AND a module genuinely under
+    ``agent_runner.builtin_plugins``. A reserved name alone is NOT enough: a
+    name-squatter (reserved name, foreign module) is treated as third-party,
+    flows through ``_admit_third_party``, and raises a loud
+    ``plugin_builtin_name_squat`` signal. Only genuine builtins skip the gate.
+
+    Every non-builtin entry passes through ``_admit_third_party`` BEFORE import
+    — a pin mismatch or an unpinned plugin under ``sandbox = "require"`` refuses
+    to import that ONE plugin (fail-closed; never loads unconfined).
     """
     import importlib
     import warnings
 
     from agent_runner._plugin_manifest import loaded_manifest_names, register_manifest
-    from agent_runner._registry import BUILTIN_PLUGIN_NAMES
+    from agent_runner._registry import BUILTIN_PLUGIN_NAMES, is_builtin_provenance
 
     disable = set(plugins_cfg.disable)
     already = set(loaded_manifest_names())
@@ -92,46 +96,71 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
         # before resolving, or it glues onto attr_path and breaks getattr().
         module_path = _entry_point_module_path(value)
         attr_path = value.partition("[")[0].rstrip().partition(":")[2]
-        if name not in BUILTIN_PLUGIN_NAMES and not _admit_third_party(
-            name, module_path, plugins_cfg, log_dir
-        ):
-            continue
+        # Builtin trust is keyed on PROVENANCE (module genuinely under
+        # agent_runner.builtin_plugins), never on the entry-point NAME alone —
+        # a reserved name is collidable, so a third-party package shipping an
+        # entry named e.g. "pi" is a name-squatter, not a builtin.
+        is_builtin = is_builtin_provenance(name, module_path)
+        if not is_builtin:
+            if name in BUILTIN_PLUGIN_NAMES:
+                _warn_builtin_name_squat(name, module_path, log_dir)
+            if not _admit_third_party(name, module_path, plugins_cfg, log_dir):
+                continue
         try:
             mod = importlib.import_module(module_path)
             target = mod
             for attr in filter(None, attr_path.split(".")):
                 target = getattr(target, attr)
-            register_manifest(target)
+            register_manifest(target, builtin=is_builtin)
         except Exception as e:  # noqa: BLE001 — a broken plugin must never crash the supervisor
             warnings.warn(f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}", stacklevel=3)
 
 
+def _warn_builtin_name_squat(name: str, module_path: str, log_dir) -> None:
+    """A discovered entry point claims a RESERVED builtin name while resolving
+    to a non-core module — a name-squatter. Builtin trust is denied (the entry
+    still flows through ``_admit_third_party``'s pin/sandbox gate); this makes
+    the claim LOUD (a warning always, plus an auditable event when a log_dir is
+    available) rather than a silent trust bypass."""
+    import warnings
+
+    warnings.warn(
+        f"{_PLUGIN_GROUP} entry {name!r} claims a reserved builtin name but resolves to "
+        f"non-core module {module_path!r}; treating as third-party (pin/sandbox gate applies)",
+        stacklevel=4,
+    )
+    if log_dir is not None:
+        from agent_runner.api import emit_plugin_builtin_name_squat
+
+        emit_plugin_builtin_name_squat(log_dir, name=name, module_path=module_path)
+
+
 def _admit_third_party(name: str, module_path: str, plugins_cfg, log_dir) -> bool:
-    """Fail-closed pin/sandbox gate for a THIRD-PARTY plugin (never called for
-    a ``BUILTIN_PLUGIN_NAMES`` member). Returns False to refuse (and emit) —
-    skipping this ONE plugin; every other discovered entry still loads.
+    """Fail-closed pin/sandbox gate for a non-builtin plugin (any entry lacking
+    genuine builtin provenance, INCLUDING a reserved-name squatter). Returns
+    False to refuse (and emit) — skipping this ONE plugin; every other
+    discovered entry still loads.
 
     Both ``name`` and ``pins``' keys are entry-point names — see
     ``load_and_register_plugins``'s docstring. Runs BEFORE
     ``importlib.import_module``, so no plugin code executes for a refused
     entry.
     """
-    from agent_runner._plugin_checksum import compute_plugin_checksum, verify_pin
+    from agent_runner._plugin_checksum import verify_pin
     from agent_runner._sandbox_probe import probe_sandbox_capability
     from agent_runner.api import emit_plugin_checksum_mismatch, emit_plugin_sandbox_degraded
 
     try:
-        verdict = verify_pin(name, module_path, plugins_cfg.pin)
+        verdict, actual = verify_pin(name, module_path, plugins_cfg.pin)
     except Exception:  # noqa: BLE001 — unresolvable/unreadable module == refuse (fail closed)
-        verdict = "mismatch"
+        verdict, actual = "mismatch", "sha256:unreadable"
     if verdict == "mismatch":
         if log_dir is not None:
-            try:
-                actual = compute_plugin_checksum(module_path)
-            except Exception:  # noqa: BLE001 — module itself unreadable; still report, don't crash
-                actual = "sha256:unreadable"
             emit_plugin_checksum_mismatch(
-                log_dir, name=name, expected=plugins_cfg.pin.get(name, ""), actual=actual
+                log_dir,
+                name=name,
+                expected=plugins_cfg.pin.get(name, ""),
+                actual=actual or "sha256:unreadable",
             )
         return False
     if verdict == "unpinned" and plugins_cfg.sandbox == "require":

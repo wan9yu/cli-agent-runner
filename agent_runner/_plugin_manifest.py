@@ -46,10 +46,18 @@ def loaded_manifest_names() -> list[str]:
     return [m.name for m in _LOADED_MANIFESTS]
 
 
-def register_manifest(manifest: PluginManifest) -> None:
+def register_manifest(manifest: PluginManifest, *, builtin: bool = False) -> None:
     """Register every capability a manifest declares into its own registry.
     No import-time side effects — the loader calls this explicitly after
     resolving a plugin's `PLUGIN` attribute.
+
+    ``builtin`` records whether this manifest is a GENUINE builtin (verified by
+    ``is_builtin_provenance`` at the load path) — it is threaded to
+    ``register_dirty_handler`` so ``dispatch_dirty`` can grant in-process trust
+    by handler-object identity rather than by the collidable manifest name.
+    Defaults to False (fail-closed): any manifest registered outside the
+    verified load path — a direct ``register_manifest`` call, a test — is
+    treated as third-party and sandboxed.
 
     Raises ``ValueError`` up front if ``manifest.name`` collides with an
     already-registered manifest's ``.name`` — this is checked HERE, not by
@@ -86,7 +94,7 @@ def register_manifest(manifest: PluginManifest) -> None:
     for h in manifest.serve_startup_hooks:
         hooks.register_serve_startup_hook(h)
     for d in manifest.dirty_handlers:
-        hooks.register_dirty_handler(d, owner=manifest.name)
+        hooks.register_dirty_handler(d, owner=manifest.name, builtin=builtin)
     for det in manifest.detectors:
         monitor.register_detector(det)
     for kind in manifest.event_kinds:
@@ -116,6 +124,7 @@ def unregister_by_name(names: set[str]) -> set[str]:
         _remove_by_identity(hooks._DIRTY_HANDLERS, manifest.dirty_handlers)
         for h in manifest.dirty_handlers:
             hooks._DIRTY_HANDLER_OWNER.pop(id(h), None)
+            hooks._DIRTY_HANDLER_BUILTIN.pop(id(h), None)
         _remove_by_identity(monitor._PLUGIN_DETECTORS, manifest.detectors)
         for kind in manifest.event_kinds:
             events._PLUGIN_KINDS.pop(kind, None)

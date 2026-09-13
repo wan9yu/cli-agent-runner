@@ -203,6 +203,7 @@ _POST_ROUND_HOOKS: list[PostRoundHook] = []
 _SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
 _DIRTY_HANDLERS: list[DirtyHandler] = []
 _DIRTY_HANDLER_OWNER: dict[int, str] = {}  # id(handler) -> manifest .name; "" = unknown/legacy
+_DIRTY_HANDLER_BUILTIN: dict[int, bool] = {}  # id(handler) -> genuine-builtin trust; absent = False
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -246,10 +247,18 @@ def plugin_context_enrichers() -> list[str]:
     return sorted(e.name for e in _CONTEXT_ENRICHERS)
 
 
-def register_dirty_handler(handler: DirtyHandler, *, owner: str = "") -> None:
+def register_dirty_handler(
+    handler: DirtyHandler, *, owner: str = "", builtin: bool = False
+) -> None:
+    """``builtin`` grants in-process dispatch trust and is keyed on
+    ``id(handler)`` — the handler OBJECT, never the collidable ``owner`` name.
+    Defaults to False (fail-closed): a handler registered without it is
+    sandboxed as third-party. Only the verified load path
+    (``is_builtin_provenance``) passes ``builtin=True``."""
     ensure_unique(handler.name, _DIRTY_HANDLERS, "dirty_handler")
     _DIRTY_HANDLERS.append(handler)
     _DIRTY_HANDLER_OWNER[id(handler)] = owner
+    _DIRTY_HANDLER_BUILTIN[id(handler)] = builtin
 
 
 def dispatch_dirty(
@@ -261,22 +270,22 @@ def dispatch_dirty(
 ) -> Any | None:
     """Run registered DirtyHandlers ascending by priority; first non-None wins.
 
-    A third-party handler (owner not in BUILTIN_PLUGIN_NAMES; "" counts as
-    third-party — fail closed) runs inside the Landlock+seccomp trampoline
-    when ``sandbox != "off"``; builtins stay in-process. Under ``sandbox ==
-    "require"`` on a host that cannot confine (no Landlock+seccomp), the
-    handler is refused rather than run unconfined; under ``"prefer"`` it is
-    still launched (the trampoline degrades to a best-effort child there). A
-    handler that raises (or whose trampoline fails, including the require
-    refusal) is isolated — emits ``hook_failed`` and is treated as pass
-    (continue to next), so the builtin fallback still resolves the tree.
+    A third-party handler runs inside the Landlock+seccomp trampoline when
+    ``sandbox != "off"``; genuine builtins stay in-process. Builtin trust is
+    read from ``_DIRTY_HANDLER_BUILTIN`` keyed on the handler OBJECT identity —
+    never the collidable owner name — so a name-squatter's handler (absent from
+    that map → False) is sandboxed. Under ``sandbox == "require"`` on a host
+    that cannot confine (no Landlock+seccomp), the handler is refused rather
+    than run unconfined; under ``"prefer"`` it is still launched (the
+    trampoline degrades to a best-effort child there). A handler that raises
+    (or whose trampoline fails, including the require refusal) is isolated —
+    emits ``hook_failed`` and is treated as pass (continue to next), so the
+    builtin fallback still resolves the tree.
     """
-    from agent_runner._registry import BUILTIN_PLUGIN_NAMES
-
     ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
     for h in ordered:
         owner = _DIRTY_HANDLER_OWNER.get(id(h), "")
-        third_party = owner not in BUILTIN_PLUGIN_NAMES
+        third_party = not _DIRTY_HANDLER_BUILTIN.get(id(h), False)
         try:
             if sandbox != "off" and third_party:
                 from agent_runner._plugin_sandbox import (

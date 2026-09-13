@@ -1,9 +1,10 @@
-"""dispatch_dirty routes a dirty handler by its owning plugin's identity: a
-builtin (owner in BUILTIN_PLUGIN_NAMES) runs in-process; a third-party handler
-(any other owner, including the empty/legacy owner -- fail closed) goes through
-the Landlock+seccomp trampoline whenever sandbox != 'off'. These tests stub the
-trampoline launcher so the routing decision is verified without a real Linux
-sandbox."""
+"""dispatch_dirty routes a dirty handler by GENUINE-builtin trust keyed on the
+handler OBJECT identity (_DIRTY_HANDLER_BUILTIN), never the collidable owner
+name: a handler registered builtin=True runs in-process; anything else --
+including a handler whose owner name collides with a builtin, or the
+default/legacy False -- goes through the Landlock+seccomp trampoline whenever
+sandbox != 'off'. These tests stub the trampoline launcher so the routing
+decision is verified without a real Linux sandbox."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from agent_runner import hooks
 from agent_runner._registry import BUILTIN_PLUGIN_NAMES
 from tests._test_helpers import isolating, make_hook_context
 
-_reset = isolating(hooks._DIRTY_HANDLERS, hooks._DIRTY_HANDLER_OWNER)
+_reset = isolating(hooks._DIRTY_HANDLERS, hooks._DIRTY_HANDLER_OWNER, hooks._DIRTY_HANDLER_BUILTIN)
 
 
 class _Handler:
@@ -42,14 +43,48 @@ def test_register_dirty_handler_should_default_owner_empty_when_omitted() -> Non
     assert hooks._DIRTY_HANDLER_OWNER[id(handler)] == ""
 
 
-def test_dispatch_dirty_should_run_builtin_in_process_when_owner_is_builtin(tmp_path) -> None:
+def test_register_dirty_handler_should_default_builtin_false_when_omitted() -> None:
     handler = _Handler()
-    builtin_owner = next(iter(BUILTIN_PLUGIN_NAMES))
-    hooks.register_dirty_handler(handler, owner=builtin_owner)
+
+    hooks.register_dirty_handler(handler, owner="acme_pkg")
+
+    assert hooks._DIRTY_HANDLER_BUILTIN[id(handler)] is False
+
+
+def test_register_dirty_handler_should_record_builtin_trust_when_flagged() -> None:
+    handler = _Handler()
+
+    hooks.register_dirty_handler(handler, owner="pi", builtin=True)
+
+    assert hooks._DIRTY_HANDLER_BUILTIN[id(handler)] is True
+
+
+def test_dispatch_dirty_should_run_in_process_when_registered_builtin(tmp_path) -> None:
+    handler = _Handler()
+    hooks.register_dirty_handler(handler, owner="default_dirty_handler", builtin=True)
 
     hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="require")
 
     assert handler.calls == 1
+
+
+def test_dispatch_dirty_should_trampoline_when_builtin_name_but_registered_third_party(
+    tmp_path, monkeypatch
+) -> None:
+    handler = _Handler()
+    builtin_name = next(iter(BUILTIN_PLUGIN_NAMES))
+    hooks.register_dirty_handler(handler, owner=builtin_name)
+    routed: list[str] = []
+
+    import agent_runner._plugin_sandbox as ps
+
+    monkeypatch.setattr(
+        ps, "run_hook_sandboxed", lambda *a, **k: routed.append("trampoline") or None
+    )
+
+    hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
+
+    assert handler.calls == 0 and routed == ["trampoline"]
 
 
 def test_dispatch_dirty_should_trampoline_third_party_when_sandbox_on(

@@ -40,6 +40,7 @@ from agent_runner._emit.memory import (  # noqa: F401 — public re-export
     emit_round_resumed,
 )
 from agent_runner._emit.plugins import (  # noqa: F401 — public re-export
+    emit_plugin_builtin_name_squat,
     emit_plugin_checksum_mismatch,
     emit_plugin_sandbox_degraded,
     emit_plugin_sandbox_kill,
@@ -85,6 +86,7 @@ __all__ = [
     "emit_mem_loop",
     "emit_mem_loop_persistent",
     "emit_mem_pressure_deferred_to_cgroup",
+    "emit_plugin_builtin_name_squat",
     "emit_plugin_checksum_mismatch",
     "emit_plugin_sandbox_degraded",
     "emit_plugin_sandbox_kill",

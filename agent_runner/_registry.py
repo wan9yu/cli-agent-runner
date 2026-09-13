@@ -22,8 +22,19 @@ BUILTIN_PLUGIN_NAMES: frozenset[str] = frozenset(
     }
 )
 """Mirrors pyproject.toml's [project.entry-points."agent_runner.plugins"] table
-exactly (pinned by test_builtin_plugin_names_sync). This frozenset is the ONE
-place trust-by-identity is decided, so drift here is a silent trust boundary bug."""
+exactly (pinned by test_builtin_plugin_names_sync). A reserved name is NECESSARY
+but not SUFFICIENT for builtin trust — see ``is_builtin_provenance``: the name
+alone is collidable, so trust also requires genuine provenance."""
+
+_BUILTIN_MODULE_PREFIX = "agent_runner.builtin_plugins."
+
+
+def is_builtin_provenance(name: str, module_path: str) -> bool:
+    """A plugin is a trusted builtin ONLY if its name is reserved AND its
+    module is genuinely part of this package. Third-party code cannot place a
+    module under agent_runner.builtin_plugins, so a name match without this
+    prefix is a name-squatter, never a builtin."""
+    return name in BUILTIN_PLUGIN_NAMES and module_path.startswith(_BUILTIN_MODULE_PREFIX)
 
 
 def ensure_unique(name: str, existing: list, kind: str) -> None:

@@ -2,8 +2,8 @@
 
 These exercise the IN-PROCESS dispatch mechanics (priority ordering,
 fall-through, raise-isolation), so they run with ``sandbox="off"`` -- the
-Landlock+seccomp trampoline routing (owner-in/out of BUILTIN_PLUGIN_NAMES) is
-covered separately by test_dispatch_dirty_owner_branch."""
+Landlock+seccomp trampoline routing (genuine-builtin trust keyed on handler
+object identity) is covered separately by test_dispatch_dirty_owner_branch."""
 
 from __future__ import annotations
 

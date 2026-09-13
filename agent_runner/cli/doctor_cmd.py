@@ -67,13 +67,13 @@ def _third_party_plugin_checksums() -> dict[str, str]:
     value straight into ``[plugins.pin]`` and have it verify."""
     import agent_runner
     from agent_runner._plugin_checksum import compute_plugin_checksum
-    from agent_runner._registry import BUILTIN_PLUGIN_NAMES
+    from agent_runner._registry import is_builtin_provenance
 
     out: dict[str, str] = {}
     for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
-        if name in BUILTIN_PLUGIN_NAMES:
-            continue
         module_path = agent_runner._entry_point_module_path(value)
+        if is_builtin_provenance(name, module_path):
+            continue
         try:
             out[name] = compute_plugin_checksum(module_path)
         except Exception as e:  # noqa: BLE001 — doctor reports, never crashes, on a broken plugin

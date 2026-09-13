@@ -35,9 +35,15 @@ def compute_plugin_checksum(module_path: str) -> str:
     return f"sha256:{digest}"
 
 
-def verify_pin(name: str, module_path: str, pins: dict[str, str]) -> PinVerdict:
-    """``name`` is the entry-point name (the ``[plugins.pin]`` key an operator
+def verify_pin(name: str, module_path: str, pins: dict[str, str]) -> tuple[PinVerdict, str | None]:
+    """Returns ``(verdict, actual)`` where ``actual`` is the computed
+    ``"sha256:<hex>"`` digest of the module file, or ``None`` when the name is
+    unpinned (no digest is computed in that case). The caller reuses ``actual``
+    for the mismatch event instead of hashing the file a second time.
+
+    ``name`` is the entry-point name (the ``[plugins.pin]`` key an operator
     writes), NOT ``PluginManifest.name`` — see module docstring."""
     if name not in pins:
-        return "unpinned"
-    return "verified" if compute_plugin_checksum(module_path) == pins[name] else "mismatch"
+        return "unpinned", None
+    actual = compute_plugin_checksum(module_path)
+    return ("verified" if actual == pins[name] else "mismatch"), actual

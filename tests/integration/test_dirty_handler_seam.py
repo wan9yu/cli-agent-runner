@@ -12,6 +12,9 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from agent_runner import _plugin_manifest, hooks
+from agent_runner._plugin_manifest import register_manifest
+from agent_runner.builtin_plugins.default_dirty_handler import PLUGIN as _DEFAULT_DIRTY_PLUGIN
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -21,7 +24,14 @@ from agent_runner.config import (
     VcsConfig,
 )
 from agent_runner.runner import run_one_round
-from tests._test_helpers import read_events_for_current_month
+from tests._test_helpers import isolating, read_events_for_current_month
+
+_reset = isolating(
+    hooks._DIRTY_HANDLERS,
+    hooks._DIRTY_HANDLER_OWNER,
+    hooks._DIRTY_HANDLER_BUILTIN,
+    _plugin_manifest._LOADED_MANIFESTS,
+)
 
 
 def _make_auto_commit_cfg(tmp_git_repo: Path, agent_script: Path) -> Config:
@@ -71,6 +81,7 @@ def test_auto_commit_should_emit_dirty_auto_committed_via_default_plugin(
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
     cfg = _make_auto_commit_cfg(tmp_git_repo, fake_agent_script)
+    register_manifest(_DEFAULT_DIRTY_PLUGIN, builtin=True)  # genuine builtin -> in-process trust
 
     result = run_one_round(cfg)
 

@@ -17,6 +17,17 @@ def emit_plugin_sandbox_kill(
     emit(log_dir, PLUGIN_SANDBOX_KILL, hook=hook, signal=signal, syscall=syscall)
 
 
+def emit_plugin_builtin_name_squat(log_dir: Path, *, name: str, module_path: str) -> None:
+    """Emit when a discovered entry point claims a RESERVED builtin name while
+    resolving to a module OUTSIDE the core ``agent_runner.builtin_plugins``
+    namespace -- a name-squatter. Builtin trust is denied: the entry falls
+    through to the third-party pin/sandbox gate. This event makes the claim
+    auditable rather than silent."""
+    from agent_runner.events import PLUGIN_BUILTIN_NAME_SQUAT, emit
+
+    emit(log_dir, PLUGIN_BUILTIN_NAME_SQUAT, name=name, module_path=module_path)
+
+
 def emit_plugin_checksum_mismatch(log_dir: Path, *, name: str, expected: str, actual: str) -> None:
     """Emit when a third-party plugin's computed sha256 doesn't match its
     ``[plugins.pin]`` entry (or the pin is unreadable) -- the loader refuses
