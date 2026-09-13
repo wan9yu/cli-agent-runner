@@ -2029,7 +2029,7 @@ def test_mid_round_hysteresis_should_default_to_three_samples_with_terminate_ena
     assert cfg.pressure.in_round_terminate is True
 
 
-def test_mem_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path) -> None:
+def test_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + "critical_consecutive_samples = 5\n")
 
     cfg = load_config(toml)
@@ -2038,7 +2038,7 @@ def test_mem_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path)
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
-def test_mem_critical_consecutive_samples_should_reject_invalid_values(
+def test_critical_consecutive_samples_should_reject_invalid_values(
     tmp_path: Path, bad: str
 ) -> None:
     """Must be a positive int -- 0 or negative would terminate on the very
@@ -2054,7 +2054,7 @@ def test_mem_critical_consecutive_samples_should_reject_invalid_values(
 
 
 @pytest.mark.parametrize(("literal", "expected"), [("true", True), ("false", False)])
-def test_in_round_mem_terminate_should_parse_bool_value(
+def test_in_round_terminate_should_parse_bool_value(
     tmp_path: Path, literal: str, expected: bool
 ) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {literal}\n")
@@ -2065,7 +2065,7 @@ def test_in_round_mem_terminate_should_parse_bool_value(
 
 
 @pytest.mark.parametrize("bad", ["1", '"true"'])
-def test_in_round_mem_terminate_should_reject_non_bool_value(tmp_path: Path, bad: str) -> None:
+def test_in_round_terminate_should_reject_non_bool_value(tmp_path: Path, bad: str) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {bad}\n")
 
     with pytest.raises(ValueError, match="monitor.host_health.pressure.in_round_terminate"):
