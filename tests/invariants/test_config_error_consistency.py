@@ -120,10 +120,10 @@ def _write_config_with_scalar_table(tmp_path: Path, table: str) -> Path:
         "runtime": f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{log_dir}"\n',
         "prompt": f'[prompt]\nfile = "{prompt_file}"\n',
     }
-    # The scalar assignment must come FIRST — TOML has no way to "return to
-    # root" after a `[header]` line; any bare `key = value` following one
+    # The scalar assignment(s) must come FIRST — TOML has no way to "return
+    # to root" after a `[header]` line; any bare `key = value` following one
     # belongs to THAT header's table, not the root table.
-    lines = [f"{table} = 1\n"]
+    lines = ["schema_version = 1\n", f"{table} = 1\n"]
     lines += [block for name, block in mandatory.items() if name != table]
     toml = tmp_path / "agent-runner.toml"
     toml.write_text("".join(lines))
@@ -138,5 +138,5 @@ def test_load_config_should_raise_config_error_when_top_level_table_given_as_sca
 
     cfg_path = _write_config_with_scalar_table(tmp_path, table)
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError, match=rf"\[{table}\] must be a table"):
         load_config(cfg_path)

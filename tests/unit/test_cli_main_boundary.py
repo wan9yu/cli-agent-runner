@@ -13,6 +13,7 @@ def _broken_toml(tmp_path: Path) -> Path:
     # [prompt] with neither file nor files → ConfigError at load_config.
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
+        "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         "[prompt]\n"
@@ -29,7 +30,13 @@ def test_main_serve_should_exit_78_not_traceback_when_config_broken(tmp_path: Pa
 def test_main_should_name_migrate_in_stderr_when_config_broken(tmp_path: Path, capsys) -> None:
     main(["serve", "--config", str(_broken_toml(tmp_path))])
 
-    assert "agent-runner migrate" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    # Pins the [prompt]-validation path specifically -- not just any
+    # ConfigError -- so this can't silently go vacuous against some
+    # unrelated, earlier-firing config rejection (e.g. the schema_version
+    # boot gate) that also happens to mention "agent-runner migrate".
+    assert "missing required field: prompt.file or prompt.files" in err
+    assert "agent-runner migrate" in err
 
 
 def test_main_serve_should_exit_78_not_traceback_when_config_missing(tmp_path: Path) -> None:
