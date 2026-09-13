@@ -47,19 +47,19 @@ from typing import Any
 
 # Tier 1 -- PSI avg10 (%-of-time-stalled over the last 10s). `some` = at least
 # one task stalled on reclaim; `full` = every task stalled (severe).
-# Config-tunable (``MonitorHostHealthConfig.psi_full_avg10_critical`` /
-# ``.psi_some_avg10_warning``) -- see that dataclass for the defaults and the
-# rationale for the 60% critical bar (systemd-oomd's proven
+# Config-tunable (``MonitorHostHealthConfig.pressure.full_avg10_critical`` /
+# ``.pressure.some_avg10_warning``) -- see that dataclass for the defaults and
+# the rationale for the 60% critical bar (systemd-oomd's proven
 # DefaultMemoryPressureLimit; a sustained near-total stall, not a 1% hiccup).
 
 # Tier 2 -- swap-out delta (bytes) between two samples. Below
-# cfg.swap_sout_noise_floor_mb is noise: tens of MB is ordinary startup/idle
-# churn between successive samples (round boundaries, or the mid-round loop's
-# own ~10s ticks) and is NOT, on its own, a real paging signal -- a single
-# page (4096B, the old floor) is far too sensitive and made the pre-round gate
-# defer/resume on a few idle KB of swap movement every round. Config-tunable
-# (``MonitorHostHealthConfig.swap_sout_noise_floor_mb``, default 32 MiB) so a
-# tiny host can lower it and a large host can raise it.
+# cfg.memory.swap_out_noise_floor_mb is noise: tens of MB is ordinary
+# startup/idle churn between successive samples (round boundaries, or the
+# mid-round loop's own ~10s ticks) and is NOT, on its own, a real paging
+# signal -- a single page (4096B, the old floor) is far too sensitive and made
+# the pre-round gate defer/resume on a few idle KB of swap movement every
+# round. Config-tunable (``MonitorHostHealthConfig.memory.swap_out_noise_floor_mb``,
+# default 32 MiB) so a tiny host can lower it and a large host can raise it.
 
 # Tier 3 -- combined-low. MemFree alone is always low on a cache-heavy host
 # (the kernel prefers to keep it near-zero and use spare RAM for cache), so
@@ -67,7 +67,7 @@ from typing import Any
 # or an actual measured, above-floor swap-out delta (tier 2's critical
 # escalation, below). Also doubles as the critical-escalation MemFree floor:
 # "critically low" is the same absolute bar either way. Config-tunable
-# (``MonitorHostHealthConfig.mem_free_low_mb``, default 16 MiB).
+# (``MonitorHostHealthConfig.memory.free_low_mb``, default 16 MiB).
 
 
 @dataclass(frozen=True)
@@ -112,14 +112,14 @@ def memory_pressure(
     psi_some = sample.get("psi_some_avg10")
     if psi_some is not None:
         psi_full = sample.get("psi_full_avg10") or 0.0
-        if psi_full >= cfg.psi_full_avg10_critical:
+        if psi_full >= cfg.pressure.full_avg10_critical:
             return Pressure(
                 "critical",
                 "psi",
                 f"PSI memory full avg10={psi_full} (every task stalled on reclaim)",
                 {"psi_some_avg10": psi_some, "psi_full_avg10": psi_full},
             )
-        if psi_some >= cfg.psi_some_avg10_warning:
+        if psi_some >= cfg.pressure.some_avg10_warning:
             return Pressure(
                 "warning",
                 "psi",
@@ -129,14 +129,14 @@ def memory_pressure(
         return None  # PSI is readable and says healthy -- trust it, no fall-through.
 
     delta = _swap_sout_delta(sample, prev_sample)
-    if delta is not None and delta > cfg.swap_sout_noise_floor_mb * 1024 * 1024:
+    if delta is not None and delta > cfg.memory.swap_out_noise_floor_mb * 1024 * 1024:
         mem_free = sample.get("mem_free_mb")
-        if mem_free is not None and mem_free < cfg.mem_free_low_mb:
+        if mem_free is not None and mem_free < cfg.memory.free_low_mb:
             return Pressure(
                 "critical",
                 "swap_out_rate",
                 f"swap sout +{delta}B since last sample while mem_free_mb {mem_free} "
-                f"< {cfg.mem_free_low_mb} (actively dying, independent of swap-device speed)",
+                f"< {cfg.memory.free_low_mb} (actively dying, independent of swap-device speed)",
                 {"swap_sout_delta": delta, "mem_free_mb": mem_free},
             )
         return Pressure(
@@ -153,12 +153,12 @@ def memory_pressure(
     mem_free = sample.get("mem_free_mb")
     mem_avail = sample.get("mem_available_mb")
     if mem_free is not None and mem_avail is not None:
-        if mem_free < cfg.mem_free_low_mb and mem_avail < cfg.mem_avail_min_mb:
+        if mem_free < cfg.memory.free_low_mb and mem_avail < cfg.memory.avail_min_mb:
             return Pressure(
                 "warning",
                 "combined_low",
-                f"mem_free_mb {mem_free} < {cfg.mem_free_low_mb} and "
-                f"mem_available_mb {mem_avail} < {cfg.mem_avail_min_mb}",
+                f"mem_free_mb {mem_free} < {cfg.memory.free_low_mb} and "
+                f"mem_available_mb {mem_avail} < {cfg.memory.avail_min_mb}",
                 {"mem_free_mb": mem_free, "mem_available_mb": mem_avail},
             )
         return None
@@ -167,7 +167,7 @@ def memory_pressure(
 
 
 def configured_gate_inert(sample: dict[str, Any], prev_sample: dict[str, Any], cfg: Any) -> bool:
-    """True when the configured ``mem_available_mb < mem_avail_min_mb`` gate is
+    """True when the configured ``mem_available_mb < memory.avail_min_mb`` gate is
     provably inert on this host: a cache-poor-valid signal (PSI or swap-out
     rate -- NOT combined-low, which can only fire when MemAvailable is
     already below threshold, so it can never coexist with this condition)
@@ -179,7 +179,7 @@ def configured_gate_inert(sample: dict[str, Any], prev_sample: dict[str, Any], c
     channel.
     """
     mem_avail = sample.get("mem_available_mb")
-    if mem_avail is None or mem_avail < cfg.mem_avail_min_mb:
+    if mem_avail is None or mem_avail < cfg.memory.avail_min_mb:
         return False  # the gate would fire (or we can't evaluate it) -- not inert
     pressure = memory_pressure(sample, prev_sample, cfg)
     return pressure is not None and pressure.signal in ("psi", "swap_out_rate")

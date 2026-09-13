@@ -11,12 +11,21 @@ warm-cache host).
 
 from __future__ import annotations
 
+import dataclasses
+
 from agent_runner import host_health
-from agent_runner.config import MonitorHostHealthConfig
+from agent_runner.config import (
+    MonitorHostHealthConfig,
+    _HostHealthMemoryConfig,
+    _HostHealthPressureConfig,
+)
 
 
 def _cfg(mem_avail_min_mb: int = 40) -> MonitorHostHealthConfig:
-    return MonitorHostHealthConfig(mem_avail_min_mb=mem_avail_min_mb)
+    cfg = MonitorHostHealthConfig()
+    return dataclasses.replace(
+        cfg, memory=dataclasses.replace(cfg.memory, avail_min_mb=mem_avail_min_mb)
+    )
 
 
 _50MB = 50 * 1024 * 1024
@@ -198,7 +207,7 @@ def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant()
     a readable-and-quiet PSI (e.g. 0.0) would short-circuit at tier 1 and
     never reach the swap-out floor this test exercises."""
     cfg = MonitorHostHealthConfig(
-        swap_sout_noise_floor_mb=8, mem_free_low_mb=16, mem_avail_min_mb=200
+        memory=_HostHealthMemoryConfig(swap_out_noise_floor_mb=8, free_low_mb=16, avail_min_mb=200)
     )
     prev = {
         "swap_sout": 0,
@@ -220,7 +229,7 @@ def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant()
     assert p is not None and p.signal == "swap_out_rate"
 
     cfg2 = MonitorHostHealthConfig(
-        swap_sout_noise_floor_mb=32, mem_free_low_mb=16, mem_avail_min_mb=200
+        memory=_HostHealthMemoryConfig(swap_out_noise_floor_mb=32, free_low_mb=16, avail_min_mb=200)
     )
     assert host_health.memory_pressure(cur, prev, cfg2) is None  # 9 MiB < 32 MiB floor: no warning
 
@@ -228,7 +237,7 @@ def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant()
 def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg() -> None:
     """psi_full_avg10_critical must be read from cfg, not the deleted module
     constant (0.2.15's hardcoded 1.0 killed every round on a 1% hiccup)."""
-    cfg = MonitorHostHealthConfig(psi_full_avg10_critical=60.0)
+    cfg = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(full_avg10_critical=60.0))
     healthy = {"psi_some_avg10": 2.0, "psi_full_avg10": 40.0}  # 40 < 60 -- not critical
 
     assert host_health.memory_pressure(healthy, {}, cfg) is None
