@@ -250,3 +250,71 @@ def test_trampoline_subprocess_should_roundtrip_outcome_when_run_end_to_end(
 
     assert proc.returncode == 0, proc.stderr.decode(errors="replace")
     assert json.loads(proc.stdout) == {"schema": "dirty_outcome/1", "kind": "ignored", "ref": None}
+
+
+def test_child_env_should_drop_parent_secrets_but_keep_git_and_path(monkeypatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret")
+    monkeypatch.setenv("ACME_TOKEN", "t0ken")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "tester")
+
+    from agent_runner._plugin_sandbox import _child_env
+
+    env = _child_env()
+
+    assert "ANTHROPIC_API_KEY" not in env and "ACME_TOKEN" not in env
+    assert env["PATH"] == "/usr/bin" and env["GIT_AUTHOR_NAME"] == "tester"
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
+def _point_discovery_at(monkeypatch, module_name: str) -> None:
+    import agent_runner
+
+    monkeypatch.setattr(
+        agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", [("acme_pkg", f"{module_name}:PLUGIN")]
+    )
+
+
+def test_run_hook_sandboxed_should_hide_parent_secrets_from_child(tmp_path, monkeypatch) -> None:
+    body = (
+        "        import os\n"
+        '        return DirtyOutcome(kind="committed", '
+        'ref=os.environ.get("ANTHROPIC_API_KEY") or "ABSENT")'
+    )
+    module_name = _write_fake_plugin(tmp_path, name="leak", hook_name="leak_dirty", body=body)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-should-not-leak")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    _point_discovery_at(monkeypatch, module_name)
+    from agent_runner._plugin_sandbox import run_hook_sandboxed
+
+    outcome = run_hook_sandboxed(
+        "dirty_handler",
+        "acme_pkg",
+        "leak_dirty",
+        make_hook_context(tmp_path),
+        log_dir=tmp_path,
+        dirty_files=["f.py"],
+    )
+
+    assert outcome.kind == "committed"
+    assert outcome.ref == "ABSENT"
+
+
+def test_run_hook_sandboxed_should_bound_child_output_when_plugin_floods_stdout(
+    tmp_path, monkeypatch
+) -> None:
+    body = "        import os\n        os.write(1, b'x' * (128 * 1024))\n        return None"
+    module_name = _write_fake_plugin(tmp_path, name="flood", hook_name="flood_dirty", body=body)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    _point_discovery_at(monkeypatch, module_name)
+    from agent_runner._plugin_sandbox import run_hook_sandboxed
+
+    with pytest.raises((ValueError, RuntimeError)):
+        run_hook_sandboxed(
+            "dirty_handler",
+            "acme_pkg",
+            "flood_dirty",
+            make_hook_context(tmp_path),
+            log_dir=tmp_path,
+            dirty_files=[],
+        )

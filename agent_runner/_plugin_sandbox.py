@@ -25,8 +25,19 @@ from agent_runner.api_types import DirtyOutcome
 
 _TRAMPOLINE_TIMEOUT_S = 30.0  # wall-clock; not config-tunable this release
 _MAX_WIRE_BYTES = 64 * 1024
+_MAX_STDERR_BYTES = 8 * 1024  # hard read cap; a runaway child can't OOM the supervisor
 _REF_CAP = 256
 _STDERR_CAP = 512
+
+# The child's environment is built default-DENY from this allowlist -- NOT copied
+# from the parent's, which holds the real agent secrets (ANTHROPIC_*, and every
+# *_API_KEY/*_TOKEN/*_SECRET agent_runtime injects). A confined plugin is Python
+# code: with the full env it could read a secret VALUE from os.environ and persist
+# it to the rw work_dir, commit it via the allowed git exec, or return a short one
+# in ``ref`` -- exfil seccomp's network block would never see. So only the vars git
+# and the Python child genuinely need cross the boundary; anything unlisted drops.
+_ENV_ALLOW_EXACT = frozenset({"PATH", "HOME", "LANG", "TMPDIR", "TZ", "VIRTUAL_ENV", "PYTHONPATH"})
+_ENV_ALLOW_PREFIX = ("LC_", "GIT_")
 
 # seccomp KILL_PROCESS deny-list (default-allow). A deny-list, not an allowlist:
 # an allowlist is arch/libc-fragile (a libc update adds a new syscall and the
@@ -153,10 +164,7 @@ def run_hook_sandboxed(
         "spawn_view": None,
         "dirty_files": dirty_files,
     }
-    import os
-
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    proc = subprocess.run(
+    returncode, stdout, stderr = _run_child_process(
         [
             sys.executable,
             "-m",
@@ -166,20 +174,93 @@ def run_hook_sandboxed(
             attr_path,
             hook_name,
         ],
-        input=json.dumps(payload).encode("utf-8"),
-        capture_output=True,
-        env=env,
-        timeout=timeout_s,
+        json.dumps(payload).encode("utf-8"),
+        timeout_s,
     )
-    if proc.returncode < 0:
+    if returncode < 0:
         from agent_runner.api import emit_plugin_sandbox_kill
 
-        emit_plugin_sandbox_kill(log_dir, hook=hook_name, signal=-proc.returncode)
-        raise RuntimeError(f"trampoline for {hook_name} killed by signal {-proc.returncode}")
-    if proc.returncode != 0:
-        detail = hooks._cap_redacted(proc.stderr.decode("utf-8", "replace"), _STDERR_CAP)
-        raise RuntimeError(f"trampoline for {hook_name} exited {proc.returncode}: {detail}")
-    return _parse_dirty_stdout(proc.stdout)
+        emit_plugin_sandbox_kill(log_dir, hook=hook_name, signal=-returncode)
+        raise RuntimeError(f"trampoline for {hook_name} killed by signal {-returncode}")
+    if returncode != 0:
+        detail = hooks._cap_redacted(stderr.decode("utf-8", "replace"), _STDERR_CAP)
+        raise RuntimeError(f"trampoline for {hook_name} exited {returncode}: {detail}")
+    return _parse_dirty_stdout(stdout)
+
+
+def _child_env() -> dict[str, str]:
+    """Minimal default-DENY environment for the confined child (see the
+    ``_ENV_ALLOW_*`` note). Only allowlisted vars are copied; every parent secret
+    is left behind. ``PYTHONDONTWRITEBYTECODE`` is forced so the read-only import
+    roots never see a .pyc write."""
+    import os
+
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name in _ENV_ALLOW_EXACT or name.startswith(_ENV_ALLOW_PREFIX)
+    }
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
+
+
+def _drain_capped(stream, cap: int, out: list[bytes]) -> None:
+    """Read up to ``cap`` bytes, then drain+discard the rest so the child can never
+    block on a full pipe (nor make us buffer more than the cap)."""
+    data = bytearray()
+    try:
+        while len(data) < cap:
+            chunk = stream.read(min(65536, cap - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        while stream.read(65536):
+            pass
+    finally:
+        out.append(bytes(data))
+
+
+def _run_child_process(
+    argv: list[str], stdin_bytes: bytes, timeout_s: float
+) -> tuple[int, bytes, bytes]:
+    """Spawn the confined child with the minimal env and read BOUNDED stdout/stderr
+    concurrently (a thread per stream), so a plugin printing without limit within
+    the wall-timeout cannot exhaust supervisor memory. Concurrent draining also
+    avoids a full-pipe deadlock. On timeout the child is killed and
+    ``TimeoutExpired`` propagates (the caller isolates it as ``hook_failed``)."""
+    import threading
+
+    proc = subprocess.Popen(
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_child_env(),
+    )
+    out_box: list[bytes] = []
+    err_box: list[bytes] = []
+    # +1 so an over-cap stdout stays over the limit and _parse_dirty_stdout rejects it.
+    t_out = threading.Thread(target=_drain_capped, args=(proc.stdout, _MAX_WIRE_BYTES + 1, out_box))
+    t_err = threading.Thread(target=_drain_capped, args=(proc.stderr, _MAX_STDERR_BYTES, err_box))
+    t_out.start()
+    t_err.start()
+    try:
+        try:
+            proc.stdin.write(stdin_bytes)
+        except BrokenPipeError:
+            pass
+        finally:
+            proc.stdin.close()
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        t_out.join()
+        t_err.join()
+        raise
+    t_out.join()
+    t_err.join()
+    return proc.returncode, out_box[0], err_box[0]
 
 
 def _parse_dirty_stdout(raw: bytes) -> DirtyOutcome | None:
