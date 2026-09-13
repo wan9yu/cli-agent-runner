@@ -152,6 +152,8 @@ _DEFAULT_AUTO_STOP_ON: tuple[str, ...] = ("oauth_fail", "disk_critical")
 # 0 = opt-out (the first ssh exit is fatal, no reconnect).
 _DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
 
+_VALID_SANDBOX_MODES: frozenset[str] = frozenset({"require", "prefer", "off"})
+
 
 @dataclass(frozen=True)
 class PluginsConfig:
@@ -168,6 +170,9 @@ class PluginsConfig:
     """
 
     disable: list[str] = field(default_factory=list)
+    spawn_override_allow: list[str] = field(default_factory=list)
+    sandbox: Literal["require", "prefer", "off"] = "prefer"
+    pin: dict[str, str] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
 

@@ -303,6 +303,18 @@ hooks receive the narrower `HookContext`, which does not expose `cfg`; read your
 config once in a serve-startup hook and seed what per-round hooks need into
 plugin state.
 
+### `[plugins]` additional first-class knobs
+
+```toml
+[plugins]
+disable = [...]                       # existing
+spawn_override_allow = ["<hook>"]     # NEW — hooks allowed to defer/skip a spawn
+sandbox = "prefer"                    # NEW — require | prefer | off
+
+[plugins.pin]                         # NEW — third-party checksum pins
+"<third_party_plugin_name>" = "sha256:<hex>"
+```
+
 ```python
 class MyPluginConfigHook:
     name = "myproject_config"

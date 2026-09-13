@@ -33,6 +33,7 @@ from agent_runner.config.models import (
     _VALID_DIRTY_ACTIONS,
     _VALID_INJECTION_MODES,
     _VALID_PROMPT_DELIVERY,
+    _VALID_SANDBOX_MODES,
     _VALID_TRANSIENT_ERROR_ACTIONS,
     _VCS_ALLOWED_FIELDS,
     DEFAULT_TERMINAL_MARKER,
@@ -574,8 +575,9 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
 def _parse_plugins(plugins_d: dict) -> PluginsConfig:
     """Parse the ``[plugins]`` table into a ``PluginsConfig``.
 
-    Known keys (``disable``) are popped into first-class fields; whatever
-    remains lands in ``.raw`` for plugin-author-defined sub-keys.
+    Known keys (``disable``, ``spawn_override_allow``, ``sandbox``, ``pin``)
+    are popped into first-class fields; whatever remains lands in ``.raw``
+    for plugin-author-defined sub-keys.
     """
     plugins_raw = dict(plugins_d)  # copy so we can pop
     disable = (
@@ -583,4 +585,26 @@ def _parse_plugins(plugins_d: dict) -> PluginsConfig:
         if "disable" in plugins_raw
         else []
     )
-    return PluginsConfig(disable=disable, raw=plugins_raw)
+    spawn_override_allow = (
+        _require_str_list(
+            plugins_raw.pop("spawn_override_allow"), field="plugins.spawn_override_allow"
+        )
+        if "spawn_override_allow" in plugins_raw
+        else []
+    )
+    sandbox = str(plugins_raw.pop("sandbox", "prefer"))
+    if sandbox not in _VALID_SANDBOX_MODES:
+        raise ConfigError(
+            f"plugins.sandbox: {sandbox!r} not in allowed values {sorted(_VALID_SANDBOX_MODES)}"
+        )
+    pin_d = plugins_raw.pop("pin", {})
+    if not isinstance(pin_d, dict):
+        raise ConfigError('[plugins.pin] must be a table of "<plugin>" = "sha256:<hex>"')
+    pin = {str(k): str(v) for k, v in pin_d.items()}
+    return PluginsConfig(
+        disable=disable,
+        spawn_override_allow=spawn_override_allow,
+        sandbox=sandbox,  # type: ignore[arg-type]
+        pin=pin,
+        raw=plugins_raw,
+    )

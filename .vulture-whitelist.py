@@ -193,6 +193,9 @@ phase_policy
 
 # agent_runner.config.models.PluginsConfig
 disable
+spawn_override_allow
+sandbox
+pin
 raw
 
 # agent_runner.config.models.Profile
