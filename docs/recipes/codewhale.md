@@ -78,7 +78,7 @@ auth_fail_hint = "Run `codewhale auth status` to inspect provider/credentials, o
 - `--auto` — non-interactive confirmation; **mandatory** for unattended supervisor
   mode.
 - `--output-format stream-json` — emits NDJSON to stdout; required so the
-  `codewhale_error_detector` plugin can parse usage records. Without this flag
+  `codewhale` plugin can parse usage records. Without this flag
   the plugin receives human-readable text and emits no `agent_usage_recorded`
   events.
 
@@ -90,7 +90,7 @@ auth_fail_hint = "Run `codewhale auth status` to inspect provider/credentials, o
 
 ## What the detector emits
 
-The built-in `codewhale_error_detector` plugin parses the round log tail after
+The built-in `codewhale` plugin parses the round log tail after
 each round completes:
 
 - **`agent_usage_recorded`** — emitted from the `{"type":"metadata","meta":{...}}`

@@ -380,7 +380,8 @@ No configuration required to enable the detector; it activates for any
 project using claude as the agent CLI.
 
 Non-claude agents: the detector returns early when `ctx.agent_binary != "claude"`.
-Third-party plugin authors may declare an equivalent `PluginManifest(post_round_hooks=(...))`
+Third-party plugin authors may declare an equivalent
+`PluginManifest(name="my_plugin", post_round_hooks=(...))`
 to ship the same event families for other agent CLIs — the bundled `gemini`
 and `codewhale` plugins are working references.
 
@@ -563,7 +564,7 @@ class RoundLogCounter:
         ...
 ```
 
-Declare it on your `PLUGIN = PluginManifest(post_round_hooks=(RoundLogCounter(),))`.
+Declare it on your `PLUGIN = PluginManifest(name="my_plugin", post_round_hooks=(RoundLogCounter(),))`.
 A runnable, tested reference — the minimal plugin plus a test asserting
 `after_round` fires with a real `HookContext` — lives in
 `tests/unit/test_example_plugin.py`; copy from there rather than from a
@@ -626,7 +627,8 @@ DirtyOutcome(kind="committed", ref="<commit-sha>")
 
 ### Override recipe
 
-Disable the bundled default, then declare your own handler's `PluginManifest(dirty_handlers=(...))`:
+Disable the bundled default, then declare your own handler's
+`PluginManifest(name="my_plugin", dirty_handlers=(...))`:
 
 ```toml
 # agent-runner.toml
