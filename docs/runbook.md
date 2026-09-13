@@ -215,7 +215,7 @@ prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "/srv/research"
 log_dir = "logs"
-round_timeout_s = 1800
+round_budget_s = 1800
 
 [phases]
 list = ["deepseek", "glm", "qwen"]
@@ -229,7 +229,7 @@ pause_windows = ["Mon-Fri 09:00-18:00"]   # DeepSeek peak hours
 command = ["glm-cli", "run"]      # swaps command only; inherits prompt_arg_template
 
 [phases.glm.runtime]
-round_timeout_s = 3600            # heavier synthesis pass
+round_budget_s = 3600             # heavier synthesis pass
 
 [phases.qwen.agent]
 command = ["qwen-cli", "chat"]
@@ -509,10 +509,10 @@ with an uptime/ping check, or a scheduled `ssh <host> agent-runner peek --json`
 that alerts when the command or its `last_event_ts` goes stale.
 
 <!-- authored: derived supervisor_stale default; SSOT agent_runner/config/models.py -->
-The `supervisor_stale` threshold defaults to `round_timeout_s * 1.5`. Override
+The `supervisor_stale` threshold defaults to `round_budget_s * 1.5`. Override
 with `[monitor] supervisor_stale_threshold_s = N` for projects whose legitimate
 cadence — very short rounds with occasional long legitimate gaps, or phase
-overrides that raise `round_timeout_s` — does not fit the derived threshold. Set
+overrides that raise `round_budget_s` — does not fit the derived threshold. Set
 to `0` to disable the detector entirely.
 
 ## Live event stream (machine-readable)
@@ -745,10 +745,10 @@ host-safety needs are already in-core. Detector rows require a running
 | Operator need | What exists | Notes |
 |---|---|---|
 | Never two supervisors on one project | `flock_concurrency` defense — exclusive `flock` on `{log_dir}/agent-runner.lock` | A second `serve` fails fast naming the holder's PID, lock age, and cmdline. No cron-overlap guard of your own needed |
-| Runaway round | `[runtime] round_timeout_s` (default 1800) <!-- authored: default round_timeout_s; SSOT agent_runner/config/models.py --> | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_timeout_s` |
+| Runaway round | `[runtime] round_budget_s` (default 1800) <!-- authored: default round_budget_s; SSOT agent_runner/config/models.py --> | Wall-clock kill, emits `round_timeout_kill`. For a CLI with no self-timeout (pi has no turn cap, runtime timeout, or token budget) this is the **only** brake. Per-phase override: `[phases.<name>] round_budget_s` |
 | Cap the agent process itself | `[agent.env]` | Passed verbatim into the round subprocess env and takes precedence over the inherited `os.environ`, so e.g. `NODE_OPTIONS = "--max-old-space-size=384"` reaches a Node-based CLI |
-| Host memory pressure | `mem_pressure` detector + serve-loop admission gate | `host_health`'s signal ladder (PSI → swap-out rate → combined MemFree+MemAvailable low → unavailable) reports `warning` or `critical` — a bare `mem_available_mb` gate is unreliable on cache-poor small-memory hosts. PSI's critical bar is `[monitor.host_health] psi_full_avg10_critical` (default 60.0, i.e. sustained ~60% avg10, not a single 1% blip); `psi_some_avg10_warning` (default 5.0) gates the warning tier. `mem_pressure_gate_inert` fires once if a cache-poor-valid signal shows real pressure while the configured `mem_avail_min_mb` (default 200) gate stays green; `mem_signal_unavailable` fires once when no tier is readable. The detector itself is notify-only (`auto_action="none"`), but `serve` separately **defers the next round** while `host_health` reports **`critical`** pressure only (`round_deferred`/`round_resumed` — a mere `warning` no longer delays a round) and, mid-round, **terminates a ballooning round** once pressure reads `critical` for `mem_critical_consecutive_samples` (default 3) consecutive ~10s ticks in a row (`round_mem_terminated`, `round_mem_critical_sample` per tick, capped at `2 × mem_critical_consecutive_samples` consecutive ticks — 1..6 at the default — so a sustained-critical deferred/off run doesn't write one event per tick for the whole round; any non-critical tick resets both the streak and the cap). `in_round_mem_terminate = false` keeps sampling and counting that streak without ever terminating a round. If this process's cgroup has both `memory.max` and `memory.swap.max` set (`host_cgroup_memory_limit` at startup), the mid-round floor defers to kernel cgroup-OOM instead (`mem_pressure_deferred_to_cgroup`) — the kernel will already contain the agent within that budget. Whole-host figures, not the agent's own share <!-- authored: default mem_avail_min_mb / psi_full_avg10_critical / psi_some_avg10_warning / mem_critical_consecutive_samples; SSOT agent_runner/config/models.py --> |
-| Cgroup memory bound missing graceful throttling, or a swap cap set far below what the host actually has | `host_cgroup_memory_limit` startup event (advisory fields) + one stderr line | Computed once at serve startup, alongside the existing `memory_max`/`memory_swap_max`/`cgroup_path` fields on this SAME event (no new event kind): `swap_total_bytes` (the host's total swap), `swap_cap_pct` (`memory_swap_max` as a percentage of it, `null` when either side is unknown), `memory_high` (the cgroup's `memory.high` soft-throttle threshold in bytes, `null` when unset — the cgroup read the literal `"max"`, or the file/cgroup v2 itself is unavailable), and `advisory` (one or two warning strings joined with `"; "`, else `null`). One advisory fires when a finite `memory.swap.max` sits under 25% of host swap — this is the blind spot where the mid-round floor can terminate a round the kernel's own cgroup-OOM would have contained on a wider cap. A second, independent advisory fires when `memory.max` is set on the supervisor's OWN cgroup (not an inherited parent slice or container root, where the operator couldn't act on the hint from their own unit anyway) without `memory.high`: it recommends adding `memory.high` below `memory.max` for graceful pre-OOM throttling, plus — only when the mid-round floor ISN'T already deferring to kernel cgroup-OOM — a caveat to also bound `memory.swap.max` or set `in_round_mem_terminate=false`, so the throttle's own PSI-full rise doesn't trip the floor mid-round. Either advisory prints its own `agent-runner: ...` line to stderr. Advisory only: nothing here ever edits the operator's cgroup or systemd unit. The auto-defer decision above also requires `memory_swap_max` to be at most `swap_total_bytes` — a cap far ABOVE host swap can't bind before host-wide swap exhaustion either, so it can't disarm the floor |
+| Host memory pressure | `mem_pressure` detector + serve-loop admission gate | `host_health`'s signal ladder (PSI → swap-out rate → combined MemFree+MemAvailable low → unavailable) reports `warning` or `critical` — a bare `mem_available_mb` gate is unreliable on cache-poor small-memory hosts. PSI's critical bar is `[monitor.host_health.pressure] full_avg10_critical` (default 60.0, i.e. sustained ~60% avg10, not a single 1% blip); `some_avg10_warning` (default 5.0) gates the warning tier. `mem_pressure_gate_inert` fires once if a cache-poor-valid signal shows real pressure while the configured `[monitor.host_health.memory] avail_min_mb` (default 200) gate stays green; `mem_signal_unavailable` fires once when no tier is readable. The detector itself is notify-only (`auto_action="none"`), but `serve` separately **defers the next round** while `host_health` reports **`critical`** pressure only (`round_deferred`/`round_resumed` — a mere `warning` no longer delays a round) and, mid-round, **terminates a ballooning round** once pressure reads `critical` for `critical_consecutive_samples` (default 3) consecutive ~10s ticks in a row (`round_mem_terminated`, `round_mem_critical_sample` per tick, capped at `2 × critical_consecutive_samples` consecutive ticks — 1..6 at the default — so a sustained-critical deferred/off run doesn't write one event per tick for the whole round; any non-critical tick resets both the streak and the cap). `[monitor.host_health.pressure] in_round_terminate = false` keeps sampling and counting that streak without ever terminating a round. If this process's cgroup has both `memory.max` and `memory.swap.max` set (`host_cgroup_memory_limit` at startup), the mid-round floor defers to kernel cgroup-OOM instead (`mem_pressure_deferred_to_cgroup`) — the kernel will already contain the agent within that budget. Whole-host figures, not the agent's own share <!-- authored: default avail_min_mb / full_avg10_critical / some_avg10_warning / critical_consecutive_samples; SSOT agent_runner/config/models.py --> |
+| Cgroup memory bound missing graceful throttling, or a swap cap set far below what the host actually has | `host_cgroup_memory_limit` startup event (advisory fields) + one stderr line | Computed once at serve startup, alongside the existing `memory_max`/`memory_swap_max`/`cgroup_path` fields on this SAME event (no new event kind): `swap_total_bytes` (the host's total swap), `swap_cap_pct` (`memory_swap_max` as a percentage of it, `null` when either side is unknown), `memory_high` (the cgroup's `memory.high` soft-throttle threshold in bytes, `null` when unset — the cgroup read the literal `"max"`, or the file/cgroup v2 itself is unavailable), and `advisory` (one or two warning strings joined with `"; "`, else `null`). One advisory fires when a finite `memory.swap.max` sits under 25% of host swap — this is the blind spot where the mid-round floor can terminate a round the kernel's own cgroup-OOM would have contained on a wider cap. A second, independent advisory fires when `memory.max` is set on the supervisor's OWN cgroup (not an inherited parent slice or container root, where the operator couldn't act on the hint from their own unit anyway) without `memory.high`: it recommends adding `memory.high` below `memory.max` for graceful pre-OOM throttling, plus — only when the mid-round floor ISN'T already deferring to kernel cgroup-OOM — a caveat to also bound `memory.swap.max` or set `[monitor.host_health.pressure] in_round_terminate=false`, so the throttle's own PSI-full rise doesn't trip the floor mid-round. Either advisory prints its own `agent-runner: ...` line to stderr. Advisory only: nothing here ever edits the operator's cgroup or systemd unit. The auto-defer decision above also requires `memory_swap_max` to be at most `swap_total_bytes` — a cap far ABOVE host swap can't bind before host-wide swap exhaustion either, so it can't disarm the floor |
 | See cgroup memory pressure BUILDING (not just the terminate/defer verdict) | `round_cgroup_memory` event, once per round | Emitted once per round when this process's cgroup has a finite `memory.max` (see `host_cgroup_memory_limit` above): the round's peak `memory.current`/`memory.swap.current` (the max seen across the existing ~10s mid-round ticks, not the cumulative-since-startup `memory.peak`) and the `memory.events` counter DELTAS over the round (`events_high_delta`/`events_max_delta`/`events_oom_delta`/`events_oom_kill_delta`) — pressure an operator can watch build toward an OOM without SSH-ing in. Deltas, not absolutes: a nonzero `events_oom_kill_delta` means the kernel OOM-killed something inside this round specifically. `bounding_cgroup_path` names the ancestor these figures are read at (deliberately distinct from `host_cgroup_memory_limit`'s `cgroup_path`, which is this process's own leaf cgroup — the two can differ). No-op (nothing emitted) on a host with no finite cgroup bound, or if that bounding cgroup is no longer readable at round end |
 | A round dies to the kernel's own cgroup-OOM, not just a silent 137 | `round_oom_killed` event, folded from the same `round_cgroup_memory` scan | Emitted when `memory.events.oom_kill` rose over the round (the same delta `round_cgroup_memory` already computed — no second read). Pointer-only: `log_path`, `log_bytes`, and `oom_kill_delta`, never the round-log/transcript content itself. `partial_log` reports whether the supervisor appended its own truncation trailer to the round log (a residue marker, not content) so a later reader can tell the tail is supervisor-added. The round still exits 137 and counts toward the crash streak exactly as today — this event only makes the kill legible, it never changes the give-up decision |
 | Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health]` <!-- authored: disk_critical ships in the default auto_stop_on set; SSOT agent_runner/config/models.py --> |
@@ -810,12 +810,12 @@ MemorySwapMax=224M
 without a matching finite `MemorySwapMax` throttles the cgroup under the
 kernel's own `memory.high` reclaim, and that throttling shows up to the
 supervisor as rising PSI-full — which can cross the supervisor's own PSI
-floor (`[monitor.host_health] psi_full_avg10_critical`, once sustained for
-`mem_critical_consecutive_samples` consecutive ticks) and terminate the very
+floor (`[monitor.host_health.pressure] full_avg10_critical`, once sustained for
+`critical_consecutive_samples` consecutive ticks) and terminate the very
 round `MemoryHigh` was trying to protect. Either bound `MemorySwapMax` too —
 with both `memory.max` and `memory.swap.max` finite, the mid-round floor
 auto-defers to the kernel's own cgroup-OOM instead of firing itself (see
-`host_cgroup_memory_limit` above) — or set `in_round_mem_terminate = false`
+`host_cgroup_memory_limit` above) — or set `[monitor.host_health.pressure] in_round_terminate = false`
 so `MemoryHigh` can throttle without the floor ever stepping in.
 
 **`vm.swappiness` on a zram host.** A fast zram device should be used, not
@@ -856,7 +856,7 @@ is needed unless it keeps recurring — if it does, it escalates on its own to
 | `config_broken` | Any `ConfigError`-classified round exit (`78`) — not only a startup-battery failure. Most often the battery failing permanently (missing/short prompt, non-git `work_dir`, agent CLI not on PATH); also a stale-serve-cache phase error (`--phase` no longer matches a config `serve` edited since it started). | Battery failure: read the round's `smoke_check_failed` event, fix the config, `agent-runner start`. Stale-cache phase error (no `smoke_check_failed` that round): `agent-runner restart`. |
 | `crash_loop` | 5 consecutive *unknown* short crashes (non-zero exit < 60s, no classified transient); the delay escalates first. The `reason` field carries a redacted log tail. | Inspect the captured `reason` / round log, fix the root cause, `agent-runner start`. |
 | `stalled_no_progress` | 5 consecutive fast (< 30s), *clean* (exit `0`) rounds with no `agent_usage_recorded` — some CLIs (e.g. pi) exit `0` on a provider failure that never reached the model, so the crash-loop breaker above (which keys on a non-zero exit) never sees it. Reuses `crash_loop`'s exit code `75` — same give-up verdict, different signal. | Check credentials / provider status first (an auth failure or an exhausted-retries outage is the common cause); inspect the round log for the actual CLI-level error, fix it, `agent-runner start`. |
-| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the others, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring: investigate host memory pressure (see `host_health`/`mem_pressure` above); re-tune the `[monitor.host_health]` PSI/hysteresis knobs (`psi_full_avg10_critical`, `psi_some_avg10_warning`, `mem_critical_consecutive_samples`) or the older floors (`swap_sout_noise_floor_mb`, `mem_free_low_mb`) if the ladder is mis-calibrated for this host's memory size or swap speed; set `in_round_mem_terminate = false` to stop the floor from ever terminating a round while still watching the signal; or, if the host's cgroup bounds both `memory.max` and `memory.swap.max`, the floor already steps back on its own (`mem_pressure_deferred_to_cgroup`) and lets kernel cgroup-OOM contain the agent instead. If one specific round is the culprit, track its own RSS with a wrapper script (see "Still not covered: per-round peak RSS" above) — agent-runner has no per-round memory ceiling to lower. |
+| `mem_loop` | 5 consecutive rounds killed by the mid-round memory-pressure hard floor (`round_mem_terminated`) — the host isn't recovering between rounds. Unlike the others, systemd **restarts** the service on this exit code. | Usually self-heals on restart. If it keeps recurring: investigate host memory pressure (see `host_health`/`mem_pressure` above); re-tune the `[monitor.host_health.pressure]` PSI/hysteresis knobs (`full_avg10_critical`, `some_avg10_warning`, `critical_consecutive_samples`) or the older `[monitor.host_health.memory]` floors (`swap_out_noise_floor_mb`, `free_low_mb`) if the ladder is mis-calibrated for this host's memory size or swap speed; set `[monitor.host_health.pressure] in_round_terminate = false` to stop the floor from ever terminating a round while still watching the signal; or, if the host's cgroup bounds both `memory.max` and `memory.swap.max`, the floor already steps back on its own (`mem_pressure_deferred_to_cgroup`) and lets kernel cgroup-OOM contain the agent instead. If one specific round is the culprit, track its own RSS with a wrapper script (see "Still not covered: per-round peak RSS" above) — agent-runner has no per-round memory ceiling to lower. |
 | `mem_loop_persistent` | `mem_loop` itself recurred 3 times inside a rolling 2-hour window — the host isn't recovering across restarts either, so `serve` gives up for real (exit `70`) instead of respawning into the identical loop forever. Needs a human. | Same remedies as `mem_loop` above, but treat it as confirmed rather than transient: the host's memory/swap sizing likely needs to change, or the workload needs to move off this host. `agent-runner start` once the underlying pressure is addressed. |
 
 Recoverable-slow failures (rate-limit / 5h quota / 5xx / timeout) are classified
@@ -882,13 +882,13 @@ first.
 relies entirely on the swap-out-rate / combined-low tiers. Since 0.2.16 made
 the swap-out check per-tick rather than cumulative-since-round-start, a
 slow, sustained trickle of swap-out (e.g. an SD-card-backed host swapping
-gradually) may no longer cross `swap_sout_noise_floor_mb` in any single
+gradually) may no longer cross `[monitor.host_health.memory] swap_out_noise_floor_mb` in any single
 ~10s tick even though the round is clearly under sustained pressure — this
 is north-star-accepted (the floor targets unresponsiveness, not swapping
 per se), but it means a PSI-off host can go a long time without tripping
 `mem_loop` at all. If that matters for your host, either enable PSI
 (`psi=1` boot param, or a kernel with `CONFIG_PSI=y`) so the primary signal
-is available again, or lower `swap_sout_noise_floor_mb` to make the
+is available again, or lower `swap_out_noise_floor_mb` to make the
 per-tick check sensitive enough for this host's swap-device speed.
 
 **Diagnose:**
@@ -1012,10 +1012,10 @@ takes one of three paths:
 
 - **`round_grace_extended`** — grace elapsed but a live worker is still running
   (e.g. a backgrounded build). Round is NOT killed; agent-runner waits until the
-  round finishes or hits the `round_timeout_s` wall-clock ceiling.
+  round finishes or hits the `round_budget_s` wall-clock ceiling.
 - **`round_grace_kill`** — grace elapsed and the process group is idle (genuine
   hang). Round is reaped, same as pre-0.1.38.
-- **`round_timeout_kill`** — `round_timeout_s` wall-clock exceeded (hard ceiling,
+- **`round_timeout_kill`** — `round_budget_s` wall-clock exceeded (hard ceiling,
   fires regardless of process-group state).
 
 If you see repeated `round_grace_extended` events, the agent is backgrounding
@@ -1026,7 +1026,7 @@ truly done.
 **Persistent-helper exclusion (0.1.39+):** when an agent CLI keeps long-lived
 helper subprocesses alive past `type=result` (claude does this with a Bash-tool
 shell-snapshot), they would otherwise count as "live workers" and defer every
-post-result hang to `round_timeout_s`. Set `[runtime] grace_kill_ignore_patterns
+post-result hang to `round_budget_s`. Set `[runtime] grace_kill_ignore_patterns
 = [<regex>, ...]` to exclude them; the `claude` preset ships a default. The
 `round_grace_extended` event's `ignored_children` field shows which cmdlines
 matched a pattern.

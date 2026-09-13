@@ -34,7 +34,7 @@ agent-runner init            # writes agent-runner.toml + prompts/main.md + .git
 <!-- skip-test: illustrative fixed path (~/myproject); the git-init + `init --no-commit` block below (with an assert) is this same call, exercised for real in tmp_path -->
 
 Edit `prompts/main.md` to describe what the agent should do per round.
-Edit `agent-runner.toml` if you need to change `round_timeout_s` or `[phases]`.
+Edit `agent-runner.toml` if you need to change `round_budget_s` or `[phases]`.
 
 The default preset (`--preset claude`) invokes `claude`. Other built-in
 presets: `--preset aider`, `--preset gemini`, `--preset codewhale`, `--preset kimi`, and `--preset pi`. To use any other CLI,

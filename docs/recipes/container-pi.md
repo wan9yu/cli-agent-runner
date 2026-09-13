@@ -49,7 +49,7 @@ unaffected by running inside docker.
   accumulate one per round.
 - **`-i`** — keep stdin open. pi's `prompt_delivery = "stdin"` needs it;
   without `-i`, docker drops stdin and the agent hangs until
-  `round_timeout_s` kills it. agent-runner checks this at startup and
+  `round_budget_s` kills it. agent-runner checks this at startup and
   refuses to start a stdin-delivery config whose `exec_prefix` is missing
   `-i`.
 - **`--init`** — run an init process as PID 1 inside the container, so

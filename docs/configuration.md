@@ -177,7 +177,7 @@ presets set their own token (`"type":"agent_end"`, `"type":"metadata"`); the
 `kimi` and `aider` presets have no marker of their own; unless you set one,
 the default claude token never appears in their output, so marker-based
 grace-kill never engages and a round runs to the wall-clock
-`round_timeout_s` ceiling instead. An empty string disables the marker scan
+`round_budget_s` ceiling instead. An empty string disables the marker scan
 outright — an honest opt-out, not an empty-string-matches-everything trap.
 
 ### `runtime.round_log_retention`
@@ -347,7 +347,7 @@ sub-tables reject unknown keys: `agent` and `runtime` as noted below, and
 | Sub-table | Overrides | Fields accepted |
 |---|---|---|
 | `[phases.<name>.agent]` | `[agent]` | any `[agent]` field except `exec_prefix` (base-only, see below); field-merged onto the base `[agent]`, then validated (so the `stdin` + `{prompt}` cross-check runs on the merged result) |
-| `[phases.<name>.runtime]` | `[runtime]` | `round_timeout_s`, `disable_pre_round_hooks` only |
+| `[phases.<name>.runtime]` | `[runtime]` | `round_budget_s`, `disable_pre_round_hooks` only |
 | `[phases.<name>.schedule]` | `[schedule]` | any `[schedule]` field; **replaces** the global windows wholesale |
 | `[phases.<name>.prompt]` | `[prompt]` | `files` only |
 
@@ -358,7 +358,7 @@ key onto the base `[agent]` — unset fields inherit — so a phase can swap onl
 make one phase run around the clock even while the global schedule pauses. A
 per-phase schedule that omits `timezone` inherits the global one.
 
-**Flat aliases.** `round_timeout_s`, `disable_pre_round_hooks`, and
+**Flat aliases.** `round_budget_s`, `disable_pre_round_hooks`, and
 `prompt.files` may also be written directly under `[phases.<name>]` (the
 pre-0.2.9 form). They are permanent aliases for the matching `runtime` / `prompt`
 sub-table fields. Setting both a flat field and its `[phases.<name>.runtime]`
@@ -371,7 +371,7 @@ the base config regardless of phase:
 
 - **`runtime.work_dir` / `runtime.log_dir`** — one working tree and one log
   directory per deployment; a phase cannot relocate them. `[phases.<name>.runtime]`
-  accepts only `round_timeout_s` and `disable_pre_round_hooks`; any other runtime
+  accepts only `round_budget_s` and `disable_pre_round_hooks`; any other runtime
   key there is rejected at load.
 - the rest of `[runtime]` (`restart_delay_s`, `round_log_retention`,
   `transient_error_action`, `max_rounds`, `stop_file`, …), and all of `[vcs]`,
@@ -416,7 +416,7 @@ prompt_arg_template = ["{prompt}"]
 [runtime]
 work_dir = "/srv/research"
 log_dir = "logs"
-round_timeout_s = 1800            # base budget for phases that set none
+round_budget_s = 1800             # base budget for phases that set none
 
 [phases]
 list = ["deepseek", "glm", "qwen"]
@@ -430,7 +430,7 @@ pause_windows = ["Mon-Fri 09:00-18:00"]   # skip DeepSeek's peak-price hours
 command = ["glm-cli", "run"]      # different provider CLI; inherits prompt_arg_template
 
 [phases.glm.runtime]
-round_timeout_s = 3600            # GLM runs the heavier synthesis pass
+round_budget_s = 3600             # GLM runs the heavier synthesis pass
 
 [phases.glm.schedule]
 pause_windows = []                # no off-peak constraint — always runnable
@@ -455,7 +455,7 @@ provider keeps running. serve idle-pauses (waking at the earliest reset) only wh
 idle-sleeps until DeepSeek's window reopens rather than advancing. A
 `docs/runbook.md` ("Mixed-model rotation") recipe walks the operational side.
 
-> **Migration from the pre-0.2.9 flat form**: flat `round_timeout_s` /
+> **Migration from the pre-0.2.9 flat form**: flat `round_budget_s` /
 > `disable_pre_round_hooks` under `[phases.<name>]` still work as aliases;
 > `agent-runner migrate` reports (it does not rewrite) the option to nest them
 > under `[phases.<name>.runtime]`. See `docs/migrations/0.2.md`.
@@ -473,7 +473,7 @@ idle-sleeps until DeepSeek's window reopens rather than advancing. A
 [monitor]
 auto_stop_on = ["oauth_fail", "disk_critical"]
 round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress heartbeat events
-# supervisor_stale_threshold_s = 2700  # unset = round_timeout_s * 1.5; 0 = disable
+# supervisor_stale_threshold_s = 2700  # unset = round_budget_s * 1.5; 0 = disable
 
 # Thresholds for mem_pressure / disk_warning / disk_critical, grouped into
 # three sub-tables by mechanism. Defaults are authoritative in the

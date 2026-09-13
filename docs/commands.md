@@ -87,7 +87,7 @@ Verb descriptions are in the verb table above; the operator nuances not captured
 there:
 
 - `start` is idempotent.
-- `stop` waits up to `round_timeout_s` for the current round.
+- `stop` waits up to `round_budget_s` for the current round.
 - `kill` (and `restart --force`) is for a stuck round only — 5s grace then SIGKILL.
 - `restart` against a `--system`-installed unit refuses, printing the
   `sudo systemctl restart ...` command to run instead (it manages user-scope

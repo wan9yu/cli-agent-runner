@@ -54,8 +54,8 @@ Notes:
   read-only mode, and a `tool_call` extension hook can veto calls
   (`{ block: true }`) — load it via an explicit `-e <path>` (with `-na`,
   repo-local `.pi/` extensions never load).
-- **`round_timeout_s` is the only brake.** pi has no turn cap, runtime timeout,
-  or token budget of its own — agent-runner's wall-clock `round_timeout_s` is
+- **`round_budget_s` is the only brake.** pi has no turn cap, runtime timeout,
+  or token budget of its own — agent-runner's wall-clock `round_budget_s` is
   the sole thing that ends a runaway round.
 - **pi exits 0 on provider failure** (auth errors and exhausted retries alike;
   errors surface only as JSONL `errorMessage` on stdout). The `pi` detector

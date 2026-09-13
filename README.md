@@ -62,7 +62,7 @@ Verb reference: [`docs/commands.md`](docs/commands.md).
 Each carries the historical incident it codifies and the invariant test that
 guards it. Highlights:
 
-- **round_timeout_s** — hard wall, never the agent's word on when to stop
+- **round_budget_s** — hard wall, never the agent's word on when to stop
 - **process_group_isolation** — kill the round, not just the parent
 - **orphan_stash_idempotency_s** — no 3-stashes-per-second pile-ups
 - **sha_locked_stash** — `stash@{N}` indices drift; SHAs don't
