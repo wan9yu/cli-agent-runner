@@ -2315,3 +2315,31 @@ def test_agent_config_should_default_terminal_marker_to_claude_token_when_absent
     cfg = load_config(cfg_path)
 
     assert cfg.agent.terminal_marker == '"type":"result"'
+
+
+def test_runtime_config_should_expose_round_budget_s_when_constructed(tmp_path):
+    from agent_runner.config import RuntimeConfig
+
+    cfg = RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path)
+
+    assert cfg.round_budget_s == 1800
+    assert not hasattr(cfg, "round_timeout_s")
+
+
+def test_load_config_should_parse_round_budget_s_in_all_three_forms_when_present(tmp_path):
+    from agent_runner.config import load_config
+    from tests._test_helpers import make_toml_with_sections
+
+    toml = make_toml_with_sections(
+        tmp_path,
+        runtime_extra="round_budget_s = 900\n",
+        phases_block=(
+            "[phases]\nlist = [\"dev\"]\n"
+            "[phases.dev]\nround_budget_s = 1200\n"
+        ),
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.runtime.round_budget_s == 900
+    assert cfg.phases.overrides["dev"].round_budget_s == 1200

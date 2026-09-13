@@ -67,7 +67,7 @@ class AgentConfig:
 class RuntimeConfig:
     work_dir: Path
     log_dir: Path
-    round_timeout_s: int = 1800
+    round_budget_s: int = 1800
     restart_delay_s: int = 3
     disable_pre_round_hooks: bool = False
     round_log_retention: int = 0  # 0 = never prune (pruning is opt-in)
@@ -96,7 +96,7 @@ class PhaseOverride:
     fields documented in docs/configuration.md.
     """
 
-    round_timeout_s: int | None = None
+    round_budget_s: int | None = None
     disable_pre_round_hooks: bool | None = None
     prompt_files: list[Path] | None = None
     agent: AgentConfig | None = None
@@ -227,7 +227,7 @@ class MonitorConfig:
     supervisor_stale_threshold_s: int | None = None
     """Staleness deadline for the supervisor_stale detector (seconds).
 
-    None (unset) → derived default round_timeout_s * 1.5.
+    None (unset) → derived default round_budget_s * 1.5.
     Positive int → explicit threshold. 0 → disable the detector.
     """
 
@@ -285,8 +285,8 @@ class Config:
             return Profile(self.agent, self.runtime, self.schedule, None)
         runtime = self.runtime
         rt_updates: dict[str, Any] = {}
-        if ov.round_timeout_s is not None:
-            rt_updates["round_timeout_s"] = ov.round_timeout_s
+        if ov.round_budget_s is not None:
+            rt_updates["round_budget_s"] = ov.round_budget_s
         if ov.disable_pre_round_hooks is not None:
             rt_updates["disable_pre_round_hooks"] = ov.disable_pre_round_hooks
         if rt_updates:
@@ -301,7 +301,7 @@ class Config:
 
 _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
     {
-        "round_timeout_s",
+        "round_budget_s",
         "disable_pre_round_hooks",
         "prompt",
         "agent",
@@ -311,7 +311,7 @@ _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
 )
 
 # Keys allowed under [phases.<name>.runtime] — the flat-alias twins.
-_PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_timeout_s", "disable_pre_round_hooks"})
+_PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_budget_s", "disable_pre_round_hooks"})
 
 # Field names of AgentConfig — the keys a [phases.<name>.agent] sub-table may
 # set (merged onto the base [agent] table before validation), and also the
