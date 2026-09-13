@@ -72,7 +72,7 @@ def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) ->
         f"schema_version regressed: got {payload['schema_version']!r}, "
         f"expected >= {PEEK_SCHEMA_VERSION!r}"
     )
-    assert payload["schema_version"] == "2.1"
+    assert payload["schema_version"] == "2.2"
     assert "plugins" in payload
     assert isinstance(payload["plugins"], dict)
     assert "event_kinds" in payload["plugins"]
@@ -83,3 +83,14 @@ def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) ->
         f"plugins namespace missing detectors key: {payload['plugins']}"
     )
     assert isinstance(payload["plugins"]["detectors"], list)
+    assert "sandbox" in payload["plugins"], (
+        f"plugins namespace missing sandbox key: {payload['plugins']}"
+    )
+    assert isinstance(payload["plugins"]["sandbox"], dict)
+    assert "covers" in payload["plugins"]["sandbox"]
+    assert "pins" in payload["plugins"], f"plugins namespace missing pins key: {payload['plugins']}"
+    assert isinstance(payload["plugins"]["pins"], dict)
+    assert "spawn_override_allow" in payload["plugins"], (
+        f"plugins namespace missing spawn_override_allow key: {payload['plugins']}"
+    )
+    assert isinstance(payload["plugins"]["spawn_override_allow"], list)

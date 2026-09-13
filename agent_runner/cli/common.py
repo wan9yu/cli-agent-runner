@@ -19,7 +19,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "2.1"
+PEEK_SCHEMA_VERSION = "2.2"
 
 
 def cfg_from_args(args) -> Config:
@@ -94,22 +94,25 @@ def install_term_handler(message: str) -> None:
     signal.signal(signal.SIGTERM, _raise_term)
 
 
-def emit(value: Any, *, json_mode: bool) -> None:
+def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
-            from agent_runner import disabled_plugin_names
+            from agent_runner import _sandbox_probe, disabled_plugin_names
 
+            plugins_block = {
+                "event_kinds": plugin_event_kinds(),
+                "context_enrichers": plugin_context_enrichers(),
+                "pre_round_hooks": [h.name for h in pre_round_hooks()],
+                "post_round_hooks": [h.name for h in post_round_hooks()],
+                "detectors": plugin_detectors(),
+                "owned_paths": plugin_owned_paths(),
+                "disabled": disabled_plugin_names(),
+            }
+            if cfg is not None:
+                plugins_block.update(_sandbox_probe.peek_snapshot(cfg))
             wrapped = {
                 "schema_version": PEEK_SCHEMA_VERSION,
-                "plugins": {
-                    "event_kinds": plugin_event_kinds(),
-                    "context_enrichers": plugin_context_enrichers(),
-                    "pre_round_hooks": [h.name for h in pre_round_hooks()],
-                    "post_round_hooks": [h.name for h in post_round_hooks()],
-                    "detectors": plugin_detectors(),
-                    "owned_paths": plugin_owned_paths(),
-                    "disabled": disabled_plugin_names(),
-                },
+                "plugins": plugins_block,
                 **_to_jsonable(value),
             }
             print(json.dumps(wrapped, indent=2, default=str))

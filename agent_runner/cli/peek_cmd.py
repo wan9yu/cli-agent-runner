@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from agent_runner import api
-from agent_runner.cli.common import emit, fail, work_dir_from_args
+from agent_runner.cli.common import cfg_from_args, emit, fail, work_dir_from_args
 from agent_runner.clock import SYSTEM_CLOCK
 
 
@@ -65,11 +65,12 @@ def cmd_peek(args) -> int:
             events=args.events,
             select=select,
         )
+        cfg = cfg_from_args(args)
     except KeyError as e:
         return fail(str(e))
     except FileNotFoundError as e:
         return fail(f"config not found: {e}")
-    emit(result, json_mode=getattr(args, "json", False))
+    emit(result, json_mode=getattr(args, "json", False), cfg=cfg)
     return 0
 
 

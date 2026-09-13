@@ -153,3 +153,58 @@ def gate_serve_boot(cfg, log_dir: Path) -> bool:
         log_dir, requested=cfg.plugins.sandbox, achieved_tier=probe.achieved_tier, reason=reason
     )
     return cfg.plugins.sandbox != "require"
+
+
+def peek_snapshot(cfg) -> dict:
+    """Assemble ``peek --json``'s ``plugins.sandbox`` / ``plugins.pins`` /
+    ``plugins.spawn_override_allow`` block from one probe + ``cfg``.
+    Read-only: never engages confinement, never (re-)imports a plugin module.
+
+    ``sandbox.covers`` is the honesty mechanism: it names ONLY the Tier-B
+    families the trampoline actually confines (``TIER_B_PROTOCOLS`` --
+    ``spawn_hooks``/``dirty_handlers``). Tier-A hooks (detectors, context
+    enrichers, pre/post-round, serve-startup) run in-process and are never
+    confined by this mechanism, so this list must never imply otherwise.
+
+    ``pins`` categorizes third-party-vs-builtin by
+    ``is_builtin_provenance(name, module_path)`` -- NEVER by a bare
+    ``name in BUILTIN_PLUGIN_NAMES``. A plugin that name-squats a reserved
+    builtin name (foreign module, reserved name -- see
+    ``agent_runner._warn_builtin_name_squat``) must still surface here as
+    third-party (verified/mismatch/unpinned); keying on the name alone would
+    hide a squatter as a trusted builtin, masking exactly the threat this
+    block exists to make visible. Mirrors
+    ``cli.doctor_cmd._third_party_plugin_checksums``'s identical recipe.
+    """
+    import agent_runner
+    from agent_runner._plugin_checksum import verify_pin
+    from agent_runner._plugin_manifest import loaded_manifest_names
+    from agent_runner._registry import is_builtin_provenance
+
+    probe = probe_sandbox_capability()
+    entries = dict(agent_runner._DISCOVERED_PLUGIN_ENTRIES)
+    pins: dict[str, str] = {}
+    for name in loaded_manifest_names():
+        value = entries.get(name)
+        if value is None:
+            continue
+        module_path = agent_runner._entry_point_module_path(value)
+        if is_builtin_provenance(name, module_path):
+            continue
+        try:
+            verdict, _actual = verify_pin(name, module_path, cfg.plugins.pin)
+        except Exception:  # noqa: BLE001 — display only, never fail peek on a broken plugin
+            verdict = "mismatch"
+        pins[name] = verdict
+    return {
+        "sandbox": {
+            "requested": cfg.plugins.sandbox,
+            "achieved_tier": probe.achieved_tier,
+            "landlock_abi": probe.landlock_abi,
+            "seccomp": probe.seccomp,
+            "unconfined_reason": probe.unconfined_reason,
+            "covers": list(TIER_B_PROTOCOLS),
+        },
+        "pins": pins,
+        "spawn_override_allow": list(cfg.plugins.spawn_override_allow),
+    }
