@@ -17,6 +17,7 @@ injectable for exactly this reason.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -630,3 +631,71 @@ def test_advisory_should_be_none_when_cgroup_v2_unavailable(
 
     ev = _only_event(tmp_path)
     assert ev["advisory"] is None
+
+
+# --- v0.3.3 T1: cgroup_delegated, a READ-ONLY delegation-readiness probe ---
+#
+# A future release needs to know, before it may ever write memory.high on a
+# round-scoped nested cgroup, whether THIS process's own cgroup v2 leaf is
+# actually delegated to it (systemd's Delegate=yes): uid-owned AND both
+# cgroup.procs and memory.high writable. This probe only ever ANSWERS that
+# question -- it never itself writes anything, tested via os.access/stat
+# against the existing directory, never a trial write.
+
+
+def test_cgroup_delegated_should_return_none_when_cgroup_v2_unavailable(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(v2=False)
+
+    result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert result is None
+
+
+def test_cgroup_delegated_should_return_false_when_leaf_uid_differs_from_process_uid(
+    fake_cgroup: _FakeCgroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cgroup(memory_max="335544320")
+    leaf_dir = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf_dir / "cgroup.procs").touch()
+    (leaf_dir / "memory.high").touch()
+    # metrics.os IS the stdlib os module (same object this file imported), so
+    # patching metrics.os.getuid replaces os.getuid globally -- capture the
+    # real uid as a plain value first, or a lambda calling os.getuid() would
+    # recurse into its own patched self.
+    real_uid = os.getuid()
+    monkeypatch.setattr(metrics.os, "getuid", lambda: real_uid + 1)
+
+    result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert result is False
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file-permission checks")
+def test_cgroup_delegated_should_return_false_when_leaf_files_not_writable(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(memory_max="335544320")
+    leaf_dir = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf_dir / "cgroup.procs").touch()
+    (leaf_dir / "memory.high").touch()
+    os.chmod(leaf_dir / "cgroup.procs", 0o444)
+    os.chmod(leaf_dir / "memory.high", 0o444)
+
+    result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert result is False
+
+
+def test_cgroup_delegated_should_return_true_when_uid_owned_and_both_files_writable(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(memory_max="335544320")
+    leaf_dir = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf_dir / "cgroup.procs").touch()
+    (leaf_dir / "memory.high").touch()
+
+    result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert result is True

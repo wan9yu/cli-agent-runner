@@ -362,6 +362,39 @@ def cgroup_memory_high(
     return _min_ancestor_limit(root, ancestors, "memory.high")
 
 
+def cgroup_delegated(
+    *,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> bool | None:
+    """Whether THIS process's own cgroup v2 leaf is delegated to it: uid-owned
+    AND both cgroup.procs and memory.high are writable. Read-only -- tests
+    writability via os.access(path, os.W_OK) against the existing directory;
+    NEVER opens, creates, or writes either file. None when cgroup v2 is
+    unavailable or the leaf can't be resolved (mirrors cgroup_path=None
+    elsewhere in this module) -- distinct from False (cgroup v2 present,
+    but NOT delegated to this process).
+
+    Delegation (systemd's Delegate=yes) is the prerequisite a future release
+    needs before it may safely write memory.high on a round-scoped nested
+    cgroup -- this probe only ever answers the readiness question; it never
+    itself writes anything.
+    """
+    resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+    if resolved is None:
+        return None
+    cgroup_path, _ancestors = resolved
+    leaf_dir = root / cgroup_path.lstrip("/")
+    try:
+        uid_owned = leaf_dir.stat().st_uid == os.getuid()
+    except OSError:
+        return False
+    procs_writable = os.access(leaf_dir / "cgroup.procs", os.W_OK)
+    high_writable = os.access(leaf_dir / "memory.high", os.W_OK)
+    return uid_owned and procs_writable and high_writable
+
+
 def cgroup_memory_usage(
     *,
     root: Path = _CGROUP_ROOT,
