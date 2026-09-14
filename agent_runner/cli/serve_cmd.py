@@ -150,16 +150,17 @@ def _maybe_pause_for_schedule(
     sleep_fn=SYSTEM_CLOCK.sleep,
     chunk_s: int = 30,
     listener: Listener | NullListener = NULL_LISTENER,
+    clock: Clock = SYSTEM_CLOCK,
 ) -> bool:
     """If the current time is outside the run schedule, pause until it opens.
 
     Returns True if a pause was entered (caller should ``continue`` so the
     top-of-loop guards re-run), False if runnable now. During a pause, sleeps
     in <= chunk_s slices so SIGTERM / SIGINT (which set stop["requested"]) lands
-    within one slice; ``listener`` (default
-    :data:`agent_runner._notify.NULL_LISTENER`) wakes that poll immediately on a
-    SIGTERM/``ring()`` instead of after up to ``chunk_s`` — omitted, this stays
-    byte-identical.
+    within one slice. ``listener`` forwards unchanged to :func:`_pause_poll`
+    (see its docstring for the wake/byte-identical contract); ``clock``
+    (default :data:`SYSTEM_CLOCK`) is the :func:`_pause_poll` wait's clock --
+    ``sleep_fn`` stays the separately-injectable plain-sleep fallback.
 
     We do NOT check the self-terminate sentinel here: no round runs during a
     pause, so no new sentinel can appear, and any pre-existing one already broke
@@ -197,7 +198,7 @@ def _maybe_pause_for_schedule(
         sleep_fn,
         chunk_s,
         listener=listener,
-        clock=SYSTEM_CLOCK,
+        clock=clock,
     ):
         emit_schedule_resumed(log_dir, paused_for_s=int(SYSTEM_CLOCK.monotonic() - started))
     return True
@@ -246,10 +247,9 @@ def _pause_until_selectable(
     so an all-throttled round resumes when the throttle clears even though no window
     ever opens. ``clock`` supplies epoch/sleep/monotonic (inject a ``FakeClock`` to
     pin the wake); ``now_fn`` stays a separate seam — the tz-aware datetime the pure
-    schedule core needs, which tests monkeypatch by name. ``listener`` (default
-    :data:`agent_runner._notify.NULL_LISTENER`) forwards into :func:`_pause_poll` so
-    a SIGTERM/``ring()`` wakes this poll immediately instead of after up to
-    ``chunk_s`` — omitted, this stays byte-identical."""
+    schedule core needs, which tests monkeypatch by name. ``listener`` forwards
+    unchanged to :func:`_pause_poll` (see its docstring for the wake/byte-identical
+    contract)."""
     candidates = [
         (p, cfg.profile_for(p).schedule)
         for p in phase_select.candidate_phases(cfg, round_num)
@@ -495,10 +495,8 @@ def _select_and_gate(
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
     paused and should ``continue`` from the loop top. ``sandbox_engaged`` is the
     boot probe verdict threaded through to the pre-spawn hook seam. ``listener``
-    (default :data:`agent_runner._notify.NULL_LISTENER`) forwards unchanged into
-    every pause gate below so a SIGTERM/``ring()`` wakes whichever one is active
-    immediately instead of after up to its own chunk interval — omitted, every
-    gate stays byte-identical."""
+    forwards unchanged into every pause gate below (see :func:`_pause_poll`'s
+    docstring for the wake/byte-identical contract)."""
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.

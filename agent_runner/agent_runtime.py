@@ -19,6 +19,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import psutil
 
@@ -145,6 +146,21 @@ def _snapshot_stray_descendants(proc: subprocess.Popen) -> list[dict]:
     return stray
 
 
+def _wait_exit_shielded(
+    proc: subprocess.Popen, *, deadline: float, clock: Clock
+) -> Literal["exited", "timeout"]:
+    """``wait_exit`` retried against the SAME absolute ``deadline`` on a
+    re-entrant ``KeyboardInterrupt`` (round_cmd's process-wide SIGTERM handler
+    raises one through the blocking wait) -- so an impatient double-kill can
+    never inflate the grace window or skip the SIGKILL escalation. The deadline
+    is absolute, so a retry never extends it."""
+    while True:
+        try:
+            return wait_exit(proc, deadline=deadline, clock=clock)
+        except KeyboardInterrupt:
+            continue
+
+
 def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
     the round-timeout path and ``run``'s BaseException handler (which fires on
@@ -171,26 +187,17 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     deadline = (
         clock.monotonic() + REAP_GRACE_S
     )  # monotonic: an NTP step must not stretch/skip the reap
-    while True:
-        try:
-            wait_exit(proc, deadline=deadline, clock=clock)
-            break  # "exited" or "timeout": either way, fall through to the SIGKILL last-resort
-        except KeyboardInterrupt:
-            continue  # shielded: retry against the SAME deadline -- a re-entrant SIGTERM
-            # cannot inflate grace or skip the SIGKILL below
+    _wait_exit_shielded(proc, deadline=deadline, clock=clock)
+    # "exited" or "timeout": either way, fall through to the SIGKILL last-resort
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
     _kill_stray_descendants(stray)
     final_deadline = clock.monotonic() + 10
-    while True:
-        try:
-            if wait_exit(proc, deadline=final_deadline, clock=clock) == "exited":
-                proc.wait()  # reap the zombie the fast path left; idempotent if already reaped
-            return
-        except KeyboardInterrupt:
-            continue  # shielded: still must reap before returning
+    if _wait_exit_shielded(proc, deadline=final_deadline, clock=clock) == "exited":
+        proc.wait()  # reap the zombie the fast path left; idempotent if already reaped
+    return
 
 
 def _live_children(

@@ -176,10 +176,9 @@ def _maybe_pause_for_memory_pressure(
     ``round_deferred``/``round_resumed`` (like ``schedule_paused``/
     ``schedule_resumed``) so a long defer does not trip
     ``detect_supervisor_stale`` (see its suppression set in
-    ``_monitor_detectors.py``). ``listener`` (default
-    :data:`agent_runner._notify.NULL_LISTENER`) forwards into :func:`_pause_poll` so
-    a SIGTERM/``ring()`` wakes the defer poll immediately instead of after up to
-    ``chunk_s``; omitted, this stays byte-identical."""
+    ``_monitor_detectors.py``). ``listener`` forwards unchanged to
+    :func:`_pause_poll` (see its docstring for the wake/byte-identical
+    contract)."""
     pressure = _memory_pressure_now(cfg, log_dir, sample_fn)
     if not _pressure_is_critical(pressure):
         return False
@@ -676,7 +675,7 @@ def _spawn_round(
                             host_health_cfg, defer_to_cgroup, critical_streak
                         )
                         if action == "terminate":
-                            returncode = _terminate_round(proc)
+                            returncode = _terminate_round(proc, clock=clock)
                             emit_round_mem_terminated(
                                 log_dir,
                                 pid=proc.pid,
@@ -701,14 +700,15 @@ def _spawn_round(
                         cgroup_defer_notified = False
                     next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
-            _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
+            # exception-path cleanup: never orphan the round pgroup
+            _terminate_round(proc, clock=clock)
             raise
         # Safety kill BEFORE the observability write: the wedged round must not
         # keep burning wall-clock (and, if its own reap hangs, its agent's
         # budget) waiting on the least-reliable step (a disk write) to finish
         # first. emit_round_supervisor_wedged reads proc.pid, which stays a
         # valid attribute after the process has already been terminated.
-        returncode = _terminate_round(proc)
+        returncode = _terminate_round(proc, clock=clock)
         emit_round_supervisor_wedged(
             log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
         )

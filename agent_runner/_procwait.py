@@ -140,6 +140,9 @@ def _wait_exit_by_polling(
     deadline: float,
     clock: Clock,
 ) -> Literal["exited", "timeout"]:
+    # Not clock.wait_until: keep this poll loop in _procwait so
+    # test_procwait_shield.py's _procwait-only scan guards its KeyboardInterrupt
+    # propagation (the grace-kill shield depends on it).
     while True:
         if proc.poll() is not None:
             return "exited"

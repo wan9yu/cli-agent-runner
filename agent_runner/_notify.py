@@ -5,7 +5,7 @@ Per-listener FIFO under ``log_dir/.notify/``: one named pipe per live
 ``Listener``, path-addressed so the producer (``events.emit``) needs no
 registry, no socket, and no persistent connection -- it just fans a single
 byte out to every ``*.fifo`` file it finds. Zero cost when nobody is
-listening (the directory is empty, ``ring`` is a fast no-op glob).
+listening (the directory is empty, ``ring`` is a fast no-op scan).
 Self-healing on a stale entry left behind by a crashed listener: opening a
 FIFO with no reader raises ``ENXIO``, which ``ring`` treats as "nobody's
 there" and cleans up.
@@ -46,17 +46,18 @@ def ring(log_dir: Path) -> None:
     """
     notify_dir = log_dir / _NOTIFY_DIRNAME
     try:
-        fifos = list(notify_dir.glob("*.fifo"))
+        with os.scandir(notify_dir) as it:
+            paths = [e.path for e in it if e.name.endswith(".fifo")]
     except OSError:
         return
 
-    for fifo in fifos:
+    for path in paths:
         try:
-            fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
         except OSError as e:
             if e.errno == errno.ENXIO:
                 try:
-                    fifo.unlink(missing_ok=True)
+                    os.unlink(path)
                 except OSError:
                     pass  # a permission-denied .notify/ can't be cleaned up -- never mind
             continue
