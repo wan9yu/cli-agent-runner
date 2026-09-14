@@ -17,6 +17,7 @@ from agent_runner.agent_runtime import REAP_GRACE_S
 from agent_runner.cli._serve_cgroup import _ROUND_UNREAPED_RC as _SERVE_CGROUP_UNREAPED_RC
 from agent_runner.cli._serve_round import _ROUND_TERM_GRACE_S as _SERVE_ROUND_TERM_GRACE_S
 from agent_runner.cli._serve_round import _ROUND_UNREAPED_RC as _SERVE_ROUND_UNREAPED_RC
+from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
 from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
 
 
@@ -33,6 +34,23 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grac
     timeout_stop_sec, outer_ceiling_s = _serve_policy.timeout_budget(100)
 
     assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
+
+
+def test_outer_ceiling_should_bound_the_worst_case_cooperative_grace_not_just_the_default():
+    """A cooperative agent's sigterm_grace_s is boot-capped at
+    _ROUND_TERM_GRACE_S (config/validators.py's mirror), so the outer ceiling's
+    reap margin must be sized to that worst case, not the old fixed
+    REAP_GRACE_S=5 -- else a long cooperative grace could trip the outer
+    wall-clock ceiling mid-grace."""
+    _, outer_ceiling_s = _serve_policy.timeout_budget(100)
+
+    expected = (
+        100
+        + _serve_policy._ROUND_TERM_GRACE_S
+        + _serve_policy._GIT_COMMIT_TIMEOUT_S
+        + _serve_policy._HOOK_ALLOWANCE_S
+    )
+    assert outer_ceiling_s == expected
 
 
 def test_budget_should_scale_linearly_with_round_timeout():
@@ -68,3 +86,4 @@ def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
     assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S
     assert _SERVE_ROUND_UNREAPED_RC == _SERVE_CGROUP_UNREAPED_RC == _serve_policy._ROUND_UNREAPED_RC
+    assert _MAX_SIGTERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S

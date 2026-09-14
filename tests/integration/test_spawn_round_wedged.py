@@ -46,6 +46,18 @@ def test_round_term_grace_should_be_at_least_reap_grace():
     assert _serve_round._ROUND_TERM_GRACE_S >= REAP_GRACE_S
 
 
+def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace():
+    """Generalizes test_round_term_grace_should_be_at_least_reap_grace: the
+    supervisor's own wait for the round leader must never be shorter than the
+    widest grace ANY configured agent can resolve to (a cooperative agent's
+    sigterm_grace_s, boot-capped at _MAX_SIGTERM_GRACE_S) -- else the
+    supervisor could SIGKILL the leader mid-cooperative-wrap-up, the exact
+    v0.3.3 failure this release exists to fix."""
+    from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
+
+    assert _serve_round._ROUND_TERM_GRACE_S >= _MAX_SIGTERM_GRACE_S
+
+
 def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, monkeypatch):
     """The load-bearing safety net: a round leader that TRAPS SIGTERM (a real hang,
     not a cooperative one) forces `_terminate_round` past its TERM-then-wait branch

@@ -312,13 +312,24 @@ def timeout_budget(round_budget_s: int) -> tuple[int, int]:
       round subprocess (``api.outer_round_ceiling_s``): ``round_budget_s``
       plus reap grace + git-commit ceiling + hook allowance, so it only trips
       when the round supervisor itself is wedged, never during its own
-      bounded post-round cleanup.
+      bounded post-round cleanup. The reap margin must cover the widest grace
+      ANY round can be configured with -- a cooperative agent's
+      ``sigterm_grace_s`` is boot-capped at ``_ROUND_TERM_GRACE_S``
+      (``config/validators.py``'s mirror of this module's single source), not
+      the non-cooperative default ``_REAP_GRACE_S``, so the margin is
+      ``max(_REAP_GRACE_S, _ROUND_TERM_GRACE_S)`` -- else a long cooperative
+      grace could trip the outer wall-clock ceiling mid-grace.
     - ``timeout_stop_sec`` — systemd's ``TimeoutStopSec``
       (``service_unit.py``): must clear ``outer_ceiling_s`` by enough for a
       SIGTERM to reach and drain the round (``_ROUND_TERM_GRACE_S``) plus a
       stop-request overhead pad, so `systemctl stop` never SIGKILLs a round
       that is draining normally.
     """
-    outer_ceiling_s = round_budget_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
+    outer_ceiling_s = (
+        round_budget_s
+        + max(_REAP_GRACE_S, _ROUND_TERM_GRACE_S)
+        + _GIT_COMMIT_TIMEOUT_S
+        + _HOOK_ALLOWANCE_S
+    )
     timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + _STOP_GRACE_MARGIN_S
     return timeout_stop_sec, outer_ceiling_s
