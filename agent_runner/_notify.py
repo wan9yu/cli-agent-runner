@@ -71,6 +71,25 @@ def ring(log_dir: Path) -> None:
                 pass  # EINTR or similar -- fail-open, never let a close raise into emit()
 
 
+def drain(fd: int) -> None:
+    """Read a level-triggered wakeup fd until ``EAGAIN`` so a delivered byte
+    (a ``ring()`` or a ``signal.set_wakeup_fd`` signal) doesn't leave the next
+    ``select()`` on it instantly ready -- an undrained fd busy-spins its
+    caller at 100% CPU forever after the first wake, since a level-triggered
+    fd stays readable until read. Advisory: the bytes carry no payload and are
+    discarded. Shared by :meth:`Listener.wait` (its own timeout branch) and
+    any caller that watches this fd as an extra ``wait_exit``/``select`` fd
+    itself (e.g. ``_spawn_round``'s ``doorbell_fd`` -- see ``_serve_round.py``)
+    and so must drain it manually on a ``"woken"`` outcome.
+    """
+    while True:
+        try:
+            if not os.read(fd, 4096):
+                break
+        except OSError:
+            break
+
+
 class Listener:
     """Context manager owning one FIFO under ``log_dir/.notify/``.
 
@@ -142,13 +161,7 @@ class Listener:
         if not ready:
             return False
 
-        while True:
-            try:
-                if not os.read(self.fd, 4096):
-                    break
-            except OSError:
-                break
-
+        drain(self.fd)
         return True
 
 

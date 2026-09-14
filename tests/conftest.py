@@ -60,6 +60,30 @@ def _isolate_plugin_registries():
                 reg.extend(snap)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_serve_doorbell(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default ``serve_cmd.open_listener`` to a ``NullListener`` for the whole
+    suite.
+
+    ``serve_cmd.cmd()`` now opens a real doorbell ``Listener`` (mkfifo + fd)
+    and registers it with the process-global ``signal.set_wakeup_fd`` on every
+    call (see ``_open_serve_doorbell``). A test that drives ``cmd()`` end to
+    end without stubbing this would otherwise leak a FIFO file + fd per test
+    and re-clobber the one process-wide wakeup-fd registration -- unbounded
+    across the whole suite, not just within one test's own teardown.
+
+    A test that wants the REAL doorbell mechanism under test builds its own
+    ``Listener`` directly (see ``test_serve_wakeup.py``) rather than going
+    through ``serve_cmd.open_listener`` at all, so this default never shadows
+    it; a test can still opt back into a real listener for `cmd()` itself with
+    its own ``monkeypatch.setattr(serve_cmd, "open_listener", ...)`` after this
+    fixture runs (last-write-wins, standard monkeypatch layering)."""
+    from agent_runner._notify import NullListener
+    from agent_runner.cli import serve_cmd
+
+    monkeypatch.setattr(serve_cmd, "open_listener", lambda log_dir: NullListener())
+
+
 @pytest.fixture
 def tmp_git_repo(tmp_path: Path) -> Path:
     """Create a real git repo in tmp_path (commits enabled)."""

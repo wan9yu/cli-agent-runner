@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import _resolve, events, hooks, host_health, metrics
-from agent_runner._notify import NULL_LISTENER, Listener, NullListener
+from agent_runner._notify import NULL_LISTENER, Listener, NullListener, drain
 from agent_runner._plugin_sandbox import run_hook_sandboxed
 from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
@@ -600,6 +600,13 @@ def _spawn_round(
                     returncode = proc.wait()  # already exited -- reaps immediately, no real block
                     _stash_cgroup()
                     return returncode
+                if outcome == "woken" and doorbell_fd is not None:
+                    # The FIFO is level-triggered: an undrained byte leaves
+                    # every subsequent select() in wait_exit instantly ready,
+                    # busy-spinning this loop at 100% CPU for the rest of the
+                    # round. wait_exit itself never drains extra_fds (see its
+                    # own docstring) -- draining is this caller's contract.
+                    drain(doorbell_fd)
                 if clock.monotonic() >= deadline:
                     break
                 if next_mem_check is not None and clock.monotonic() >= next_mem_check:

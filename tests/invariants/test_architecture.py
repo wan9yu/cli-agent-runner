@@ -100,7 +100,7 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
 }
 ALLOWED_SERVE_ROUND_FROM = [
     ("agent_runner", {"_resolve", "events", "host_health", "hooks", "metrics"}),
-    ("agent_runner._notify", {"Listener", "NullListener", "NULL_LISTENER"}),
+    ("agent_runner._notify", {"Listener", "NullListener", "NULL_LISTENER", "drain"}),
     ("agent_runner._plugin_sandbox", {"run_hook_sandboxed"}),
     ("agent_runner._procwait", {"wait_exit"}),
     ("agent_runner._sandbox_probe", {"hook_route"}),

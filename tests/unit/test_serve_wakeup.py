@@ -14,6 +14,7 @@ is needed to prove the prompt-wake property deterministically.
 
 from __future__ import annotations
 
+import sys
 import time
 import types
 from datetime import datetime
@@ -23,7 +24,7 @@ from agent_runner import config as ar_config
 from agent_runner import schedule as ar_schedule
 from agent_runner._notify import Listener, ring
 from agent_runner._throttle import _interruptible_sleep
-from agent_runner.cli import serve_cmd
+from agent_runner.cli import _serve_round, serve_cmd
 from agent_runner.cli._serve_round import _pause_poll
 from tests._clock import FakeClock
 
@@ -140,3 +141,41 @@ def test_pause_should_sleep_full_chunk_when_default_listener_and_no_ring(tmp_log
 
     assert paused is True
     assert slept == [30]
+
+
+def test_spawn_round_should_not_busy_spin_after_doorbell_ring(tmp_path, monkeypatch):
+    """The FIFO doorbell is level-triggered: a byte that _spawn_round's mid-round
+    wait_exit(extra_fds=(doorbell_fd,)) sees but never drains leaves every
+    subsequent select() instantly ready, busy-spinning the loop at 100% CPU
+    for the rest of the round instead of blocking until the round actually
+    exits. Reproduces the exact scenario a `serve stop`/SIGTERM (or a
+    cross-process ring()) mid-round hits: one ring queued BEFORE the round
+    starts, then a real ~1.5s child. Counts wait_exit calls -- undrained, this
+    explodes into hundreds of thousands of calls (measured: 445,795); drained,
+    it's ~2 (one immediate "woken", one blocking "exited")."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(1.5)"]
+    calls = {"n": 0}
+    real_wait_exit = _serve_round.wait_exit
+
+    def counting_wait_exit(*args, **kwargs):
+        calls["n"] += 1
+        return real_wait_exit(*args, **kwargs)
+
+    monkeypatch.setattr(_serve_round, "wait_exit", counting_wait_exit)
+
+    with Listener(log_dir) as listener:
+        ring(log_dir)
+
+        rc = _serve_round._spawn_round(
+            argv,
+            log_dir / "round-1.log",
+            {},
+            timeout_s=300,
+            round_num=1,
+            doorbell_fd=listener.fd,
+        )
+
+    assert rc == 0
+    assert calls["n"] < 20  # undrained: ~445,795 in the reproduction
