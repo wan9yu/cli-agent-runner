@@ -344,7 +344,7 @@ def _maybe_defer_for_spawn_hooks(
 # single-sourced in _serve_policy (imported above), not defined here.
 
 
-def _terminate_round(proc: subprocess.Popen) -> int:
+def _terminate_round(proc: subprocess.Popen, *, clock: Clock = SYSTEM_CLOCK) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
     flock/sidecar released), grace, then killpg as last resort. Returns the returncode.
 
@@ -359,6 +359,8 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     SIGKILL, so the post-killpg wait is also guarded -- this must never raise
     TimeoutExpired back into a caller (_spawn_round's own ``except BaseException``
     calls this again on the way out), which would escape ``cmd()`` unclassified.
+    ``wait_exit`` itself never raises ``TimeoutExpired`` (it returns ``"timeout"``),
+    so that guard is now structural rather than an exception catch -- see below.
 
     The killpg escalation ALSO reaps any live descendant that ``setsid()``'d off
     the leader's own process group (POSIX ``setsid()`` changes pgid+sid but NOT
@@ -370,21 +372,25 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     taken up front, before ``.terminate()``, while the leader (and hence its
     process subtree) is still guaranteed resolvable -- once it exits, a
     detached descendant is reparented to init and is no longer reachable by
-    walking down from the leader's (by then vacated, possibly reused) pid."""
+    walking down from the leader's (by then vacated, possibly reused) pid.
+
+    Grace waits are fd-driven (``wait_exit``, not a busy-poll ``proc.wait(timeout=)``):
+    on ``"exited"`` we reap with a bare ``proc.wait()`` (the fast path never reaps
+    itself, so this is required, not optional -- it's a no-op if the poll fallback
+    already reaped). Both ``"exited"`` and ``"timeout"`` after the FIRST wait fall
+    through to the SAME killpg(SIGKILL) escalation; only the return differs."""
     stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     proc.terminate()
+    if wait_exit(proc, deadline=clock.monotonic() + _ROUND_TERM_GRACE_S, clock=clock) == "exited":
+        return proc.wait()
     try:
-        return proc.wait(timeout=_ROUND_TERM_GRACE_S)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        _kill_stray_descendants(stray)
-        try:
-            return proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            return _ROUND_UNREAPED_RC  # D-state leader: don't re-raise into cmd()
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        pass
+    _kill_stray_descendants(stray)
+    if wait_exit(proc, deadline=clock.monotonic() + 10, clock=clock) == "exited":
+        return proc.wait()
+    return _ROUND_UNREAPED_RC  # D-state leader: don't re-raise into cmd()
 
 
 # Mid-round hard floor: how often (in clock.monotonic() seconds) _spawn_round

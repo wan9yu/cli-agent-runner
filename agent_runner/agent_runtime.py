@@ -22,6 +22,7 @@ from pathlib import Path
 
 import psutil
 
+from agent_runner._procwait import wait_exit
 from agent_runner.api_types import _round_ok
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 
@@ -150,8 +151,9 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     a SIGTERM landing while the round is unwinding from a first one).
     ``round_cmd``'s SIGTERM handler stays installed for the whole process life
     (it converts every SIGTERM into a fresh ``KeyboardInterrupt``, not just the
-    first), so a re-entrant SIGTERM during the grace sleep below raises HERE —
-    shielded (caught and retried) so the SIGKILL escalation always runs. An
+    first), so a re-entrant SIGTERM during the grace wait below raises HERE —
+    shielded (caught and retried against the SAME absolute deadline, so it
+    cannot inflate the grace window) so the SIGKILL escalation always runs. An
     operator's impatient double-kill must not leave the agent outliving the
     grace period unreaped.
 
@@ -169,24 +171,26 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     deadline = (
         clock.monotonic() + REAP_GRACE_S
     )  # monotonic: an NTP step must not stretch/skip the reap
-    while clock.monotonic() < deadline and proc.poll() is None:
+    while True:
         try:
-            clock.sleep(0.1)
+            wait_exit(proc, deadline=deadline, clock=clock)
+            break  # "exited" or "timeout": either way, fall through to the SIGKILL last-resort
         except KeyboardInterrupt:
-            pass  # shielded: keep waiting out the grace window, never skip SIGKILL
+            continue  # shielded: retry against the SAME deadline -- a re-entrant SIGTERM
+            # cannot inflate grace or skip the SIGKILL below
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
     _kill_stray_descendants(stray)
+    final_deadline = clock.monotonic() + 10
     while True:
         try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass  # reaped via the SIGKILL above regardless; nothing more to wait for
+            if wait_exit(proc, deadline=final_deadline, clock=clock) == "exited":
+                proc.wait()  # reap the zombie the fast path left; idempotent if already reaped
+            return
         except KeyboardInterrupt:
             continue  # shielded: still must reap before returning
-        return
 
 
 def _live_children(

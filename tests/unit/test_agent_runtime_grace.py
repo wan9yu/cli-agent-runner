@@ -14,7 +14,7 @@ import pytest
 
 from agent_runner import agent_runtime
 from agent_runner.agent_runtime import run
-from tests._test_helpers import poll_until, wait_for
+from tests._test_helpers import poll_until
 
 
 def _write_fake_script(tmp_path: Path, body: str) -> Path:
@@ -614,55 +614,12 @@ def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
         p.wait()
 
 
-def test_kill_pgroup_should_sigkill_when_sigterm_reenters_during_grace(tmp_path):
-    """round_cmd's SIGTERM handler stays installed for the whole process life
-    (every SIGTERM raises a fresh KeyboardInterrupt, not just the first), so a
-    second, impatient SIGTERM landing while _kill_pgroup waits out its grace
-    period re-raises INSIDE the grace-sleep loop. Unshielded, that interrupt
-    would propagate out of _kill_pgroup before SIGKILL ever ran, leaving a
-    TERM-ignoring agent alive forever. FakeClock makes this deterministic: the
-    first clock.sleep() call raises (simulating the re-entrant signal); the
-    function must swallow it and keep going until it SIGKILLs the child."""
-    from agent_runner.agent_runtime import _kill_pgroup
-    from tests._clock import FakeClock
-
-    ready = tmp_path / "trap.ready"
-    # A ready marker (not a fixed sleep) makes "the trap is installed before we
-    # TERM it" deterministic under load -- a fixed sleep raced bash startup
-    # under a busy full-suite run and could see the child die on the FIRST
-    # (un-trapped) SIGTERM, exiting the grace loop after only one flaky_sleep
-    # call instead of exercising the shield across the full grace window.
-    script = _write_fake_script(tmp_path, f'trap "" TERM\ntouch "{ready}"\nsleep 30\n')
-    proc = subprocess.Popen([str(script)], start_new_session=True)
-    try:
-        # 40s (widened from 15s, then from the original 5s): measured under
-        # `-n auto` contention on a busy host, bash's own fork+exec
-        # occasionally starved for several real seconds before it got
-        # scheduled to run the trap+touch line; reproduced failing at 15s
-        # under >=2 concurrent gates (~2-3x CPU oversubscription).
-        assert wait_for(tmp_path, ready.exists, timeout_s=40), (
-            "child never installed its SIGTERM trap"
-        )
-        clock = FakeClock()
-        real_sleep = clock.sleep
-        calls = {"n": 0}
-
-        def flaky_sleep(seconds):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise KeyboardInterrupt("re-entrant SIGTERM during grace")
-            real_sleep(seconds)
-
-        clock.sleep = flaky_sleep
-
-        _kill_pgroup(proc, clock)
-
-        assert calls["n"] >= 2, "the shield must retry after the re-entrant interrupt"
-        assert proc.wait(timeout=5) is not None  # SIGKILL reaped it despite the interrupt
-    finally:
-        if proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
+# The KeyboardInterrupt-shielding property for _kill_pgroup's fd-driven grace
+# wait (wait_exit, not a clock.sleep loop) now lives in its own dedicated file:
+# tests/unit/test_kill_pgroup_shielding.py -- it drives the poll fallback with
+# a FakeClock so the re-entrant-SIGTERM-during-grace shield stays deterministic
+# post-refactor (a real subprocess's fast path never calls clock.sleep at all,
+# so the old in-place version of this test silently stopped exercising anything).
 
 
 def test_run_should_fire_hard_wall_on_monotonic_time_when_epoch_warps(tmp_path):

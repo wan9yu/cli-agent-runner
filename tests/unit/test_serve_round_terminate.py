@@ -16,17 +16,28 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import _procwait
 from agent_runner.cli import _serve_round
+from tests._clock import FakeClock
 
 
 class _WedgedProc:
+    """Never exits -- models a D-state (uninterruptible-sleep) leader that
+    outlives even a killpg SIGKILL. ``poll()`` (not ``wait(timeout=)``) is the
+    surface ``wait_exit``'s poll fallback drives; this proc always reports
+    "still running" so both grace waits in ``_terminate_round`` genuinely
+    time out rather than ever observing an exit."""
+
     pid = 4242
 
     def terminate(self):
         pass
 
+    def poll(self):
+        return None
+
     def wait(self, timeout=None):
-        raise subprocess.TimeoutExpired(cmd="round", timeout=timeout)
+        raise AssertionError("D-state leader never exits -- wait() must not be reached")
 
 
 def test_terminate_round_should_return_sentinel_when_leader_is_dstate(monkeypatch):
@@ -39,8 +50,13 @@ def test_terminate_round_should_return_sentinel_when_leader_is_dstate(monkeypatc
     # return actual descendants and _kill_stray_descendants would fire a stray
     # killpg, breaking the killpg_calls assertion below. Stub the snapshot empty.
     monkeypatch.setattr(_serve_round, "_snapshot_stray_descendants", lambda proc: [])
+    # Force wait_exit's poll fallback (deterministic, no real fd/select
+    # dependency on the fake, nonexistent pid 4242) and drive it on a
+    # FakeClock so both 15s+10s grace windows resolve instantly, not over
+    # 25 real seconds.
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
 
-    rc = _serve_round._terminate_round(_WedgedProc())
+    rc = _serve_round._terminate_round(_WedgedProc(), clock=FakeClock())
 
     assert rc == _serve_round._ROUND_UNREAPED_RC  # a defined sentinel, not a raise
     assert killpg_calls == [(4242, _serve_round.signal.SIGKILL)]  # escalation still fired
