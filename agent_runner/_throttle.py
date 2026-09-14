@@ -615,10 +615,33 @@ def _interruptible_sleep(
     zero-arg predicate the caller closes over its own stop_file check with, so this
     module never needs to know what "should stop" means beyond calling it.
 
-    Counts down the *intended* nap per slice rather than measuring a wall/monotonic
-    deadline: NTP-step immune (no clock read for the deadline) AND does not busy-spin
-    when ``clock.sleep`` is a no-op (a test patching ``time.sleep`` runs it instantly
-    instead of looping until real time advances).
+    A live ``Listener`` can return from ``wait`` early on an advisory event byte that
+    is not a stop (e.g. a doorbell already rung by a concurrent ``events.emit``
+    before this call even started, or another emit landing mid-sleep) — crediting
+    the full nap for a wait that actually returned in microseconds would collapse
+    the whole sleep to ~0 on the first stray byte, defeating callers like the serve
+    restart/crash back-off delay that depend on this function to ride out its full
+    duration. So a live listener is credited its *actual* ``clock.monotonic()``
+    elapsed per slice, not the intended nap.
+
+    ``NullListener.wait``, by contrast, can never return early — there is no fd to
+    wake on, it always just calls ``clock.sleep(nap)`` and returns — so for it the
+    intended nap IS the correct credit, and this function keeps using it directly
+    (``remaining -= nap``) rather than measuring elapsed around it. This is
+    deliberate, not an optimization: a monotonic-elapsed measurement would only be
+    byte-identical to the old intended-nap count if the injected clock's
+    ``monotonic()`` genuinely tracked its own ``sleep()`` — true for ``FakeClock``,
+    but NOT for a test that monkeypatches the stdlib ``time.sleep`` (what
+    ``RealClock.sleep`` calls) to skip real waiting without touching
+    ``time.monotonic()`` (a real, used-elsewhere-in-this-suite pattern, e.g.
+    ``test_serve_crash_loop.py``): that combination would leave elapsed pinned
+    near 0 forever and busy-spin the loop for the full ``chunk_s``/``total_s``
+    instead of terminating. Branching on the listener type sidesteps that clock
+    fragility entirely and keeps every existing NULL_LISTENER caller provably
+    byte-identical to the pre-fix accounting. Still NTP-step immune either way:
+    ``clock.monotonic()`` is never stepped by an NTP correction (only
+    ``clock.epoch()`` is, which the ``deadline_epoch`` branch below handles
+    separately).
 
     ``deadline_epoch``, when given, additionally re-checks ``clock.epoch() >=
     deadline_epoch`` at each chunk boundary and returns False (completed, NOT
@@ -637,8 +660,18 @@ def _interruptible_sleep(
         if deadline_epoch is not None and clock.epoch() >= deadline_epoch:
             return False
         nap = min(float(chunk_s), remaining)
-        listener.wait(nap, clock=clock)
-        remaining -= nap
+        if isinstance(listener, NullListener):
+            # Never returns early (no fd to wake on) -- the intended nap is exactly
+            # what it consumed, so crediting it directly is provably byte-identical
+            # to the pre-fix accounting for every existing (non-serve) caller.
+            listener.wait(nap, clock=clock)
+            remaining -= nap
+        else:
+            # May return early on a spurious/stale ring -- credit only what the
+            # wait actually consumed, or a stray event byte collapses the sleep.
+            started = clock.monotonic()
+            listener.wait(nap, clock=clock)
+            remaining -= max(0.0, clock.monotonic() - started)
     return False
 
 

@@ -1,11 +1,17 @@
 """Serve wakeup fd (doorbell): the ONE new mechanism Task 5 wires in -- a real
 ``Listener``'s ``.wait`` wakes ``_pause_poll``/``_interruptible_sleep`` promptly
 on a ``ring()`` (standing in for a SIGTERM/SIGINT landing on the SAME fd via
-``signal.set_wakeup_fd``, see ``serve_cmd._open_serve_doorbell``) instead of
-riding out the full chunk/duration. The default -- ``NULL_LISTENER``, what
-every pre-existing caller still gets -- keeps degrading to a plain
-``clock.sleep``/injected ``sleep_fn``, so nothing already using these two
-functions changes.
+``signal.set_wakeup_fd``, see ``serve_cmd._open_serve_doorbell``) so a genuine
+stop (``stop["requested"]``/``should_stop()``) lands within milliseconds instead
+of riding out the full chunk/duration. A ring with NO stop is a different story
+for ``_interruptible_sleep``: it only shortens the individual ``listener.wait``
+call, not the sleep's total duration -- the function credits actual elapsed
+monotonic time per slice, so a spurious/advisory ring (e.g. an unrelated
+``events.emit`` on the same ``log_dir``) cannot collapse a caller's intended
+delay (see ``_interruptible_sleep``'s docstring and the serve restart/crash
+back-off delay it guards). The default -- ``NULL_LISTENER``, what every
+pre-existing caller still gets -- keeps degrading to a plain ``clock.sleep``/
+injected ``sleep_fn``, so nothing already using these two functions changes.
 
 Real FIFOs throughout (matching test_notify.py's own style): ``ring()`` before
 the wait call queues the wake byte in the kernel pipe buffer, so no thread/race
@@ -48,17 +54,38 @@ def test_pause_poll_should_wake_promptly_when_ring_arrives_before_wait(tmp_log_d
         assert elapsed < 1.0  # woke on the ring, not the 30s chunk
 
 
-def test_interruptible_sleep_should_wake_promptly_when_ring_arrives_before_wait(tmp_log_dir):
+def test_interruptible_sleep_should_not_collapse_when_a_spurious_ring_lands(tmp_log_dir):
+    """A pre-queued ring with no stop must NOT shorten the sleep: this is the serve
+    restart/crash back-off delay's whole anti-hammering purpose (serve_cmd.cmd()
+    passes the live doorbell listener here). A stray event byte -- another emit
+    before this call even started, or a concurrent monitor -- wakes listener.wait
+    early, but _interruptible_sleep now credits only the ACTUAL elapsed monotonic
+    time from that wait, not the full intended nap, so the total duration still
+    takes ~the full total_s. total_s is kept short (well under chunk_s, so this is
+    a single slice) purely so the test runs fast."""
+    total_s = 0.4
     with Listener(tmp_log_dir) as listener:
         ring(tmp_log_dir)
         stop = {"requested": False}
 
         start = time.monotonic()
+        interrupted = _interruptible_sleep(total_s, stop, chunk_s=30, listener=listener)
+        elapsed = time.monotonic() - start
+
+        assert interrupted is False
+        assert elapsed >= total_s * 0.8  # the ring drained but did NOT collapse the wait
+
+
+def test_interruptible_sleep_should_return_promptly_when_stop_is_requested(tmp_log_dir):
+    with Listener(tmp_log_dir) as listener:
+        stop = {"requested": True}
+
+        start = time.monotonic()
         interrupted = _interruptible_sleep(30, stop, chunk_s=30, listener=listener)
         elapsed = time.monotonic() - start
 
-        assert interrupted is False  # total_s exhausted -- the ring only shortened the WAIT
-        assert elapsed < 1.0  # ...not the accounting: listener.wait returned in ms, not 30s
+        assert interrupted is True
+        assert elapsed < 1.0  # a real stop still cuts the sleep short, ring or no ring
 
 
 def test_pause_poll_should_fall_through_to_injected_sleep_fn_when_default_listener():

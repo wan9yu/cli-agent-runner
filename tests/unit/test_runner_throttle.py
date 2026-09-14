@@ -382,7 +382,12 @@ def test_interruptible_sleep_should_return_true_when_stop_preset():
 def test_interruptible_sleep_should_terminate_when_sleep_is_noop():
     """Regression: a no-op sleep whose monotonic never advances (a test patching only
     time.sleep) must NOT busy-spin — the count-down loop terminates after
-    ceil(total/chunk) slices instead of looping until a real deadline."""
+    ceil(total/chunk) slices instead of looping until a real deadline. Exercises the
+    NULL_LISTENER branch specifically: it credits the intended nap directly (never
+    reads clock.monotonic()), so it is immune to a clock like this one whose
+    monotonic() doesn't track its own sleep() -- a real, used-elsewhere-in-this-suite
+    pattern (monkeypatching stdlib time.sleep without touching time.monotonic(), e.g.
+    test_serve_crash_loop.py) that a monotonic-elapsed measurement would busy-spin on."""
     from agent_runner._throttle import _interruptible_sleep
 
     class _FrozenNoopClock:
@@ -393,7 +398,7 @@ def test_interruptible_sleep_should_terminate_when_sleep_is_noop():
             return 0.0
 
         def monotonic(self):
-            return 0.0  # never advances — the old deadline loop would spin forever
+            return 0.0  # never advances — a monotonic-elapsed measurement would spin forever
 
         def sleep(self, _s):
             self.calls += 1  # no-op: does not advance time
