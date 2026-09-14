@@ -161,7 +161,9 @@ def _wait_exit_shielded(
             continue
 
 
-def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
+def _kill_pgroup(
+    proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK, reap_grace_s: int = REAP_GRACE_S
+) -> None:
     """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
     the round-timeout path and ``run``'s BaseException handler (which fires on
     a SIGTERM landing while the round is unwinding from a first one).
@@ -185,7 +187,7 @@ def _kill_pgroup(proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK) -> None:
     except OSError:
         pass
     deadline = (
-        clock.monotonic() + REAP_GRACE_S
+        clock.monotonic() + reap_grace_s
     )  # monotonic: an NTP step must not stretch/skip the reap
     _wait_exit_shielded(proc, deadline=deadline, clock=clock)
     # "exited" or "timeout": either way, fall through to the SIGKILL last-resort
@@ -574,6 +576,7 @@ def _terminate_agent(
     container_runtime: str | None,
     container_cidfile: Path | None,
     on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None,
+    reap_grace_s: int = REAP_GRACE_S,
 ) -> None:
     """Reap the agent pgroup (``_kill_pgroup``), then -- for a
     container-launching command only -- make a best-effort container `stop`
@@ -581,7 +584,7 @@ def _terminate_agent(
     hard-kill entry point ``run()`` uses for all three of its termination
     paths (R1128 wall-clock, grace-kill, and the BaseException reap), so the
     container handling isn't duplicated three times."""
-    _kill_pgroup(proc, clock)
+    _kill_pgroup(proc, clock, reap_grace_s=reap_grace_s)
     if container_runtime is not None:
         cid, stop_ok = _best_effort_container_stop(container_runtime, container_cidfile)
         if on_container_orphan_risk is not None:
@@ -606,10 +609,16 @@ def run(
     grace_kill_ignore_patterns: list[re.Pattern[str]] | None = None,
     on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None = None,
     clock: Clock = SYSTEM_CLOCK,
+    reap_grace_s: int = REAP_GRACE_S,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
-    Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → REAP_GRACE_S → SIGKILL.
+    Wall-clock timeout (R1128). On timeout: SIGTERM pgroup → reap_grace_s → SIGKILL.
+
+    reap_grace_s: the SIGTERM->SIGKILL grace passed straight through to every
+    ``_terminate_agent`` call site below (R1128 wall-clock, grace-kill, and
+    the BaseException reap) -- one deadline value, threaded end to end.
+    Defaults to REAP_GRACE_S so every existing caller is unchanged.
 
     work_dir: the agent child's working directory; callers pass the
     already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
@@ -776,6 +785,7 @@ def run(
                     container_runtime=container_runtime,
                     container_cidfile=container_cidfile,
                     on_container_orphan_risk=_report_orphan_once,
+                    reap_grace_s=reap_grace_s,
                 )
                 duration = clock.monotonic() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
@@ -820,6 +830,7 @@ def run(
                             container_runtime=container_runtime,
                             container_cidfile=container_cidfile,
                             on_container_orphan_risk=_report_orphan_once,
+                            reap_grace_s=reap_grace_s,
                         )
                         duration = clock.monotonic() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
@@ -860,6 +871,7 @@ def run(
                 container_runtime=container_runtime,
                 container_cidfile=container_cidfile,
                 on_container_orphan_risk=_report_orphan_once,
+                reap_grace_s=reap_grace_s,
             )
         raise
     finally:

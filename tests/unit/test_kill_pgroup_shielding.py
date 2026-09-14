@@ -108,3 +108,27 @@ def test_kill_pgroup_should_propagate_keyboardinterrupt_through_wait_exit(monkey
     assert (proc.pid, signal.SIGKILL) in killpg_calls, (
         "SIGKILL must still fire after the interrupts, never skipped"
     )
+
+
+def test_kill_pgroup_should_use_the_given_reap_grace_s_for_its_deadline_not_the_module_default(
+    monkeypatch,
+):
+    """The v0.3.3 dark-code fix: the SIGTERM->SIGKILL deadline must come from
+    _kill_pgroup's reap_grace_s PARAMETER, not the module-level REAP_GRACE_S
+    constant -- the resolved cooperative grace is threaded through this exact
+    call site."""
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    monkeypatch.setattr(agent_runtime, "_snapshot_stray_descendants", lambda proc: [])
+    monkeypatch.setattr(agent_runtime, "_kill_stray_descendants", lambda stray: None)
+    proc = _NeverExitsProc()
+    clock = FakeClock()
+    killpg_calls: list[tuple[int, int, float]] = []
+
+    def spy_killpg(pgid, sig):
+        killpg_calls.append((pgid, sig, clock.monotonic()))
+
+    monkeypatch.setattr(agent_runtime.os, "killpg", spy_killpg)
+
+    agent_runtime._kill_pgroup(proc, clock, reap_grace_s=11)
+
+    assert killpg_calls[1][2] == 11, "SIGKILL must fire at the GIVEN grace, not REAP_GRACE_S (5)"
