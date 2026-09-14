@@ -196,15 +196,20 @@ def _resolve_reap_grace_s() -> int:
     so the child never re-derives (and skews) serve's own cooperative-manifest
     resolution; a standalone `agent-runner round` (no env) falls back to
     agent_runtime.REAP_GRACE_S -- the same non-cooperative default -- when the
-    env var is absent or unparseable."""
+    env var is absent, unparseable, or non-positive (a leaked <=0 value would
+    make a past deadline and kill with zero grace; serve only ever publishes a
+    boot-validated positive value or REAP_GRACE_S, so this only guards a
+    hand-set/leaked standalone env)."""
     from agent_runner.agent_runtime import REAP_GRACE_S
 
     raw = os.environ.get("AGENT_RUNNER_REAP_GRACE_S")
     if raw is not None:
         try:
-            return int(raw)
+            parsed = int(raw)
         except ValueError:
-            pass
+            parsed = None
+        if parsed is not None and parsed > 0:
+            return parsed
     return REAP_GRACE_S
 
 

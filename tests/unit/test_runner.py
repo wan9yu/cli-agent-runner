@@ -1110,3 +1110,12 @@ def test_resolve_reap_grace_s_should_fall_back_when_env_value_is_unparseable(mon
     monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "not-a-number")
 
     assert runner._resolve_reap_grace_s() == REAP_GRACE_S
+
+
+def test_resolve_reap_grace_s_should_fall_back_when_env_value_is_non_positive(monkeypatch):
+    from agent_runner import runner
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "-3")
+
+    assert runner._resolve_reap_grace_s() == REAP_GRACE_S
