@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agent_runner import phase_select, startup_check
+from agent_runner import _plugin_manifest, phase_select, startup_check
 from agent_runner.cli.common import cfg_from_args, emit
 
 
@@ -120,6 +120,8 @@ def _format(report: DoctorReport) -> str:
         lines.append("  third-party plugin checksums (paste into [plugins.pin]):")
         for name, digest in sorted(hashes.items()):
             lines.append(f'    {name} = "{digest}"')
+    cooperative = _plugin_manifest.cooperative_manifest_names()
+    lines.append(f"  cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
     cgroup = report.cgroup
     lines.append("cgroup:")
     lines.append(f"  cgroup_path: {cgroup['cgroup_path']}")

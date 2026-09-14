@@ -188,14 +188,15 @@ The round itself continues — a broken plugin must not crash the supervisor.
 
 ```json
 {
-  "schema_version": "2.2",
+  "schema_version": "2.3",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": ["current_branch"],
     "pre_round_hooks": [...],
     "post_round_hooks": [...],
     "detectors": [...],
-    "owned_paths": [...]
+    "owned_paths": [...],
+    "sigterm_cooperative": ["gemini"]
   },
   ...
 }
@@ -549,7 +550,7 @@ detector. Other plugin detectors and all builtins still run normally.
 
 ```json
 {
-  "schema_version": "2.2",
+  "schema_version": "2.3",
   "plugins": {
     "event_kinds": [...],
     "context_enrichers": [...],

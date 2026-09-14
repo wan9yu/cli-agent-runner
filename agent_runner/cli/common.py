@@ -19,7 +19,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "2.2"
+PEEK_SCHEMA_VERSION = "2.3"
 
 
 def cfg_from_args(args) -> Config:
@@ -98,6 +98,7 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
             from agent_runner import _sandbox_probe, disabled_plugin_names
+            from agent_runner._plugin_manifest import cooperative_manifest_names
 
             plugins_block = {
                 "event_kinds": plugin_event_kinds(),
@@ -107,6 +108,7 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
                 "detectors": plugin_detectors(),
                 "owned_paths": plugin_owned_paths(),
                 "disabled": disabled_plugin_names(),
+                "sigterm_cooperative": cooperative_manifest_names(),
             }
             if cfg is not None:
                 plugins_block.update(_sandbox_probe.peek_snapshot(cfg))

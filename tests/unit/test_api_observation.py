@@ -617,3 +617,28 @@ def test_emit_should_include_disabled_plugins_block_when_json_mode(
     assert "disabled" in out["plugins"]
     # Default empty list when no apply_plugin_disable was called
     assert isinstance(out["plugins"]["disabled"], list)
+
+
+def test_emit_should_include_sigterm_cooperative_plugins_block_when_json_mode(
+    tmp_git_repo: Path,
+    capsys,
+) -> None:
+    from agent_runner.api_types import ProjectState, ServiceMode, ServiceStatus, SystemMetrics
+    from agent_runner.cli.common import emit
+
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+
+    emit(state, json_mode=True)
+
+    out = json.loads(capsys.readouterr().out)
+    assert "sigterm_cooperative" in out["plugins"]
+    assert isinstance(out["plugins"]["sigterm_cooperative"], list)
