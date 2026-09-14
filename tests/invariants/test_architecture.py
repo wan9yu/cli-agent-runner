@@ -25,6 +25,7 @@ ALLOWED_SERVE_FROM = [
         "agent_runner._notify",
         {"Listener", "NullListener", "NULL_LISTENER", "open_listener"},
     ),
+    ("agent_runner._plugin_manifest", {"resolve_sigterm_grace_s"}),
     ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.agent_runtime", {"_detect_container_run"}),
