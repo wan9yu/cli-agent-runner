@@ -406,6 +406,35 @@ find agent_runner -name '*.py' -not -path '*/__pycache__/*' -exec wc -l {} + | s
   honestly flat (not improved) 0.2.19 on the same axis; axis 3 never moved
   in any release. Both are reported as measured.
 
+## 0.3.1 → 0.3.3 (2026-09-14)
+
+Covers 0.3.2 (plugin security — Landlock+seccomp trampoline, checksum pinning, spawn-hook seam) and 0.3.3 (cgroup-delegation readiness probe + `sigterm_cooperative` declaration). Same macOS harness (§ methodology above).
+
+### 1. Import/startup RSS
+
+| | 0.3.1 | 0.3.3 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.9 MB | 23.9 MB | ~0 MB (flat) |
+| RSS range | 23.8–24.0 MB | 23.8–24.0 MB | |
+
+Flat despite the substantial 0.3.2 plugin-security surface (`_plugin_sandbox`, `_sandbox_probe`, `_plugin_checksum`, the SpawnHook seam) and 0.3.3's cgroup probe: the LSM bindings are an opt-in `[sandbox]` extra (absent from a base install), and the trampoline/probe modules import lazily (only when the sandbox path runs), so they never join the cold-startup graph — held by the frozen `test_import_footprint.py` allowlist (which the 0.3.2 loader restructure actually *shrank* by 7 modules, and no 0.3.2/0.3.3 addition re-added an eager import).
+
+### 2. Base dependencies
+
+Unchanged: `psutil>=5.9` is the only runtime dependency. 0.3.2's `py-landlock`/`pyseccomp` ship ONLY under the opt-in `[sandbox]` extra with `sys_platform=='linux'` markers — a base or macOS install pulls neither (clean-room-verified each release).
+
+### 3. Per-round allocation growth
+
+No new growth — `test_round_alloc_growth.py` green across both versions. 0.3.3's cgroup-delegation probe is a boot-time read-only `os.access`/`stat` (not per-round); 0.3.2's trampoline is a per-hook subprocess only for a THIRD-PARTY Tier-B hook on an engaged sandbox (zero for the first-party fleet), off the per-round allocation axis.
+
+### Efficiency (internal wait)
+
+Unchanged this cycle — the serve loop's ~1s busy-poll (`_spawn_round`'s `proc.wait(timeout=_ROUND_POLL_TICK_S)`) is still synchronous. The event-driven/async migration that removes the internal waits is the 0.3.4 work; its efficiency numbers land there.
+
+### Constrained-host (honesty)
+
+Numbers are dev-host-relative (the macOS harness this page has used since 0.2.17). The 462MB / 256MB constrained-host confirmation stays deferred while that host is offline — measured on dev/CI, documented as deferred for the constrained host, never reported as zero-cost.
+
 ## Enforcement
 
 Three invariant tests keep these numbers from drifting silently:
