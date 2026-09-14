@@ -52,7 +52,6 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `dry_run` | `bool` | False |
 | `max_grace_after_result_s` | `int` | 0 |
 | `grace_kill_ignore_patterns` | `list[str]` | [] |
-| `wrapup_grace_s` | `int` | 0 |
 
 ### `[prompt]`
 

@@ -388,9 +388,6 @@ def _parse_runtime(runtime_d: dict, *, project_name: str, work_dir: Path) -> Run
             runtime_d.get("grace_kill_ignore_patterns", []),
             field="runtime.grace_kill_ignore_patterns",
         ),
-        wrapup_grace_s=_require_non_negative_int(
-            runtime_d.get("wrapup_grace_s", 0), field="runtime.wrapup_grace_s"
-        ),
     )
 
 

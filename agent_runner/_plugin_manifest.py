@@ -39,11 +39,9 @@ class PluginManifest:
     sigterm_cooperative: bool = False
     """Declares that this preset's CLI cooperatively drains/cleans up on
     SIGTERM -- source-verified per preset, NEVER assumed from a CLI's
-    general reputation. Read by wrapup_grace_s (cli/_serve_round.py,
-    Component 3) to decide whether the existing TERM-then-grace-then-SIGKILL
-    escalation's grace window should extend for this agent. Does not by
-    itself change any termination behavior -- an untouched consumer reads
-    False for every manifest exactly as before this field existed."""
+    general reputation. Observability-only: surfaced via
+    cooperative_manifest_names() to `peek --json` and `doctor`. Does not
+    itself change any termination behavior."""
 
 
 _LOADED_MANIFESTS: list[PluginManifest] = []
@@ -62,21 +60,6 @@ def cooperative_manifest_names() -> list[str]:
     loaded_manifest_names; used by peek + doctor to answer "which presets
     are cooperative" without either caller reaching into _LOADED_MANIFESTS."""
     return [m.name for m in _LOADED_MANIFESTS if m.sigterm_cooperative]
-
-
-def manifest_sigterm_cooperative(binary: str | None) -> bool:
-    """Whether the registered manifest whose .name equals `binary` (the
-    resolved agent's own AgentConfig.binary) declares
-    sigterm_cooperative=True. False -- the safe, grace-unchanged default --
-    when binary is None, no manifest is registered under that name, or the
-    matching manifest declares False. See this module's docstring note on
-    the claude_rate_limit name/binary mismatch: an unmatched binary reads as
-    non-cooperative by omission, never by a guess.
-
-    register_manifest enforces unique manifest .name, so 'the manifest named
-    binary is cooperative' is exactly 'binary is in cooperative_manifest_names()'
-    -- reuse it rather than re-scanning _LOADED_MANIFESTS a second time."""
-    return binary is not None and binary in cooperative_manifest_names()
 
 
 def register_manifest(

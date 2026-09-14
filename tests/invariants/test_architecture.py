@@ -22,7 +22,6 @@ ALLOWED_SERVE_IMPORTS = {
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"metrics", "phase_select", "schedule"}),
     ("agent_runner.config", {"ConfigError"}),
-    ("agent_runner._plugin_manifest", {"manifest_sigterm_cooperative"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.agent_runtime", {"_detect_container_run"}),
     ("agent_runner.hooks", {"run_serve_startup_hooks"}),

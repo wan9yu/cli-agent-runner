@@ -343,7 +343,7 @@ def _maybe_defer_for_spawn_hooks(
 # single-sourced in _serve_policy (imported above), not defined here.
 
 
-def _terminate_round(proc: subprocess.Popen, *, extra_grace_s: int = 0) -> int:
+def _terminate_round(proc: subprocess.Popen) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
     flock/sidecar released), grace, then killpg as last resort. Returns the returncode.
 
@@ -353,14 +353,6 @@ def _terminate_round(proc: subprocess.Popen, *, extra_grace_s: int = 0) -> int:
     ``monkeypatch.setattr(_serve_round, "_ROUND_TERM_GRACE_S", ...)``
     (test_spawn_round_wedged.py) still lands directly, with no reach-back through
     ``serve_cmd``.
-
-    ``extra_grace_s`` (default 0) is added on top of ``_ROUND_TERM_GRACE_S`` for
-    this call only -- a bounded EXTENSION of the existing grace window, never a
-    new signal and never a new kill. It is 0 for every caller unless
-    Component 3's wiring (serve_cmd.py) determined the resolved agent is
-    sigterm_cooperative AND the operator set ``runtime.wrapup_grace_s > 0``;
-    both conditions are re-checked at that single call site, never inferred
-    here.
 
     Fail-open: a D-state (uninterruptible-sleep) leader can outlive even a killpg
     SIGKILL, so the post-killpg wait is also guarded -- this must never raise
@@ -381,7 +373,7 @@ def _terminate_round(proc: subprocess.Popen, *, extra_grace_s: int = 0) -> int:
     stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     proc.terminate()
     try:
-        return proc.wait(timeout=_ROUND_TERM_GRACE_S + extra_grace_s)
+        return proc.wait(timeout=_ROUND_TERM_GRACE_S)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -454,7 +446,6 @@ def _spawn_round(
     round_num: int,
     host_health_cfg=None,
     defer_to_cgroup: bool = False,
-    extra_grace_s: int = 0,
     clock: Clock = SYSTEM_CLOCK,
     sample_fn=metrics.sample,
 ) -> int:
@@ -642,7 +633,7 @@ def _spawn_round(
                             host_health_cfg, defer_to_cgroup, critical_streak
                         )
                         if action == "terminate":
-                            returncode = _terminate_round(proc, extra_grace_s=extra_grace_s)
+                            returncode = _terminate_round(proc)
                             emit_round_mem_terminated(
                                 log_dir,
                                 pid=proc.pid,
@@ -667,15 +658,14 @@ def _spawn_round(
                         cgroup_defer_notified = False
                     next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
-            # exception-path cleanup: never orphan the round pgroup
-            _terminate_round(proc, extra_grace_s=extra_grace_s)
+            _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
             raise
         # Safety kill BEFORE the observability write: the wedged round must not
         # keep burning wall-clock (and, if its own reap hangs, its agent's
         # budget) waiting on the least-reliable step (a disk write) to finish
         # first. emit_round_supervisor_wedged reads proc.pid, which stays a
         # valid attribute after the process has already been terminated.
-        returncode = _terminate_round(proc, extra_grace_s=extra_grace_s)
+        returncode = _terminate_round(proc)
         emit_round_supervisor_wedged(
             log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
         )

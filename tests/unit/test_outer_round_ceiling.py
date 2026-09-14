@@ -62,29 +62,3 @@ def test_outer_round_ceiling_s_should_read_round_budget_s_when_no_phase_override
     ceiling = outer_round_ceiling_s(cfg, None)
 
     assert ceiling > 42  # ceiling adds reap/git/hook margin on top of the budget
-
-
-def _cfg_with_wrapup_grace(tmp_path: Path, wrapup_grace_s: int) -> api.Config:
-    (tmp_path / "prompt.md").write_text("p")
-    toml = tmp_path / "agent-runner.toml"
-    toml.write_text(
-        "schema_version = 1\n"
-        "[agent]\ncommand = ['true']\nprompt_arg_template = ['{prompt}']\n"
-        "[runtime]\nwork_dir = '.'\nlog_dir = './logs'\nround_budget_s = 100\n"
-        f"wrapup_grace_s = {wrapup_grace_s}\n"
-        "[prompt]\nfile = 'prompt.md'\n"
-    )
-    return load_config(toml)
-
-
-def test_outer_round_ceiling_should_stay_unchanged_when_wrapup_grace_s_is_set(tmp_path):
-    """_lifecycle.py's outer_round_ceiling_s calls timeout_budget(inner) with NO
-    wrapup_grace_s kwarg -- R1128's own wedged-detection deadline must stay
-    independent of any grace-extension choice, or a slow cooperative SIGTERM
-    would delay detecting a wedged round."""
-    baseline_cfg = _cfg(tmp_path)
-    grace_cfg = _cfg_with_wrapup_grace(tmp_path, 999)
-
-    assert api.outer_round_ceiling_s(grace_cfg, None) == api.outer_round_ceiling_s(
-        baseline_cfg, None
-    )

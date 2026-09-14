@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `host_cgroup_memory_limit` now reports whether the supervisor's own cgroup is delegated (its `cgroup.procs`/`memory.high` are writable); `doctor` shows it and advises adding `Delegate=yes` to the systemd unit when it isn't. Read-only — nothing is written to any cgroup.
-- Plugin presets can declare `sigterm_cooperative` (the built-in `gemini` preset does — its CLI drains and cleans up on SIGTERM); surfaced in `peek --json` (schema `2.3`) and `doctor`.
-- `[runtime] wrapup_grace_s` (default 0): for an agent whose preset is `sigterm_cooperative`, lengthens the existing SIGTERM→SIGKILL grace so the CLI can wrap up on its own signal handler. It never changes *when* a round is terminated — only how long the already-decided SIGTERM waits before the SIGKILL fallback.
+- Plugin presets can declare `sigterm_cooperative` (the built-in `gemini` preset does); an observability-only declaration surfaced in `peek --json` (schema `2.3`) and `doctor` — it does not change any termination behavior.
 
 ## [0.3.2] - 2026-09-14
 

@@ -77,7 +77,7 @@ def render_serve_unit(
         for override in cfg.phases.overrides.values():
             if override.round_budget_s is not None:
                 max_timeout = max(max_timeout, override.round_budget_s)
-    timeout_total, _ = timeout_budget(max_timeout, wrapup_grace_s=cfg.runtime.wrapup_grace_s)
+    timeout_total, _ = timeout_budget(max_timeout)
     user_lines, wanted_by = _unit_mode_lines(user)
     return (
         f"[Unit]\n"

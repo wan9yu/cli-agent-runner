@@ -243,7 +243,6 @@ fresh_eyes_every_n
 dry_run
 max_grace_after_result_s
 grace_kill_ignore_patterns
-wrapup_grace_s
 
 # agent_runner.config.models.ScheduleConfig
 timezone

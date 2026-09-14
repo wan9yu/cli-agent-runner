@@ -85,11 +85,6 @@ class RuntimeConfig:
     check — for persistent helper subprocesses (e.g. claude's shell-snapshot
     bash) that would otherwise defeat max_grace_after_result_s. Empty list
     = no filtering (existing behavior preserved)."""
-    wrapup_grace_s: int = 0
-    """0 = disabled (byte-identical); only takes effect for a
-    sigterm_cooperative=True agent (Component 2) -- see
-    cli/_serve_round._terminate_round's extra_grace_s. Ignored (no-op) for
-    any other agent, exactly as if unset."""
 
 
 @dataclass(frozen=True)

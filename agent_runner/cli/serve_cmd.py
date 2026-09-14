@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
-from agent_runner._plugin_manifest import manifest_sigterm_cooperative
 from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
@@ -564,22 +563,6 @@ def _apply_round_num_env(round_env: dict, round_num: int) -> None:
     round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
 
 
-def _resolve_extra_grace_s(cfg, phase_arg: str | None) -> int:
-    """``wrapup_grace_s`` only takes effect for the resolved agent's own
-    registered PluginManifest declaring sigterm_cooperative=True (see
-    _plugin_manifest.manifest_sigterm_cooperative) -- 0 (no widening,
-    byte-identical to today) for every other case: unset, or a
-    non-cooperative agent. Both facts are re-checked HERE, every round
-    (a phase can override [phases.<name>.agent] to a different binary), never
-    inferred by cli/_serve_round._terminate_round itself."""
-    binary = cfg.profile_for(phase_arg).agent.binary
-    return (
-        cfg.runtime.wrapup_grace_s
-        if cfg.runtime.wrapup_grace_s and manifest_sigterm_cooperative(binary)
-        else 0
-    )
-
-
 def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
     """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
     git_head = compute_git_head(work_dir)
@@ -757,7 +740,6 @@ def cmd(args) -> int:
                 _detect_container_run(cfg.profile_for(phase_arg).agent.spawn_command(work_dir))
                 is None
             )
-            extra_grace_s = _resolve_extra_grace_s(cfg, phase_arg)
             r_returncode = _spawn_round(
                 round_argv,
                 round_log_path,
@@ -766,7 +748,6 @@ def cmd(args) -> int:
                 round_num=round_num,
                 host_health_cfg=cfg.monitor.host_health,
                 defer_to_cgroup=defer_to_cgroup,
-                extra_grace_s=extra_grace_s,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
