@@ -87,6 +87,12 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._monitor_detectors",
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
+        # _notify: events.emit() rings a FIFO doorbell (agent_runner._notify.ring)
+        # after every durable write so a --tail consumer wakes in ms instead of
+        # polling. events.py is already a startup dependency, and _notify pulls
+        # only stdlib (os/select/pathlib) + the already-loaded clock module, so
+        # this adds the one leaf module, not a new transitive dependency.
+        "agent_runner._notify",
         "agent_runner._observe",
         # _plugin_sandbox: the serve-admission SpawnHook seam (cli/_serve_round)
         # imports run_hook_sandboxed at module scope so the seam is monkeypatchable

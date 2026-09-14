@@ -21,6 +21,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agent_runner import _notify
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import _iter_parsed_lines, open_events_jsonl, parse_iso_ms
 
@@ -277,9 +278,12 @@ def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
 
 
 def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = None) -> int:
-    """Streaming: poll current-month events.jsonl at 1s interval; emit each
-    new matching line as it fires. Blocks until SIGINT (KeyboardInterrupt).
-    Follows month rollover via per-poll glob.
+    """Streaming: re-scan current-month events.jsonl each time the FIFO
+    doorbell (``_notify``) wakes this process -- a ``ring()`` from
+    ``events.emit`` lands within milliseconds -- falling back to a 1s poll
+    tick when no doorbell fd is available; emit each new matching line as
+    it fires. Blocks until SIGINT (KeyboardInterrupt). Follows month
+    rollover via per-poll glob.
 
     With ``since``, the backlog (``ts >= since``, across month files) is replayed
     first and the poll resumes at the exact byte the replay stopped on — no gap
@@ -302,26 +306,27 @@ def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = Non
             return 1
 
     try:
-        while True:
-            events_file = _current_month_events_file(log_dir)
-            if events_file != current_file:
-                if current_file is not None and current_file.exists():
-                    # Rollover: flush the old file's remaining tail before switching,
-                    # then begin the new file at 0 (no line is lost across the boundary).
-                    _emit_new_lines(current_file, last_size, kind_set)
-                    last_size = 0
-                elif current_file is None:
-                    # True first iteration (no --since): skip the pre-existing backlog.
-                    last_size = events_file.stat().st_size if events_file.exists() else 0
-                current_file = events_file
+        with _notify.open_listener(log_dir) as listener:
+            while True:
+                events_file = _current_month_events_file(log_dir)
+                if events_file != current_file:
+                    if current_file is not None and current_file.exists():
+                        # Rollover: flush the old file's remaining tail before switching,
+                        # then begin the new file at 0 (no line is lost across the boundary).
+                        _emit_new_lines(current_file, last_size, kind_set)
+                        last_size = 0
+                    elif current_file is None:
+                        # True first iteration (no --since): skip the pre-existing backlog.
+                        last_size = events_file.stat().st_size if events_file.exists() else 0
+                    current_file = events_file
 
-            if events_file.exists():
-                size = events_file.stat().st_size
-                if size > last_size:
-                    last_size = _emit_new_lines(events_file, last_size, kind_set)
-                elif size < last_size:
-                    # File truncated / rotated underneath us; reset
-                    last_size = 0
-            SYSTEM_CLOCK.sleep(1.0)
+                if events_file.exists():
+                    size = events_file.stat().st_size
+                    if size > last_size:
+                        last_size = _emit_new_lines(events_file, last_size, kind_set)
+                    elif size < last_size:
+                        # File truncated / rotated underneath us; reset
+                        last_size = 0
+                listener.wait(1.0)
     except KeyboardInterrupt:
         return 0

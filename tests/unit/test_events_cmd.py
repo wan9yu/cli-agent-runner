@@ -350,13 +350,15 @@ def test_cmd_events_since_should_exit_2_when_timestamp_invalid(tmp_path, capsys)
 
 
 def test_events_tail_should_emit_new_events_as_they_arrive(tmp_path, capsys, monkeypatch):
-    """--tail mode polls and emits new matching lines as they appear.
+    """--tail mode wakes on the doorbell and emits new matching lines as they
+    appear.
 
     The real poll loop (agent_runner.cli.events_cmd._tail_events) runs
-    unmodified; only its SYSTEM_CLOCK.sleep tick is stubbed so the test is
-    deterministic instead of racing a real 1s poll: tick 1 appends the new
-    event between polls (what a concurrent writer would do), tick 2 raises
-    KeyboardInterrupt (what a real SIGINT delivers) to stop the loop."""
+    unmodified; only the doorbell listener is stubbed so the test is
+    deterministic instead of racing a real FIFO wake: wait 1 appends the new
+    event between polls (what a concurrent writer would do) and reports a
+    wake, wait 2 raises KeyboardInterrupt (what a real SIGINT delivers) to
+    stop the loop."""
     from agent_runner.cli import events_cmd
 
     events_file = _write_events(
@@ -366,22 +368,33 @@ def test_events_tail_should_emit_new_events_as_they_arrive(tmp_path, capsys, mon
         ],
     )
 
-    sleep_calls: list[float] = []
+    wait_calls: list[float] = []
 
-    def fake_sleep(seconds: float) -> None:
-        sleep_calls.append(seconds)
-        if len(sleep_calls) == 1:
-            with events_file.open("a", encoding="utf-8") as f:
-                f.write(
-                    json.dumps(
-                        {"event": "anomaly_repetitive_tool", "round_num": 5, "tool_name": "Edit"}
+    class _FakeListener:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def wait(self, timeout_s, *, clock=None):
+            wait_calls.append(timeout_s)
+            if len(wait_calls) == 1:
+                with events_file.open("a", encoding="utf-8") as f:
+                    f.write(
+                        json.dumps(
+                            {
+                                "event": "anomaly_repetitive_tool",
+                                "round_num": 5,
+                                "tool_name": "Edit",
+                            }
+                        )
+                        + "\n"
                     )
-                    + "\n"
-                )
-        else:
+                return True
             raise KeyboardInterrupt()
 
-    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    monkeypatch.setattr(events_cmd._notify, "open_listener", lambda log_dir: _FakeListener())
 
     with patch.object(events_cmd, "_resolve_log_dir", return_value=tmp_path):
         args = _make_args(kind="anomaly_repetitive_tool", tail=True)
@@ -392,4 +405,4 @@ def test_events_tail_should_emit_new_events_as_they_arrive(tmp_path, capsys, mon
     assert len(out) == 1
     assert json.loads(out[0])["event"] == "anomaly_repetitive_tool"
     assert json.loads(out[0])["round_num"] == 5
-    assert sleep_calls == [1.0, 1.0]
+    assert wait_calls == [1.0, 1.0]

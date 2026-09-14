@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
+from agent_runner import _notify
 from agent_runner.clock import SYSTEM_CLOCK
 
 # Cross-module event-kind constants. Every module-level UPPER_CASE constant
@@ -215,6 +216,7 @@ def emit(log_dir: Path, kind: str, /, **fields: Any) -> None:
     payload = {"ts": ts, "event": kind, **fields}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    _notify.ring(log_dir)
 
 
 def open_events_jsonl(path: Path) -> TextIO:

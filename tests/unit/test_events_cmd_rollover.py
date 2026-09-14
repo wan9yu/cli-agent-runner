@@ -13,6 +13,24 @@ def _append(p: Path, ev: dict) -> None:
         f.write(json.dumps(ev) + "\n")
 
 
+def _install_fake_listener(monkeypatch, on_wait) -> None:
+    """Stub the FIFO doorbell (agent_runner._notify) so ``_tail_events``'s
+    ``listener.wait(1.0)`` calls ``on_wait`` deterministically instead of
+    racing a real FIFO wake."""
+
+    class _FakeListener:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def wait(self, timeout_s, *, clock=None):
+            return on_wait(timeout_s)
+
+    monkeypatch.setattr(events_cmd._notify, "open_listener", lambda log_dir: _FakeListener())
+
+
 def test_tail_events_should_drain_old_file_tail_and_start_new_file_at_zero_when_month_rolls_over(
     tmp_path, monkeypatch, capsys
 ):
@@ -25,7 +43,7 @@ def test_tail_events_should_drain_old_file_tail_and_start_new_file_at_zero_when_
 
     calls = {"n": 0}
 
-    def fake_sleep(_s):
+    def fake_wait(_timeout_s):
         calls["n"] += 1
         if calls["n"] == 1:
             _append(aug, {"event": "round_end", "round_num": 2, "ts": "2026-08-31T23:59:59Z"})
@@ -33,8 +51,9 @@ def test_tail_events_should_drain_old_file_tail_and_start_new_file_at_zero_when_
             _append(sep, {"event": "round_end", "round_num": 3, "ts": "2026-09-01T00:00:01Z"})
         else:
             raise KeyboardInterrupt
+        return True
 
-    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    _install_fake_listener(monkeypatch, fake_wait)
 
     rc = events_cmd._tail_events(tmp_path, {"round_end"})
     out = capsys.readouterr().out

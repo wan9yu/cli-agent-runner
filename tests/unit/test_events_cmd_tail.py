@@ -26,6 +26,25 @@ def _append(path: Path, kind: str, n: int, ts: str | None = None) -> None:
         f.write(json.dumps(payload) + "\n")
 
 
+def _install_fake_listener(monkeypatch: pytest.MonkeyPatch, on_wait) -> None:
+    """Stub the FIFO doorbell (agent_runner._notify) so ``_tail_events``'s
+    ``listener.wait(1.0)`` calls ``on_wait`` deterministically instead of
+    racing a real FIFO wake -- the same seam ``SYSTEM_CLOCK.sleep`` used to
+    be, before ``_tail_events`` moved onto the doorbell."""
+
+    class _FakeListener:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def wait(self, timeout_s, *, clock=None):
+            return on_wait(timeout_s)
+
+    monkeypatch.setattr(events_cmd._notify, "open_listener", lambda log_dir: _FakeListener())
+
+
 def test_event_appended_during_read_loop_should_be_emitted_once_when_tailing(
     tmp_log_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -41,12 +60,13 @@ def test_event_appended_during_read_loop_should_be_emitted_once_when_tailing(
 
     polls = {"n": 0}
 
-    def fake_sleep(_interval: float) -> None:
+    def fake_wait(_timeout_s: float) -> bool:
         polls["n"] += 1
         if polls["n"] == 1:
             _append(events_file, "round_start", 1)
         elif polls["n"] >= 4:
             raise KeyboardInterrupt
+        return True
 
     injected = {"done": False}
 
@@ -58,10 +78,10 @@ def test_event_appended_during_read_loop_should_be_emitted_once_when_tailing(
         return evt
 
     # Rebind the module's own globals, never the shared stdlib modules: patching
-    # json.loads / time.sleep process-wide would reach unrelated test machinery.
-    # The line parse+dict-guard loop lives in agent_runner.events (shared by
-    # every events-*.jsonl reader) since 0.2.13, not in events_cmd itself.
-    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    # json.loads process-wide would reach unrelated test machinery. The line
+    # parse+dict-guard loop lives in agent_runner.events (shared by every
+    # events-*.jsonl reader) since 0.2.13, not in events_cmd itself.
+    _install_fake_listener(monkeypatch, fake_wait)
     monkeypatch.setattr(
         events,
         "json",
@@ -91,7 +111,7 @@ def test_non_dict_json_line_appended_should_be_skipped_without_crashing_when_tai
 
     polls = {"n": 0}
 
-    def fake_sleep(_interval: float) -> None:
+    def fake_wait(_timeout_s: float) -> bool:
         polls["n"] += 1
         if polls["n"] == 1:
             with events_file.open("a", encoding="utf-8") as f:
@@ -99,8 +119,9 @@ def test_non_dict_json_line_appended_should_be_skipped_without_crashing_when_tai
             _append(events_file, "round_start", 1)
         elif polls["n"] >= 4:
             raise KeyboardInterrupt
+        return True
 
-    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    _install_fake_listener(monkeypatch, fake_wait)
     monkeypatch.setattr(
         events_cmd,
         "signal",
@@ -126,14 +147,15 @@ def test_since_should_replay_backlog_then_live_lines_each_once_when_tailing(
 
     polls = {"n": 0}
 
-    def fake_sleep(_interval: float) -> None:
+    def fake_wait(_timeout_s: float) -> bool:
         polls["n"] += 1
         if polls["n"] == 1:
             _append(events_file, "round_start", 3, ts="2026-07-01T12:00:00.000Z")
         elif polls["n"] >= 3:
             raise KeyboardInterrupt
+        return True
 
-    monkeypatch.setattr(events_cmd.SYSTEM_CLOCK, "sleep", fake_sleep)
+    _install_fake_listener(monkeypatch, fake_wait)
     monkeypatch.setattr(
         events_cmd,
         "signal",
