@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.5]
 
 ### Added
-- `[agent] sigterm_grace_s` (default 10): the SIGTERM→SIGKILL grace a round gives its agent when the agent's preset declares itself cooperative (the built-in `gemini` preset does), so an agent that catches SIGTERM to flush or commit its work gets time to finish. A non-cooperative agent (e.g. `claude`) keeps the previous 5 s. Capped at the supervisor's own 15 s wait for the round; `peek --json` (schema `2.4`) and `doctor` report the resolved grace per agent.
+- `[agent] sigterm_grace_s` (default 10): the SIGTERM→SIGKILL grace a round gives its agent when the agent's preset declares itself cooperative (the built-in `gemini` preset does), so an agent that catches SIGTERM to flush or commit its work gets time to finish. A non-cooperative agent (e.g. `claude`) keeps the previous 5 s. Capped at 12 s, inside the supervisor's 15 s wait for the round; `peek --json` (schema `2.4`) and `doctor` report the resolved grace per agent.
 
 ## [0.3.4] - 2026-09-15
 

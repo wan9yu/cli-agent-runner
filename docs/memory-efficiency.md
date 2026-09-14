@@ -488,7 +488,7 @@ Flat: the change is a config field, a pure grace-resolution function, an env rou
 
 ### 2. Efficiency
 
-No new internal wait — the grace window rides the v0.3.4 `wait_exit` deadline (zero polling during the grace), so a 15 s cooperative grace costs zero wakeups, same as the old 5 s. Two structural wins rather than a headline number:
+No new internal wait — the grace window rides the v0.3.4 `wait_exit` deadline (zero polling during the grace), so a 12 s cooperative grace costs zero wakeups, same as the old 5 s. Two structural wins rather than a headline number:
 - **One grace code path, not two.** The reap deadline is now a single threaded value (defaulting to `REAP_GRACE_S`) instead of a hardcoded constant plus a would-be cooperative branch — the branch was never created, closing the v0.3.3 dark-code shape at the source.
 - **No wasted force-kills.** A cooperative agent that finishes flushing within its grace is reaped normally instead of SIGKILLed mid-write — work that the old fixed 5 s could truncate now completes. The behavioral efficiency win, measured by the wall-clock PROPERTY test (`test_cooperative_grace_property.py`), not RSS.
 

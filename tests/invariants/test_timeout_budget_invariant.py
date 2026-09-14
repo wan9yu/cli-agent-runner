@@ -37,11 +37,13 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grac
 
 
 def test_outer_ceiling_should_bound_the_worst_case_cooperative_grace_not_just_the_default():
-    """A cooperative agent's sigterm_grace_s is boot-capped at
-    _ROUND_TERM_GRACE_S (config/models.py's mirror), so the outer ceiling's
-    reap margin must be sized to that worst case, not the old fixed
-    REAP_GRACE_S=5 -- else a long cooperative grace could trip the outer
-    wall-clock ceiling mid-grace."""
+    """A cooperative agent's sigterm_grace_s is boot-capped strictly below
+    _ROUND_TERM_GRACE_S (config/models.py's _MAX_SIGTERM_GRACE_S mirror-with-
+    margin), so the outer ceiling's reap margin must be sized to that worst
+    case, not the old fixed REAP_GRACE_S=5 -- else a long cooperative grace
+    could trip the outer wall-clock ceiling mid-grace. Sizing off
+    _ROUND_TERM_GRACE_S itself (rather than the smaller cap) keeps this bound
+    correct even though the cap sits below it."""
     _, outer_ceiling_s = _serve_policy.timeout_budget(100)
 
     expected = (
@@ -81,9 +83,19 @@ def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     hoisted out of cli/_serve_round.py into this leaf so its sibling module
     cli/_serve_cgroup.py (carved out in the same release) can import it too
     without cycling back through _serve_round. Pin both real importers the
-    same way, not a vacuous self-compare."""
+    same way, not a vacuous self-compare.
+
+    _MAX_SIGTERM_GRACE_S (0.3.5) is NOT an equality mirror: it is boot-capped
+    STRICTLY BELOW _serve_policy._ROUND_TERM_GRACE_S, by at least 3s of
+    leader-exit margin, so the round leader's own killpg(SIGKILL) of its agent
+    always has room to fire before the supervisor's SIGKILL of the leader on
+    the out-of-process `agent-runner kill` path (_lifecycle._terminate_round_pid,
+    which SIGKILLs only the leader pid with no stray-reap)."""
     assert _serve_policy._REAP_GRACE_S == REAP_GRACE_S
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
     assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S
     assert _SERVE_ROUND_UNREAPED_RC == _SERVE_CGROUP_UNREAPED_RC == _serve_policy._ROUND_UNREAPED_RC
-    assert _MAX_SIGTERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S
+
+    # _MAX_SIGTERM_GRACE_S is a mirror-WITH-MARGIN, not an equality mirror.
+    assert _MAX_SIGTERM_GRACE_S < _serve_policy._ROUND_TERM_GRACE_S
+    assert _serve_policy._ROUND_TERM_GRACE_S - _MAX_SIGTERM_GRACE_S >= 3

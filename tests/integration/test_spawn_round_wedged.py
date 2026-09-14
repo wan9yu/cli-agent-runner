@@ -52,10 +52,12 @@ def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace():
     widest grace ANY configured agent can resolve to (a cooperative agent's
     sigterm_grace_s, boot-capped at _MAX_SIGTERM_GRACE_S) -- else the
     supervisor could SIGKILL the leader mid-cooperative-wrap-up, the exact
-    v0.3.3 failure this release exists to fix."""
+    v0.3.3 failure this release exists to fix. Strict: the cap sits ~3s below
+    the supervisor's wait (not equal to it), preserving leader-exit margin for
+    the out-of-process `agent-runner kill` path."""
     from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
 
-    assert _serve_round._ROUND_TERM_GRACE_S >= _MAX_SIGTERM_GRACE_S
+    assert _serve_round._ROUND_TERM_GRACE_S > _MAX_SIGTERM_GRACE_S
 
 
 def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, monkeypatch):

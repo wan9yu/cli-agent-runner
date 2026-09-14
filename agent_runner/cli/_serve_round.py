@@ -362,10 +362,12 @@ def _maybe_defer_for_spawn_hooks(
 
 
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler
-# reaps its agent pgroup (agent_runtime.REAP_GRACE_S) then exits, so allow that plus
-# margin. test_spawn_round_wedged asserts it stays >= REAP_GRACE_S so the two never
-# drift. Single-sourced in _serve_policy (imported above) -- api.py imports the same
-# constant, so this and the out-of-process kill path can no longer drift apart.
+# reaps its agent pgroup -- up to agent_runtime.REAP_GRACE_S for a non-cooperative
+# agent, or up to the configured (boot-capped) config.models._MAX_SIGTERM_GRACE_S
+# for a cooperative one -- then exits, so allow that plus margin. test_spawn_round_wedged
+# asserts it stays > _MAX_SIGTERM_GRACE_S so the two never drift. Single-sourced in
+# _serve_policy (imported above) -- api.py imports the same constant, so this and the
+# out-of-process kill path can no longer drift apart.
 #
 # _ROUND_UNREAPED_RC (the D-state-leader sentinel returned below) is likewise
 # single-sourced in _serve_policy (imported above), not defined here.

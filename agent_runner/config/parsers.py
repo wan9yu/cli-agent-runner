@@ -71,16 +71,17 @@ from agent_runner.config.validators import (
 
 def _validate_sigterm_grace_s(value: Any, *, field: str) -> int:
     """Validate [agent] sigterm_grace_s (or a per-phase override): positive
-    int, capped at _MAX_SIGTERM_GRACE_S (the supervisor's own wait for the
-    round leader). Mirrors _validate_remote_failure_tolerance's
-    require-then-cap shape; `field` is threaded through (unlike that single-
-    call-site validator) since this one validates both the base [agent]
-    table and each [phases.<name>.agent] override, under different prefixes."""
+    int, capped at _MAX_SIGTERM_GRACE_S -- a value strictly inside (not equal
+    to) the supervisor's own wait for the round leader, preserving leader-exit
+    margin. Mirrors _validate_remote_failure_tolerance's require-then-cap
+    shape; `field` is threaded through (unlike that single-call-site
+    validator) since this one validates both the base [agent] table and each
+    [phases.<name>.agent] override, under different prefixes."""
     v = _require_positive_int(value, field=field)
     if v > _MAX_SIGTERM_GRACE_S:
         raise ConfigError(
             f"{field}: must be <= {_MAX_SIGTERM_GRACE_S} "
-            f"(the supervisor's own wait for the round leader), got {v}"
+            f"(strictly inside the supervisor's own wait for the round leader), got {v}"
         )
     return v
 

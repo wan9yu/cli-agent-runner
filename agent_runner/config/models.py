@@ -32,15 +32,19 @@ DEFAULT_TERMINAL_MARKER = '"type":"result"'
 # agent's preset gets from the round leader (see AgentConfig.sigterm_grace_s).
 DEFAULT_SIGTERM_GRACE_S = 10
 
-# Ceiling for [agent] sigterm_grace_s: must never exceed _serve_policy's
-# _ROUND_TERM_GRACE_S (the supervisor's own wait for the round leader) --
-# a longer configured grace would let the supervisor SIGKILL the leader
-# mid-wrap-up. config/ cannot import _serve_policy (a cycle: _serve_policy
-# already imports agent_runner.config for ConfigError), so this is a
-# LITERAL mirror, pinned by tests/invariants/test_timeout_budget_invariant.py
-# against drift, the same pattern _serve_policy uses for its own
-# agent_runtime.REAP_GRACE_S / vcs_state.GIT_COMMIT_TIMEOUT_S mirrors.
-_MAX_SIGTERM_GRACE_S = 15
+# Ceiling for [agent] sigterm_grace_s: sits a STRICT ~3s BELOW _serve_policy's
+# _ROUND_TERM_GRACE_S (15, the supervisor's own wait for the round leader) --
+# NOT equal to it. The margin matters on the out-of-process `agent-runner kill`
+# path (_lifecycle._terminate_round_pid), which SIGKILLs only the leader pid
+# with no stray-reap: without it, a leader whose own killpg(SIGKILL) of its
+# agent fires at the same instant the supervisor SIGKILLs the leader could lose
+# the race, leaving the agent permanently orphaned. config/ cannot import
+# _serve_policy (a cycle: _serve_policy already imports agent_runner.config for
+# ConfigError), so this is a LITERAL mirror-with-margin, pinned by
+# tests/invariants/test_timeout_budget_invariant.py against drift, the same
+# pattern _serve_policy uses for its own agent_runtime.REAP_GRACE_S /
+# vcs_state.GIT_COMMIT_TIMEOUT_S mirrors.
+_MAX_SIGTERM_GRACE_S = 12
 
 
 @dataclass(frozen=True)
@@ -60,9 +64,10 @@ class AgentConfig:
     """The SIGTERM->SIGKILL grace this round's leader gives its agent, applied
     only when the agent's preset declares itself cooperative (sigterm_cooperative
     on its PluginManifest) -- a non-cooperative agent always gets the fixed
-    agent_runtime.REAP_GRACE_S instead. Capped at _MAX_SIGTERM_GRACE_S (a mirror
-    of _serve_policy._ROUND_TERM_GRACE_S, the supervisor's own wait for the round
-    leader) -- a value above that is rejected at boot, not clamped."""
+    agent_runtime.REAP_GRACE_S instead. Capped at _MAX_SIGTERM_GRACE_S, which sits
+    strictly inside (not equal to) _serve_policy._ROUND_TERM_GRACE_S, the
+    supervisor's own wait for the round leader -- a value above the cap is
+    rejected at boot, not clamped."""
 
     @property
     def binary(self) -> str | None:
