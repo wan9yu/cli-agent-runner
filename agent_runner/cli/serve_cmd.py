@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
+from agent_runner._plugin_manifest import manifest_sigterm_cooperative
 from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
@@ -740,6 +741,13 @@ def cmd(args) -> int:
                 _detect_container_run(cfg.profile_for(phase_arg).agent.spawn_command(work_dir))
                 is None
             )
+            resolved_agent = cfg.profile_for(phase_arg).agent
+            extra_grace_s = (
+                cfg.runtime.wrapup_grace_s
+                if cfg.runtime.wrapup_grace_s
+                and manifest_sigterm_cooperative(resolved_agent.binary)
+                else 0
+            )
             r_returncode = _spawn_round(
                 round_argv,
                 round_log_path,
@@ -748,6 +756,7 @@ def cmd(args) -> int:
                 round_num=round_num,
                 host_health_cfg=cfg.monitor.host_health,
                 defer_to_cgroup=defer_to_cgroup,
+                extra_grace_s=extra_grace_s,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)
