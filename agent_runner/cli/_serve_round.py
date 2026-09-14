@@ -28,6 +28,7 @@ from typing import Literal
 
 from agent_runner import _resolve, events, hooks, host_health, metrics
 from agent_runner._plugin_sandbox import run_hook_sandboxed
+from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
     _MEM_LOOP_PERSIST_WINDOW_S,
@@ -386,21 +387,10 @@ def _terminate_round(proc: subprocess.Popen) -> int:
             return _ROUND_UNREAPED_RC  # D-state leader: don't re-raise into cmd()
 
 
-# Real per-tick poll granularity for _spawn_round's proc.wait loop: how often
-# (in real wall-clock seconds, NOT clock.monotonic()) the round leader's exit
-# is checked. Hoisted to a module constant (mirrors _ROUND_TERM_GRACE_S above)
-# purely so test_spawn_round_mem_floor.py can monkeypatch it down and drive
-# that suite's assertions by sample_fn call count instead of real wall time --
-# production keeps the same value (1) it always had, so this changes no
-# behavior: proc.wait(timeout=_ROUND_POLL_TICK_S) still just bounds how
-# promptly a round's own exit is noticed, unrelated to the coarser cadences
-# below (host_health resampling, round_budget_s) which run off
-# clock.monotonic() and are unaffected by this constant either way.
-_ROUND_POLL_TICK_S = 1
-
-# Mid-round hard floor: how often (in clock.monotonic() seconds, not per-tick)
-# _spawn_round resamples host_health while a round is in flight. Coarser than
-# the 1s proc.wait tick so a healthy round pays no real sampling cost.
+# Mid-round hard floor: how often (in clock.monotonic() seconds) _spawn_round
+# resamples host_health while a round is in flight. Coarser than
+# _procwait's per-tick wait_exit cadence so a healthy round pays no real
+# sampling cost.
 _MEM_CHECK_INTERVAL_S = 10
 
 
@@ -448,6 +438,7 @@ def _spawn_round(
     defer_to_cgroup: bool = False,
     clock: Clock = SYSTEM_CLOCK,
     sample_fn=metrics.sample,
+    doorbell_fd: int | None = None,
 ) -> int:
     """Spawn `agent-runner round` in its OWN process group under an outer wall-clock
     ceiling. Breaks on the timeout DEADLINE only: on breach, emit
@@ -457,6 +448,16 @@ def _spawn_round(
     `while not stop["requested"]` check + post-round break let the current round
     finish (the documented stop contract: runbook.md). Returns
     the round returncode.
+
+    ``doorbell_fd`` (None by default — byte-identical to today, since no caller
+    passes one yet) is an extra fd to watch alongside the round leader's own
+    exit while blocked in ``wait_exit``: a readable doorbell (SIGTERM's
+    wakeup fd, or a plugin's ``ring()``) just wakes the mid-round wait early
+    to re-check the SAME `deadline`/`next_mem_check` this loop already
+    evaluates -- it adds no new branch and changes no decision, only how
+    promptly a pending stop/notification is noticed between ~10s mem-check
+    ticks. Draining that fd, if anything must, is the caller's own contract;
+    this function only ever reads its readiness via ``select``.
 
     ``host_health_cfg`` (None by default — existing callers get byte-identical
     behavior) arms the mid-round hard floor: every ~``_MEM_CHECK_INTERVAL_S``
@@ -552,13 +553,19 @@ def _spawn_round(
             def _stash_cgroup() -> None:
                 _stash_round_cgroup_state(log_dir, cg_base, cg_peak_current, cg_peak_swap)
 
+            _select_fds = (doorbell_fd,) if doorbell_fd is not None else ()
+
             while True:
-                try:
-                    returncode = proc.wait(timeout=_ROUND_POLL_TICK_S)
+                wake_deadline = (
+                    min(deadline, next_mem_check) if next_mem_check is not None else deadline
+                )
+                outcome = wait_exit(
+                    proc, deadline=wake_deadline, extra_fds=_select_fds, clock=clock
+                )
+                if outcome == "exited":
+                    returncode = proc.wait()  # already exited -- reaps immediately, no real block
                     _stash_cgroup()
                     return returncode
-                except subprocess.TimeoutExpired:
-                    pass
                 if clock.monotonic() >= deadline:
                     break
                 if next_mem_check is not None and clock.monotonic() >= next_mem_check:

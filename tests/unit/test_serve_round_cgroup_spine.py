@@ -4,9 +4,24 @@ the peak memory.current/swap over the round (not the cumulative memory.peak)."""
 
 import json
 import sys
+import time
 
+import pytest
+
+from agent_runner import _procwait
 from agent_runner.cli import _serve_cgroup, _serve_round
 from agent_runner.config import MonitorHostHealthConfig
+
+
+@pytest.fixture(autouse=True)
+def _fallback_wait_exit(monkeypatch):
+    """_spawn_round's mid-round wait is one wait_exit call; its fast path is
+    a real select/kqueue registration that blocks in real wall-clock and
+    cannot be driven by this file's fake-monotonic _TickingClock (see
+    _procwait's module docstring) -- force the poll FALLBACK so the
+    ~10s-interval ticks below stay paced by _TickingClock's virtual time
+    instead of a real select() timeout racing a fixed time.sleep(6) child."""
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
 
 
 def _events(log_dir):
@@ -26,7 +41,12 @@ def _usage(current, swap):
 class _TickingClock:
     """monotonic() advances by `step` on every call -- fakes elapsed wall time
     so a ~10s mid-round sample interval elapses without a real ~10s wait
-    (mirrors tests/integration/test_spawn_round_mem_floor.py's helper)."""
+    (mirrors tests/integration/test_spawn_round_mem_floor.py's helper).
+    sleep() is a real (short, production-cadence) block, deliberately NOT
+    advancing the fake monotonic time -- the poll fallback's own per-tick
+    pacing, keeping each tick roughly 1 real second apart so ~6 ticks elapse
+    across this file's fixed real time.sleep(6) round leaders, same as the
+    old proc.wait(timeout=1) loop did."""
 
     def __init__(self, step: float = 5.0):
         self._t = 0.0
@@ -35,6 +55,9 @@ class _TickingClock:
     def monotonic(self) -> float:
         self._t += self._step
         return self._t
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
 
 def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is_lower(

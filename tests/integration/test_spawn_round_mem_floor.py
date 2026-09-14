@@ -1,6 +1,6 @@
 """Group 3 action half, part 2: the mid-round hard floor. A pre-round gate alone
 cannot stop a single round that balloons mid-flight (metrics only sample at
-round boundaries), so _spawn_round's existing 1s proc.wait loop also samples
+round boundaries), so _spawn_round's mid-round wait_exit loop also samples
 host_health roughly every ~10s.
 
 0.2.16 requires SUSTAINED critical pressure before _terminate_round's the
@@ -34,11 +34,13 @@ block for a real ~10s interval."""
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from agent_runner.cli import _serve_round, serve_cmd
+from agent_runner import _procwait
+from agent_runner.cli import serve_cmd
 from agent_runner.config import (
     MonitorHostHealthConfig,
     _HostHealthMemoryConfig,
@@ -48,14 +50,20 @@ from tests._test_helpers import read_events_for_current_month
 
 
 @pytest.fixture(autouse=True)
-def _fast_poll_tick(monkeypatch):
+def _fallback_wait_exit(monkeypatch):
     """Every test below drives _spawn_round's mid-round loop by sample_fn
     CALL COUNT (via the sentinel-waiting children + _TickingClock), never by
-    real wall time -- so shrink the real per-tick proc.wait() from
-    production's 1s to 0.01s. This is the one file in the suite allowed to
-    do that; test_spawn_round_wedged.py keeps the real 1s tick as the sole
-    real-tick/real-TERM path."""
-    monkeypatch.setattr(_serve_round, "_ROUND_POLL_TICK_S", 0.01)
+    real wall time. _spawn_round's mid-round wait is now one wait_exit call;
+    its fast path is a real select/kqueue registration that blocks in real
+    wall-clock and cannot be driven by a fake clock (see _procwait's module
+    docstring), so force the poll FALLBACK instead, and shrink its real
+    per-tick cadence from production's 1s to 0.01s -- the direct
+    replacement for the old proc.wait(timeout=_ROUND_POLL_TICK_S) shrink.
+    This is the one file in the suite allowed to do that;
+    test_spawn_round_wedged.py keeps the real fast path + real 1s tick as
+    the sole real-tick/real-TERM path."""
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.01)
 
 
 def _sentinel_child_argv(sentinel: Path) -> list[str]:
@@ -132,7 +140,14 @@ def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
 class _TickingClock:
     """monotonic() advances by `step` on every call -- fakes elapsed wall time
     across _spawn_round's real-subprocess poll loop so a ~10s sample interval
-    elapses without the test actually waiting ~10 real seconds."""
+    elapses without the test actually waiting ~10 real seconds. sleep() is a
+    REAL (short) block, deliberately NOT advancing the fake monotonic time --
+    it is the poll FALLBACK's own per-tick pacing (shrunk to 0.01s by this
+    file's autouse fixture), the same real role production's old
+    proc.wait(timeout=_ROUND_POLL_TICK_S) played: give the real round-leader
+    subprocess repeated real chances to actually exit between ticks, so a
+    fast-exiting child is noticed before the fake clock ever races ahead to
+    a mem-check crossing that hasn't really happened yet."""
 
     def __init__(self, step: float = 5.0):
         self._t = 0.0
@@ -141,6 +156,9 @@ class _TickingClock:
     def monotonic(self) -> float:
         self._t += self._step
         return self._t
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
 
 def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure_sustained(
@@ -472,7 +490,14 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
         argv,
         log_dir / "round-1.log",
         {},
-        timeout_s=300,
+        # Comfortably larger than the other tests' 300: this is the longest
+        # tick run in the file (11 ticks + possible overshoot), and the
+        # fallback wait_exit loop reads clock.monotonic() more often per
+        # tick than the old proc.wait loop did (once inside wait_exit's own
+        # poll, on top of the outer deadline/next_mem_check checks) -- pure
+        # _TickingClock virtual-time bookkeeping, unrelated to the streak
+        # decision under test, but it burns through a tight budget faster.
+        timeout_s=3000,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)

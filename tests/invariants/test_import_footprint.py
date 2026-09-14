@@ -101,6 +101,11 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         # adds the one module, not a new transitive dependency.
         "agent_runner._plugin_sandbox",
         "agent_runner._plugin_scan",
+        # _procwait: cli/_serve_round.py imports wait_exit at module scope for
+        # the mid-round wait (0.3.4). It pulls only stdlib (os/select/
+        # subprocess/sys) + the already-loaded clock module, so this adds the
+        # one leaf module, not a new transitive dependency.
+        "agent_runner._procwait",
         "agent_runner._redact",
         "agent_runner._registry",
         "agent_runner._resolve",

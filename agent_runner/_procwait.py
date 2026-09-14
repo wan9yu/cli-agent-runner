@@ -39,11 +39,11 @@ from typing import Literal
 
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 
-# Fallback poll cadence when exit_fd() is unsupported -- matches the real-second
-# value of the busy-poll tick this module replaces
-# (agent_runner/cli/_serve_round.py's _ROUND_POLL_TICK_S). Kept as its own
-# constant rather than imported so this module has no dependency on
-# cli/_serve_round.py; the two simply agree on the same cadence.
+# Fallback poll cadence when exit_fd() is unsupported -- matches the
+# real-second value of the busy-poll tick this module's callers used to run
+# themselves before switching to wait_exit (e.g. _spawn_round's old
+# proc.wait(timeout=1)). Kept as its own constant, not imported by/from a
+# caller, so this module has no dependency on any of them.
 _POLL_TICK_S = 1.0
 
 
