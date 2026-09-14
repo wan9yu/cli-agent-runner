@@ -15,9 +15,15 @@ is needed to prove the prompt-wake property deterministically.
 from __future__ import annotations
 
 import time
+import types
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from agent_runner import config as ar_config
+from agent_runner import schedule as ar_schedule
 from agent_runner._notify import Listener, ring
 from agent_runner._throttle import _interruptible_sleep
+from agent_runner.cli import serve_cmd
 from agent_runner.cli._serve_round import _pause_poll
 from tests._clock import FakeClock
 
@@ -76,3 +82,61 @@ def test_interruptible_sleep_should_sleep_full_duration_when_default_listener():
 
     assert interrupted is False
     assert clock.slept == [30.0, 30.0, 30.0]  # NULL_LISTENER default -> plain clock.sleep
+
+
+def _paused_schedule_cfg(pause_windows: list[str]):
+    return types.SimpleNamespace(
+        schedule=ar_config.ScheduleConfig(
+            timezone="Asia/Shanghai",
+            pause_windows=tuple(ar_schedule.parse_window(w) for w in pause_windows),
+        ),
+        runtime=types.SimpleNamespace(stop_file=None),
+    )
+
+
+def test_pause_should_wake_early_on_ring_when_listener_is_live(tmp_log_dir):
+    """A production PAUSE path (not just the mid-round wait), driven through
+    serve_cmd._maybe_pause_for_schedule -- the wrapper cmd() actually calls
+    with its live listener -- wakes on a pre-queued ring() instead of riding
+    out its 30s chunk. The window stays closed across the wrapper's own
+    ``evaluate`` check AND the poll's first ``runnable_fn`` check (both hour
+    10, inside the 09:00-12:00 pause window) so the loop genuinely reaches
+    ``listener.wait`` before the window opens (hour 13, third call)."""
+    with Listener(tmp_log_dir) as listener:
+        ring(tmp_log_dir)
+        cfg = _paused_schedule_cfg(["09:00-12:00"])
+        stop = {"requested": False}
+        hours = iter([10, 10, 13])
+
+        def now_fn(_tz):
+            return datetime(2026, 8, 22, next(hours), 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+        start = time.monotonic()
+        paused = serve_cmd._maybe_pause_for_schedule(
+            cfg, tmp_log_dir, stop, now_fn=now_fn, chunk_s=30, listener=listener
+        )
+        elapsed = time.monotonic() - start
+
+        assert paused is True
+        assert elapsed < 1.0  # the doorbell drained the pre-queued ring, not a 30s chunk
+
+
+def test_pause_should_sleep_full_chunk_when_default_listener_and_no_ring(tmp_log_dir):
+    """Byte-identical companion: with no listener passed (NULL_LISTENER
+    default), the SAME wrapper still advances via the injected sleep_fn --
+    exactly the pre-doorbell behavior -- proving the live-listener wake above
+    is additive, not a change to the default path."""
+    cfg = _paused_schedule_cfg(["09:00-12:00"])
+    stop = {"requested": False}
+    hours = iter([10, 10, 13])
+    slept: list[float] = []
+
+    def now_fn(_tz):
+        return datetime(2026, 8, 22, next(hours), 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    paused = serve_cmd._maybe_pause_for_schedule(
+        cfg, tmp_log_dir, stop, now_fn=now_fn, sleep_fn=slept.append, chunk_s=30
+    )
+
+    assert paused is True
+    assert slept == [30]

@@ -13,6 +13,7 @@ from argparse import Namespace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from agent_runner._notify import NullListener
 from agent_runner.cli import serve_cmd
 from tests._clock import FakeClock
 from tests._test_helpers import make_toml_with_sections
@@ -107,7 +108,14 @@ class _FlipClock:
 def test_wait_policy_should_pause_and_resume_at_next_open_window_when_phase_closed(
     monkeypatch, tmp_path
 ):
+    """cmd() now opens a real doorbell Listener (see _open_serve_doorbell), and
+    _pause_poll prefers it over sleep_fn whenever one is live -- so this test's
+    fast-forward-via-fake-sleep trick needs the doorbell forced back to a
+    NullListener (byte-identical to pre-doorbell behavior) or the pause loop
+    would genuinely block on a real select() per chunk instead of advancing on
+    the patched SYSTEM_CLOCK.sleep below."""
     argvs = _capture_run(monkeypatch)
+    monkeypatch.setattr(serve_cmd, "open_listener", lambda log_dir: NullListener())
     clock = _FlipClock()
     monkeypatch.setattr(serve_cmd.schedule, "now_in_zone", clock)
     monkeypatch.setattr(serve_cmd.SYSTEM_CLOCK, "sleep", lambda _s: setattr(clock, "opened", True))

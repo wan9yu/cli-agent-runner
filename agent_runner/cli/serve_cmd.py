@@ -484,6 +484,7 @@ def _select_and_gate(
     wake_epoch: int | None = None,
     sandbox_engaged: bool = False,
     sample_fn=metrics.sample,
+    listener: Listener | NullListener = NULL_LISTENER,
 ):
     """Resolve the phase to launch this round, gating on memory pressure, on
     schedule, and on ``throttled_phases`` — the phases whose agent is currently
@@ -493,18 +494,22 @@ def _select_and_gate(
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
     paused and should ``continue`` from the loop top. ``sandbox_engaged`` is the
-    boot probe verdict threaded through to the pre-spawn hook seam."""
+    boot probe verdict threaded through to the pre-spawn hook seam. ``listener``
+    (default :data:`agent_runner._notify.NULL_LISTENER`) forwards unchanged into
+    every pause gate below so a SIGTERM/``ring()`` wakes whichever one is active
+    immediately instead of after up to its own chunk interval — omitted, every
+    gate stays byte-identical."""
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.
-    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn):
+    if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn, listener=listener):
         return _PAUSED_CONTINUE
     if args.ignore_schedule:
         # rotation self-resolves in the round; no --phase, but the pre-spawn gate
         # still runs on the concrete (None) outcome.
         return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
     if not _phase_aware(cfg):
-        if _maybe_pause_for_schedule(cfg, log_dir, stop):
+        if _maybe_pause_for_schedule(cfg, log_dir, stop, listener=listener):
             return _PAUSED_CONTINUE
         return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
@@ -534,6 +539,7 @@ def _select_and_gate(
             # monkeypatch schedule.now_in_zone; the clock default is a stable object
             # whose .sleep tests mutate in place, so it needs no call-time passing.
             now_fn=schedule.now_in_zone,
+            listener=listener,
         )
         return _PAUSED_CONTINUE
     if sel.skipped:
@@ -743,6 +749,7 @@ def cmd(args) -> int:
                 throttled_phases=throttled_phases,
                 wake_epoch=wake_epoch,
                 sandbox_engaged=sandbox_engaged,
+                listener=listener,
             )
             if phase_arg is _PAUSED_CONTINUE:
                 continue
@@ -813,8 +820,10 @@ def cmd(args) -> int:
             if args.once or stop["requested"]:
                 break
             # Chunked so a SIGTERM/stop_file during a long restart delay lands within
-            # one chunk.
-            _interruptible_sleep(delay, stop, should_stop=_stop_file_predicate(stop_file))
+            # one chunk (immediately, via listener, when the doorbell is live).
+            _interruptible_sleep(
+                delay, stop, should_stop=_stop_file_predicate(stop_file), listener=listener
+            )
     finally:
         pid_file.unlink()
         _release_serve_lock(serve_lock_fd)
