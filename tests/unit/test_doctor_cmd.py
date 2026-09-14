@@ -226,3 +226,27 @@ def test_doctor_should_report_phase_window_overlap_as_a_failing_check_when_prese
 
     overlap_check = next(r for r in results if r.name == "phase_window_overlap")
     assert overlap_check.ok is False
+
+
+def test_doctor_should_report_cgroup_delegation_state_in_json(tmp_path, capsys):
+    args = _args(_write_min_config(tmp_path), json=True)
+
+    doctor_cmd.cmd_doctor(args)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert "cgroup" in payload
+    assert "delegated" in payload["cgroup"]
+    assert "cgroup_path" in payload["cgroup"]
+    assert "memory_high" in payload["cgroup"]
+
+
+def test_doctor_should_never_emit_an_event_when_probing_cgroup(tmp_path, monkeypatch):
+    from agent_runner import events
+
+    def _fail_if_called(*a, **k):
+        raise AssertionError("doctor must never emit an event")
+
+    monkeypatch.setattr(events, "emit", _fail_if_called)
+    args = _args(_write_min_config(tmp_path))
+
+    doctor_cmd.cmd_doctor(args)

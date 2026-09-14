@@ -16,6 +16,7 @@ class DoctorReport:
     overlaps: list[phase_select.WindowOverlap]
     plan: list[dict]
     sandbox: dict
+    cgroup: dict
 
 
 def add_parser(sub, parent) -> None:
@@ -43,6 +44,23 @@ def _plan(cfg, rounds: int) -> list[dict]:
     return out
 
 
+def _cgroup_report() -> dict:
+    """Read-only cgroup delegation-readiness snapshot for `doctor` -- never
+    emits an event (unlike serve's `_probe_and_emit_cgroup_defer`, which
+    shares the same underlying `metrics` probes but writes
+    `host_cgroup_memory_limit`). `doctor` never launches the agent or writes
+    anything; this section is the same discipline applied to cgroup state."""
+    from agent_runner import metrics
+
+    limits = metrics.cgroup_memory_limits()
+    return {
+        "cgroup_path": limits["cgroup_path"],
+        "memory_max": limits["memory_max"],
+        "memory_high": metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"]),
+        "delegated": metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"]),
+    }
+
+
 def cmd_doctor(args) -> int:
     from agent_runner._sandbox_probe import doctor_snapshot
 
@@ -52,6 +70,7 @@ def cmd_doctor(args) -> int:
         overlaps=phase_select.find_phase_window_overlaps(cfg),
         plan=_plan(cfg, args.rounds),
         sandbox=doctor_snapshot(cfg),
+        cgroup=_cgroup_report(),
     )
     json_mode = getattr(args, "json", False)
     if json_mode:
@@ -101,4 +120,14 @@ def _format(report: DoctorReport) -> str:
         lines.append("  third-party plugin checksums (paste into [plugins.pin]):")
         for name, digest in sorted(hashes.items()):
             lines.append(f'    {name} = "{digest}"')
+    cgroup = report.cgroup
+    lines.append("cgroup:")
+    lines.append(f"  cgroup_path: {cgroup['cgroup_path']}")
+    lines.append(f"  memory_max: {cgroup['memory_max']}")
+    lines.append(f"  memory_high: {cgroup['memory_high']}")
+    lines.append(f"  delegated: {cgroup['delegated']}")
+    if cgroup["delegated"] is False:
+        from agent_runner.cli._serve_cgroup import _UNDELEGATED_HINT
+
+        lines.append(f"  hint: {_UNDELEGATED_HINT}")
     return "\n".join(lines)
