@@ -1,0 +1,122 @@
+"""Tests for _procwait.exit_fd / wait_exit.
+
+Real subprocesses throughout -- exercised on whichever fast path the host
+actually supports (macOS kqueue locally; Linux pidfd on CI), transparently,
+by calling the same public functions. The fallback path is forced explicitly
+by monkeypatching exit_fd to None, per the module's own documented contract.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import time
+
+from agent_runner import _procwait
+from agent_runner._procwait import exit_fd, wait_exit
+from agent_runner.clock import SYSTEM_CLOCK
+
+
+def test_exit_fd_should_return_a_readable_fd_for_a_live_process():
+    proc = subprocess.Popen(["sleep", "5"])
+
+    try:
+        fd = exit_fd(proc)
+
+        assert fd is not None
+        os.close(fd)
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
+def test_wait_exit_should_return_exited_when_proc_exits():
+    proc = subprocess.Popen(["sleep", "0.2"])
+
+    outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5)
+
+    assert outcome == "exited"
+    assert proc.returncode is None  # wait_exit itself did not reap
+
+    rc = proc.poll()  # the test reaps
+    assert rc is not None
+
+
+def test_wait_exit_should_return_timeout_when_deadline_passes_before_exit():
+    proc = subprocess.Popen(["sleep", "5"])
+
+    try:
+        start = time.monotonic()
+        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 0.15)
+        elapsed = time.monotonic() - start
+
+        assert outcome == "timeout"
+        assert elapsed < 1.0  # sub-second-tight, not tick-quantized
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
+def test_wait_exit_should_return_woken_when_extra_fd_readable():
+    proc = subprocess.Popen(["sleep", "5"])
+    read_fd, write_fd = os.pipe()
+
+    try:
+        os.write(write_fd, b"x")
+        start = time.monotonic()
+        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5, extra_fds=(read_fd,))
+        elapsed = time.monotonic() - start
+
+        assert outcome == "woken"
+        assert elapsed < 1.0  # promptly, not after the deadline
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+        proc.terminate()
+        proc.wait()
+
+
+def test_wait_exit_should_fall_back_to_poll_when_exit_fd_none(monkeypatch):
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.05)
+    proc = subprocess.Popen(["sleep", "0.2"])
+
+    outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5)
+
+    assert outcome == "exited"
+    assert proc.returncode == 0  # the poll fallback reaps synchronously, unlike the fast path
+
+
+def test_wait_exit_should_honor_extra_fds_promptly_during_poll_fallback(monkeypatch):
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 5.0)
+    proc = subprocess.Popen(["sleep", "5"])
+    read_fd, write_fd = os.pipe()
+
+    try:
+        os.write(write_fd, b"x")
+        start = time.monotonic()
+        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5, extra_fds=(read_fd,))
+        elapsed = time.monotonic() - start
+
+        assert outcome == "woken"
+        assert elapsed < 1.0  # not stuck behind the 5s poll tick
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+        proc.terminate()
+        proc.wait()
+
+
+def test_wait_exit_should_return_timeout_during_poll_fallback_with_no_extra_fds(monkeypatch):
+    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.05)
+    proc = subprocess.Popen(["sleep", "5"])
+
+    try:
+        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 0.15)
+
+        assert outcome == "timeout"
+    finally:
+        proc.terminate()
+        proc.wait()
