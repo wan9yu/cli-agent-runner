@@ -162,4 +162,6 @@ def _extract_usage(stats: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-PLUGIN = PluginManifest(name="gemini", post_round_hooks=(GeminiErrorDetector(),), sigterm_cooperative=True)
+PLUGIN = PluginManifest(
+    name="gemini", post_round_hooks=(GeminiErrorDetector(),), sigterm_cooperative=True
+)
