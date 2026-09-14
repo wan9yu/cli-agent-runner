@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A stop (`SIGTERM` / `agent-runner serve stop`) during a schedule, memory, or phase pause, or during the inter-round restart delay, now takes effect near-instantly instead of after the current pause chunk (up to 30 s).
 - `agent-runner events --tail` shows a new matching event within a drain cycle of its being written, instead of on a ~1 s poll.
 
-No change to when a round is deferred, terminated, or reaped — only how promptly and how cheaply the supervisor reacts.
+No change to the rules for when a round is deferred, terminated, or reaped. The mid-round memory check and the round budget now take effect on schedule instead of up to ~1 s late, so within that window the sustained-pressure floor or the budget cutoff can act on a round the old ~1 s poll would have seen finish first.
 
 ## [0.3.3] - 2026-09-14
 
