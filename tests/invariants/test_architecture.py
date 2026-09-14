@@ -21,6 +21,10 @@ ALLOWED_SERVE_IMPORTS = {
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"metrics", "phase_select", "schedule"}),
+    (
+        "agent_runner._notify",
+        {"Listener", "NullListener", "NULL_LISTENER", "open_listener"},
+    ),
     ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.agent_runtime", {"_detect_container_run"}),
@@ -96,6 +100,7 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
 }
 ALLOWED_SERVE_ROUND_FROM = [
     ("agent_runner", {"_resolve", "events", "host_health", "hooks", "metrics"}),
+    ("agent_runner._notify", {"Listener", "NullListener", "NULL_LISTENER"}),
     ("agent_runner._plugin_sandbox", {"run_hook_sandboxed"}),
     ("agent_runner._procwait", {"wait_exit"}),
     ("agent_runner._sandbox_probe", {"hook_route"}),

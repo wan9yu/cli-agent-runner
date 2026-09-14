@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import _resolve, events, hooks, host_health, metrics
+from agent_runner._notify import NULL_LISTENER, Listener, NullListener
 from agent_runner._plugin_sandbox import run_hook_sandboxed
 from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
@@ -118,17 +119,38 @@ def _pressure_is_critical(pressure: host_health.Pressure | None) -> bool:
     return pressure is not None and pressure.severity == "critical"
 
 
-def _pause_poll(stop, stop_file, runnable_fn, sleep_fn, chunk_s) -> bool:
+def _pause_poll(
+    stop,
+    stop_file,
+    runnable_fn,
+    sleep_fn,
+    chunk_s,
+    *,
+    listener: Listener | NullListener = NULL_LISTENER,
+    clock: Clock = SYSTEM_CLOCK,
+) -> bool:
     """Chunked (<= chunk_s) sleep until ``runnable_fn()`` is True; break on
     ``stop["requested"]`` or ``stop_file``. Returns True iff a window opened (a
     stop / stop_file break returns False — the pause was interrupted, not resumed).
-    Shared by both pause entry points; only the runnable predicate + sleep differ."""
+    Shared by both pause entry points; only the runnable predicate + sleep differ.
+
+    ``listener`` (default :data:`agent_runner._notify.NULL_LISTENER`) wakes the
+    per-chunk nap early on a SIGTERM/SIGINT or a cross-process ``ring()`` instead of
+    riding out the full ``chunk_s``. Unlike :func:`agent_runner._throttle.
+    _interruptible_sleep`, ``sleep_fn`` is KEPT (not replaced) — every existing
+    caller already injects ``sleep_fn=clock.sleep`` bound to its OWN clock, and a
+    ``NullListener`` default would sleep on :data:`SYSTEM_CLOCK` instead, breaking
+    a ``FakeClock``-driven caller; branching on ``listener.fd`` preserves that
+    injection byte-for-byte when no live listener is passed."""
     while not stop["requested"]:
         if stop_file is not None and stop_file.exists():
             return False
         if runnable_fn():
             return True
-        sleep_fn(chunk_s)
+        if listener.fd is not None:
+            listener.wait(chunk_s, clock=clock)
+        else:
+            sleep_fn(chunk_s)
     return False
 
 
@@ -140,6 +162,7 @@ def _maybe_pause_for_memory_pressure(
     sample_fn=metrics.sample,
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
+    listener: Listener | NullListener = NULL_LISTENER,
 ) -> bool:
     """Pre-round admission gate (Group 3 action half): defer the next round
     while host_health reports CRITICAL pressure (narrowed from ANY --
@@ -153,7 +176,10 @@ def _maybe_pause_for_memory_pressure(
     ``round_deferred``/``round_resumed`` (like ``schedule_paused``/
     ``schedule_resumed``) so a long defer does not trip
     ``detect_supervisor_stale`` (see its suppression set in
-    ``_monitor_detectors.py``)."""
+    ``_monitor_detectors.py``). ``listener`` (default
+    :data:`agent_runner._notify.NULL_LISTENER`) forwards into :func:`_pause_poll` so
+    a SIGTERM/``ring()`` wakes the defer poll immediately instead of after up to
+    ``chunk_s``; omitted, this stays byte-identical."""
     pressure = _memory_pressure_now(cfg, log_dir, sample_fn)
     if not _pressure_is_critical(pressure):
         return False
@@ -167,6 +193,8 @@ def _maybe_pause_for_memory_pressure(
         lambda: not _pressure_is_critical(_memory_pressure_now(cfg, log_dir, sample_fn)),
         clock.sleep,
         chunk_s,
+        listener=listener,
+        clock=clock,
     ):
         emit_round_resumed(log_dir, deferred_for_s=int(clock.monotonic() - started))
     return True

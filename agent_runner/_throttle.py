@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from agent_runner._notify import NULL_LISTENER, Listener, NullListener
 from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.events import (
@@ -594,12 +595,21 @@ def _interruptible_sleep(
     chunk_s: int = 30,
     should_stop: Callable[[], bool] | None = None,
     deadline_epoch: float | None = None,
+    listener: Listener | NullListener = NULL_LISTENER,
 ) -> bool:
     """Sleep ``total_s`` in ``<= chunk_s`` slices, re-checking ``stop`` (and, if given,
     ``should_stop()``) at each boundary; return True iff ``stop["requested"]`` OR
     ``should_stop()`` cut it short. Shared by the serve restart delay and
     :func:`_apply_back_off` so a SIGTERM or a stop_file lands within one chunk instead
     of after the full sleep (e.g. the 8h back-off cap).
+
+    ``listener`` (default :data:`agent_runner._notify.NULL_LISTENER`) is the single
+    wakeup mechanism for the per-chunk nap below: a real ``Listener`` wakes early on a
+    SIGTERM/SIGINT (via ``signal.set_wakeup_fd``) or a cross-process ``ring()``,
+    dropping the wait to milliseconds instead of riding out the full ``chunk_s``; the
+    default ``NullListener`` degrades ``listener.wait(nap, clock=clock)`` to a plain
+    ``clock.sleep(nap)`` on the SAME clock, so every existing caller (none of which
+    pass ``listener``) stays byte-identical.
 
     ``should_stop`` matches :func:`_pause_poll`'s contract (cli/_serve_round.py): a
     zero-arg predicate the caller closes over its own stop_file check with, so this
@@ -627,7 +637,7 @@ def _interruptible_sleep(
         if deadline_epoch is not None and clock.epoch() >= deadline_epoch:
             return False
         nap = min(float(chunk_s), remaining)
-        clock.sleep(nap)
+        listener.wait(nap, clock=clock)
         remaining -= nap
     return False
 

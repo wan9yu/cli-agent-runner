@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import metrics, phase_select, schedule
+from agent_runner._notify import NULL_LISTENER, Listener, NullListener, open_listener
 from agent_runner._serve_policy import PERMANENT_CONFIG_EXIT
 from agent_runner._substrate import compute_git_head, compute_paths_hash
 from agent_runner._throttle import (
@@ -88,6 +89,24 @@ def _release_serve_lock(fd: int) -> None:
     os.close(fd)
 
 
+def _open_serve_doorbell(log_dir: Path) -> Listener | NullListener:
+    """Open the process-lifetime doorbell Listener for this serve process and
+    register its fd with signal.set_wakeup_fd, so a SIGTERM/SIGINT lands on the
+    SAME fd every _interruptible_sleep/_pause_poll wait already selects on, plus
+    any ring() from this or another process. NullListener.fd is None -> set_wakeup_fd
+    is skipped (the existing graceful handler + stop['requested'] flag stays the
+    only signal path, exactly as today -- no regression).
+
+    Never __exit__'d: the serve listener is process-lifetime, not scoped to a
+    `with` block (that would re-indent cmd()'s whole loop and blow its LOC
+    budget). A leaked FIFO self-heals -- the next cross-process ring() hits
+    ENXIO on the dead reader and unlinks it (see _notify.ring)."""
+    listener = open_listener(log_dir)
+    if listener.fd is not None:
+        signal.set_wakeup_fd(listener.fd, warn_on_full_buffer=False)
+    return listener
+
+
 def _resolve_max_rounds(*, cli_value: int | None, config_value: int | None) -> int | None:
     """Resolve effective max_rounds: CLI flag overrides [runtime] config value.
 
@@ -130,13 +149,17 @@ def _maybe_pause_for_schedule(
     now_fn=schedule.now_in_zone,
     sleep_fn=SYSTEM_CLOCK.sleep,
     chunk_s: int = 30,
+    listener: Listener | NullListener = NULL_LISTENER,
 ) -> bool:
     """If the current time is outside the run schedule, pause until it opens.
 
     Returns True if a pause was entered (caller should ``continue`` so the
     top-of-loop guards re-run), False if runnable now. During a pause, sleeps
     in <= chunk_s slices so SIGTERM / SIGINT (which set stop["requested"]) lands
-    within one slice.
+    within one slice; ``listener`` (default
+    :data:`agent_runner._notify.NULL_LISTENER`) wakes that poll immediately on a
+    SIGTERM/``ring()`` instead of after up to ``chunk_s`` — omitted, this stays
+    byte-identical.
 
     We do NOT check the self-terminate sentinel here: no round runs during a
     pause, so no new sentinel can appear, and any pre-existing one already broke
@@ -173,6 +196,8 @@ def _maybe_pause_for_schedule(
         ),
         sleep_fn,
         chunk_s,
+        listener=listener,
+        clock=SYSTEM_CLOCK,
     ):
         emit_schedule_resumed(log_dir, paused_for_s=int(SYSTEM_CLOCK.monotonic() - started))
     return True
@@ -206,6 +231,7 @@ def _pause_until_selectable(
     now_fn=schedule.now_in_zone,
     clock: Clock = SYSTEM_CLOCK,
     chunk_s: int = 30,
+    listener: Listener | NullListener = NULL_LISTENER,
 ) -> None:
     """Phase-aware analogue of _maybe_pause_for_schedule: idle until any candidate
     phase's window opens. ``sel`` is the paused Selection already computed by the
@@ -220,7 +246,10 @@ def _pause_until_selectable(
     so an all-throttled round resumes when the throttle clears even though no window
     ever opens. ``clock`` supplies epoch/sleep/monotonic (inject a ``FakeClock`` to
     pin the wake); ``now_fn`` stays a separate seam — the tz-aware datetime the pure
-    schedule core needs, which tests monkeypatch by name."""
+    schedule core needs, which tests monkeypatch by name. ``listener`` (default
+    :data:`agent_runner._notify.NULL_LISTENER`) forwards into :func:`_pause_poll` so
+    a SIGTERM/``ring()`` wakes this poll immediately instead of after up to
+    ``chunk_s`` — omitted, this stays byte-identical."""
     candidates = [
         (p, cfg.profile_for(p).schedule)
         for p in phase_select.candidate_phases(cfg, round_num)
@@ -250,6 +279,8 @@ def _pause_until_selectable(
         ),
         clock.sleep,
         chunk_s,
+        listener=listener,
+        clock=clock,
     ):
         emit_schedule_resumed(log_dir, paused_for_s=int(clock.monotonic() - started))
 
@@ -639,6 +670,7 @@ def cmd(args) -> int:
     # loop will not start rather than killing with the default handler.
     signal.signal(signal.SIGTERM, graceful)
     signal.signal(signal.SIGINT, graceful)
+    listener = _open_serve_doorbell(log_dir)
 
     round_env = {**os.environ, "AGENT_RUNNER_LOG_DIR": str(log_dir)}
     fail_code, effective_max_rounds = _prepare_loop(cfg, args, log_dir)
@@ -748,6 +780,7 @@ def cmd(args) -> int:
                 round_num=round_num,
                 host_health_cfg=cfg.monitor.host_health,
                 defer_to_cgroup=defer_to_cgroup,
+                doorbell_fd=listener.fd,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)

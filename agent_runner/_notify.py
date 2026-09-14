@@ -179,6 +179,13 @@ class NullListener:
         return False
 
 
+# Stateless (fd=None, wait==clock.sleep, no-op ctx mgr), so one module-level
+# instance is a safe default arg -- the stable-singleton default (mirrors
+# SYSTEM_CLOCK) every non-serve caller of a listener-aware function keeps by
+# not passing one, staying byte-identical to its pre-doorbell behavior.
+NULL_LISTENER = NullListener()
+
+
 def open_listener(log_dir: Path) -> Listener | NullListener:
     """Try to construct a live ``Listener``; degrade to a ``NullListener``
     on any ``OSError`` from ``mkfifo``/``open`` (e.g. a read-only
