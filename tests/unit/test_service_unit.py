@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner._serve_policy import timeout_budget
 from agent_runner.config import (
     AgentConfig,
     Config,
@@ -127,6 +128,29 @@ def test_render_serve_unit_should_add_grace_budget_to_timeout_when_rendered(
     )
 
     assert f"TimeoutStopSec={expected}" in body
+
+
+def test_render_serve_unit_should_widen_timeout_stop_sec_by_wrapup_grace_s_when_set(
+    tmp_path: Path,
+) -> None:
+    cfg = Config(
+        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_budget_s=600,
+            wrapup_grace_s=45,
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+    )
+    baseline_stop, _ = timeout_budget(600)
+
+    body = render_serve_unit(
+        cfg, script_path=tmp_path / ".venv" / "bin" / "agent-runner", config_path=_toml(tmp_path)
+    )
+
+    assert f"TimeoutStopSec={baseline_stop + 45}" in body
 
 
 def test_render_serve_unit_should_substitute_paths_when_rendered(tmp_path: Path) -> None:
