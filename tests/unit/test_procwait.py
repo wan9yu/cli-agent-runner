@@ -42,6 +42,20 @@ def test_wait_exit_should_return_exited_when_proc_exits():
     assert rc is not None
 
 
+def test_wait_exit_should_short_circuit_to_exited_without_reopening_a_reaped_pid(monkeypatch):
+    proc = subprocess.Popen(["true"])
+    proc.wait()  # this owner reaps (as Popen.terminate()'s poll does) -> pid freed, maybe reused
+
+    def _fail_if_called(_proc):
+        raise AssertionError("wait_exit must not re-open exit_fd on an already-reaped pid")
+
+    monkeypatch.setattr(_procwait, "exit_fd", _fail_if_called)
+
+    outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5)
+
+    assert outcome == "exited"
+
+
 def test_wait_exit_should_return_timeout_when_deadline_passes_before_exit():
     proc = subprocess.Popen(["sleep", "5"])
 

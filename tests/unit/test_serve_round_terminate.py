@@ -29,6 +29,7 @@ class _WedgedProc:
     time out rather than ever observing an exit."""
 
     pid = 4242
+    returncode = None  # live/unreaped, like a running Popen
 
     def terminate(self):
         pass

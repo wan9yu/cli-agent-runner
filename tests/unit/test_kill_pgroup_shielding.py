@@ -24,6 +24,7 @@ class _NeverExitsProc:
 
     def __init__(self, pid: int = 4242):
         self.pid = pid
+        self.returncode = None  # live/unreaped, like a running Popen
 
     def poll(self):
         return None

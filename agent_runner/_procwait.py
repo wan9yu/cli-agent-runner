@@ -120,7 +120,18 @@ def wait_exit(
     short, fixed cadence via ``clock.sleep``, with the same two return
     meanings, so a test driving this path with a fake clock still makes
     progress without blocking on real wall time.
+
+    Short-circuits to ``"exited"`` when ``proc.returncode`` is already set:
+    this owner has already reaped it, so its pid is freed (and may be reused).
+    Re-opening ``exit_fd(proc.pid)`` on a freed pid could bind pidfd/kqueue to
+    an UNRELATED process and ride out the whole deadline as a false
+    ``"timeout"``. The most common way this happens is ``Popen.terminate()``,
+    whose ``send_signal`` calls ``proc.poll()`` first and reaps a leader that
+    exited in the microseconds before the signal.
     """
+    if proc.returncode is not None:
+        return "exited"  # already reaped by this owner -- never re-open a pid we no longer hold
+
     fd = exit_fd(proc)
 
     if fd is None:
