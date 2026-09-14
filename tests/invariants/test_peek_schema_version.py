@@ -72,7 +72,7 @@ def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) ->
         f"schema_version regressed: got {payload['schema_version']!r}, "
         f"expected >= {PEEK_SCHEMA_VERSION!r}"
     )
-    assert payload["schema_version"] == "2.3"
+    assert payload["schema_version"] == "2.4"
     assert "plugins" in payload
     assert isinstance(payload["plugins"], dict)
     assert "event_kinds" in payload["plugins"]

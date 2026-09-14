@@ -19,7 +19,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "2.3"
+PEEK_SCHEMA_VERSION = "2.4"
 
 
 def cfg_from_args(args) -> Config:
@@ -98,7 +98,10 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
             from agent_runner import _sandbox_probe, disabled_plugin_names
-            from agent_runner._plugin_manifest import cooperative_manifest_names
+            from agent_runner._plugin_manifest import (
+                cooperative_manifest_names,
+                resolve_sigterm_grace_s,
+            )
 
             plugins_block = {
                 "event_kinds": plugin_event_kinds(),
@@ -112,6 +115,9 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
             }
             if cfg is not None:
                 plugins_block.update(_sandbox_probe.peek_snapshot(cfg))
+                plugins_block["resolved_sigterm_grace_s"] = resolve_sigterm_grace_s(
+                    cfg.agent.binary, cfg.agent.sigterm_grace_s
+                )
             wrapped = {
                 "schema_version": PEEK_SCHEMA_VERSION,
                 "plugins": plugins_block,

@@ -45,6 +45,32 @@ def test_peek_snapshot_should_include_achieved_capability_fields_when_called(
     assert "unconfined_reason" in sandbox
 
 
+def test_emit_plugins_block_should_report_resolved_sigterm_grace_when_cfg_given(
+    tmp_path: Path, capsys
+) -> None:
+    import json
+
+    from agent_runner.api_types import ProjectState, ServiceMode, ServiceStatus, SystemMetrics
+    from agent_runner.cli.common import emit
+
+    cfg = make_cfg(tmp_path)  # default agent binary "true" -- not in cooperative_manifest_names()
+    state = ProjectState(
+        project="t",
+        status={},
+        defenses=[],
+        current_round=None,
+        recent_rounds=[],
+        orphan=None,
+        system=SystemMetrics(mem_total_mb=1, mem_available_mb=1, disk_used_pct=0.0),
+        service=ServiceStatus(mode=ServiceMode.NONE, active=False),
+    )
+
+    emit(state, json_mode=True, cfg=cfg)
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["plugins"]["resolved_sigterm_grace_s"] == 5
+
+
 def test_peek_snapshot_should_surface_a_name_squatter_as_third_party_when_pins_checked(
     tmp_path: Path, monkeypatch
 ) -> None:

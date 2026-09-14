@@ -17,6 +17,7 @@ class DoctorReport:
     plan: list[dict]
     sandbox: dict
     cgroup: dict
+    sigterm_grace: dict
 
 
 def add_parser(sub, parent) -> None:
@@ -65,12 +66,23 @@ def cmd_doctor(args) -> int:
     from agent_runner._sandbox_probe import doctor_snapshot
 
     cfg = cfg_from_args(args)
+    is_cooperative = cfg.agent.binary is not None and (
+        cfg.agent.binary in _plugin_manifest.cooperative_manifest_names()
+    )
+    sigterm_grace = {
+        "agent": cfg.agent.binary,
+        "cooperative": is_cooperative,
+        "resolved_s": _plugin_manifest.resolve_sigterm_grace_s(
+            cfg.agent.binary, cfg.agent.sigterm_grace_s
+        ),
+    }
     report = DoctorReport(
         checks=startup_check.run_battery(cfg),
         overlaps=phase_select.find_phase_window_overlaps(cfg),
         plan=_plan(cfg, args.rounds),
         sandbox=doctor_snapshot(cfg),
         cgroup=_cgroup_report(),
+        sigterm_grace=sigterm_grace,
     )
     json_mode = getattr(args, "json", False)
     if json_mode:
@@ -122,6 +134,11 @@ def _format(report: DoctorReport) -> str:
             lines.append(f'    {name} = "{digest}"')
     cooperative = _plugin_manifest.cooperative_manifest_names()
     lines.append(f"cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
+    sg = report.sigterm_grace
+    lines.append(
+        f"sigterm grace: {sg['resolved_s']}s "
+        f"({'cooperative' if sg['cooperative'] else 'non-cooperative'}, agent={sg['agent']})"
+    )
     cgroup = report.cgroup
     lines.append("cgroup:")
     lines.append(f"  cgroup_path: {cgroup['cgroup_path']}")

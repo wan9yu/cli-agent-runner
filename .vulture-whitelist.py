@@ -158,6 +158,7 @@ overlaps
 plan
 sandbox
 cgroup
+sigterm_grace
 
 # agent_runner.config.models.AgentConfig
 command

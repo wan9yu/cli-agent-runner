@@ -259,3 +259,12 @@ def test_doctor_should_print_cooperative_preset_names(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "cooperative presets:" in out
+
+
+def test_doctor_should_print_resolved_sigterm_grace(tmp_path, capsys):
+    args = _args(_write_min_config(tmp_path))
+
+    doctor_cmd.cmd_doctor(args)
+
+    out = capsys.readouterr().out
+    assert "sigterm grace:" in out
