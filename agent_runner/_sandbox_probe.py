@@ -263,17 +263,33 @@ def peek_snapshot(cfg) -> dict:
     }
 
 
+def _libseccomp_present() -> bool:
+    """True if ``libseccomp.so.2`` (the shared library ``pyseccomp`` shims) can
+    be dlopen'd on this host. A direct ``ctypes.CDLL`` rather than
+    ``ctypes.util.find_library("seccomp")``: on Linux the latter falls back to
+    spawning ``gcc``/``ld`` (slow, and a read-only diagnostic must not shell
+    out -- it also trips subprocess mocks). Off-Linux the ``.so.2`` name simply
+    fails to load and this returns False, which is correct (no libseccomp)."""
+    import ctypes
+
+    try:
+        ctypes.CDLL("libseccomp.so.2")
+    except OSError:
+        return False
+    return True
+
+
 def doctor_snapshot(cfg) -> dict:
     """``doctor``'s read-only sandbox report -- the SINGLE source for
     ``doctor``'s sandbox block (folds what were two doctor_cmd-local helpers,
     ``_sandbox_report`` and ``_third_party_plugin_checksums``, into one).
 
-    ``libseccomp_present`` is a cheap presence probe
-    (``ctypes.util.find_library``) distinct from ``probe_sandbox_capability``'s
-    filter-CONSTRUCTING check -- it answers "is ``libseccomp.so.2`` even
-    installed on this host" rather than "can this process actually build a
-    filter with it," since ``pyseccomp`` is a ctypes shim over that shared
-    library.
+    ``libseccomp_present`` is a cheap presence probe (a direct
+    ``ctypes.CDLL("libseccomp.so.2")`` -- see ``_libseccomp_present``) distinct
+    from ``probe_sandbox_capability``'s filter-CONSTRUCTING check -- it answers
+    "is ``libseccomp.so.2`` even installed on this host" rather than "can this
+    process actually build a filter with it," since ``pyseccomp`` is a ctypes
+    shim over that shared library.
 
     ``third_party_plugin_hashes`` gives every discovered THIRD-PARTY
     (non-builtin) plugin's computed sha256, keyed by entry-point name -- the
@@ -290,8 +306,6 @@ def doctor_snapshot(cfg) -> dict:
     masking exactly the threat this report exists to make visible. Mirrors
     ``peek_snapshot``'s identical recipe.
     """
-    import ctypes.util
-
     from agent_runner._plugin_checksum import compute_plugin_checksum
 
     probe = probe_sandbox_capability()
@@ -306,7 +320,7 @@ def doctor_snapshot(cfg) -> dict:
         "achieved_tier": probe.achieved_tier,
         "landlock_abi": probe.landlock_abi,
         "seccomp": probe.seccomp,
-        "libseccomp_present": ctypes.util.find_library("seccomp") is not None,
+        "libseccomp_present": _libseccomp_present(),
         "unconfined_reason": probe.unconfined_reason,
         "third_party_plugin_hashes": hashes,
     }

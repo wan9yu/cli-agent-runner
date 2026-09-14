@@ -25,6 +25,12 @@ class _FakeProc:
     def communicate(self, timeout=None):
         return "", ""
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
 
 def _fake_popen(calls: list[list[str]]):
     def make(argv, *a, **k):
