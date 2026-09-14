@@ -38,10 +38,12 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_hook_contract_docs.py",
     "test_module_sizes.py",
     "test_no_ai_signatures.py",
+    "test_no_asyncio_select.py",
     "test_no_internal_refs.py",
     "test_no_price_logic.py",
     "test_no_pytest_skip_on_parse_fail.py",
     "test_no_raw_time.py",
+    "test_procwait_shield.py",
     "test_repo_constants_patched_in_tests.py",
     "test_set_diff_for_auto_tool_classification.py",
 )
