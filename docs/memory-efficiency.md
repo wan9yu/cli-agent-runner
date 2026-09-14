@@ -456,17 +456,18 @@ Unchanged: `psutil>=5.9` is still the only runtime dependency. No new dependency
 
 ### 3. Per-round allocation growth
 
-`test_round_alloc_growth.py` green — no new retained per-round growth. The rewrite also **reduces transient per-round work**: the old mid-round loop iterated once per ~1 s tick for the whole round (hundreds of loop bodies over a long round), whereas the new loop blocks in one `wait_exit` and wakes only when the round exits, the ~10 s mem-check is due, or a signal/doorbell fires. Idle-round loop iterations drop from ~`round_budget_s` to ~`round_budget_s/10` (host-health armed) or 1 (unarmed).
+`test_round_alloc_growth.py` green — no new retained per-round growth. The rewrite also **reduces transient per-round work**: the old mid-round loop iterated once per ~1 s tick for the whole round (hundreds of loop bodies over a long round), whereas the new loop blocks in one `wait_exit` and wakes only when the round exits or the ~10 s mem-check is due. Mid-round wakeups per round drop from ~`round_budget_s` (1/s busy-poll) to ~`round_budget_s / 10` (host-health armed) or 1 (unarmed) — and, crucially, are **independent of how many events the round emits**: `_spawn_round` watches only the round leader's own exit fd, not the doorbell (a design-review ruling removed the mid-round doorbell watch as a no-op that consumed no decision — see below). Measured: a 2 s round that emitted ~256 events mid-flight woke `wait_exit` exactly **1** time.
 
 ### Efficiency (internal wait) — the headline
 
 This is the release whose whole point is removing an internal wait, and it does. On the fast path (`pidfd`/`kqueue` — the CI and production norm):
-- **Idle CPU wakeups during a round drop from ~1/s to ~0** — the supervisor sleeps in one `select`/`kqueue` call until something real happens instead of waking every second to re-check a clock.
-- **Signal reaction goes from up-to-`chunk_s` (≤30 s) to near-instant** — a `SIGTERM`/`serve stop` during a schedule/memory/phase pause or the restart delay wakes the wait immediately (via `signal.set_wakeup_fd` on the same doorbell fd) instead of riding out the current 30 s chunk.
+- **Idle CPU wakeups during a round drop from ~1/s to ~0** — the supervisor sleeps in one `select`/`kqueue` call until the round leader actually exits (or the next ~10 s mem-check is due), instead of waking every second to re-check a clock.
+- **Mid-round wakeups are event-rate-independent** — because `_spawn_round` no longer watches the doorbell, a round emitting a burst of events costs it zero extra wakeups (measured: 1 wake for a 2 s round with ~256 events). An earlier iteration DID watch it and, without a drain, busy-spun (measured 445,795 `wait_exit` calls in a 1.5 s round); rather than paper over that with a drain, the design review removed the watch entirely — the wake advanced no mid-round decision — so the failure mode is structurally gone, not merely guarded.
+- **Signal reaction goes from up-to-`chunk_s` (≤30 s) to near-instant** — a `SIGTERM`/`serve stop` during a schedule/memory/phase pause or the restart delay wakes that wait immediately (via `signal.set_wakeup_fd` on the pause/sleep doorbell fd) instead of riding out the current 30 s chunk. (Mid-round, a SIGTERM is handled by the signal handler + the post-round stop check, unchanged — the round runs to its natural end/deadline either way.)
 - **`events --tail` latency drops from ≤1 s to one drain cycle (sub-ms).**
-- A regression test pins the failure mode this could have introduced: an un-drained level-triggered doorbell would busy-spin the mid-round loop (measured 445,795 `wait_exit` calls in a 1.5 s round); the drained implementation makes ~2 — a permanent guard against the efficiency win silently inverting.
+- **`events.emit`'s doorbell ring got cheaper too** — it lists live listeners with `os.scandir` + a suffix check instead of `pathlib.glob("*.fifo")`, skipping a `Path` allocation and the fnmatch machinery on the highest-frequency durable-write path.
 
-The decision surface is byte-identical: none of this changes *when* a round is deferred, terminated, or reaped — only how promptly (and how cheaply) the supervisor notices.
+The decision RULES are byte-identical: none of this changes the inputs→verdict for when a round is deferred, terminated, or reaped. One honest boundary note: the ~10 s mem-check tick and the `round_budget_s` deadline now fire on schedule instead of up to ~1 s late (the old poll-tick lag), so within that ≤1 s window the sustained-pressure floor or the budget cutoff can act on a round the old poll would have seen finish first — a more-precise floor, not a rule change.
 
 ### Constrained-host (honesty)
 
