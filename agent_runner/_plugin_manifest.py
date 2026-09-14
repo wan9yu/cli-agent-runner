@@ -36,6 +36,14 @@ class PluginManifest:
     spawn_hooks: tuple[SpawnHook, ...] = ()
     detectors: tuple[Detector, ...] = ()
     event_kinds: tuple[str, ...] = ()
+    sigterm_cooperative: bool = False
+    """Declares that this preset's CLI cooperatively drains/cleans up on
+    SIGTERM -- source-verified per preset, NEVER assumed from a CLI's
+    general reputation. Read by wrapup_grace_s (cli/_serve_round.py,
+    Component 3) to decide whether the existing TERM-then-grace-then-SIGKILL
+    escalation's grace window should extend for this agent. Does not by
+    itself change any termination behavior -- an untouched consumer reads
+    False for every manifest exactly as before this field existed."""
 
 
 _LOADED_MANIFESTS: list[PluginManifest] = []
@@ -46,6 +54,14 @@ def loaded_manifest_names() -> list[str]:
     Mirrors the ``list(_LOADED_MANIFESTS)`` pattern; used by the loader for
     idempotent re-load skipping and by doctor for third-party hash listing."""
     return [m.name for m in _LOADED_MANIFESTS]
+
+
+def cooperative_manifest_names() -> list[str]:
+    """Names of every currently-registered manifest declaring
+    sigterm_cooperative=True (order-preserving). Mirrors
+    loaded_manifest_names; used by peek + doctor to answer "which presets
+    are cooperative" without either caller reaching into _LOADED_MANIFESTS."""
+    return [m.name for m in _LOADED_MANIFESTS if m.sigterm_cooperative]
 
 
 def register_manifest(

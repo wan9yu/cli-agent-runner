@@ -92,3 +92,42 @@ def test_register_manifest_should_raise_when_manifest_name_already_registered():
     assert any(h.name == "first_hook" for h in hooks.post_round_hooks())
     assert not any(h.name == "second_hook" for h in hooks.post_round_hooks())
     assert [m for m in _plugin_manifest._LOADED_MANIFESTS if m.name == "dup_plugin"] == [first]
+
+
+def test_plugin_manifest_should_default_sigterm_cooperative_to_false_when_omitted():
+    from agent_runner._plugin_manifest import PluginManifest
+
+    manifest = PluginManifest(name="x")
+
+    assert manifest.sigterm_cooperative is False
+
+
+def test_cooperative_manifest_names_should_list_only_manifests_declaring_true():
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        cooperative_manifest_names,
+        register_manifest,
+    )
+
+    register_manifest(PluginManifest(name="cooperative_one", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="not_cooperative"))
+
+    assert cooperative_manifest_names() == ["cooperative_one"]
+
+
+def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
+    from agent_runner.builtin_plugins import (
+        claude_rate_limit,
+        codewhale,
+        default_dirty_handler,
+        gemini,
+        kimi,
+        pi,
+    )
+
+    assert gemini.PLUGIN.sigterm_cooperative is True
+    assert claude_rate_limit.PLUGIN.sigterm_cooperative is False
+    assert kimi.PLUGIN.sigterm_cooperative is False
+    assert codewhale.PLUGIN.sigterm_cooperative is False
+    assert pi.PLUGIN.sigterm_cooperative is False
+    assert default_dirty_handler.PLUGIN.sigterm_cooperative is False
