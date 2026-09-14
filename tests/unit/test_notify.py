@@ -11,9 +11,21 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from agent_runner import events
 from agent_runner._notify import Listener, NullListener, ring
 from tests._clock import FakeClock
+
+
+def _skip_unless_chmod_blocks_write(notify_dir: Path) -> None:
+    """chmod 0o555 only actually blocks writes for a non-root process -- under
+    root (some CI containers) the permission bits are advisory. Restore the
+    writable mode before skipping so tmp_path teardown can still remove the
+    directory."""
+    if os.access(notify_dir, os.W_OK):
+        os.chmod(notify_dir, 0o755)
+        pytest.skip("directory permissions do not block writes here (likely running as root)")
 
 
 def test_listener_should_wake_on_ring(tmp_log_dir: Path):
@@ -82,3 +94,33 @@ def test_events_tail_should_wake_on_new_event(tmp_log_dir: Path):
         woken = listener.wait(5.0)
 
         assert woken is True
+
+
+def test_ring_should_not_raise_when_stale_fifo_unlink_fails(tmp_log_dir: Path):
+    notify_dir = tmp_log_dir / ".notify"
+    notify_dir.mkdir()
+    os.mkfifo(notify_dir / "stale.fifo")
+    os.chmod(notify_dir, 0o555)
+    _skip_unless_chmod_blocks_write(notify_dir)
+
+    try:
+        events.emit(tmp_log_dir, events.MONITOR_STARTED)
+
+        written = [p.read_text() for p in tmp_log_dir.glob("events-*.jsonl")]
+        assert len(written) == 1
+        assert "monitor_started" in written[0]
+    finally:
+        os.chmod(notify_dir, 0o755)
+
+
+def test_listener_exit_should_not_raise_when_unlink_fails(tmp_log_dir: Path):
+    notify_dir = tmp_log_dir / ".notify"
+    listener = Listener(tmp_log_dir)
+    listener.__enter__()
+    os.chmod(notify_dir, 0o555)
+    _skip_unless_chmod_blocks_write(notify_dir)
+
+    try:
+        listener.__exit__(None, None, None)
+    finally:
+        os.chmod(notify_dir, 0o755)

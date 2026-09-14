@@ -55,14 +55,20 @@ def ring(log_dir: Path) -> None:
             fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
         except OSError as e:
             if e.errno == errno.ENXIO:
-                fifo.unlink(missing_ok=True)
+                try:
+                    fifo.unlink(missing_ok=True)
+                except OSError:
+                    pass  # a permission-denied .notify/ can't be cleaned up -- never mind
             continue
         try:
             os.write(fd, b"\x00")
         except OSError:
             pass  # EAGAIN: listener's kernel buffer is full -- the wake already landed
         finally:
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError:
+                pass  # EINTR or similar -- fail-open, never let a close raise into emit()
 
 
 class Listener:
@@ -97,9 +103,15 @@ class Listener:
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object
     ) -> None:
         if self._fd is not None:
-            os.close(self._fd)
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
             self._fd = None
-        self._path.unlink(missing_ok=True)
+        try:
+            self._path.unlink(missing_ok=True)
+        except OSError:
+            pass  # e.g. a permission-denied .notify/ -- fail-open, never crash teardown
 
     @property
     def fd(self) -> int:
@@ -183,6 +195,9 @@ def open_listener(log_dir: Path) -> Listener | NullListener:
     try:
         listener.__enter__()
     except OSError:
-        listener._path.unlink(missing_ok=True)
+        try:
+            listener._path.unlink(missing_ok=True)
+        except OSError:
+            pass  # cleanup best-effort -- must not crash the caller's degrade-to-Null path
         return NullListener()
     return listener
