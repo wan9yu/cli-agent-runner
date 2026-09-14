@@ -190,7 +190,12 @@ def _child_env() -> dict[str, str]:
     """Minimal default-DENY environment for the confined child (see the
     ``_ENV_ALLOW_*`` note). Only allowlisted vars are copied; every parent secret
     is left behind. ``PYTHONDONTWRITEBYTECODE`` is forced so the read-only import
-    roots never see a .pyc write."""
+    roots never see a .pyc write. ``PYTHONSAFEPATH`` is forced so ``python -m``
+    does NOT prepend the cwd to ``sys.path``: ``_readable_roots`` grants Landlock
+    read on every ``sys.path`` entry, so a cwd on the path would widen the child's
+    read profile to the whole working directory (and, run ad-hoc from ``$HOME``/
+    ``/``, to ``/proc/<ppid>/environ`` -- the parent's real secrets). Requires
+    Python >= 3.11 (this project's floor)."""
     import os
 
     env = {
@@ -199,6 +204,7 @@ def _child_env() -> dict[str, str]:
         if name in _ENV_ALLOW_EXACT or name.startswith(_ENV_ALLOW_PREFIX)
     }
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONSAFEPATH"] = "1"
     return env
 
 

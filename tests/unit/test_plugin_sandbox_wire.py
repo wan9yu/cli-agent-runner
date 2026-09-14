@@ -265,6 +265,7 @@ def test_child_env_should_drop_parent_secrets_but_keep_git_and_path(monkeypatch)
     assert "ANTHROPIC_API_KEY" not in env and "ACME_TOKEN" not in env
     assert env["PATH"] == "/usr/bin" and env["GIT_AUTHOR_NAME"] == "tester"
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert env["PYTHONSAFEPATH"] == "1"
 
 
 def test_run_hook_sandboxed_should_hide_parent_secrets_from_child(tmp_path, monkeypatch) -> None:
