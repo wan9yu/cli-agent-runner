@@ -61,12 +61,20 @@ def peek(
     log: bool = False,
     events: int | None = None,
     select: str | None = None,
+    cfg: Any = None,
 ) -> ProjectState | Any:
-    """Build a ProjectState snapshot. With select, return that subtree."""
+    """Build a ProjectState snapshot. With select, return that subtree.
+
+    ``cfg`` (an already-loaded ``Config``) lets a caller that has loaded config
+    once — ``cli.peek_cmd.cmd_peek`` does, for the ``emit`` block — pass it in so
+    ``peek`` does not re-``load_config`` (which re-runs plugin load/checksum/probe)
+    a second time per invocation. ``None`` loads it here (the default, unchanged
+    for every other caller)."""
     from agent_runner import round_view
 
     work_dir = project if isinstance(project, Path) else Path.cwd()
-    cfg = load_config(work_dir / "agent-runner.toml")
+    if cfg is None:
+        cfg = load_config(work_dir / "agent-runner.toml")
     log_dir = cfg.runtime.log_dir
     src = monitor.LocalSource(log_dir=log_dir)
     base_state = monitor.assemble_project_state(src, project=_project_name(work_dir))

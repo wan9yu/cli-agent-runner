@@ -201,7 +201,7 @@ def test_doctor_should_omit_builtin_plugins_from_the_checksum_print(tmp_path, ca
     assert "third-party plugin checksums" not in out
 
 
-def test_doctor_should_emit_json_with_sandbox_and_plugin_checksums_keys(tmp_path, capsys):
+def test_doctor_should_emit_json_with_sandbox_and_third_party_plugin_hashes_keys(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path), json=True)
 
     doctor_cmd.cmd_doctor(args)

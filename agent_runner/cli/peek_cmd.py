@@ -58,14 +58,18 @@ def add_parser(sub, parent) -> None:
 def cmd_peek(args) -> int:
     select = args.select
     try:
+        # Load config ONCE and thread it into peek so it doesn't re-load
+        # (re-running plugin load/checksum/probe) internally — the emit block
+        # needs the same cfg for the plugins.sandbox snapshot.
+        cfg = cfg_from_args(args)
         result = api.peek(
             work_dir_from_args(args),
             round=args.round,
             log=args.log,
             events=args.events,
             select=select,
+            cfg=cfg,
         )
-        cfg = cfg_from_args(args)
     except KeyError as e:
         return fail(str(e))
     except FileNotFoundError as e:

@@ -311,7 +311,10 @@ def _maybe_defer_for_spawn_hooks(
     if collapsed.action == "defer":
         started = clock.monotonic()
         emit_round_deferred(
-            log_dir, severity="info", signal="plugin_spawn_hook", message=collapsed.reason
+            log_dir,
+            severity="warning",
+            signal=f"plugin_spawn:{winner}",
+            message=collapsed.reason,
         )
         emit_plugin_spawn_decision(
             log_dir,

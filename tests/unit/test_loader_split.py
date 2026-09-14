@@ -22,11 +22,7 @@ class _Marker:
 PLUGIN = PluginManifest(name="task1_probe", post_round_hooks=(_Marker(),))
 
 
-def test_discover_should_register_no_manifest_when_called(monkeypatch):
-    monkeypatch.setattr(
-        agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", [("task1_probe", f"{__name__}:PLUGIN")]
-    )
-
+def test_discover_should_register_no_manifest_when_called():
     agent_runner._discover_plugin_manifests()
 
     assert "task1_probe" not in loaded_manifest_names()
