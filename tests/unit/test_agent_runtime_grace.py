@@ -619,7 +619,9 @@ def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
 # tests/unit/test_kill_pgroup_shielding.py -- it drives the poll fallback with
 # a FakeClock so the re-entrant-SIGTERM-during-grace shield stays deterministic
 # post-refactor (a real subprocess's fast path never calls clock.sleep at all,
-# so the old in-place version of this test silently stopped exercising anything).
+# so the old in-place version of this test -- which drove the shield by
+# monkeypatching clock.sleep -- would fail outright post-refactor, its
+# `calls["n"] >= 2` assertion firing on `calls["n"] == 0`).
 
 
 def test_run_should_fire_hard_wall_on_monotonic_time_when_epoch_warps(tmp_path):
