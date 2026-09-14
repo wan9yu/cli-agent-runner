@@ -473,6 +473,29 @@ The decision RULES are byte-identical: none of this changes the inputs→verdict
 
 Numbers are dev-host-relative (the macOS `kqueue` harness). The Linux `pidfd` fast path is exercised only on CI (ubuntu runners); the real 462 MB / 256 MB constrained-host wake-latency and `pidfd`/`kqueue`-under-swap-pressure confirmation stays deferred to 0.3.5 while that host is offline — measured on dev/CI, documented as deferred for the constrained host, never reported as zero-cost.
 
+## 0.3.4 → 0.3.5 (2026-09-15)
+
+"Cooperative wrap-up grace": a configurable, manifest-gated SIGTERM→SIGKILL grace threaded to the round leader's actual reap deadline (a cooperative agent like `gemini` gets `[agent] sigterm_grace_s`, default 10 s; `claude` keeps 5 s). Same macOS harness.
+
+### 1. Import/startup RSS
+
+| | 0.3.4 | 0.3.5 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 24.0 MB | 24.1 MB | ~0 MB (flat, within noise) |
+| RSS range | 23.95–24.12 MB | 23.91–24.25 MB | |
+
+Flat: the change is a config field, a pure grace-resolution function, an env round-trip, and two observability fields — no new module on the cold-startup graph, no new dependency (base stays `psutil>=5.9`). `test_import_footprint.py` + `test_round_alloc_growth.py` green.
+
+### 2. Efficiency
+
+No new internal wait — the grace window rides the v0.3.4 `wait_exit` deadline (zero polling during the grace), so a 15 s cooperative grace costs zero wakeups, same as the old 5 s. Two structural wins rather than a headline number:
+- **One grace code path, not two.** The reap deadline is now a single threaded value (defaulting to `REAP_GRACE_S`) instead of a hardcoded constant plus a would-be cooperative branch — the branch was never created, closing the v0.3.3 dark-code shape at the source.
+- **No wasted force-kills.** A cooperative agent that finishes flushing within its grace is reaped normally instead of SIGKILLed mid-write — work that the old fixed 5 s could truncate now completes. The behavioral efficiency win, measured by the wall-clock PROPERTY test (`test_cooperative_grace_property.py`), not RSS.
+
+### 3. Constrained-host (honesty)
+
+Dev-host-relative (macOS). The grace's real value shows on the constrained fleet (a `gemini` round flushing under memory pressure before an early-SIGTERM nudge) — that nudge is the 462 MB-constrained-host-gated v0.3.7 work; this release ships only the correct, configurable grace it will use. No new constrained-host claim.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:
