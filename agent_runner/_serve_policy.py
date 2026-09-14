@@ -303,7 +303,7 @@ _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-requ
 _ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
 
 
-def timeout_budget(round_budget_s: int) -> tuple[int, int]:
+def timeout_budget(round_budget_s: int, *, wrapup_grace_s: int = 0) -> tuple[int, int]:
     """Single source for the round-timeout safety budget.
 
     Returns ``(timeout_stop_sec, outer_ceiling_s)``:
@@ -317,8 +317,14 @@ def timeout_budget(round_budget_s: int) -> tuple[int, int]:
       (``service_unit.py``): must clear ``outer_ceiling_s`` by enough for a
       SIGTERM to reach and drain the round (``_ROUND_TERM_GRACE_S``) plus a
       stop-request overhead pad, so `systemctl stop` never SIGKILLs a round
-      that is draining normally.
+      that is draining normally. ``wrapup_grace_s`` (default 0) widens this
+      further to match a cooperative agent's extended _terminate_round wait
+      -- it must NEVER be passed to the R1128 outer-ceiling caller
+      (``_lifecycle.outer_round_ceiling_s``), only to service_unit.py's
+      TimeoutStopSec render.
     """
     outer_ceiling_s = round_budget_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
-    timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + _STOP_GRACE_MARGIN_S
+    timeout_stop_sec = (
+        outer_ceiling_s + _ROUND_TERM_GRACE_S + wrapup_grace_s + _STOP_GRACE_MARGIN_S
+    )
     return timeout_stop_sec, outer_ceiling_s

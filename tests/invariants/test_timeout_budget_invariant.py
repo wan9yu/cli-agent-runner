@@ -68,3 +68,19 @@ def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
     assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S
     assert _SERVE_ROUND_UNREAPED_RC == _SERVE_CGROUP_UNREAPED_RC == _serve_policy._ROUND_UNREAPED_RC
+
+
+def test_timeout_budget_should_leave_timeout_stop_sec_unchanged_when_wrapup_grace_s_omitted():
+    a_stop, a_ceiling = _serve_policy.timeout_budget(100)
+    b_stop, b_ceiling = _serve_policy.timeout_budget(100, wrapup_grace_s=0)
+
+    assert a_stop == b_stop
+    assert a_ceiling == b_ceiling
+
+
+def test_timeout_budget_should_widen_timeout_stop_sec_by_exactly_wrapup_grace_s_when_given():
+    base_stop, base_ceiling = _serve_policy.timeout_budget(100)
+    widened_stop, widened_ceiling = _serve_policy.timeout_budget(100, wrapup_grace_s=45)
+
+    assert widened_stop - base_stop == 45
+    assert widened_ceiling == base_ceiling  # R1128's own ceiling is untouched
