@@ -141,7 +141,7 @@ def _snapshot_stray_descendants(proc: subprocess.Popen) -> list[dict]:
     while the leader (and hence its subtree) is still alive -- both reap sites
     (``_kill_pgroup`` and ``cli/_serve_round._terminate_round``) open with it, so
     the capture-before-signal ordering lives in ONE place, not copy-pasted."""
-    stray, _ignored = _live_children(proc)
+    stray, _ignored = _live_children(proc, max_n=None)
     _capture_descendant_pgids(stray)
     return stray
 
@@ -206,7 +206,7 @@ def _live_children(
     proc: subprocess.Popen,
     *,
     ignore_patterns: list[re.Pattern[str]] | None = None,
-    max_n: int = 5,
+    max_n: int | None = 5,
 ) -> tuple[list[dict], list[dict]]:
     """Live (non-zombie) descendants of ``proc``, split into ``(live, ignored)``.
 
@@ -216,6 +216,12 @@ def _live_children(
     --api-key …, redis://:pass@…) and these lists are persisted to
     events-*.jsonl. Ignore-pattern MATCHING runs against the full cmdline
     (detection unchanged); only what we STORE is minimized.
+
+    ``max_n`` (default 5) bounds only the event-persisted lists this returns
+    to a caller that writes them to events-*.jsonl. The reap snapshot
+    (``_snapshot_stray_descendants``) passes ``max_n=None`` — a real subtree
+    can exceed 5 live descendants, and undercounting it here would leave the
+    excess unreaped, not merely under-logged.
 
     The stored name is read from the kernel-reported process name (comm —
     e.g. /proc/<pid>/comm on Linux), not from ``Path(argv[0]).name``: comm is
@@ -251,11 +257,11 @@ def _live_children(
                     matched = p.pattern
                     break
         if matched is not None:
-            if len(ignored) < max_n:
+            if max_n is None or len(ignored) < max_n:
                 ignored.append({"name": name, "pid": pid, "matched": matched})
-        elif len(live) < max_n:
+        elif max_n is None or len(live) < max_n:
             live.append({"name": name, "pid": pid})
-        if len(live) >= max_n and len(ignored) >= max_n:
+        if max_n is not None and len(live) >= max_n and len(ignored) >= max_n:
             break
     return live, ignored
 

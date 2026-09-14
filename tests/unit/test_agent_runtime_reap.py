@@ -350,3 +350,30 @@ def test_kill_stray_descendants_should_skip_when_pgid_was_none_at_capture(monkey
     _kill_stray_descendants([{"name": "c", "pid": 100, "pgid": None}])
 
     assert killed == []  # gone at capture time -> nothing to target
+
+
+def test_live_children_should_return_all_descendants_when_max_n_is_none(tmp_path):
+    import subprocess as sp
+
+    leader_py = tmp_path / "leader.py"
+    leader_py.write_text(
+        "import subprocess, sys, time\n"
+        "for _ in range(7):\n"
+        "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    proc = sp.Popen([sys.executable, str(leader_py)])
+    try:
+        recorded = 0
+        for _ in range(150):
+            live, _ignored = agent_runtime._live_children(proc, max_n=None)
+            recorded = len(live)
+            if recorded >= 7:
+                break
+            time.sleep(0.1)
+
+        assert recorded >= 7, f"uncapped snapshot saw only {recorded} of 7 children"
+    finally:
+        proc.kill()
+        proc.wait()
