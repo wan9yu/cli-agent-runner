@@ -23,6 +23,7 @@ dirty_handlers
 spawn_hooks
 detectors
 event_kinds
+sigterm_cooperative
 
 # agent_runner._round_outcome.RoundOutcome
 mem_terminated

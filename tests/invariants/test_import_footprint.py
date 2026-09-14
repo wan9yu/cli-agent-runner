@@ -126,6 +126,11 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         # startup_check, cli.common) were ALL already in this allowlist -- it adds
         # no new transitive dependency, just this one module itself.
         "agent_runner.cli.doctor_cmd",
+        # _plugin_manifest: doctor_cmd's new module-level import (cooperative
+        # presets line). Its own imports (_registry, api_types, hooks) were ALL
+        # already in this allowlist -- adds no new transitive dependency, just
+        # this one module itself.
+        "agent_runner._plugin_manifest",
         "agent_runner.cli.events_cmd",
         "agent_runner.cli.init_cmd",
         "agent_runner.cli.install_cmd",
