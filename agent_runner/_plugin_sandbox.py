@@ -401,15 +401,33 @@ def _apply_seccomp_denylist(syscalls: tuple[str, ...]) -> None:
     flt.load()
 
 
+def _preimport_seccomp() -> None:
+    """Import the seccomp binding BEFORE any Landlock fs restriction is applied.
+
+    ``pyseccomp``'s module init resolves libc via ``ctypes.util.find_library``,
+    which probes the filesystem (``gettempdir()``/tempfile, and gcc/ld as a
+    fallback). Once ``_apply_landlock_*`` restricts the fs to the profile's
+    read-roots, that probe raises ``FileNotFoundError`` and the child dies before
+    it can install the seccomp filter. Importing here -- while the fs is still
+    open -- runs that init once and caches it in ``sys.modules``, so the later
+    ``import pyseccomp`` inside ``_apply_seccomp_denylist`` (post-Landlock) is a
+    no-op cache hit. No-op off-Linux (no binding, no seccomp)."""
+    if sys.platform != "linux":
+        return
+    import pyseccomp  # noqa: F401 -- side-effecting import: run find_library init unrestricted
+
+
 def _default_restrict_dirty(ctx: hooks.HookContext) -> None:
     import shutil
 
     git_bin = shutil.which("git")
+    _preimport_seccomp()  # before Landlock: pyseccomp's find_library init needs the fs
     _apply_landlock_dirty(ctx.work_dir, ctx.log_dir, git_bin)
     _apply_seccomp_denylist(_DIRTY_DENY_SYSCALLS)
 
 
 def _default_restrict_spawn(ctx: hooks.HookContext) -> None:
+    _preimport_seccomp()  # before Landlock: pyseccomp's find_library init needs the fs
     _apply_landlock_spawn(ctx.work_dir, ctx.log_dir)
     _apply_seccomp_denylist(_SPAWN_DENY_SYSCALLS)
 
