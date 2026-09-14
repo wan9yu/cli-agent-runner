@@ -5,7 +5,7 @@ planning task added a piece of code, in two related shapes:
 
 - a release version number, e.g. "0.2.17 Task 1" / "pre-0.2.18"
 - a bare internal-dev tag with no version number at all, e.g. "Group C,
-  seam 3" / "Group A" / "Task 5" on its own
+  seam 3" / "Group A" / "Task 5" / "Component 3" on its own
 
 Neither shape ever drove any logic (no version comparisons or branches
 existed anywhere, and no code ever switched on a group/task/seam label), and
@@ -51,17 +51,18 @@ _REPO = Path(__file__).resolve().parents[2]
 # contains "0.0.1", which would otherwise match this pattern) -- OR a bare
 # SDD-planning tag. The SDD-tag alternatives are anchored on the exact shapes
 # actually used (a single capital letter after "Group"; a number after
-# "Task"/"seam") so ordinary English -- "a group of tests", "the task
-# queue", "process group", "a watertight seam" -- never matches: "Group
-# Alpha" fails because `\b` cannot land between the two word characters "A"
-# and "l", and a bare "task"/"seam" with no following digit never matches at
-# all.
+# "Task"/"seam"/"Component") so ordinary English -- "a group of tests", "the
+# task queue", "process group", "a watertight seam", "a component of the
+# system" -- never matches: "Group Alpha" fails because `\b` cannot land
+# between the two word characters "A" and "l", and a bare "task"/"seam"/
+# "component" with no following digit never matches at all.
 _BREADCRUMB_REF = re.compile(
     r"(?<![\d.])0\.[0-9]+\.[0-9]+\b"  # release version, e.g. "0.2.17"
     r"|(?<![\d.])pre-0\.[0-9]"  # "pre-0.2.18"
     r"|\bGroup [A-Z]\b"  # SDD group label, e.g. "Group C"
     r"|\bTask [0-9]+"  # SDD task label, e.g. "Task 5"
     r"|\bseam [0-9]+"  # SDD seam label, e.g. "seam 3"
+    r"|\bComponent [0-9]+"  # SDD component label, e.g. "Component 3"
 )
 
 _ALLOWLIST_FILES = {
@@ -138,6 +139,10 @@ def test_scanner_should_flag_reintroduced_sdd_tag_when_scanned(tmp_path: Path) -
     group_only.write_text('"""The round-child exit-code CLASSIFIER (Group A)."""\n')
     assert _scan([group_only]), "scanner failed to flag a reintroduced bare 'Group A' tag"
 
+    component = tmp_path / "component_module.py"
+    component.write_text('"""Read by wrapup_grace_s (cli/_serve_round.py, Component 3)."""\n')
+    assert _scan([component]), "scanner failed to flag a reintroduced 'Component 3' tag"
+
     clean = tmp_path / "clean_module.py"
     clean.write_text('"""The round-child exit-code CLASSIFIER."""\n')
     assert not _scan([clean]), "scanner false-positived on tag-free text"
@@ -158,8 +163,9 @@ def test_scanner_should_not_flag_ordinary_english_group_task_seam_when_scanned(
     """The SDD-tag patterns must not fire on genuine domain/English usage of
     the same words -- "process group" and "a group of X" (real usage
     elsewhere in this codebase, e.g. defenses.py's "process group reaping"),
-    a plain "task queue", and "seam" used as an ordinary noun with no
-    following digit."""
+    a plain "task queue", "seam" used as an ordinary noun with no following
+    digit, and "component" used as an ordinary noun (e.g. "a component of
+    the system") with no following digit."""
     english = tmp_path / "english_module.py"
     english.write_text(
         "\n".join(
@@ -168,6 +174,7 @@ def test_scanner_should_not_flag_ordinary_english_group_task_seam_when_scanned(
                 "",
                 "A group of background tasks share a task queue; the seam between",
                 "two panels must stay watertight. Group Alpha handles retries.",
+                "This module is a component of the larger system.",
                 '"""',
                 "",
             ]
