@@ -45,6 +45,8 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_plugin_checksum_mismatch,
     emit_plugin_sandbox_degraded,
     emit_plugin_sandbox_kill,
+    emit_plugin_spawn_decision,
+    emit_plugin_spawn_override_ignored,
     emit_rate_limit_stop,
     emit_round_cgroup_memory,
     emit_round_container_orphan_risk,

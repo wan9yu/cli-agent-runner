@@ -171,7 +171,7 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 {
   "event": "hook_failed",
   "hook_name": "<plugin's name attribute>",
-  "hook_kind": "pre_round | context_enricher | post_round | dirty_handler",
+  "hook_kind": "pre_round | context_enricher | post_round | dirty_handler | spawn_hook",
   "error_type": "<exception class>",
   "error_message": "<str(exc)>",
   "traceback": "<head 1KB + ... [truncated] ... + tail 1KB>"

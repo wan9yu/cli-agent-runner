@@ -1,7 +1,8 @@
 """Round-lifecycle helpers for the serve loop: spawn/terminate the round
-subprocess, pre-round + mid-round memory-pressure gating, and the post-round
-give-up decision (config_broken / mem_loop / mem_loop_persistent / crash_loop
-/ stalled_no_progress -> exit code).
+subprocess, pre-round + mid-round memory-pressure gating, the pre-spawn hook
+admission gate (SpawnHook proceed/defer/skip over a read-only view of the
+resolved spawn), and the post-round give-up decision (config_broken / mem_loop
+/ mem_loop_persistent / crash_loop / stalled_no_progress -> exit code).
 
 Split out of ``serve_cmd.py`` purely to buy LOC headroom
 under the module-size gate (``test_module_sizes.py``) and ``cmd()``'s
@@ -21,10 +22,12 @@ from __future__ import annotations
 import os
 import signal
 import subprocess  # noqa: TID251
+import traceback as tb_mod
 from pathlib import Path
 from typing import Literal
 
-from agent_runner import host_health, metrics
+from agent_runner import _resolve, events, hooks, host_health, metrics
+from agent_runner._plugin_sandbox import run_hook_sandboxed
 from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
     _MEM_LOOP_PERSIST_WINDOW_S,
@@ -40,6 +43,7 @@ from agent_runner._serve_policy import (
     post_round_decision,
 )
 from agent_runner._throttle import (
+    _interruptible_sleep,
     mem_loop_events_in_window,
     pending_recovered,
     round_had_no_progress,
@@ -56,6 +60,8 @@ from agent_runner.api import (
     emit_mem_loop,
     emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
+    emit_plugin_spawn_decision,
+    emit_plugin_spawn_override_ignored,
     emit_round_deferred,
     emit_round_mem_critical_sample,
     emit_round_mem_terminated,
@@ -64,6 +70,7 @@ from agent_runner.api import (
     emit_stalled_no_progress,
     emit_transient_error_recovered,
 )
+from agent_runner.api_types import SpawnDecision
 from agent_runner.cli._serve_cgroup import (
     _emit_round_cgroup_memory,
     _maybe_emit_oom_killed,
@@ -177,6 +184,131 @@ def _maybe_emit_recovered(log_dir, active=None) -> None:
         emit_transient_error_recovered(
             log_dir, classification=classification, agent=agent, throttled_for_s=throttled_for_s
         )
+
+
+# How long a `skip` verdict idles before the caller re-admits (re-running the
+# hooks): a busy-loop guard so a persistent `skip` does not spin the serve loop
+# at 100% CPU re-selecting a phase it will only skip again.
+_SPAWN_SKIP_REPOLL_S = 5
+
+
+def _spawn_hook_context(cfg, log_dir, work_dir, phase, profile) -> hooks.HookContext:
+    """The narrow HookContext a SpawnHook sees at the pre-spawn admission gate.
+    ``round_num`` is 0: this gate runs before a round is committed, so no round
+    number is assigned to this view yet (the hook keys on argv/env, not the
+    round counter)."""
+    return hooks.HookContext(
+        work_dir=work_dir,
+        log_dir=log_dir,
+        project=_resolve.project_name(work_dir, strict=False),
+        round_num=0,
+        phase=phase,
+        agent_name=profile.agent.name
+        or (profile.agent.command[0] if profile.agent.command else None),
+        agent_binary=profile.agent.binary,
+        vcs=hooks.VcsHookView(
+            dirty_action=cfg.vcs.dirty_action, stash_idempotency_s=cfg.vcs.stash_idempotency_s
+        ),
+    )
+
+
+def _spawn_view(work_dir, profile) -> hooks.SpawnView:
+    """Read-only view of the resolved spawn: the effective argv plus env NAMES
+    with every value forced to "" — a hook may check which names are set (e.g.
+    whether an API key is present) but can never read a secret's value."""
+    env_names = {**os.environ, **dict(profile.agent.env)}
+    return hooks.SpawnView(
+        argv=tuple(profile.agent.spawn_command(work_dir)),
+        env=dict.fromkeys(env_names, ""),
+    )
+
+
+def _run_one_spawn_hook(h, ctx, log_dir, view) -> SpawnDecision | None:
+    """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
+    isolates a raising dirty handler: emit ``hook_failed`` and return None (the
+    caller omits None from the collapse — treated as proceed). Trampoline-vs-
+    in-process is decided by per-handler provenance (``hooks._SPAWN_HOOK_BUILTIN``
+    keyed on the hook OBJECT, never the collidable owner name): a genuine builtin
+    runs in-process, everything else (unknown → third-party, fail-closed) is
+    confined by the Landlock+seccomp trampoline."""
+    third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
+    try:
+        if third_party:
+            owner = hooks._SPAWN_HOOK_OWNER.get(id(h), "")
+            return run_hook_sandboxed("spawn_hook", owner, h.name, ctx, log_dir=log_dir, view=view)
+        return h.before_spawn(ctx, view)
+    except Exception as exc:  # noqa: BLE001 — isolate; omit from collapse (== proceed)
+        events.emit(
+            log_dir,
+            events.HOOK_FAILED,
+            hook_name=h.name,
+            hook_kind="spawn_hook",
+            **hooks._summarize_error(exc, tb=tb_mod.format_exc()),
+        )
+        return None
+
+
+def _maybe_defer_for_spawn_hooks(
+    cfg, log_dir, stop, *, phase, work_dir, clock: Clock = SYSTEM_CLOCK
+) -> bool:
+    """The LAST serve-admission gate: run every registered SpawnHook over a
+    read-only view of the resolved spawn and collapse their verdicts
+    (skip > defer(max defer_s) > proceed). Returns True (the caller ``continue``s
+    the loop and re-admits next iteration) on defer/skip, False on proceed.
+
+    ``spawn_override_allow`` is applied PER-HOOK, before the collapse: a hook NOT
+    on the operator's allow-list has any non-``proceed`` verdict downgraded to
+    ``proceed`` (emitting ``plugin_spawn_override_ignored``) — blocking a round is
+    an operator-granted capability, not a default one.
+
+    A ``defer`` reuses the existing ``round_deferred``/``round_resumed`` pair (so a
+    long defer does not trip ``detect_supervisor_stale``) plus ``plugin_spawn_decision``,
+    sleeps ``defer_s``, and re-runs the hooks on the NEXT admission — once per
+    round, no internal re-poll. A ``skip`` emits ``plugin_spawn_decision`` and idles
+    ``_SPAWN_SKIP_REPOLL_S`` (the busy-loop guard) before likewise re-admitting."""
+    registered = hooks.spawn_hooks()
+    if not registered:
+        return False
+    profile = cfg.profile_for(phase)
+    ctx = _spawn_hook_context(cfg, log_dir, work_dir, phase, profile)
+    view = _spawn_view(work_dir, profile)
+    allow = set(cfg.plugins.spawn_override_allow)
+    named: list[tuple[str, SpawnDecision]] = []
+    for h in registered:
+        decision = _run_one_spawn_hook(h, ctx, log_dir, view)
+        if decision is None:
+            continue  # hook_failed already emitted; omit from collapse (== proceed)
+        if decision.action != "proceed" and h.name not in allow:
+            emit_plugin_spawn_override_ignored(log_dir, hook=h.name, action=decision.action)
+            decision = SpawnDecision(action="proceed")
+        named.append((h.name, decision))
+    collapsed = hooks.collapse_spawn_decisions(named)
+    if collapsed.action == "proceed":
+        return False
+    # The winning hook by the collapse's own precedence — value-equality finds
+    # the FIRST named entry matching it, which is exactly the registration-order
+    # tiebreak collapse itself uses.
+    winner = next((n for n, d in named if d == collapsed), "")
+    if collapsed.action == "defer":
+        started = clock.monotonic()
+        emit_round_deferred(
+            log_dir, severity="info", signal="plugin_spawn_hook", message=collapsed.reason
+        )
+        emit_plugin_spawn_decision(
+            log_dir,
+            hook=winner,
+            action="defer",
+            defer_s=collapsed.defer_s,
+            reason=collapsed.reason,
+        )
+        if not _interruptible_sleep(collapsed.defer_s, stop, clock=clock):
+            emit_round_resumed(log_dir, deferred_for_s=int(clock.monotonic() - started))
+        return True
+    emit_plugin_spawn_decision(
+        log_dir, hook=winner, action="skip", defer_s=0, reason=collapsed.reason
+    )
+    _interruptible_sleep(_SPAWN_SKIP_REPOLL_S, stop, clock=clock)
+    return True
 
 
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler

@@ -20,6 +20,7 @@ context_enrichers
 post_round_hooks
 serve_startup_hooks
 dirty_handlers
+spawn_hooks
 detectors
 event_kinds
 
@@ -128,6 +129,11 @@ uptime_s
 unit_file
 rate_limit
 system_managed
+
+# agent_runner.api_types.SpawnDecision
+action
+defer_s
+reason
 
 # agent_runner.api_types.SystemMetrics
 mem_total_mb
@@ -299,6 +305,10 @@ dry_run
 anomaly_repetitive_window
 anomaly_repetitive_threshold
 vcs
+
+# agent_runner.hooks.SpawnView
+argv
+env
 
 # agent_runner.hooks.VcsHookView
 dirty_action

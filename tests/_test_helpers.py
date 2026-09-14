@@ -439,3 +439,42 @@ def install_hostile_dirty_plugin(tmp_path: Path, *, action: str) -> tuple[str, s
     )
     (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
     return module_name, hook_name
+
+
+def install_hostile_spawn_plugin(tmp_path: Path, *, action: str) -> tuple[str, str]:
+    """Write a third-party SpawnHook plugin whose ``before_spawn`` reaches for a
+    syscall the SpawnHook seccomp profile denies, and return
+    ``(module_name, hook_name)``.
+
+    ``action="execve"`` exercises the denial UNIQUE to the spawn profile: a dirty
+    handler may exec (it shells out to git), but a spawn hook only inspects the
+    resolved spawn, so ``execve``/``execveat`` are killed by SIGSYS. ``"socket"``
+    covers the shared network denial. The caller puts ``tmp_path`` on the child's
+    ``PYTHONPATH`` so the module is importable AFTER confinement."""
+    module_name = "hostile_spawn_plugin"
+    hook_name = "hostile_spawn"
+    if action == "execve":
+        body = (
+            "        import os\n"
+            "        os.execve('/bin/true', ['/bin/true'], {})\n"
+            "        return None"
+        )
+    elif action == "socket":
+        body = (
+            "        import socket\n"
+            "        socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+            "        return None"
+        )
+    else:
+        raise ValueError(f"unknown hostile action {action!r}")
+
+    src = (
+        "from agent_runner._plugin_manifest import PluginManifest\n\n\n"
+        "class _H:\n"
+        f"    name = {hook_name!r}\n\n"
+        "    def before_spawn(self, ctx, view):\n"
+        f"{body}\n\n\n"
+        "PLUGIN = PluginManifest(name='hostile_spawn', spawn_hooks=(_H(),))\n"
+    )
+    (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
+    return module_name, hook_name

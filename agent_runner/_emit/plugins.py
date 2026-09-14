@@ -17,6 +17,28 @@ def emit_plugin_sandbox_kill(
     emit(log_dir, PLUGIN_SANDBOX_KILL, hook=hook, signal=signal, syscall=syscall)
 
 
+def emit_plugin_spawn_decision(
+    log_dir: Path, *, hook: str, action: str, defer_s: int, reason: str
+) -> None:
+    """Emit the collapsed pre-spawn verdict the serve admission gate acted on --
+    ``defer`` or ``skip`` (a ``proceed`` is the silent default, no event). ``hook``
+    is the winning hook by the collapse's own precedence (skip > max-defer)."""
+    from agent_runner.events import PLUGIN_SPAWN_DECISION, emit
+
+    emit(log_dir, PLUGIN_SPAWN_DECISION, hook=hook, action=action, defer_s=defer_s, reason=reason)
+
+
+def emit_plugin_spawn_override_ignored(log_dir: Path, *, hook: str, action: str) -> None:
+    """Emit when a spawn hook returned a non-``proceed`` verdict but is NOT in
+    ``[plugins] spawn_override_allow`` -- its blocking power is denied (the
+    decision is downgraded to ``proceed`` before the collapse). Blocking a round
+    is an operator-granted capability, so an un-listed hook's ``defer``/``skip``
+    is audited here rather than honored silently."""
+    from agent_runner.events import PLUGIN_SPAWN_OVERRIDE_IGNORED, emit
+
+    emit(log_dir, PLUGIN_SPAWN_OVERRIDE_IGNORED, hook=hook, action=action)
+
+
 def emit_plugin_builtin_name_squat(log_dir: Path, *, name: str, module_path: str) -> None:
     """Emit when a discovered entry point claims a RESERVED builtin name while
     resolving to a module OUTSIDE the core ``agent_runner.builtin_plugins``

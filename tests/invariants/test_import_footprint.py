@@ -88,6 +88,12 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._monitor_registry",
         "agent_runner._monitor_state",
         "agent_runner._observe",
+        # _plugin_sandbox: the serve-admission SpawnHook seam (cli/_serve_round)
+        # imports run_hook_sandboxed at module scope so the seam is monkeypatchable
+        # in place. It pulls only stdlib + already-loaded hooks/api_types (no
+        # bindings — those stay lazy inside the child's restrict path), so this
+        # adds the one module, not a new transitive dependency.
+        "agent_runner._plugin_sandbox",
         "agent_runner._plugin_scan",
         "agent_runner._redact",
         "agent_runner._registry",

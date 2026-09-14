@@ -47,6 +47,7 @@ from agent_runner.api import (
 )
 from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 from agent_runner.cli._serve_round import (
+    _maybe_defer_for_spawn_hooks,
     _maybe_emit_recovered,
     _maybe_pause_for_memory_pressure,
     _pause_poll,
@@ -424,6 +425,19 @@ def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int 
     return frozenset(), None
 
 
+def _spawn_gate(cfg, log_dir, stop, phase):
+    """The final admission gate: run the pre-spawn hooks for the resolved
+    ``phase`` and translate a defer/skip into the ``_PAUSED_CONTINUE`` sentinel
+    (caller re-admits next iteration); a proceed returns ``phase`` unchanged.
+    Runs only on a concrete phase outcome — every pause path in ``_select_and_gate``
+    returns ``_PAUSED_CONTINUE`` before reaching here, so this never runs while
+    already paused, and it is the LAST gate (after memory / schedule / throttle
+    have all resolved a concrete phase to spawn)."""
+    if _maybe_defer_for_spawn_hooks(cfg, log_dir, stop, phase=phase, work_dir=cfg.runtime.work_dir):
+        return _PAUSED_CONTINUE
+    return phase
+
+
 def _select_and_gate(
     cfg,
     args,
@@ -449,11 +463,13 @@ def _select_and_gate(
     if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn):
         return _PAUSED_CONTINUE
     if args.ignore_schedule:
-        return None  # rotation self-resolves in the round; no --phase, no gate
+        # rotation self-resolves in the round; no --phase, but the pre-spawn gate
+        # still runs on the concrete (None) outcome.
+        return _spawn_gate(cfg, log_dir, stop, None)
     if not _phase_aware(cfg):
         if _maybe_pause_for_schedule(cfg, log_dir, stop):
             return _PAUSED_CONTINUE
-        return None
+        return _spawn_gate(cfg, log_dir, stop, None)
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
     sel = phase_select.select_phase(
@@ -491,7 +507,7 @@ def _select_and_gate(
             chosen=sel.phase,
             active_window=sel.active_window or "",
         )
-    return sel.phase
+    return _spawn_gate(cfg, log_dir, stop, sel.phase)
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:

@@ -21,7 +21,7 @@ gemini, or any command-line tool). It:
    auto-stop. Each defense codifies a specific observed failure mode with a
    concrete trigger signature.
 4. Exposes **plugin hooks** (`PreRoundHook`, `PostRoundHook`, `ContextEnricher`,
-   `ServeStartupHook`, `DirtyHandler`) for extension without modifying core.
+   `ServeStartupHook`, `DirtyHandler`, `SpawnHook`) for extension without modifying core.
 
 That's the complete scope. The layers are thin by design.
 

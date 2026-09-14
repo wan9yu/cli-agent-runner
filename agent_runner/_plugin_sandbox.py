@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import hooks
-from agent_runner.api_types import DirtyOutcome
+from agent_runner.api_types import DirtyOutcome, SpawnDecision
 
 _TRAMPOLINE_TIMEOUT_S = 30.0  # wall-clock; not config-tunable this release
 _MAX_WIRE_BYTES = 64 * 1024
@@ -64,6 +64,12 @@ _DIRTY_DENY_SYSCALLS = (
     "io_uring_register",
     "bpf",
 )
+
+# SpawnHook deny-list: the dirty deny-list PLUS execve/execveat. A spawn
+# decision only inspects the resolved spawn (argv + env NAMES) and returns a
+# verdict -- it never shells out, so exec joins the network/escape primitives a
+# spawn hook has no business reaching for.
+_SPAWN_DENY_SYSCALLS = ("execve", "execveat", *_DIRTY_DENY_SYSCALLS)
 
 
 def _sandbox_enforceable() -> bool:
@@ -147,21 +153,25 @@ def run_hook_sandboxed(
     *,
     log_dir: Path,
     dirty_files: list[str] | None = None,
+    view: hooks.SpawnView | None = None,
     timeout_s: float = _TRAMPOLINE_TIMEOUT_S,
-) -> DirtyOutcome | None:
+) -> SpawnDecision | DirtyOutcome | None:
     """Launch the confinement child for one third-party hook call and return its
     validated outcome. Secrets never cross the wire: only context field NAMES /
-    plain values that ``_ctx_to_wire`` chooses are sent. A child killed by signal
-    (seccomp KILL_PROCESS) emits ``plugin_sandbox_kill`` and raises; a non-zero
-    exit or a timeout raises too -- the caller (``dispatch_dirty``) isolates any
-    raise as ``hook_failed``. Both child streams are redact-capped before any
-    byte reaches an event."""
+    plain values that ``_ctx_to_wire`` chooses are sent, and a ``SpawnView`` is
+    reduced to its argv + env NAMES (``env_names``) -- never a value. A child
+    killed by signal (seccomp KILL_PROCESS) emits ``plugin_sandbox_kill`` and
+    raises; a non-zero exit or a timeout raises too -- the caller (``dispatch_dirty``
+    / the spawn seam) isolates any raise as ``hook_failed``. Both child streams
+    are redact-capped before any byte reaches an event."""
     module_path, attr_path = _resolve_entry(owner)
     payload = {
         "schema": "plugin_sandbox_input/1",
         "ctx": _ctx_to_wire(ctx),
         "hook_kind": hook_kind,
-        "spawn_view": None,
+        "spawn_view": None
+        if view is None
+        else {"argv": list(view.argv), "env_names": list(view.env)},
         "dirty_files": dirty_files,
     }
     returncode, stdout, stderr = _run_child_process(
@@ -185,6 +195,8 @@ def run_hook_sandboxed(
     if returncode != 0:
         detail = hooks._cap_redacted(stderr.decode("utf-8", "replace"), _STDERR_CAP)
         raise RuntimeError(f"trampoline for {hook_name} exited {returncode}: {detail}")
+    if hook_kind == "spawn_hook":
+        return _parse_spawn_stdout(stdout)
     return _parse_dirty_stdout(stdout)
 
 
@@ -285,6 +297,36 @@ def _parse_dirty_stdout(raw: bytes) -> DirtyOutcome | None:
     )
 
 
+def _parse_spawn_stdout(raw: bytes) -> SpawnDecision:
+    """Validate + build the child's spawn verdict. The closed vocabulary is
+    enforced here (unknown keys rejected, action in-vocabulary, defer_s a
+    non-negative int), and ``reason`` is redact-capped before it can reach an
+    event -- so a hostile child cannot smuggle a secret (or an argv splice)
+    through this line."""
+    if len(raw) > _MAX_WIRE_BYTES:
+        raise ValueError("trampoline stdout exceeded wire cap")
+    obj = json.loads(raw.decode("utf-8"))
+    if (
+        not isinstance(obj, dict)
+        or set(obj) - {"schema", "action", "defer_s", "reason"}
+        or obj.get("schema") != "spawn_decision/1"
+    ):
+        shape = sorted(obj) if isinstance(obj, dict) else type(obj).__name__
+        raise ValueError(f"invalid spawn_decision wire: {shape}")
+    action = obj["action"]
+    if action not in ("proceed", "defer", "skip"):
+        raise ValueError(f"invalid spawn_decision action: {action!r}")
+    defer_s = obj.get("defer_s", 0)
+    if not isinstance(defer_s, int) or isinstance(defer_s, bool) or defer_s < 0:
+        raise ValueError(f"invalid spawn_decision defer_s: {defer_s!r}")
+    reason = obj.get("reason", "")
+    if not isinstance(reason, str):
+        raise ValueError(f"invalid spawn_decision reason: {reason!r}")
+    return SpawnDecision(
+        action=action, defer_s=defer_s, reason=hooks._cap_redacted(reason, _REF_CAP)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Child self-restriction (Linux-only; imported lazily; no-op off-Linux).
 # ---------------------------------------------------------------------------
@@ -330,6 +372,31 @@ def _apply_landlock_dirty(work_dir: Path, log_dir: Path, git_bin: str | None) ->
         return
 
 
+def _apply_landlock_spawn(work_dir: Path, log_dir: Path) -> None:
+    """SpawnHook Landlock profile: read the import roots, work_dir and log_dir;
+    grant NO write and NO execute rule, and -- by NOT granting any net rule on a
+    net-capable kernel -- deny the network. A spawn decision only inspects the
+    resolved spawn; it never writes, execs, or talks to the network (the parent
+    seam, not the child, records the decision event). Best-effort (seccomp is the
+    primary denier): a kernel without Landlock, or without the sandbox extra,
+    degrades silently here and leaves seccomp to enforce."""
+    if sys.platform != "linux":
+        return
+    try:
+        from py_landlock import Landlock, LandlockError
+    except ImportError:
+        return
+    read_roots = _readable_roots()
+    try:
+        lock = Landlock(strict=False)
+        if read_roots:
+            lock.allow_read(*read_roots)
+        lock.allow_read(str(work_dir), str(log_dir))
+        lock.apply()
+    except LandlockError:
+        return
+
+
 def _apply_seccomp_denylist(syscalls: tuple[str, ...]) -> None:
     """Install the KILL_PROCESS deny-list. Mandatory on Linux: if the binding or
     libseccomp is missing, the ImportError/OSError propagates so the child dies
@@ -354,6 +421,11 @@ def _default_restrict_dirty(ctx: hooks.HookContext) -> None:
     git_bin = shutil.which("git")
     _apply_landlock_dirty(ctx.work_dir, ctx.log_dir, git_bin)
     _apply_seccomp_denylist(_DIRTY_DENY_SYSCALLS)
+
+
+def _default_restrict_spawn(ctx: hooks.HookContext) -> None:
+    _apply_landlock_spawn(ctx.work_dir, ctx.log_dir)
+    _apply_seccomp_denylist(_SPAWN_DENY_SYSCALLS)
 
 
 def _run_dirty_child(
@@ -383,9 +455,42 @@ def _run_dirty_child(
     return {"schema": "dirty_outcome/1", "kind": outcome.kind, "ref": outcome.ref}
 
 
+def _run_spawn_child(
+    module_path: str,
+    attr_path: str,
+    hook_name: str,
+    ctx: hooks.HookContext,
+    view: hooks.SpawnView,
+    *,
+    restrict,
+) -> dict:
+    """Self-restrict, THEN import the plugin and run its spawn hook -- same
+    load-bearing order as ``_run_dirty_child``: the plugin's code executes for
+    the FIRST time already confined. A ``None`` verdict serializes as ``proceed``
+    so the closed vocabulary is the only shape crossing the wire."""
+    restrict(ctx)
+
+    import importlib
+
+    mod = importlib.import_module(module_path)
+    target = mod
+    for attr in filter(None, attr_path.split(".")):
+        target = getattr(target, attr)
+    hook = next(h for h in target.spawn_hooks if h.name == hook_name)
+    decision = hook.before_spawn(ctx, view)
+    if decision is None:
+        return {"schema": "spawn_decision/1", "action": "proceed", "defer_s": 0, "reason": ""}
+    return {
+        "schema": "spawn_decision/1",
+        "action": decision.action,
+        "defer_s": decision.defer_s,
+        "reason": decision.reason,
+    }
+
+
 def _main(argv: list[str]) -> int:
     hook_kind, module_path, attr_path, hook_name = argv[1], argv[2], argv[3], argv[4]
-    if hook_kind != "dirty_handler":
+    if hook_kind not in ("dirty_handler", "spawn_hook"):
         raise SystemExit(f"plugin sandbox: unsupported hook_kind {hook_kind!r}")
     data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     ctx = _ctx_from_wire(data["ctx"])
@@ -393,14 +498,32 @@ def _main(argv: list[str]) -> int:
     real_stdout = sys.stdout
     sys.stdout = sys.stderr  # a plugin's own print() must never corrupt the JSON wire
     try:
-        result = _run_dirty_child(
-            module_path,
-            attr_path,
-            hook_name,
-            ctx,
-            data["dirty_files"],
-            restrict=_default_restrict_dirty,
-        )
+        if hook_kind == "spawn_hook":
+            sv = data["spawn_view"]
+            # Reconstruct names-only: every env value is forced to "" here in the
+            # child too, so even a child that ignored the parent's names-only wire
+            # cannot read a secret VALUE from the view.
+            view = hooks.SpawnView(
+                argv=tuple(sv["argv"]),
+                env=dict.fromkeys(sv["env_names"], ""),
+            )
+            result = _run_spawn_child(
+                module_path,
+                attr_path,
+                hook_name,
+                ctx,
+                view,
+                restrict=_default_restrict_spawn,
+            )
+        else:
+            result = _run_dirty_child(
+                module_path,
+                attr_path,
+                hook_name,
+                ctx,
+                data["dirty_files"],
+                restrict=_default_restrict_dirty,
+            )
     finally:
         sys.stdout = real_stdout
     real_stdout.write(json.dumps(result))

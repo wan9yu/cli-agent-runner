@@ -241,6 +241,8 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `plugin_checksum_mismatch`
 - `plugin_sandbox_degraded`
 - `plugin_sandbox_kill`
+- `plugin_spawn_decision`
+- `plugin_spawn_override_ignored`
 - `prompt_overwritten`
 - `round_cgroup_memory`
 - `round_container_orphan_risk`

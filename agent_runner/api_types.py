@@ -41,6 +41,17 @@ class DirtyOutcome:
 
 
 @dataclass(frozen=True)
+class SpawnDecision:
+    """A SpawnHook's verdict on whether this round should spawn. Wire-format
+    for the trampoline's stdout line too — the closed vocabulary structurally
+    cannot carry a raw argv splice."""
+
+    action: Literal["proceed", "defer", "skip"]
+    defer_s: int = 0
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class RateLimitState:
     """Public: surfaced via peek --json when supervisor is currently throttled."""
 

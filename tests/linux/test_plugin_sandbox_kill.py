@@ -19,7 +19,11 @@ import sys
 import pytest
 
 from agent_runner._plugin_sandbox import _ctx_to_wire
-from tests._test_helpers import install_hostile_dirty_plugin, make_hook_context
+from tests._test_helpers import (
+    install_hostile_dirty_plugin,
+    install_hostile_spawn_plugin,
+    make_hook_context,
+)
 
 
 def _sandbox_bindings_available() -> bool:
@@ -92,3 +96,54 @@ def test_dirty_trampoline_should_die_by_signal_when_handler_connects(tmp_path) -
     result = _run_trampoline_child(module_name, hook_name, tmp_path)
 
     assert result.returncode < 0, result.stderr.decode(errors="replace")
+
+
+def _run_spawn_trampoline_child(module_name, hook_name, tmp_path):
+    payload = {
+        "schema": "plugin_sandbox_input/1",
+        "ctx": _ctx_to_wire(make_hook_context(tmp_path)),
+        "hook_kind": "spawn_hook",
+        "spawn_view": {"argv": ["true"], "env_names": ["PATH"]},
+        "dirty_files": None,
+    }
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent_runner._plugin_sandbox",
+            "spawn_hook",
+            module_name,
+            "PLUGIN",
+            hook_name,
+        ],
+        input=json.dumps(payload).encode("utf-8"),
+        capture_output=True,
+        env=env,
+        timeout=30,
+    )
+
+
+def test_spawn_trampoline_should_die_by_signal_when_hook_calls_execve(tmp_path) -> None:
+    # execve is the denial UNIQUE to the spawn profile: a dirty handler may exec
+    # (git), a spawn hook may not. The confined child is SIGSYS-killed before the
+    # exec returns.
+    module_name, hook_name = install_hostile_spawn_plugin(tmp_path, action="execve")
+
+    result = _run_spawn_trampoline_child(module_name, hook_name, tmp_path)
+
+    assert result.returncode < 0, result.stderr.decode(errors="replace")
+    assert -result.returncode == _SIGSYS
+
+
+def test_spawn_trampoline_should_die_by_signal_when_hook_opens_socket(tmp_path) -> None:
+    module_name, hook_name = install_hostile_spawn_plugin(tmp_path, action="socket")
+
+    result = _run_spawn_trampoline_child(module_name, hook_name, tmp_path)
+
+    assert result.returncode < 0, result.stderr.decode(errors="replace")
+    assert -result.returncode == _SIGSYS

@@ -17,6 +17,7 @@ from agent_runner.hooks import (
     PostRoundHook,
     PreRoundHook,
     ServeStartupHook,
+    SpawnHook,
 )
 
 
@@ -32,6 +33,7 @@ class PluginManifest:
     post_round_hooks: tuple[PostRoundHook, ...] = ()
     serve_startup_hooks: tuple[ServeStartupHook, ...] = ()
     dirty_handlers: tuple[DirtyHandler, ...] = ()
+    spawn_hooks: tuple[SpawnHook, ...] = ()
     detectors: tuple[Detector, ...] = ()
     event_kinds: tuple[str, ...] = ()
 
@@ -95,6 +97,8 @@ def register_manifest(manifest: PluginManifest, *, builtin: bool = False) -> Non
         hooks.register_serve_startup_hook(h)
     for d in manifest.dirty_handlers:
         hooks.register_dirty_handler(d, owner=manifest.name, builtin=builtin)
+    for s in manifest.spawn_hooks:
+        hooks.register_spawn_hook(s, owner=manifest.name, builtin=builtin)
     for det in manifest.detectors:
         monitor.register_detector(det)
     for kind in manifest.event_kinds:
@@ -125,6 +129,10 @@ def unregister_by_name(names: set[str]) -> set[str]:
         for h in manifest.dirty_handlers:
             hooks._DIRTY_HANDLER_OWNER.pop(id(h), None)
             hooks._DIRTY_HANDLER_BUILTIN.pop(id(h), None)
+        _remove_by_identity(hooks._SPAWN_HOOKS, manifest.spawn_hooks)
+        for h in manifest.spawn_hooks:
+            hooks._SPAWN_HOOK_OWNER.pop(id(h), None)
+            hooks._SPAWN_HOOK_BUILTIN.pop(id(h), None)
         _remove_by_identity(monitor._PLUGIN_DETECTORS, manifest.detectors)
         for kind in manifest.event_kinds:
             events._PLUGIN_KINDS.pop(kind, None)

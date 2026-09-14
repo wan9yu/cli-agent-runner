@@ -1,6 +1,6 @@
 """Plugin hook surface for agent-runner.
 
-Five Protocol-typed extension points loaded via setuptools entry_points at
+Six Protocol-typed extension points loaded via setuptools entry_points at
 package import:
   * PreRoundHook    — runs after lock acquired, before context is written
   * ContextEnricher — returns a per-plugin slice merged into round-context.json
@@ -11,6 +11,9 @@ package import:
                        round loop; receives the loaded Config
   * DirtyHandler    — resolves a clean-exit dirty tree; runs ascending by
                       ``priority``, first non-None DirtyOutcome wins
+  * SpawnHook       — runs at the serve admission gate, before a round spawns;
+                      a read-only view of the resolved spawn (argv + env NAMES)
+                      that may return proceed / defer / skip
 
 Each hook's failure is contained: runner wraps every call in try/except and
 emits a built-in ``hook_failed`` event with truncated traceback. A broken
@@ -19,13 +22,16 @@ plugin must never crash the supervisor.
 Public API:
   * HookContext                — narrowed runtime context passed to all hooks
   * PreRoundHook / ContextEnricher / PostRoundHook / ServeStartupHook /
-    DirtyHandler                — Protocols
+    DirtyHandler / SpawnHook    — Protocols
+  * SpawnView / SpawnDecision   — the read-only spawn view + a SpawnHook's verdict
   * register_pre_round_hook / register_context_enricher / register_post_round_hook
-    / register_serve_startup_hook / register_dirty_handler
+    / register_serve_startup_hook / register_dirty_handler / register_spawn_hook
   * pre_round_hooks() / context_enrichers() / post_round_hooks()
-    / serve_startup_hooks()
+    / serve_startup_hooks() / spawn_hooks()
   * dispatch_dirty()            — runs DirtyHandlers in priority order; first
                                   non-None outcome wins
+  * collapse_spawn_decisions()  — pure fold of SpawnHook verdicts
+                                  (skip > defer > proceed)
   * run_serve_startup_hooks()   — orchestrates serve-startup hook execution with
                                   structured stderr + best-effort event emission
   * plugin_context_enrichers()  — sorted list of registered enricher names
@@ -36,6 +42,7 @@ from __future__ import annotations
 
 import sys
 import traceback as tb_mod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -43,6 +50,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from agent_runner import events
 from agent_runner._redact import redact_secrets
 from agent_runner._registry import ensure_unique
+from agent_runner.api_types import SpawnDecision
 
 _HEAD_BYTES = 1024
 _TAIL_BYTES = 1024
@@ -197,6 +205,25 @@ class ServeStartupHook(Protocol):
     def __call__(self, cfg: Any) -> None: ...
 
 
+@runtime_checkable
+class SpawnHook(Protocol):
+    """Runs immediately before a round would spawn. Read-only view of the
+    resolved spawn — cannot mutate argv/env. Return None ⇒ proceed."""
+
+    name: str
+
+    def before_spawn(self, ctx: HookContext, view: SpawnView) -> SpawnDecision | None: ...
+
+
+@dataclass(frozen=True)
+class SpawnView:
+    """Every value in ``env`` is the empty string — a hook may check which
+    names are set but can never read a secret's value through this view."""
+
+    argv: tuple[str, ...]
+    env: Mapping[str, str]
+
+
 _PRE_ROUND_HOOKS: list[PreRoundHook] = []
 _CONTEXT_ENRICHERS: list[ContextEnricher] = []
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
@@ -204,6 +231,9 @@ _SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
 _DIRTY_HANDLERS: list[DirtyHandler] = []
 _DIRTY_HANDLER_OWNER: dict[int, str] = {}  # id(handler) -> manifest .name; "" = unknown/legacy
 _DIRTY_HANDLER_BUILTIN: dict[int, bool] = {}  # id(handler) -> genuine-builtin trust; absent = False
+_SPAWN_HOOKS: list[SpawnHook] = []
+_SPAWN_HOOK_OWNER: dict[int, str] = {}  # id(hook) -> manifest .name; "" = unknown/legacy
+_SPAWN_HOOK_BUILTIN: dict[int, bool] = {}  # id(hook) -> genuine-builtin trust; absent = False
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -259,6 +289,36 @@ def register_dirty_handler(
     _DIRTY_HANDLERS.append(handler)
     _DIRTY_HANDLER_OWNER[id(handler)] = owner
     _DIRTY_HANDLER_BUILTIN[id(handler)] = builtin
+
+
+def register_spawn_hook(hook: SpawnHook, *, owner: str = "", builtin: bool = False) -> None:
+    """``builtin`` grants in-process (non-trampolined) dispatch trust, keyed on
+    ``id(hook)`` — the hook OBJECT, never the collidable ``owner`` name — exactly
+    as ``register_dirty_handler`` keys builtin trust. Defaults to False
+    (fail-closed): a hook registered without it is confined as third-party. No
+    first-party plugin declares ``spawn_hooks`` today, so every spawn hook is
+    third-party and trampolined; the flag keeps the trust provenance-keyed and
+    future-proof rather than name-based."""
+    ensure_unique(hook.name, _SPAWN_HOOKS, "spawn_hook")
+    _SPAWN_HOOKS.append(hook)
+    _SPAWN_HOOK_OWNER[id(hook)] = owner
+    _SPAWN_HOOK_BUILTIN[id(hook)] = builtin
+
+
+def spawn_hooks() -> list[SpawnHook]:
+    return list(_SPAWN_HOOKS)
+
+
+def collapse_spawn_decisions(named: list[tuple[str, SpawnDecision]]) -> SpawnDecision:
+    """Pure, subprocess-free. skip > defer(max defer_s) > proceed; ties broken
+    by ``named``'s own order (== registration/manifest-load order)."""
+    skips = [d for _, d in named if d.action == "skip"]
+    if skips:
+        return skips[0]
+    defers = [d for _, d in named if d.action == "defer"]
+    if defers:
+        return max(defers, key=lambda d: d.defer_s)
+    return SpawnDecision(action="proceed")
 
 
 def dispatch_dirty(
