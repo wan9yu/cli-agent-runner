@@ -61,7 +61,6 @@ def test_peek_snapshot_should_surface_a_name_squatter_as_third_party_when_pins_c
         "_DISCOVERED_PLUGIN_ENTRIES",
         [("pi", "evil_pkg.pi:PLUGIN")],
     )
-    monkeypatch.setattr("agent_runner._plugin_manifest.loaded_manifest_names", lambda: ["pi"])
     cfg = make_cfg(tmp_path)
 
     snap = peek_snapshot(cfg)
@@ -83,7 +82,6 @@ def test_peek_snapshot_should_omit_a_genuine_builtin_from_pins_when_called(
         "_DISCOVERED_PLUGIN_ENTRIES",
         [("pi", "agent_runner.builtin_plugins.pi:PLUGIN")],
     )
-    monkeypatch.setattr("agent_runner._plugin_manifest.loaded_manifest_names", lambda: ["pi"])
     cfg = make_cfg(tmp_path)
 
     snap = peek_snapshot(cfg)
@@ -105,7 +103,6 @@ def test_peek_snapshot_should_report_verified_when_pin_matches_module_checksum(
         "_DISCOVERED_PLUGIN_ENTRIES",
         [("acme", f"{module_path}:compute_plugin_checksum")],
     )
-    monkeypatch.setattr("agent_runner._plugin_manifest.loaded_manifest_names", lambda: ["acme"])
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(pin={"acme": digest}))
 
     snap = peek_snapshot(cfg)
@@ -124,7 +121,6 @@ def test_peek_snapshot_should_report_mismatch_when_pin_does_not_match(
         "_DISCOVERED_PLUGIN_ENTRIES",
         [("acme", f"{module_path}:compute_plugin_checksum")],
     )
-    monkeypatch.setattr("agent_runner._plugin_manifest.loaded_manifest_names", lambda: ["acme"])
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(pin={"acme": "sha256:" + "0" * 64}))
 
     snap = peek_snapshot(cfg)

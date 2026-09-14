@@ -91,13 +91,28 @@ def test_dispatch_dirty_should_trampoline_third_party_when_sandbox_on(
     tmp_path, monkeypatch
 ) -> None:
     handler = _Handler()
-    hooks.register_dirty_handler(handler, owner="acme_pkg")
+    hooks.register_dirty_handler(
+        handler, owner="acme_pkg", module_path="acme_pkg.mod", attr_path="PLUGIN"
+    )
     seen: dict = {}
 
     def _fake_sandboxed(
-        hook_kind, owner, hook_name, ctx, *, log_dir, dirty_files=None, timeout_s=30.0
+        hook_kind,
+        module_path,
+        attr_path,
+        hook_name,
+        ctx,
+        *,
+        log_dir,
+        dirty_files=None,
+        timeout_s=30.0,
     ):
-        seen.update(hook_kind=hook_kind, owner=owner, hook_name=hook_name)
+        seen.update(
+            hook_kind=hook_kind,
+            module_path=module_path,
+            attr_path=attr_path,
+            hook_name=hook_name,
+        )
         return None
 
     import agent_runner._plugin_sandbox as ps
@@ -107,7 +122,12 @@ def test_dispatch_dirty_should_trampoline_third_party_when_sandbox_on(
     hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
 
     assert handler.calls == 0
-    assert seen == {"hook_kind": "dirty_handler", "owner": "acme_pkg", "hook_name": "acme_dirty"}
+    assert seen == {
+        "hook_kind": "dirty_handler",
+        "module_path": "acme_pkg.mod",
+        "attr_path": "PLUGIN",
+        "hook_name": "acme_dirty",
+    }
 
 
 def test_dispatch_dirty_should_run_third_party_in_process_when_sandbox_off(tmp_path) -> None:

@@ -130,16 +130,6 @@ def _ctx_from_wire(data: dict) -> hooks.HookContext:
     )
 
 
-def _resolve_entry(owner: str) -> tuple[str, str]:
-    from agent_runner import _DISCOVERED_PLUGIN_ENTRIES
-
-    for name, value in _DISCOVERED_PLUGIN_ENTRIES:
-        if name == owner:
-            module_path, _, attr_path = value.partition("[")[0].rstrip().partition(":")
-            return module_path, attr_path
-    raise LookupError(f"no discovered entry point owns {owner!r}")
-
-
 # ---------------------------------------------------------------------------
 # Parent-side launcher.
 # ---------------------------------------------------------------------------
@@ -147,7 +137,8 @@ def _resolve_entry(owner: str) -> tuple[str, str]:
 
 def run_hook_sandboxed(
     hook_kind: Literal["spawn_hook", "dirty_handler"],
-    owner: str,
+    module_path: str,
+    attr_path: str,
     hook_name: str,
     ctx: hooks.HookContext,
     *,
@@ -157,14 +148,18 @@ def run_hook_sandboxed(
     timeout_s: float = _TRAMPOLINE_TIMEOUT_S,
 ) -> SpawnDecision | DirtyOutcome | None:
     """Launch the confinement child for one third-party hook call and return its
-    validated outcome. Secrets never cross the wire: only context field NAMES /
-    plain values that ``_ctx_to_wire`` chooses are sent, and a ``SpawnView`` is
-    reduced to its argv + env NAMES (``env_names``) -- never a value. A child
-    killed by signal (seccomp KILL_PROCESS) emits ``plugin_sandbox_kill`` and
-    raises; a non-zero exit or a timeout raises too -- the caller (``dispatch_dirty``
-    / the spawn seam) isolates any raise as ``hook_failed``. Both child streams
-    are redact-capped before any byte reaches an event."""
-    module_path, attr_path = _resolve_entry(owner)
+    validated outcome. ``module_path``/``attr_path`` locate the plugin the child
+    re-imports; they are threaded per-handler from the DISCOVERED entry point at
+    registration (``hooks._DIRTY_HANDLER_MODULE`` / ``_SPAWN_HOOK_MODULE``), NOT
+    derived from the collidable manifest name, so an entry-point name that differs
+    from ``manifest.name`` still resolves. Secrets never cross the wire: only
+    context field NAMES / plain values that ``_ctx_to_wire`` chooses are sent, and
+    a ``SpawnView`` is reduced to its argv + env NAMES (``env_names``) -- never a
+    value. A child killed by signal (seccomp KILL_PROCESS) emits
+    ``plugin_sandbox_kill`` and raises; a non-zero exit or a timeout raises too --
+    the caller (``dispatch_dirty`` / the spawn seam) isolates any raise as
+    ``hook_failed``. Both child streams are redact-capped before any byte reaches
+    an event."""
     payload = {
         "schema": "plugin_sandbox_input/1",
         "ctx": _ctx_to_wire(ctx),

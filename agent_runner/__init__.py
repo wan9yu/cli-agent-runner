@@ -111,7 +111,9 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
             target = mod
             for attr in filter(None, attr_path.split(".")):
                 target = getattr(target, attr)
-            register_manifest(target, builtin=is_builtin)
+            register_manifest(
+                target, builtin=is_builtin, module_path=module_path, attr_path=attr_path
+            )
         except Exception as e:  # noqa: BLE001 — a broken plugin must never crash the supervisor
             warnings.warn(f"failed to load {_PLUGIN_GROUP} plugin {name!r}: {e}", stacklevel=3)
 

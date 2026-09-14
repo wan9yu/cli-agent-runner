@@ -231,9 +231,14 @@ _SERVE_STARTUP_HOOKS: list[ServeStartupHook] = []
 _DIRTY_HANDLERS: list[DirtyHandler] = []
 _DIRTY_HANDLER_OWNER: dict[int, str] = {}  # id(handler) -> manifest .name; "" = unknown/legacy
 _DIRTY_HANDLER_BUILTIN: dict[int, bool] = {}  # id(handler) -> genuine-builtin trust; absent = False
+# id(handler) -> (module_path, attr_path) resolved from the DISCOVERED entry point at
+# load time. This -- never the collidable manifest name -- is what the trampoline
+# re-imports the plugin from, so an entry-point name != manifest.name still resolves.
+_DIRTY_HANDLER_MODULE: dict[int, tuple[str, str]] = {}
 _SPAWN_HOOKS: list[SpawnHook] = []
 _SPAWN_HOOK_OWNER: dict[int, str] = {}  # id(hook) -> manifest .name; "" = unknown/legacy
 _SPAWN_HOOK_BUILTIN: dict[int, bool] = {}  # id(hook) -> genuine-builtin trust; absent = False
+_SPAWN_HOOK_MODULE: dict[int, tuple[str, str]] = {}  # id(hook) -> (module_path, attr_path)
 
 
 def register_pre_round_hook(hook: PreRoundHook) -> None:
@@ -278,31 +283,55 @@ def plugin_context_enrichers() -> list[str]:
 
 
 def register_dirty_handler(
-    handler: DirtyHandler, *, owner: str = "", builtin: bool = False
+    handler: DirtyHandler,
+    *,
+    owner: str = "",
+    builtin: bool = False,
+    module_path: str = "",
+    attr_path: str = "",
 ) -> None:
     """``builtin`` grants in-process dispatch trust and is keyed on
     ``id(handler)`` — the handler OBJECT, never the collidable ``owner`` name.
     Defaults to False (fail-closed): a handler registered without it is
     sandboxed as third-party. Only the verified load path
-    (``is_builtin_provenance``) passes ``builtin=True``."""
+    (``is_builtin_provenance``) passes ``builtin=True``.
+
+    ``module_path``/``attr_path`` are the DISCOVERED entry point's resolvable
+    location (``module:attr``), threaded here so the trampoline re-imports the
+    plugin from that path rather than from the collidable ``owner`` name — an
+    entry-point name that differs from ``manifest.name`` (legal for third-party
+    plugins) then still resolves."""
     ensure_unique(handler.name, _DIRTY_HANDLERS, "dirty_handler")
     _DIRTY_HANDLERS.append(handler)
     _DIRTY_HANDLER_OWNER[id(handler)] = owner
     _DIRTY_HANDLER_BUILTIN[id(handler)] = builtin
+    _DIRTY_HANDLER_MODULE[id(handler)] = (module_path, attr_path)
 
 
-def register_spawn_hook(hook: SpawnHook, *, owner: str = "", builtin: bool = False) -> None:
+def register_spawn_hook(
+    hook: SpawnHook,
+    *,
+    owner: str = "",
+    builtin: bool = False,
+    module_path: str = "",
+    attr_path: str = "",
+) -> None:
     """``builtin`` grants in-process (non-trampolined) dispatch trust, keyed on
     ``id(hook)`` — the hook OBJECT, never the collidable ``owner`` name — exactly
     as ``register_dirty_handler`` keys builtin trust. Defaults to False
     (fail-closed): a hook registered without it is confined as third-party. No
     first-party plugin declares ``spawn_hooks`` today, so every spawn hook is
     third-party and trampolined; the flag keeps the trust provenance-keyed and
-    future-proof rather than name-based."""
+    future-proof rather than name-based.
+
+    ``module_path``/``attr_path`` are threaded exactly as in
+    ``register_dirty_handler`` so the trampoline resolves the hook from the
+    discovered entry point, never the collidable ``owner`` name."""
     ensure_unique(hook.name, _SPAWN_HOOKS, "spawn_hook")
     _SPAWN_HOOKS.append(hook)
     _SPAWN_HOOK_OWNER[id(hook)] = owner
     _SPAWN_HOOK_BUILTIN[id(hook)] = builtin
+    _SPAWN_HOOK_MODULE[id(hook)] = (module_path, attr_path)
 
 
 def spawn_hooks() -> list[SpawnHook]:
@@ -344,7 +373,6 @@ def dispatch_dirty(
     """
     ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
     for h in ordered:
-        owner = _DIRTY_HANDLER_OWNER.get(id(h), "")
         third_party = not _DIRTY_HANDLER_BUILTIN.get(id(h), False)
         try:
             if sandbox != "off" and third_party:
@@ -359,8 +387,15 @@ def dispatch_dirty(
                         "unavailable on this platform; refusing to run "
                         f"{h.name!r} unconfined"
                     )
+                module_path, attr_path = _DIRTY_HANDLER_MODULE.get(id(h), ("", ""))
                 outcome = run_hook_sandboxed(
-                    "dirty_handler", owner, h.name, ctx, log_dir=log_dir, dirty_files=dirty_files
+                    "dirty_handler",
+                    module_path,
+                    attr_path,
+                    h.name,
+                    ctx,
+                    log_dir=log_dir,
+                    dirty_files=dirty_files,
                 )
             else:
                 outcome = h.handle_dirty(ctx, dirty_files)

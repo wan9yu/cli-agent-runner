@@ -267,14 +267,6 @@ def test_child_env_should_drop_parent_secrets_but_keep_git_and_path(monkeypatch)
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
-def _point_discovery_at(monkeypatch, module_name: str) -> None:
-    import agent_runner
-
-    monkeypatch.setattr(
-        agent_runner, "_DISCOVERED_PLUGIN_ENTRIES", [("acme_pkg", f"{module_name}:PLUGIN")]
-    )
-
-
 def test_run_hook_sandboxed_should_hide_parent_secrets_from_child(tmp_path, monkeypatch) -> None:
     body = (
         "        import os\n"
@@ -284,12 +276,12 @@ def test_run_hook_sandboxed_should_hide_parent_secrets_from_child(tmp_path, monk
     module_name = _write_fake_plugin(tmp_path, name="leak", hook_name="leak_dirty", body=body)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-should-not-leak")
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
-    _point_discovery_at(monkeypatch, module_name)
     from agent_runner._plugin_sandbox import run_hook_sandboxed
 
     outcome = run_hook_sandboxed(
         "dirty_handler",
-        "acme_pkg",
+        module_name,
+        "PLUGIN",
         "leak_dirty",
         make_hook_context(tmp_path),
         log_dir=tmp_path,
@@ -306,13 +298,13 @@ def test_run_hook_sandboxed_should_bound_child_output_when_plugin_floods_stdout(
     body = "        import os\n        os.write(1, b'x' * (128 * 1024))\n        return None"
     module_name = _write_fake_plugin(tmp_path, name="flood", hook_name="flood_dirty", body=body)
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
-    _point_discovery_at(monkeypatch, module_name)
     from agent_runner._plugin_sandbox import run_hook_sandboxed
 
     with pytest.raises((ValueError, RuntimeError)):
         run_hook_sandboxed(
             "dirty_handler",
-            "acme_pkg",
+            module_name,
+            "PLUGIN",
             "flood_dirty",
             make_hook_context(tmp_path),
             log_dir=tmp_path,

@@ -173,21 +173,21 @@ def peek_snapshot(cfg) -> dict:
     ``agent_runner._warn_builtin_name_squat``) must still surface here as
     third-party (verified/mismatch/unpinned); keying on the name alone would
     hide a squatter as a trusted builtin, masking exactly the threat this
-    block exists to make visible. Mirrors
-    ``cli.doctor_cmd._third_party_plugin_checksums``'s identical recipe.
+    block exists to make visible.
+
+    Keys ``pins`` by ENTRY-POINT name (iterating ``_DISCOVERED_PLUGIN_ENTRIES``
+    directly), NOT by ``manifest.name`` -- an entry-point name that differs from
+    the manifest name (legal for third-party plugins) would otherwise
+    ``entries.get(manifest_name) -> None`` and the plugin would vanish from
+    ``pins`` entirely. Mirrors ``doctor_snapshot``'s identical recipe.
     """
     import agent_runner
     from agent_runner._plugin_checksum import verify_pin
-    from agent_runner._plugin_manifest import loaded_manifest_names
     from agent_runner._registry import is_builtin_provenance
 
     probe = probe_sandbox_capability()
-    entries = dict(agent_runner._DISCOVERED_PLUGIN_ENTRIES)
     pins: dict[str, str] = {}
-    for name in loaded_manifest_names():
-        value = entries.get(name)
-        if value is None:
-            continue
+    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
         module_path = agent_runner._entry_point_module_path(value)
         if is_builtin_provenance(name, module_path):
             continue

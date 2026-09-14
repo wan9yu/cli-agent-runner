@@ -41,6 +41,8 @@ def _isolate_plugin_registries():
         hooks._SPAWN_HOOK_OWNER,
         hooks._DIRTY_HANDLER_BUILTIN,
         hooks._SPAWN_HOOK_BUILTIN,
+        hooks._DIRTY_HANDLER_MODULE,
+        hooks._SPAWN_HOOK_MODULE,
         _plugin_manifest._LOADED_MANIFESTS,
         events._PLUGIN_KINDS,
     ]

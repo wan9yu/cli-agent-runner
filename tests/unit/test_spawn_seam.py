@@ -103,14 +103,13 @@ def test_run_hook_sandboxed_should_send_env_names_only_when_spawn_view_given(tmp
             b"",
         )
 
-    monkeypatch.setattr(_plugin_sandbox, "_resolve_entry", lambda _o: ("m", "a"))
     monkeypatch.setattr(_plugin_sandbox, "_run_child_process", _fake_child)
     view = _plugin_sandbox.hooks.SpawnView(
         argv=("docker", "run", "img"), env={"ANTHROPIC_API_KEY": "s3cr3t", "PATH": "/usr/bin"}
     )
 
     _plugin_sandbox.run_hook_sandboxed(
-        "spawn_hook", "acme", "gate", make_hook_context(tmp_path), log_dir=tmp_path, view=view
+        "spawn_hook", "m", "a", "gate", make_hook_context(tmp_path), log_dir=tmp_path, view=view
     )
 
     wire = captured["payload"]["spawn_view"]
@@ -238,7 +237,7 @@ def test_seam_should_collapse_skip_over_defer_across_hooks(tmp_path, monkeypatch
         "gate_defer": SpawnDecision("defer", defer_s=9),
         "gate_skip": SpawnDecision("skip", reason="stop"),
     }
-    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", lambda *a, **k: decisions[a[2]])
+    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", lambda *a, **k: decisions[a[3]])
     cfg = make_cfg(
         tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_defer", "gate_skip"])
     )

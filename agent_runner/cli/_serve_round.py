@@ -241,8 +241,10 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox) -> SpawnDecision | No
     third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
     try:
         if sandbox != "off" and third_party:
-            owner = hooks._SPAWN_HOOK_OWNER.get(id(h), "")
-            return run_hook_sandboxed("spawn_hook", owner, h.name, ctx, log_dir=log_dir, view=view)
+            module_path, attr_path = hooks._SPAWN_HOOK_MODULE.get(id(h), ("", ""))
+            return run_hook_sandboxed(
+                "spawn_hook", module_path, attr_path, h.name, ctx, log_dir=log_dir, view=view
+            )
         return h.before_spawn(ctx, view)
     except Exception as exc:  # noqa: BLE001 — isolate; omit from collapse (== proceed)
         events.emit(
