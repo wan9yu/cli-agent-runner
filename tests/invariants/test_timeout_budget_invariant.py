@@ -89,8 +89,8 @@ def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     STRICTLY BELOW _serve_policy._ROUND_TERM_GRACE_S, by at least 3s of
     leader-exit margin, so the round leader's own killpg(SIGKILL) of its agent
     always has room to fire before the supervisor's SIGKILL of the leader on
-    the out-of-process `agent-runner kill` path (_lifecycle._terminate_round_pid,
-    which SIGKILLs only the leader pid with no stray-reap)."""
+    the out-of-process `agent-runner kill` path (_lifecycle._terminate_round_pid
+    TERM-first, then SIGKILL + stray-reap after this same grace)."""
     assert _serve_policy._REAP_GRACE_S == REAP_GRACE_S
     assert _serve_policy._GIT_COMMIT_TIMEOUT_S == GIT_COMMIT_TIMEOUT_S
     assert _ROUND_TERM_GRACE_S == _SERVE_ROUND_TERM_GRACE_S == _serve_policy._ROUND_TERM_GRACE_S

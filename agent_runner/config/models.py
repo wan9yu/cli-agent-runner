@@ -34,13 +34,14 @@ DEFAULT_SIGTERM_GRACE_S = 10
 
 # Ceiling for [agent] sigterm_grace_s: sits a STRICT ~3s BELOW _serve_policy's
 # _ROUND_TERM_GRACE_S (15, the supervisor's own wait for the round leader) --
-# NOT equal to it. The margin matters on the out-of-process `agent-runner kill`
-# path (_lifecycle._terminate_round_pid), which SIGKILLs only the leader pid
-# with no stray-reap: without it, a leader whose own killpg(SIGKILL) of its
-# agent fires at the same instant the supervisor SIGKILLs the leader could lose
-# the race, leaving the agent permanently orphaned. config/ cannot import
-# _serve_policy (a cycle: _serve_policy already imports agent_runner.config for
-# ConfigError), so this is a LITERAL mirror-with-margin, pinned by
+# NOT equal to it. The margin buys the round LEADER's own cooperative
+# _kill_pgroup (SIGTERM -> grace -> killpg of its agent) room to finish before
+# any outside SIGKILL lands: on the out-of-process `agent-runner kill` path
+# (_lifecycle._terminate_round_pid) the leader is SIGTERM'd first and only
+# SIGKILLed after this same grace, so a flushing agent isn't cut off an instant
+# before the leader's own escalation. config/ cannot import _serve_policy (a
+# cycle: _serve_policy already imports agent_runner.config for ConfigError), so
+# this is a LITERAL mirror-with-margin, pinned by
 # tests/invariants/test_timeout_budget_invariant.py against drift, the same
 # pattern _serve_policy uses for its own agent_runtime.REAP_GRACE_S /
 # vcs_state.GIT_COMMIT_TIMEOUT_S mirrors.
