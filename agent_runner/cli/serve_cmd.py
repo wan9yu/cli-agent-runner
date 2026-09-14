@@ -787,7 +787,6 @@ def cmd(args) -> int:
                 round_num=round_num,
                 host_health_cfg=cfg.monitor.host_health,
                 defer_to_cgroup=defer_to_cgroup,
-                doorbell_fd=listener.fd,
             )
             round_duration_s = SYSTEM_CLOCK.monotonic() - round_started
             atomic_relink(log_dir / ROUND_CURRENT_LINK, round_log_path)

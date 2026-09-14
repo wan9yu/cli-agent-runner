@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import _resolve, events, hooks, host_health, metrics
-from agent_runner._notify import NULL_LISTENER, Listener, NullListener, drain
+from agent_runner._notify import NULL_LISTENER, Listener, NullListener
 from agent_runner._plugin_sandbox import run_hook_sandboxed
 from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
@@ -472,7 +472,6 @@ def _spawn_round(
     defer_to_cgroup: bool = False,
     clock: Clock = SYSTEM_CLOCK,
     sample_fn=metrics.sample,
-    doorbell_fd: int | None = None,
 ) -> int:
     """Spawn `agent-runner round` in its OWN process group under an outer wall-clock
     ceiling. Breaks on the timeout DEADLINE only: on breach, emit
@@ -483,15 +482,22 @@ def _spawn_round(
     finish (the documented stop contract: runbook.md). Returns
     the round returncode.
 
-    ``doorbell_fd`` (None by default — byte-identical to today, since no caller
-    passes one yet) is an extra fd to watch alongside the round leader's own
-    exit while blocked in ``wait_exit``: a readable doorbell (SIGTERM's
-    wakeup fd, or a plugin's ``ring()``) just wakes the mid-round wait early
-    to re-check the SAME `deadline`/`next_mem_check` this loop already
-    evaluates -- it adds no new branch and changes no decision, only how
-    promptly a pending stop/notification is noticed between ~10s mem-check
-    ticks. Draining that fd, if anything must, is the caller's own contract;
-    this function only ever reads its readiness via ``select``.
+    Mid-round, this watches ONLY the round leader's own exit fd -- there is
+    no mid-round doorbell wake. A SIGTERM still lands promptly: the process's
+    signal handler runs (PEP 475 retries the interrupted ``select`` for a
+    non-raising handler), sets `stop["requested"]`, and `cmd()`'s top-of-loop
+    check stops the loop after this round finishes, exactly as before. An
+    earlier revision watched an extra doorbell fd here to wake the wait
+    early, but nothing in this loop has a `stop` check or any gate besides
+    the two fixed-timestamp deadlines below -- a doorbell wake advanced no
+    decision, it only re-checked the SAME gates sooner, so it was removed as
+    dark code.
+
+    No change to the RULES for when a round is deferred, terminated, or
+    reaped. The mid-round memory check and the round budget now take effect
+    on schedule instead of up to ~1 s late (the old fixed-cadence poll), so
+    within that window the sustained-pressure floor or the budget cutoff can
+    act on a round the old ~1 s poll would have seen finish first.
 
     ``host_health_cfg`` (None by default — existing callers get byte-identical
     behavior) arms the mid-round hard floor: every ~``_MEM_CHECK_INTERVAL_S``
@@ -587,26 +593,15 @@ def _spawn_round(
             def _stash_cgroup() -> None:
                 _stash_round_cgroup_state(log_dir, cg_base, cg_peak_current, cg_peak_swap)
 
-            _select_fds = (doorbell_fd,) if doorbell_fd is not None else ()
-
             while True:
                 wake_deadline = (
                     min(deadline, next_mem_check) if next_mem_check is not None else deadline
                 )
-                outcome = wait_exit(
-                    proc, deadline=wake_deadline, extra_fds=_select_fds, clock=clock
-                )
+                outcome = wait_exit(proc, deadline=wake_deadline, clock=clock)
                 if outcome == "exited":
                     returncode = proc.wait()  # already exited -- reaps immediately, no real block
                     _stash_cgroup()
                     return returncode
-                if outcome == "woken" and doorbell_fd is not None:
-                    # The FIFO is level-triggered: an undrained byte leaves
-                    # every subsequent select() in wait_exit instantly ready,
-                    # busy-spinning this loop at 100% CPU for the rest of the
-                    # round. wait_exit itself never drains extra_fds (see its
-                    # own docstring) -- draining is this caller's contract.
-                    drain(doorbell_fd)
                 if clock.monotonic() >= deadline:
                     break
                 if next_mem_check is not None and clock.monotonic() >= next_mem_check:

@@ -77,10 +77,11 @@ def drain(fd: int) -> None:
     ``select()`` on it instantly ready -- an undrained fd busy-spins its
     caller at 100% CPU forever after the first wake, since a level-triggered
     fd stays readable until read. Advisory: the bytes carry no payload and are
-    discarded. Shared by :meth:`Listener.wait` (its own timeout branch) and
-    any caller that watches this fd as an extra ``wait_exit``/``select`` fd
-    itself (e.g. ``_spawn_round``'s ``doorbell_fd`` -- see ``_serve_round.py``)
-    and so must drain it manually on a ``"woken"`` outcome.
+    discarded. Used only by :meth:`Listener.wait` (its own timeout branch) --
+    the pause/sleep waits (``_interruptible_sleep``/``_pause_poll``) are the
+    sole consumers of a live ``Listener``. Nothing watches this fd mid-round
+    (``_spawn_round`` only ever waits on the round leader's own exit fd), so
+    there is no other caller that must drain it itself.
     """
     while True:
         try:

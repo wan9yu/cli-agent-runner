@@ -4,8 +4,8 @@ a fresh KeyboardInterrupt for the process's whole life) can't skip the SIGKILL
 escalation. The v0.3.3 dark-code lesson: a review that only checks the
 MECHANISM (an arg value) can miss a broken PROPERTY. These tests verify the
 end-to-end behavior -- the retry happens, grace is not inflated, and SIGKILL
-still fires -- driving `wait_exit`'s poll fallback (FakeClock, no extra_fds)
-so a re-entrant interrupt can be injected deterministically without any real
+still fires -- driving `wait_exit`'s poll fallback (FakeClock) so a
+re-entrant interrupt can be injected deterministically without any real
 wall-clock wait or a real signal."""
 
 from __future__ import annotations

@@ -57,23 +57,21 @@ def test_wait_exit_should_return_timeout_when_deadline_passes_before_exit():
         proc.wait()
 
 
-def test_wait_exit_should_return_woken_when_extra_fd_readable():
-    proc = subprocess.Popen(["sleep", "5"])
-    read_fd, write_fd = os.pipe()
-
+def test_wait_exit_should_report_exited_when_proc_already_dead_at_deadline():
+    """A boundary tie: the exit fd can be ready in the SAME select() call
+    that also finds its deadline already reached. The already-dead proc must
+    win that tie -- a caller (e.g. the mid-round mem-check/round-budget
+    check in _spawn_round) must never treat a round that has already
+    finished on its own as a timeout worth acting on."""
+    proc = subprocess.Popen(["sleep", "0.05"])
     try:
-        os.write(write_fd, b"x")
-        start = time.monotonic()
-        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5, extra_fds=(read_fd,))
-        elapsed = time.monotonic() - start
+        time.sleep(0.3)  # let it exit for real, without reaping it (no poll()/wait() yet)
 
-        assert outcome == "woken"
-        assert elapsed < 1.0  # promptly, not after the deadline
+        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic())
+
+        assert outcome == "exited"
     finally:
-        os.close(read_fd)
-        os.close(write_fd)
-        proc.terminate()
-        proc.wait()
+        proc.wait()  # the test reaps
 
 
 def test_wait_exit_should_fall_back_to_poll_when_exit_fd_none(monkeypatch):
@@ -85,27 +83,6 @@ def test_wait_exit_should_fall_back_to_poll_when_exit_fd_none(monkeypatch):
 
     assert outcome == "exited"
     assert proc.returncode == 0  # the poll fallback reaps synchronously, unlike the fast path
-
-
-def test_wait_exit_should_honor_extra_fds_promptly_during_poll_fallback(monkeypatch):
-    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
-    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 5.0)
-    proc = subprocess.Popen(["sleep", "5"])
-    read_fd, write_fd = os.pipe()
-
-    try:
-        os.write(write_fd, b"x")
-        start = time.monotonic()
-        outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5, extra_fds=(read_fd,))
-        elapsed = time.monotonic() - start
-
-        assert outcome == "woken"
-        assert elapsed < 1.0  # not stuck behind the 5s poll tick
-    finally:
-        os.close(read_fd)
-        os.close(write_fd)
-        proc.terminate()
-        proc.wait()
 
 
 def test_wait_exit_should_return_timeout_during_poll_fallback_with_no_extra_fds(monkeypatch):

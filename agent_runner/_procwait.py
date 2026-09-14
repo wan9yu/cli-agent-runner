@@ -3,9 +3,8 @@
 ``exit_fd`` opens a throwaway fd that becomes readable once a subprocess has
 exited (``os.pidfd_open`` on Linux, a kqueue ``NOTE_EXIT`` registration on
 macOS/BSD, ``None`` on any other platform or any setup failure). ``wait_exit``
-blocks in one ``select.select`` on that fd plus a caller-supplied set of
-"wake me early" fds until the process exits, a real deadline passes, or one
-of those extra fds fires.
+blocks in one ``select.select`` on that fd until the process exits or a real
+deadline passes.
 
 Neither function ever reaps the process on this fast path -- a pidfd or a
 kqueue registration only observes the kernel's process table, it never
@@ -96,15 +95,13 @@ def wait_exit(
     proc: subprocess.Popen,
     *,
     deadline: float,
-    extra_fds: tuple[int, ...] = (),
     clock: Clock = SYSTEM_CLOCK,
-) -> Literal["exited", "timeout", "woken"]:
-    """Block until ``proc`` exits, ``deadline`` (a ``clock.monotonic()``
-    timestamp) is reached, or a member of ``extra_fds`` becomes readable --
-    whichever is soonest. Never calls ``os.waitpid``/``proc.wait``/
-    ``proc.poll`` on the fast path -- a caller that gets back ``"exited"``
-    must reap ``proc`` itself right after this returns (see the module
-    docstring).
+) -> Literal["exited", "timeout"]:
+    """Block until ``proc`` exits or ``deadline`` (a ``clock.monotonic()``
+    timestamp) is reached, whichever is soonest. Never calls
+    ``os.waitpid``/``proc.wait``/``proc.poll`` on the fast path -- a caller
+    that gets back ``"exited"`` must reap ``proc`` itself right after this
+    returns (see the module docstring).
 
     Opens and closes its own ``exit_fd(proc)`` registration internally, once
     per call, in a single ``select.select`` -- callers invoke this at most
@@ -113,34 +110,26 @@ def wait_exit(
     across calls.
 
     Returns ``"exited"`` (the caller should immediately reap, e.g.
-    ``proc.wait()``), ``"timeout"`` (deadline reached, proc still running,
-    caller re-evaluates its own logic), or ``"woken"`` (an ``extra_fds``
-    member fired first -- the caller drains that fd per its own ownership
-    contract and loops again with a freshly computed deadline; this changes
-    no decision, only how soon the caller re-checks state it was already
-    going to re-check).
+    ``proc.wait()``) or ``"timeout"`` (deadline reached, proc still running,
+    caller re-evaluates its own logic). When ``proc`` has already exited by
+    the time ``deadline`` is reached, the exit fd is ready in the SAME
+    ``select`` call that also times out -- the exit always wins that tie, so
+    an already-dead proc is never mistakenly reported as ``"timeout"``.
 
     Fallback (``exit_fd(proc)`` is ``None``): polls ``proc.poll()`` at a
-    short, fixed cadence, still honoring ``extra_fds`` and ``deadline`` each
-    tick, with the same three return meanings. This is a real ``select``
-    when ``extra_fds`` is non-empty (fd readiness is a real I/O event no
-    virtual clock can fake); with no ``extra_fds`` to watch it advances via
-    ``clock.sleep`` instead, so a test driving this path with a fake clock
-    still makes progress without blocking on real wall time.
+    short, fixed cadence via ``clock.sleep``, with the same two return
+    meanings, so a test driving this path with a fake clock still makes
+    progress without blocking on real wall time.
     """
     fd = exit_fd(proc)
 
     if fd is None:
-        return _wait_exit_by_polling(proc, deadline=deadline, extra_fds=extra_fds, clock=clock)
+        return _wait_exit_by_polling(proc, deadline=deadline, clock=clock)
 
     try:
         remaining = max(0.0, deadline - clock.monotonic())
-        ready, _, _ = select.select([fd, *extra_fds], [], [], remaining)
-        if fd in ready:
-            return "exited"
-        if ready:
-            return "woken"
-        return "timeout"
+        ready, _, _ = select.select([fd], [], [], remaining)
+        return "exited" if ready else "timeout"
     finally:
         os.close(fd)
 
@@ -149,9 +138,8 @@ def _wait_exit_by_polling(
     proc: subprocess.Popen,
     *,
     deadline: float,
-    extra_fds: tuple[int, ...],
     clock: Clock,
-) -> Literal["exited", "timeout", "woken"]:
+) -> Literal["exited", "timeout"]:
     while True:
         if proc.poll() is not None:
             return "exited"
@@ -160,10 +148,4 @@ def _wait_exit_by_polling(
         if remaining <= 0:
             return "timeout"
 
-        tick = min(_POLL_TICK_S, remaining)
-        if extra_fds:
-            ready, _, _ = select.select(extra_fds, [], [], tick)
-            if ready:
-                return "woken"
-        else:
-            clock.sleep(tick)
+        clock.sleep(min(_POLL_TICK_S, remaining))
