@@ -343,7 +343,7 @@ def _maybe_defer_for_spawn_hooks(
 # single-sourced in _serve_policy (imported above), not defined here.
 
 
-def _terminate_round(proc: subprocess.Popen) -> int:
+def _terminate_round(proc: subprocess.Popen, *, extra_grace_s: int = 0) -> int:
     """TERM the round leader first (fires its SIGTERM handler → agent pgroup reaped +
     flock/sidecar released), grace, then killpg as last resort. Returns the returncode.
 
@@ -353,6 +353,14 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     ``monkeypatch.setattr(_serve_round, "_ROUND_TERM_GRACE_S", ...)``
     (test_spawn_round_wedged.py) still lands directly, with no reach-back through
     ``serve_cmd``.
+
+    ``extra_grace_s`` (default 0) is added on top of ``_ROUND_TERM_GRACE_S`` for
+    this call only -- a bounded EXTENSION of the existing grace window, never a
+    new signal and never a new kill. It is 0 for every caller unless
+    Component 3's wiring (serve_cmd.py) determined the resolved agent is
+    sigterm_cooperative AND the operator set ``runtime.wrapup_grace_s > 0``;
+    both conditions are re-checked at that single call site, never inferred
+    here.
 
     Fail-open: a D-state (uninterruptible-sleep) leader can outlive even a killpg
     SIGKILL, so the post-killpg wait is also guarded -- this must never raise
@@ -373,7 +381,7 @@ def _terminate_round(proc: subprocess.Popen) -> int:
     stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     proc.terminate()
     try:
-        return proc.wait(timeout=_ROUND_TERM_GRACE_S)
+        return proc.wait(timeout=_ROUND_TERM_GRACE_S + extra_grace_s)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
