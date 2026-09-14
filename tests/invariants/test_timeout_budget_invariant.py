@@ -38,7 +38,7 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grac
 
 def test_outer_ceiling_should_bound_the_worst_case_cooperative_grace_not_just_the_default():
     """A cooperative agent's sigterm_grace_s is boot-capped at
-    _ROUND_TERM_GRACE_S (config/validators.py's mirror), so the outer ceiling's
+    _ROUND_TERM_GRACE_S (config/models.py's mirror), so the outer ceiling's
     reap margin must be sized to that worst case, not the old fixed
     REAP_GRACE_S=5 -- else a long cooperative grace could trip the outer
     wall-clock ceiling mid-grace."""

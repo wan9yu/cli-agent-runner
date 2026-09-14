@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner import agent_runtime
 from agent_runner.agent_runtime import (
     _capture_descendant_pgids,
     _kill_stray_descendants,
@@ -62,6 +63,58 @@ def test_agent_pgroup_should_be_reaped_when_progress_callback_raises(tmp_path):
             progress_callback=boom,
             progress_interval_s=1,
         )
+
+    pid = int(childpid.read_text())
+    for _ in range(80):
+        if not _alive(pid):
+            break
+        time.sleep(0.1)
+    assert not _alive(pid), "agent child was orphaned when the callback raised"
+
+
+def test_run_should_forward_reap_grace_s_to_terminate_agent_when_progress_callback_raises(
+    tmp_path, monkeypatch
+):
+    """v0.3.5 threading gap (see test_agent_runtime_grace.py's R1128/grace-kill
+    siblings): run()'s BaseException reap path also forwards reap_grace_s to
+    _terminate_agent -- a regression that silently dropped the kwarg here
+    would fall back to the default REAP_GRACE_S and pass every pre-existing
+    test (none of which pass a non-default grace). Capture the value actually
+    received and pin it to a NON-default grace."""
+    childpid = tmp_path / "child.pid"
+    script = _script(tmp_path, f'sleep 30 & echo $! > "{childpid}"\nwait\n')
+    captured: list[int] = []
+    real_terminate_agent = agent_runtime._terminate_agent
+
+    def _capture_terminate_agent(*args, **kwargs):
+        captured.append(kwargs["reap_grace_s"])
+        return real_terminate_agent(*args, **kwargs)
+
+    monkeypatch.setattr(agent_runtime, "_terminate_agent", _capture_terminate_agent)
+
+    def boom(_stats):
+        # Only trigger once the child has recorded its pid (see the identical
+        # gate in test_agent_pgroup_should_be_reaped_when_progress_callback_raises
+        # below -- avoids a load-dependent flake on a slow bash startup).
+        if not childpid.exists() or not childpid.read_text().strip():
+            return
+        raise OSError("events.emit failed mid-round")
+
+    with pytest.raises(OSError, match="events.emit failed"):
+        run(
+            work_dir=tmp_path,
+            command=[str(script)],
+            prompt_arg_template=[],
+            prompt="x",
+            timeout_s=30,
+            log_path=tmp_path / "round.log",
+            env_extra={},
+            progress_callback=boom,
+            progress_interval_s=1,
+            reap_grace_s=13,
+        )
+
+    assert captured == [13]  # NOT the default REAP_GRACE_S(5) -- proves the wire is live
 
     pid = int(childpid.read_text())
     for _ in range(80):

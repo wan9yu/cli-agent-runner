@@ -315,7 +315,7 @@ def timeout_budget(round_budget_s: int) -> tuple[int, int]:
       bounded post-round cleanup. The reap margin must cover the widest grace
       ANY round can be configured with -- a cooperative agent's
       ``sigterm_grace_s`` is boot-capped at ``_ROUND_TERM_GRACE_S``
-      (``config/validators.py``'s mirror of this module's single source), not
+      (``config/models.py``'s mirror of this module's single source), not
       the non-cooperative default ``_REAP_GRACE_S``, so the margin is
       ``max(_REAP_GRACE_S, _ROUND_TERM_GRACE_S)`` -- else a long cooperative
       grace could trip the outer wall-clock ceiling mid-grace.

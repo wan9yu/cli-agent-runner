@@ -656,3 +656,85 @@ def test_run_should_fire_hard_wall_on_monotonic_time_when_epoch_warps(tmp_path):
     assert result.timed_out is True  # hard-wall still fired (monotonic, NTP-immune)
     assert warped  # the epoch warp really happened mid-round
     assert 0 < result.duration_s < 60  # monotonic duration, not the -3600 epoch delta
+
+
+def test_run_should_forward_reap_grace_s_to_terminate_agent_when_r1128_wall_clock_fires(
+    tmp_path, monkeypatch
+):
+    """v0.3.5 threading gap: run() passes reap_grace_s=reap_grace_s to all 3
+    _terminate_agent call sites, but every pre-existing test only exercises
+    the DEFAULT grace (REAP_GRACE_S=5) -- a regression that silently dropped
+    the kwarg at any one call site would fall back to that same default and
+    pass every one of them. Capture the value the R1128 wall-clock branch
+    actually hands to _terminate_agent and pin it to a NON-default grace, so
+    a dropped kwarg here is distinguishable from a live wire.
+
+    Reuses test_run_should_fire_hard_wall_on_monotonic_time_when_epoch_warps's
+    FakeClock harness to force the R1128 path deterministically (no real
+    sleep): a real never-exiting child + a fake monotonic clock that only
+    advances via run()'s own clock.sleep(0.2) ticks."""
+    from tests._clock import FakeClock
+
+    script = _write_fake_script(tmp_path, "sleep 100\n")  # never produces a result
+    clock = FakeClock(epoch=1000.0)
+    captured: list[int] = []
+    real_terminate_agent = agent_runtime._terminate_agent
+
+    def _capture_terminate_agent(*args, **kwargs):
+        captured.append(kwargs["reap_grace_s"])
+        return real_terminate_agent(*args, **kwargs)
+
+    monkeypatch.setattr(agent_runtime, "_terminate_agent", _capture_terminate_agent)
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=2,
+        log_path=tmp_path / "round.log",
+        env_extra={},
+        clock=clock,
+        reap_grace_s=13,
+    )
+
+    assert result.timed_out is True  # R1128 hard-wall fired
+    assert captured == [13]  # NOT the default REAP_GRACE_S(5) -- proves the wire is live
+
+
+def test_run_should_forward_reap_grace_s_to_terminate_agent_when_grace_kill_fires(
+    tmp_path, monkeypatch
+):
+    """Same property as the R1128 test above, for the grace-kill call site
+    (marker seen, then the agent goes childless) -- mirrors
+    test_run_should_kill_for_grace_when_agent_has_no_live_children_after_result's
+    harness."""
+    monkeypatch.setattr(agent_runtime, "_RESULT_SCAN_INTERVAL_S", 0.1)
+    script = _write_fake_script(
+        tmp_path,
+        'echo \'{"type":"result","is_error":false}\'\nexec sleep 30\n',
+    )
+    log_path = tmp_path / "round.log"
+    captured: list[int] = []
+    real_terminate_agent = agent_runtime._terminate_agent
+
+    def _capture_terminate_agent(*args, **kwargs):
+        captured.append(kwargs["reap_grace_s"])
+        return real_terminate_agent(*args, **kwargs)
+
+    monkeypatch.setattr(agent_runtime, "_terminate_agent", _capture_terminate_agent)
+
+    result = run(
+        work_dir=tmp_path,
+        command=[str(script)],
+        prompt_arg_template=[],
+        prompt="x",
+        timeout_s=45,
+        log_path=log_path,
+        env_extra={},
+        max_grace_after_result_s=1,
+        reap_grace_s=13,
+    )
+
+    assert result.killed_for_grace is True  # grace-kill branch fired
+    assert captured == [13]  # NOT the default REAP_GRACE_S(5) -- proves the wire is live

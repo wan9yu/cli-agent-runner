@@ -475,7 +475,7 @@ Numbers are dev-host-relative (the macOS `kqueue` harness). The Linux `pidfd` fa
 
 ## 0.3.4 → 0.3.5 (2026-09-15)
 
-"Cooperative wrap-up grace": a configurable, manifest-gated SIGTERM→SIGKILL grace threaded to the round leader's actual reap deadline (a cooperative agent like `gemini` gets `[agent] sigterm_grace_s`, default 10 s; `claude` keeps 5 s). Same macOS harness.
+"Cooperative wrap-up grace": a configurable, manifest-gated SIGTERM→SIGKILL grace threaded to the round leader's actual reap deadline (a cooperative agent like `gemini` gets `[agent] sigterm_grace_s`, default 10 s; `claude` keeps 5 s). Same macOS harness. <!-- authored: default sigterm_grace_s / REAP_GRACE_S; SSOT agent_runner/config/models.py, agent_runner/agent_runtime.py -->
 
 ### 1. Import/startup RSS
 

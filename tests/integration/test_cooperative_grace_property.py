@@ -128,6 +128,9 @@ def test_non_cooperative_agent_should_get_the_default_five_second_grace(tmp_path
             f"non-cooperative agent was killed after only {t1 - t0:.2f}s, "
             f"short of the default {agent_runtime.REAP_GRACE_S}s grace"
         )
+        assert _poll_until(lambda: not _alive(pgid), timeout_s=10), (
+            "SIGKILL-escalated leader was never actually reaped"
+        )
     finally:
         try:
             os.killpg(pgid, 9)
