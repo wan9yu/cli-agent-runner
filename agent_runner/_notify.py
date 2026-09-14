@@ -95,7 +95,10 @@ class Listener:
 
     ``__enter__`` creates ``log_dir/.notify/<pid>-<id(self)>.fifo`` and
     opens it ``O_RDWR | O_NONBLOCK`` -- holding the write side ourselves
-    is what keeps the read side from ever seeing a persistent EOF.
+    is what keeps the read side from ever seeing a persistent EOF. It
+    retries up to 3 times if a concurrent ``ring()`` wins the race between
+    ``mkfifo`` and ``open`` and unlinks the readerless FIFO out from under
+    us (see ``__enter__``'s own comment).
     ``__exit__`` unlinks the FIFO unconditionally (including when an
     exception, e.g. ``KeyboardInterrupt``, propagates through the
     ``with`` block).
@@ -114,9 +117,26 @@ class Listener:
         if self._fd is not None:
             return self
         self._notify_dir.mkdir(parents=True, exist_ok=True)
-        os.mkfifo(self._path)
-        self._fd = os.open(self._path, os.O_RDWR | os.O_NONBLOCK)
-        return self
+        # Bounded retry: mkfifo and open are two separate syscalls, so there is a
+        # window between them where the FIFO exists but has no reader yet. A
+        # concurrent ring() from another process sharing this log_dir can open
+        # our fresh, readerless FIFO O_WRONLY|O_NONBLOCK, get ENXIO, and (by
+        # design -- see ring()'s docstring) unlink it as "stale". Our own
+        # os.open then loses the file underneath us with FileNotFoundError.
+        # Retrying re-creates the FIFO from scratch; three tries makes losing
+        # the race every single time astronomically unlikely.
+        last_exc: OSError | None = None
+        for _ in range(3):
+            try:
+                os.mkfifo(self._path)
+            except FileExistsError:
+                pass  # a prior retry (or the same path) already made it -- try to open it
+            try:
+                self._fd = os.open(self._path, os.O_RDWR | os.O_NONBLOCK)
+                return self
+            except FileNotFoundError as e:
+                last_exc = e  # a concurrent ring() unlinked our readerless FIFO -- retry
+        raise last_exc if last_exc is not None else OSError("Listener.__enter__ exhausted retries")
 
     def __exit__(
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object

@@ -7,13 +7,14 @@ the one exception, pinning virtual-time semantics deterministically.
 
 from __future__ import annotations
 
+import errno
 import os
 import time
 from pathlib import Path
 
 import pytest
 
-from agent_runner import events
+from agent_runner import _notify, events
 from agent_runner._notify import Listener, NullListener, ring
 from tests._clock import FakeClock
 
@@ -124,3 +125,50 @@ def test_listener_exit_should_not_raise_when_unlink_fails(tmp_log_dir: Path):
         listener.__exit__(None, None, None)
     finally:
         os.chmod(notify_dir, 0o755)
+
+
+def test_listener_enter_should_retry_when_a_concurrent_ring_unlinks_the_fresh_fifo(
+    tmp_log_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Reproduces the mkfifo->open TOCTOU: a concurrent ring() (from another process
+    sharing this log_dir) can open our fresh, readerless FIFO, get ENXIO, and unlink
+    it as stale before our own os.open runs -- so that open loses the file
+    underneath us with FileNotFoundError. __enter__ must retry (re-mkfifo, since
+    the FIFO is gone; re-open) and recover instead of leaving this listener
+    permanently degraded."""
+    real_open = os.open
+    calls = {"n": 0}
+
+    def flaky_open(path, flags, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise FileNotFoundError(errno.ENOENT, "simulated concurrent ring() unlink")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(_notify.os, "open", flaky_open)
+
+    listener = Listener(tmp_log_dir)
+    try:
+        listener.__enter__()
+        assert isinstance(listener.fd, int)
+        assert calls["n"] == 2  # first open lost the race, second recovered
+    finally:
+        listener.__exit__(None, None, None)
+
+
+def test_listener_enter_should_degrade_to_null_listener_when_race_exhausts_retries(
+    tmp_log_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The race lost 3x in a row (astronomically unlikely, but the retry is bounded)
+    still fails open, not silently -- open_listener() catches the OSError and
+    degrades to a NullListener exactly as it does for any other mkfifo/open
+    failure, instead of propagating and crashing the caller."""
+
+    def always_missing_open(path, flags, *args, **kwargs):
+        raise FileNotFoundError(errno.ENOENT, "always missing")
+
+    monkeypatch.setattr(_notify.os, "open", always_missing_open)
+
+    listener = _notify.open_listener(tmp_log_dir)
+
+    assert isinstance(listener, NullListener)
