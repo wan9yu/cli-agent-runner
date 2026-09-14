@@ -564,6 +564,22 @@ def _apply_round_num_env(round_env: dict, round_num: int) -> None:
     round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
 
 
+def _resolve_extra_grace_s(cfg, phase_arg: str | None) -> int:
+    """``wrapup_grace_s`` only takes effect for the resolved agent's own
+    registered PluginManifest declaring sigterm_cooperative=True (see
+    _plugin_manifest.manifest_sigterm_cooperative) -- 0 (no widening,
+    byte-identical to today) for every other case: unset, or a
+    non-cooperative agent. Both facts are re-checked HERE, every round
+    (a phase can override [phases.<name>.agent] to a different binary), never
+    inferred by cli/_serve_round._terminate_round itself."""
+    binary = cfg.profile_for(phase_arg).agent.binary
+    return (
+        cfg.runtime.wrapup_grace_s
+        if cfg.runtime.wrapup_grace_s and manifest_sigterm_cooperative(binary)
+        else 0
+    )
+
+
 def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
     """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
     git_head = compute_git_head(work_dir)
@@ -741,13 +757,7 @@ def cmd(args) -> int:
                 _detect_container_run(cfg.profile_for(phase_arg).agent.spawn_command(work_dir))
                 is None
             )
-            resolved_agent = cfg.profile_for(phase_arg).agent
-            extra_grace_s = (
-                cfg.runtime.wrapup_grace_s
-                if cfg.runtime.wrapup_grace_s
-                and manifest_sigterm_cooperative(resolved_agent.binary)
-                else 0
-            )
+            extra_grace_s = _resolve_extra_grace_s(cfg, phase_arg)
             r_returncode = _spawn_round(
                 round_argv,
                 round_log_path,
