@@ -122,7 +122,7 @@ def test_seam_should_return_false_when_no_spawn_hooks_registered(tmp_path):
     cfg = make_cfg(tmp_path, plugins=PluginsConfig())
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, engaged=True
     )
 
     assert consumed is False
@@ -136,7 +136,7 @@ def test_seam_should_ignore_override_when_hook_not_allow_listed(tmp_path, monkey
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=[]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, engaged=True
     )
 
     ignored = _events(tmp_path, "plugin_spawn_override_ignored")
@@ -152,7 +152,13 @@ def test_seam_should_skip_when_hook_allow_listed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_a"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=True,
+        clock=FakeClock(),
     )
 
     decision = _events(tmp_path, "plugin_spawn_decision")
@@ -171,7 +177,13 @@ def test_seam_should_defer_when_hook_allow_listed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_a"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=True,
+        clock=FakeClock(),
     )
 
     assert consumed is True
@@ -188,7 +200,7 @@ def test_seam_should_proceed_when_hook_returns_proceed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_a"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, engaged=True
     )
 
     assert consumed is False
@@ -205,7 +217,7 @@ def test_seam_should_isolate_failing_hook_as_proceed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_a"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, engaged=True
     )
 
     failures = _events(tmp_path, "hook_failed")
@@ -223,7 +235,13 @@ def test_seam_should_run_builtin_hook_in_process_not_trampoline(tmp_path, monkey
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_b"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=True,
+        clock=FakeClock(),
     )
 
     assert consumed is True
@@ -243,7 +261,13 @@ def test_seam_should_collapse_skip_over_defer_across_hooks(tmp_path, monkeypatch
     )
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=True,
+        clock=FakeClock(),
     )
 
     decision = _events(tmp_path, "plugin_spawn_decision")
@@ -272,7 +296,13 @@ def test_seam_should_run_third_party_hook_in_process_when_sandbox_off(tmp_path, 
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="off", spawn_override_allow=["gate_a"]))
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=False,
+        clock=FakeClock(),
     )
 
     decision = _events(tmp_path, "plugin_spawn_decision")
@@ -294,8 +324,74 @@ def test_seam_should_trampoline_third_party_hook_when_sandbox_require(tmp_path, 
     )
 
     consumed = _serve_round._maybe_defer_for_spawn_hooks(
-        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=True,
+        clock=FakeClock(),
     )
 
     assert consumed is True
     assert routed == ["spawn_hook"]
+
+
+def test_seam_should_run_third_party_hook_in_process_when_prefer_but_not_engaged(
+    tmp_path, monkeypatch
+):
+    seen = []
+    gate = type(
+        "Gate",
+        (),
+        {
+            "name": "gate_a",
+            "before_spawn": lambda self, ctx, view: (
+                seen.append(1) or SpawnDecision("skip", reason="halt")
+            ),
+        },
+    )()
+    hooks.register_spawn_hook(gate, owner="acme", builtin=False)
+
+    def _must_not_trampoline(*a, **k):
+        raise AssertionError("prefer + not-engaged must run a third-party hook in-process")
+
+    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", _must_not_trampoline)
+    cfg = make_cfg(
+        tmp_path, plugins=PluginsConfig(sandbox="prefer", spawn_override_allow=["gate_a"])
+    )
+
+    consumed = _serve_round._maybe_defer_for_spawn_hooks(
+        cfg,
+        tmp_path,
+        {"requested": False},
+        phase=None,
+        work_dir=tmp_path,
+        engaged=False,
+        clock=FakeClock(),
+    )
+
+    assert consumed is True
+    assert seen == [1]
+    assert not _events(tmp_path, "hook_failed")
+    assert _events(tmp_path, "plugin_spawn_decision")[-1]["action"] == "skip"
+
+
+def test_seam_should_refuse_third_party_hook_when_require_but_not_engaged(tmp_path, monkeypatch):
+    _register("gate_a", SpawnDecision("skip", reason="halt"))
+
+    def _must_not_trampoline(*a, **k):
+        raise AssertionError("require + not-engaged must refuse, never trampoline")
+
+    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", _must_not_trampoline)
+    cfg = make_cfg(
+        tmp_path, plugins=PluginsConfig(sandbox="require", spawn_override_allow=["gate_a"])
+    )
+
+    consumed = _serve_round._maybe_defer_for_spawn_hooks(
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, engaged=False
+    )
+
+    failures = _events(tmp_path, "hook_failed")
+    assert consumed is False
+    assert failures and failures[-1]["hook_kind"] == "spawn_hook"

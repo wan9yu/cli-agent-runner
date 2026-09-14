@@ -72,16 +72,6 @@ _DIRTY_DENY_SYSCALLS = (
 _SPAWN_DENY_SYSCALLS = ("execve", "execveat", *_DIRTY_DENY_SYSCALLS)
 
 
-def _sandbox_enforceable() -> bool:
-    """Whether Landlock+seccomp confinement can actually engage on this host.
-
-    A cheap, binding-free platform gate (the bindings import stays inside the
-    child's restrict path) -- consulted by ``dispatch_dirty`` to fail
-    ``sandbox=require`` closed rather than run a third-party handler unconfined.
-    """
-    return sys.platform == "linux"
-
-
 # ---------------------------------------------------------------------------
 # Wire (context) serialization -- symmetric parent<->child.
 # ---------------------------------------------------------------------------

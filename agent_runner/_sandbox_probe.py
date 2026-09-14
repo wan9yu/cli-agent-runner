@@ -114,11 +114,47 @@ def probe_sandbox_capability() -> SandboxProbe:
     )
 
 
-def gate_serve_boot(cfg, log_dir: Path) -> bool:
-    """Called ONCE at serve boot, before the round loop starts. Returns False
-    to abort serve (the caller releases the serve lock and exits with
-    ``_serve_policy.PERMANENT_CONFIG_EXIT`` -- a permanent config error, not a
-    transient one, so systemd/day-2 doesn't restart-loop on it).
+_SANDBOX_EXTRA_HINT = (
+    "install the sandbox extra to enable confinement: pip install cli-agent-runner[sandbox]"
+)
+
+
+def sandbox_engaged() -> bool:
+    """True iff the Tier-B trampoline can FULLY confine on this host right now
+    (``achieved_tier == "landlock+seccomp"``) -- the SINGLE predicate the
+    dispatch seams route on (see :func:`hook_route`). Probe once at boot and
+    thread the result to the seams; never re-probe per round."""
+    return probe_sandbox_capability().achieved_tier == "landlock+seccomp"
+
+
+def hook_route(
+    sandbox: str, *, third_party: bool, engaged: bool
+) -> Literal["in_process", "trampoline", "refuse"]:
+    """Where to run one hook, given the operator's ``[plugins] sandbox`` mode and
+    the BOOT PROBE VERDICT ``engaged`` -- never a platform-only heuristic.
+
+    ``sandbox == "off"`` or a genuine builtin (``not third_party``) always runs
+    in-process. A third-party hook under confinement trampolines only when the
+    sandbox actually ENGAGES; when it can't, ``prefer`` runs it in-process
+    (unconfined -- announced ONCE at boot via ``plugin_sandbox_degraded``, never
+    per hook) and ``require`` refuses it (belt-and-braces: ``gate_serve_boot``
+    already aborts serve under require+can't-engage, so this is the round child's
+    own last line). Symmetric across ``dispatch_dirty`` and the spawn seam."""
+    if sandbox == "off" or not third_party:
+        return "in_process"
+    if engaged:
+        return "trampoline"
+    return "refuse" if sandbox == "require" else "in_process"
+
+
+def gate_serve_boot(cfg, log_dir: Path) -> tuple[bool, bool]:
+    """Called ONCE at serve boot, before the round loop starts. Returns
+    ``(proceed, engaged)``: ``proceed`` False aborts serve (the caller releases
+    the serve lock and exits with ``_serve_policy.PERMANENT_CONFIG_EXIT`` -- a
+    permanent config error, not a transient one, so systemd/day-2 doesn't
+    restart-loop on it); ``engaged`` is the boot probe verdict
+    (``achieved_tier == "landlock+seccomp"``) the caller THREADS to the dispatch
+    seams so they route without re-probing per round (see :func:`hook_route`).
 
     Gates confinement for the Tier-B (Landlock + seccomp) trampoline that
     isolates ``spawn_hooks``/``dirty_handlers`` (see ``TIER_B_PROTOCOLS``)
@@ -129,10 +165,12 @@ def gate_serve_boot(cfg, log_dir: Path) -> bool:
     trampoline can fully confine," never "the whole supervisor is sandboxed."
 
     Tri-state ``[plugins] sandbox``:
-    - ``"off"``: no probe, no event -- always proceeds.
+    - ``"off"``: no probe, no event -- always proceeds (``engaged`` False, but
+      the seams route ``off`` to in-process regardless).
     - ``"require"``: the Tier-B trampoline MUST be able to fully confine.
-      When it can't, emits ``plugin_sandbox_degraded`` and returns False --
-      loud, deterministic, fail-closed (never silently serves unconfined).
+      When it can't, emits ``plugin_sandbox_degraded`` and returns
+      ``(False, False)`` -- loud, deterministic, fail-closed (never silently
+      serves unconfined).
     - ``"prefer"``: proceeds either way; when confinement can't fully
       engage, emits ``plugin_sandbox_degraded`` exactly once (this call is
       the only emit site for the mechanism itself -- once per serve boot,
@@ -144,15 +182,18 @@ def gate_serve_boot(cfg, log_dir: Path) -> bool:
     from agent_runner.api import emit_plugin_sandbox_degraded
 
     if cfg.plugins.sandbox == "off":
-        return True
+        return True, False
     probe = probe_sandbox_capability()
     if probe.achieved_tier == "landlock+seccomp":
-        return True
-    reason = probe.unconfined_reason or f"achieved {probe.achieved_tier}"
+        return True, True
+    base = probe.unconfined_reason or f"achieved {probe.achieved_tier}"
     emit_plugin_sandbox_degraded(
-        log_dir, requested=cfg.plugins.sandbox, achieved_tier=probe.achieved_tier, reason=reason
+        log_dir,
+        requested=cfg.plugins.sandbox,
+        achieved_tier=probe.achieved_tier,
+        reason=f"{base}; {_SANDBOX_EXTRA_HINT}",
     )
-    return cfg.plugins.sandbox != "require"
+    return cfg.plugins.sandbox != "require", False
 
 
 def peek_snapshot(cfg) -> dict:

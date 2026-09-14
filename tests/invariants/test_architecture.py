@@ -97,6 +97,7 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
 ALLOWED_SERVE_ROUND_FROM = [
     ("agent_runner", {"_resolve", "events", "host_health", "hooks", "metrics"}),
     ("agent_runner._plugin_sandbox", {"run_hook_sandboxed"}),
+    ("agent_runner._sandbox_probe", {"hook_route"}),
     ("agent_runner.api_types", {"SpawnDecision"}),
     (
         "agent_runner.agent_runtime",

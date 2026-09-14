@@ -32,9 +32,10 @@ def test_gate_should_abort_when_require_cannot_engage(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(_sandbox_probe, "probe_sandbox_capability", lambda: _Probe("unconfined"))
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="require"))
 
-    proceed = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+    proceed, engaged = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
 
     assert proceed is False
+    assert engaged is False
 
 
 def test_gate_should_proceed_and_degrade_once_when_prefer_cannot_engage(
@@ -43,23 +44,37 @@ def test_gate_should_proceed_and_degrade_once_when_prefer_cannot_engage(
     monkeypatch.setattr(_sandbox_probe, "probe_sandbox_capability", lambda: _Probe("unconfined"))
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="prefer"))
 
-    proceed = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+    proceed, engaged = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
 
     degrades = [e for e in read_events(tmp_path) if e["event"] == "plugin_sandbox_degraded"]
     assert proceed is True
+    assert engaged is False
     assert len(degrades) == 1
 
 
-def test_gate_should_proceed_silently_when_fully_engaged(monkeypatch, tmp_path) -> None:
+def test_gate_should_name_the_sandbox_extra_in_degrade_reason_when_prefer_cannot_engage(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(_sandbox_probe, "probe_sandbox_capability", lambda: _Probe("unconfined"))
+    cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="prefer"))
+
+    _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+
+    degrades = [e for e in read_events(tmp_path) if e["event"] == "plugin_sandbox_degraded"]
+    assert "pip install cli-agent-runner[sandbox]" in degrades[-1]["reason"]
+
+
+def test_gate_should_proceed_engaged_silently_when_fully_engaged(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         _sandbox_probe, "probe_sandbox_capability", lambda: _Probe("landlock+seccomp")
     )
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="prefer"))
 
-    proceed = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+    proceed, engaged = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
 
     degrades = [e for e in read_events(tmp_path) if e["event"] == "plugin_sandbox_degraded"]
     assert proceed is True
+    assert engaged is True
     assert degrades == []
 
 
@@ -67,8 +82,9 @@ def test_gate_should_proceed_silently_when_sandbox_off(monkeypatch, tmp_path) ->
     monkeypatch.setattr(_sandbox_probe, "probe_sandbox_capability", lambda: _Probe("unconfined"))
     cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="off"))
 
-    proceed = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+    proceed, engaged = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
 
     degrades = [e for e in read_events(tmp_path) if e["event"] == "plugin_sandbox_degraded"]
     assert proceed is True
+    assert engaged is False
     assert degrades == []

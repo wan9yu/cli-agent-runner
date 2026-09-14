@@ -223,24 +223,32 @@ def _spawn_view(work_dir, profile) -> hooks.SpawnView:
     )
 
 
-def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox) -> SpawnDecision | None:
+def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDecision | None:
     """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
     isolates a raising dirty handler: emit ``hook_failed`` and return None (the
     caller omits None from the collapse — treated as proceed).
 
-    Trampoline-vs-in-process mirrors ``dispatch_dirty`` on BOTH axes: a hook is
-    confined by the Landlock+seccomp trampoline only when ``sandbox != "off"`` AND
-    it is third-party (per-handler provenance via ``hooks._SPAWN_HOOK_BUILTIN``,
-    keyed on the hook OBJECT — never the collidable owner name — so unknown →
-    third-party → confined, fail-closed). Under the operator's explicit
-    ``sandbox = "off"`` opt-out, and for a genuine builtin, the hook runs
-    in-process — the same ``view`` is passed either way, so ``env`` stays
-    names-only (no secret value) on both paths. (The ``require`` path is
-    unchanged: ``gate_serve_boot`` already aborts serve when confinement is
-    unenforceable, and ``run_hook_sandboxed`` fails closed on a kill.)"""
+    Routing mirrors ``dispatch_dirty`` symmetrically via ``hook_route`` on the
+    BOOT PROBE VERDICT ``engaged`` (True iff the Tier-B trampoline can fully
+    engage): a genuine builtin (``hooks._SPAWN_HOOK_BUILTIN``, keyed on the hook
+    OBJECT — never the collidable owner name, so unknown → third-party) and the
+    operator's ``sandbox = "off"`` opt-out run in-process; a third-party hook
+    trampolines only when the sandbox actually ENGAGES, else ``prefer`` runs it
+    in-process (unconfined — announced once at serve boot) and ``require`` refuses
+    it (belt-and-braces; ``gate_serve_boot`` already aborts serve under
+    require+can't-engage). The same ``view`` is passed on every path, so ``env``
+    stays names-only (no secret value)."""
     third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
     try:
-        if sandbox != "off" and third_party:
+        from agent_runner._sandbox_probe import hook_route
+
+        route = hook_route(sandbox, third_party=third_party, engaged=engaged)
+        if route == "refuse":
+            raise RuntimeError(
+                "sandbox=require but Landlock+seccomp confinement cannot engage on "
+                f"this host; refusing to run spawn hook {h.name!r} unconfined"
+            )
+        if route == "trampoline":
             module_path, attr_path = hooks._SPAWN_HOOK_MODULE.get(id(h), ("", ""))
             return run_hook_sandboxed(
                 "spawn_hook", module_path, attr_path, h.name, ctx, log_dir=log_dir, view=view
@@ -258,7 +266,7 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox) -> SpawnDecision | No
 
 
 def _maybe_defer_for_spawn_hooks(
-    cfg, log_dir, stop, *, phase, work_dir, clock: Clock = SYSTEM_CLOCK
+    cfg, log_dir, stop, *, phase, work_dir, engaged: bool, clock: Clock = SYSTEM_CLOCK
 ) -> bool:
     """The LAST serve-admission gate: run every registered SpawnHook over a
     read-only view of the resolved spawn and collapse their verdicts
@@ -284,7 +292,9 @@ def _maybe_defer_for_spawn_hooks(
     allow = set(cfg.plugins.spawn_override_allow)
     named: list[tuple[str, SpawnDecision]] = []
     for h in registered:
-        decision = _run_one_spawn_hook(h, ctx, log_dir, view, sandbox=cfg.plugins.sandbox)
+        decision = _run_one_spawn_hook(
+            h, ctx, log_dir, view, sandbox=cfg.plugins.sandbox, engaged=engaged
+        )
         if decision is None:
             continue  # hook_failed already emitted; omit from collapse (== proceed)
         if decision.action != "proceed" and h.name not in allow:

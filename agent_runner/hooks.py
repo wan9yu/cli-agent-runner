@@ -356,37 +356,45 @@ def dispatch_dirty(
     log_dir: Path,
     *,
     sandbox: Literal["require", "prefer", "off"] = "prefer",
+    engaged: bool | None = None,
 ) -> Any | None:
     """Run registered DirtyHandlers ascending by priority; first non-None wins.
 
-    A third-party handler runs inside the Landlock+seccomp trampoline when
-    ``sandbox != "off"``; genuine builtins stay in-process. Builtin trust is
-    read from ``_DIRTY_HANDLER_BUILTIN`` keyed on the handler OBJECT identity —
-    never the collidable owner name — so a name-squatter's handler (absent from
-    that map → False) is sandboxed. Under ``sandbox == "require"`` on a host
-    that cannot confine (no Landlock+seccomp), the handler is refused rather
-    than run unconfined; under ``"prefer"`` it is still launched (the
-    trampoline degrades to a best-effort child there). A handler that raises
-    (or whose trampoline fails, including the require refusal) is isolated —
-    emits ``hook_failed`` and is treated as pass (continue to next), so the
-    builtin fallback still resolves the tree.
-    """
+    Routing (see ``_sandbox_probe.hook_route``) is decided by the BOOT PROBE
+    VERDICT ``engaged`` (True iff ``achieved_tier == "landlock+seccomp"``), never
+    a platform-only heuristic. A genuine builtin (``_DIRTY_HANDLER_BUILTIN`` keyed
+    on the handler OBJECT identity — never the collidable owner name, so a
+    name-squatter reads False and is treated third-party) and ``sandbox == "off"``
+    always run in-process. A third-party handler under confinement trampolines
+    only when the sandbox actually ENGAGES; otherwise ``prefer`` runs it
+    in-process unconfined (the degrade is announced ONCE at serve boot via
+    ``plugin_sandbox_degraded``, not here per round) and ``require`` refuses it.
+    A handler that raises (or whose trampoline fails, including the require
+    refusal) is isolated — emits ``hook_failed`` and is treated as pass (continue
+    to next), so the builtin fallback still resolves the tree.
+
+    ``engaged`` is threaded from the serve-boot probe; ``None`` (a directly-run
+    ``agent-runner round``, no serve boot) self-probes ONCE here — the round child
+    dispatches at most once, so this is not a per-round re-probe."""
+    if engaged is None and sandbox != "off":
+        from agent_runner._sandbox_probe import sandbox_engaged
+
+        engaged = sandbox_engaged()
+    from agent_runner._sandbox_probe import hook_route
+
     ordered = sorted(_DIRTY_HANDLERS, key=lambda h: getattr(h, "priority", 0))
     for h in ordered:
         third_party = not _DIRTY_HANDLER_BUILTIN.get(id(h), False)
         try:
-            if sandbox != "off" and third_party:
-                from agent_runner._plugin_sandbox import (
-                    _sandbox_enforceable,
-                    run_hook_sandboxed,
+            route = hook_route(sandbox, third_party=third_party, engaged=bool(engaged))
+            if route == "refuse":
+                raise RuntimeError(
+                    "sandbox=require but Landlock+seccomp confinement cannot engage "
+                    f"on this host; refusing to run {h.name!r} unconfined"
                 )
+            if route == "trampoline":
+                from agent_runner._plugin_sandbox import run_hook_sandboxed
 
-                if sandbox == "require" and not _sandbox_enforceable():
-                    raise RuntimeError(
-                        "sandbox=require but Landlock+seccomp confinement is "
-                        "unavailable on this platform; refusing to run "
-                        f"{h.name!r} unconfined"
-                    )
                 module_path, attr_path = _DIRTY_HANDLER_MODULE.get(id(h), ("", ""))
                 outcome = run_hook_sandboxed(
                     "dirty_handler",

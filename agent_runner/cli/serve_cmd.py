@@ -425,15 +425,19 @@ def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int 
     return frozenset(), None
 
 
-def _spawn_gate(cfg, log_dir, stop, phase):
+def _spawn_gate(cfg, log_dir, stop, phase, *, sandbox_engaged: bool):
     """The final admission gate: run the pre-spawn hooks for the resolved
     ``phase`` and translate a defer/skip into the ``_PAUSED_CONTINUE`` sentinel
     (caller re-admits next iteration); a proceed returns ``phase`` unchanged.
     Runs only on a concrete phase outcome — every pause path in ``_select_and_gate``
     returns ``_PAUSED_CONTINUE`` before reaching here, so this never runs while
     already paused, and it is the LAST gate (after memory / schedule / throttle
-    have all resolved a concrete phase to spawn)."""
-    if _maybe_defer_for_spawn_hooks(cfg, log_dir, stop, phase=phase, work_dir=cfg.runtime.work_dir):
+    have all resolved a concrete phase to spawn). ``sandbox_engaged`` is the
+    boot probe verdict threaded from ``cmd()`` so the seam routes without
+    re-probing per round."""
+    if _maybe_defer_for_spawn_hooks(
+        cfg, log_dir, stop, phase=phase, work_dir=cfg.runtime.work_dir, engaged=sandbox_engaged
+    ):
         return _PAUSED_CONTINUE
     return phase
 
@@ -447,6 +451,7 @@ def _select_and_gate(
     *,
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
+    sandbox_engaged: bool = False,
     sample_fn=metrics.sample,
 ):
     """Resolve the phase to launch this round, gating on memory pressure, on
@@ -456,7 +461,8 @@ def _select_and_gate(
 
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
-    paused and should ``continue`` from the loop top."""
+    paused and should ``continue`` from the loop top. ``sandbox_engaged`` is the
+    boot probe verdict threaded through to the pre-spawn hook seam."""
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.
@@ -465,11 +471,11 @@ def _select_and_gate(
     if args.ignore_schedule:
         # rotation self-resolves in the round; no --phase, but the pre-spawn gate
         # still runs on the concrete (None) outcome.
-        return _spawn_gate(cfg, log_dir, stop, None)
+        return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
     if not _phase_aware(cfg):
         if _maybe_pause_for_schedule(cfg, log_dir, stop):
             return _PAUSED_CONTINUE
-        return _spawn_gate(cfg, log_dir, stop, None)
+        return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
     sel = phase_select.select_phase(
@@ -507,7 +513,7 @@ def _select_and_gate(
             chosen=sel.phase,
             active_window=sel.active_window or "",
         )
-    return _spawn_gate(cfg, log_dir, stop, sel.phase)
+    return _spawn_gate(cfg, log_dir, stop, sel.phase, sandbox_engaged=sandbox_engaged)
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:
@@ -612,7 +618,10 @@ def cmd(args) -> int:
 
     from agent_runner._sandbox_probe import gate_serve_boot
 
-    if not gate_serve_boot(cfg, log_dir):
+    # gate_serve_boot probes ONCE here; sandbox_engaged is threaded to the
+    # per-round spawn seam so it never re-probes (see _sandbox_probe.hook_route).
+    proceed, sandbox_engaged = gate_serve_boot(cfg, log_dir)
+    if not proceed:
         # sandbox = "require" and the Tier-B trampoline can't fully confine --
         # same fail-closed shape as the startup-hook refusal above: loud,
         # deterministic, no restart-loop.
@@ -701,6 +710,7 @@ def cmd(args) -> int:
                 round_num,
                 throttled_phases=throttled_phases,
                 wake_epoch=wake_epoch,
+                sandbox_engaged=sandbox_engaged,
             )
             if phase_arg is _PAUSED_CONTINUE:
                 continue

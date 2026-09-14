@@ -1,10 +1,11 @@
 """dispatch_dirty routes a dirty handler by GENUINE-builtin trust keyed on the
 handler OBJECT identity (_DIRTY_HANDLER_BUILTIN), never the collidable owner
-name: a handler registered builtin=True runs in-process; anything else --
-including a handler whose owner name collides with a builtin, or the
-default/legacy False -- goes through the Landlock+seccomp trampoline whenever
-sandbox != 'off'. These tests stub the trampoline launcher so the routing
-decision is verified without a real Linux sandbox."""
+name, AND on the boot probe verdict ``engaged``: a builtin (or sandbox='off')
+runs in-process; a third-party handler goes through the Landlock+seccomp
+trampoline only when the sandbox actually ENGAGES, else runs in-process under
+'prefer' (unconfined) or is refused under 'require'. These tests stub the
+trampoline launcher and pass ``engaged`` explicitly so the routing decision is
+verified without a real Linux sandbox."""
 
 from __future__ import annotations
 
@@ -82,7 +83,9 @@ def test_dispatch_dirty_should_trampoline_when_builtin_name_but_registered_third
         ps, "run_hook_sandboxed", lambda *a, **k: routed.append("trampoline") or None
     )
 
-    hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
+    hooks.dispatch_dirty(
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=True
+    )
 
     assert handler.calls == 0 and routed == ["trampoline"]
 
@@ -119,7 +122,9 @@ def test_dispatch_dirty_should_trampoline_third_party_when_sandbox_on(
 
     monkeypatch.setattr(ps, "run_hook_sandboxed", _fake_sandboxed)
 
-    hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
+    hooks.dispatch_dirty(
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=True
+    )
 
     assert handler.calls == 0
     assert seen == {
@@ -152,7 +157,9 @@ def test_dispatch_dirty_should_treat_empty_owner_as_third_party_when_sandbox_on(
         ps, "run_hook_sandboxed", lambda *a, **k: routed.append("trampoline") or None
     )
 
-    hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
+    hooks.dispatch_dirty(
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=True
+    )
 
     assert handler.calls == 0 and routed == ["trampoline"]
 
@@ -171,7 +178,7 @@ def test_dispatch_dirty_should_isolate_third_party_when_trampoline_raises(
     monkeypatch.setattr(ps, "run_hook_sandboxed", _boom)
 
     outcome = hooks.dispatch_dirty(
-        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer"
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=True
     )
 
     from tests._test_helpers import read_events_for_current_month
@@ -181,18 +188,14 @@ def test_dispatch_dirty_should_isolate_third_party_when_trampoline_raises(
     assert failed and failed[-1]["hook_name"] == "acme_dirty"
 
 
-def test_dispatch_dirty_should_fail_closed_when_require_but_platform_cannot_confine(
-    tmp_path, monkeypatch
+def test_dispatch_dirty_should_refuse_third_party_when_require_but_not_engaged(
+    tmp_path,
 ) -> None:
     handler = _Handler()
     hooks.register_dirty_handler(handler, owner="acme_pkg")
 
-    import agent_runner._plugin_sandbox as ps
-
-    monkeypatch.setattr(ps, "_sandbox_enforceable", lambda: False)
-
     outcome = hooks.dispatch_dirty(
-        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="require"
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="require", engaged=False
     )
 
     from tests._test_helpers import read_events_for_current_month
@@ -202,7 +205,7 @@ def test_dispatch_dirty_should_fail_closed_when_require_but_platform_cannot_conf
     assert failed and failed[-1]["hook_name"] == "acme_dirty"
 
 
-def test_dispatch_dirty_should_still_attempt_trampoline_for_prefer_when_platform_cannot_confine(
+def test_dispatch_dirty_should_run_in_process_for_prefer_when_not_engaged(
     tmp_path, monkeypatch
 ) -> None:
     handler = _Handler()
@@ -211,9 +214,48 @@ def test_dispatch_dirty_should_still_attempt_trampoline_for_prefer_when_platform
 
     import agent_runner._plugin_sandbox as ps
 
-    monkeypatch.setattr(ps, "_sandbox_enforceable", lambda: False)
-    monkeypatch.setattr(ps, "run_hook_sandboxed", lambda *a, **k: routed.append("launched") or None)
+    monkeypatch.setattr(
+        ps, "run_hook_sandboxed", lambda *a, **k: routed.append("trampoline") or None
+    )
 
-    hooks.dispatch_dirty(make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer")
+    hooks.dispatch_dirty(
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=False
+    )
 
-    assert routed == ["launched"] and handler.calls == 0
+    assert routed == [] and handler.calls == 1
+
+
+def test_prefer_should_run_third_party_in_process_with_single_boot_degrade_when_not_engaged(
+    tmp_path, monkeypatch
+) -> None:
+    """The ruling's regression: a base install (sandbox bindings absent) under the
+    default ``sandbox='prefer'`` must run an existing third-party dirty handler
+    IN-PROCESS -- not die as ``hook_failed`` -- with the degrade announced EXACTLY
+    ONCE, at serve boot (``gate_serve_boot``), never again per round."""
+    from agent_runner import _sandbox_probe
+    from agent_runner.config.models import PluginsConfig
+    from tests._test_helpers import make_cfg, read_events_for_current_month
+
+    probe = _sandbox_probe.SandboxProbe(
+        achieved_tier="unconfined",
+        landlock_abi=None,
+        seccomp=False,
+        unconfined_reason="[sandbox] extra not installed",
+    )
+    monkeypatch.setattr(_sandbox_probe, "probe_sandbox_capability", lambda: probe)
+    handler = _Handler()
+    hooks.register_dirty_handler(handler, owner="acme_pkg")
+    cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="prefer"))
+
+    proceed, engaged = _sandbox_probe.gate_serve_boot(cfg, tmp_path)
+    hooks.dispatch_dirty(
+        make_hook_context(tmp_path), ["f.py"], tmp_path, sandbox="prefer", engaged=engaged
+    )
+
+    evts = read_events_for_current_month(tmp_path)
+    degrades = [e for e in evts if e["event"] == "plugin_sandbox_degraded"]
+    failed = [e for e in evts if e["event"] == "hook_failed"]
+    assert proceed is True and engaged is False
+    assert handler.calls == 1
+    assert failed == []
+    assert len(degrades) == 1
