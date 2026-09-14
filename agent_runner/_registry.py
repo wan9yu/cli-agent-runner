@@ -11,6 +11,8 @@ different-source) and stays in that module.
 
 from __future__ import annotations
 
+from typing import Any
+
 BUILTIN_PLUGIN_NAMES: frozenset[str] = frozenset(
     {
         "claude_rate_limit",
@@ -35,6 +37,25 @@ def is_builtin_provenance(name: str, module_path: str) -> bool:
     module under agent_runner.builtin_plugins, so a name match without this
     prefix is a name-squatter, never a builtin."""
     return name in BUILTIN_PLUGIN_NAMES and module_path.startswith(_BUILTIN_MODULE_PREFIX)
+
+
+def resolve_entry_target(module_path: str, attr_path: str) -> Any:
+    """Import ``module_path`` and walk ``attr_path`` (dot-separated, empty
+    segments ignored) via ``getattr``, returning the final target — the
+    module itself when ``attr_path`` is empty.
+
+    The single resolution recipe for an entry-point's ``module:attr`` value.
+    Shared by the plugin loader (``agent_runner.load_and_register_plugins``)
+    and the sandbox trampoline children (``_plugin_sandbox._run_dirty_child``
+    / ``_run_spawn_child``) — dependency-free (stdlib ``importlib`` only) so
+    it's safe to import before a child self-restricts.
+    """
+    import importlib
+
+    target: Any = importlib.import_module(module_path)
+    for attr in filter(None, attr_path.split(".")):
+        target = getattr(target, attr)
+    return target
 
 
 def ensure_unique(name: str, existing: list, kind: str) -> None:

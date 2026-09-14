@@ -18,6 +18,14 @@ from typing import Literal
 
 PinVerdict = Literal["verified", "mismatch", "unpinned"]
 
+_CHECKSUM_CACHE: dict[str, str] = {}
+"""Process-wide memo of ``module_path -> digest``, keyed post-resolution.
+A ``doctor``/``peek --json`` invocation hashes each pinned third-party file
+twice (once at load via ``verify_pin``, once for the snapshot print) — this
+avoids the second read of the SAME file in the SAME process. Never
+invalidated (a process's view of its own already-imported modules doesn't
+change mid-run); the comparison logic below is untouched."""
+
 
 def compute_plugin_checksum(module_path: str) -> str:
     """sha256 of the resolved module's source FILE, as ``"sha256:<64hex>"``.
@@ -27,12 +35,17 @@ def compute_plugin_checksum(module_path: str) -> str:
     against — an operator copy-pastes doctor's printed digest straight into
     ``[plugins.pin]``, so all three MUST compute the identical value.
     """
+    cached = _CHECKSUM_CACHE.get(module_path)
+    if cached is not None:
+        return cached
     spec = importlib.util.find_spec(module_path)
     if spec is None or spec.origin is None:
         raise ModuleNotFoundError(f"cannot resolve module file for {module_path!r}")
     with open(spec.origin, "rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()
-    return f"sha256:{digest}"
+    checksum = f"sha256:{digest}"
+    _CHECKSUM_CACHE[module_path] = checksum
+    return checksum
 
 
 def verify_pin(name: str, module_path: str, pins: dict[str, str]) -> tuple[PinVerdict, str | None]:

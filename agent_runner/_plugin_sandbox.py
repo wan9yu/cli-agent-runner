@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent_runner import hooks
+from agent_runner._registry import resolve_entry_target
 from agent_runner.api_types import DirtyOutcome, SpawnDecision
 
 _TRAMPOLINE_TIMEOUT_S = 30.0  # wall-clock; not config-tunable this release
@@ -427,12 +428,7 @@ def _run_dirty_child(
     Returns the wire dict; ``_main`` writes it to stdout."""
     restrict(ctx)
 
-    import importlib
-
-    mod = importlib.import_module(module_path)
-    target = mod
-    for attr in filter(None, attr_path.split(".")):
-        target = getattr(target, attr)
+    target = resolve_entry_target(module_path, attr_path)
     handler = next(h for h in target.dirty_handlers if h.name == hook_name)
     outcome = handler.handle_dirty(ctx, dirty_files)
     if outcome is None:
@@ -455,12 +451,7 @@ def _run_spawn_child(
     so the closed vocabulary is the only shape crossing the wire."""
     restrict(ctx)
 
-    import importlib
-
-    mod = importlib.import_module(module_path)
-    target = mod
-    for attr in filter(None, attr_path.split(".")):
-        target = getattr(target, attr)
+    target = resolve_entry_target(module_path, attr_path)
     hook = next(h for h in target.spawn_hooks if h.name == hook_name)
     decision = hook.before_spawn(ctx, view)
     if decision is None:

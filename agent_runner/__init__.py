@@ -78,11 +78,14 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
     — a pin mismatch or an unpinned plugin under ``sandbox = "require"`` refuses
     to import that ONE plugin (fail-closed; never loads unconfined).
     """
-    import importlib
     import warnings
 
     from agent_runner._plugin_manifest import loaded_manifest_names, register_manifest
-    from agent_runner._registry import BUILTIN_PLUGIN_NAMES, is_builtin_provenance
+    from agent_runner._registry import (
+        BUILTIN_PLUGIN_NAMES,
+        is_builtin_provenance,
+        resolve_entry_target,
+    )
 
     disable = set(plugins_cfg.disable)
     already = set(loaded_manifest_names())
@@ -94,8 +97,8 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
         # own module/attr grammar excludes "[", so anything from the first
         # "[" onward is always extras, never part of the path — strip it
         # before resolving, or it glues onto attr_path and breaks getattr().
-        module_path = _entry_point_module_path(value)
-        attr_path = value.partition("[")[0].rstrip().partition(":")[2]
+        stripped = value.partition("[")[0].rstrip()
+        module_path, _, attr_path = stripped.partition(":")
         # Builtin trust is keyed on PROVENANCE (module genuinely under
         # agent_runner.builtin_plugins), never on the entry-point NAME alone —
         # a reserved name is collidable, so a third-party package shipping an
@@ -107,10 +110,7 @@ def load_and_register_plugins(plugins_cfg, log_dir=None) -> None:
             if not _admit_third_party(name, module_path, plugins_cfg, log_dir):
                 continue
         try:
-            mod = importlib.import_module(module_path)
-            target = mod
-            for attr in filter(None, attr_path.split(".")):
-                target = getattr(target, attr)
+            target = resolve_entry_target(module_path, attr_path)
             register_manifest(
                 target, builtin=is_builtin, module_path=module_path, attr_path=attr_path
             )

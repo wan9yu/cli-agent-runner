@@ -196,6 +196,23 @@ def gate_serve_boot(cfg, log_dir: Path) -> tuple[bool, bool]:
     return cfg.plugins.sandbox != "require", False
 
 
+def _iter_third_party_entries():
+    """Yield ``(name, module_path)`` for every discovered entry point that is
+    NOT a genuine builtin (``is_builtin_provenance``) -- the identical
+    discover-and-classify loop ``peek_snapshot`` and ``doctor_snapshot`` each
+    ran inline. Classification is by PROVENANCE, never a bare
+    ``name in BUILTIN_PLUGIN_NAMES`` -- see either snapshot's docstring for
+    why a name-squatter must still surface as third-party."""
+    import agent_runner
+    from agent_runner._registry import is_builtin_provenance
+
+    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
+        module_path = agent_runner._entry_point_module_path(value)
+        if is_builtin_provenance(name, module_path):
+            continue
+        yield name, module_path
+
+
 def peek_snapshot(cfg) -> dict:
     """Assemble ``peek --json``'s ``plugins.sandbox`` / ``plugins.pins`` /
     ``plugins.spawn_override_allow`` block from one probe + ``cfg``.
@@ -222,16 +239,11 @@ def peek_snapshot(cfg) -> dict:
     ``entries.get(manifest_name) -> None`` and the plugin would vanish from
     ``pins`` entirely. Mirrors ``doctor_snapshot``'s identical recipe.
     """
-    import agent_runner
     from agent_runner._plugin_checksum import verify_pin
-    from agent_runner._registry import is_builtin_provenance
 
     probe = probe_sandbox_capability()
     pins: dict[str, str] = {}
-    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
-        module_path = agent_runner._entry_point_module_path(value)
-        if is_builtin_provenance(name, module_path):
-            continue
+    for name, module_path in _iter_third_party_entries():
         try:
             verdict, _actual = verify_pin(name, module_path, cfg.plugins.pin)
         except Exception:  # noqa: BLE001 — display only, never fail peek on a broken plugin
@@ -280,16 +292,11 @@ def doctor_snapshot(cfg) -> dict:
     """
     import ctypes.util
 
-    import agent_runner
     from agent_runner._plugin_checksum import compute_plugin_checksum
-    from agent_runner._registry import is_builtin_provenance
 
     probe = probe_sandbox_capability()
     hashes: dict[str, str] = {}
-    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
-        module_path = agent_runner._entry_point_module_path(value)
-        if is_builtin_provenance(name, module_path):
-            continue
+    for name, module_path in _iter_third_party_entries():
         try:
             hashes[name] = compute_plugin_checksum(module_path)
         except Exception as e:  # noqa: BLE001 — doctor reports, never crashes, on a broken plugin

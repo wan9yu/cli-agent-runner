@@ -216,10 +216,10 @@ def _spawn_view(work_dir, profile) -> hooks.SpawnView:
     """Read-only view of the resolved spawn: the effective argv plus env NAMES
     with every value forced to "" — a hook may check which names are set (e.g.
     whether an API key is present) but can never read a secret's value."""
-    env_names = {**os.environ, **dict(profile.agent.env)}
+    names = os.environ.keys() | profile.agent.env.keys()
     return hooks.SpawnView(
         argv=tuple(profile.agent.spawn_command(work_dir)),
-        env=dict.fromkeys(env_names, ""),
+        env=dict.fromkeys(names, ""),
     )
 
 
@@ -242,7 +242,7 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDeci
     try:
         from agent_runner._sandbox_probe import hook_route
 
-        route = hook_route(sandbox, third_party=third_party, engaged=engaged)
+        route = hook_route(sandbox, third_party=third_party, engaged=bool(engaged))
         if route == "refuse":
             raise RuntimeError(
                 "sandbox=require but Landlock+seccomp confinement cannot engage on "
