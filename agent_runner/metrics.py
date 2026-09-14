@@ -389,7 +389,7 @@ def cgroup_delegated(
     try:
         uid_owned = leaf_dir.stat().st_uid == os.getuid()
     except OSError:
-        return False
+        return None
     procs_writable = os.access(leaf_dir / "cgroup.procs", os.W_OK)
     high_writable = os.access(leaf_dir / "memory.high", os.W_OK)
     return uid_owned and procs_writable and high_writable

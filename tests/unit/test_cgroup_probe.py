@@ -703,6 +703,27 @@ def test_cgroup_delegated_should_return_true_when_uid_owned_and_both_files_writa
     assert result is True
 
 
+def test_cgroup_delegated_should_return_none_when_leaf_stat_fails(
+    fake_cgroup: _FakeCgroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cgroup(memory_max="335544320")
+    leaf_dir = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf_dir / "cgroup.procs").touch()
+    (leaf_dir / "memory.high").touch()
+    real_stat = Path.stat
+
+    def _raise_for_leaf(self: Path, *args, **kwargs):
+        if self == leaf_dir:
+            raise OSError("permission denied")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", _raise_for_leaf)
+
+    result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
+
+    assert result is None
+
+
 # --- v0.3.3 T1: cgroup_delegated wired onto host_cgroup_memory_limit + advisory ---
 #
 # The probe above is pure metrics; these exercise _probe_and_emit_cgroup_defer
