@@ -22,6 +22,7 @@ from agent_runner.config.models import (
     _HOST_HEALTH_DISK_ALLOWED_FIELDS,
     _HOST_HEALTH_MEMORY_ALLOWED_FIELDS,
     _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS,
+    _MAX_SIGTERM_GRACE_S,
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_OVERRIDE_ALLOWED_FIELDS,
@@ -36,6 +37,7 @@ from agent_runner.config.models import (
     _VALID_SANDBOX_MODES,
     _VALID_TRANSIENT_ERROR_ACTIONS,
     _VCS_ALLOWED_FIELDS,
+    DEFAULT_SIGTERM_GRACE_S,
     DEFAULT_TERMINAL_MARKER,
     AgentConfig,
     MonitorConfig,
@@ -119,6 +121,15 @@ def _parse_agent(
         agent_d.get("exec_prefix", []), field=f"{field_prefix} exec_prefix"
     )
     terminal_marker = str(agent_d.get("terminal_marker", DEFAULT_TERMINAL_MARKER))
+    sigterm_grace_s = _require_positive_int(
+        agent_d.get("sigterm_grace_s", DEFAULT_SIGTERM_GRACE_S),
+        field=f"{field_prefix} sigterm_grace_s",
+    )
+    if sigterm_grace_s > _MAX_SIGTERM_GRACE_S:
+        raise ConfigError(
+            f"{field_prefix} sigterm_grace_s: must be <= {_MAX_SIGTERM_GRACE_S} "
+            f"(the supervisor's own wait for the round leader), got {sigterm_grace_s}"
+        )
     return AgentConfig(
         command=command,
         prompt_arg_template=prompt_arg_template,
@@ -127,6 +138,7 @@ def _parse_agent(
         prompt_delivery=prompt_delivery,  # type: ignore[arg-type]  # narrowed above
         exec_prefix=exec_prefix,
         terminal_marker=terminal_marker,
+        sigterm_grace_s=sigterm_grace_s,
     )
 
 

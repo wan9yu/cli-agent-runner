@@ -167,6 +167,7 @@ env
 prompt_delivery
 exec_prefix
 terminal_marker
+sigterm_grace_s
 
 # agent_runner.config.models.Config
 agent

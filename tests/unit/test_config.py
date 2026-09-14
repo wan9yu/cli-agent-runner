@@ -2394,6 +2394,50 @@ def test_agent_config_should_default_terminal_marker_to_claude_token_when_absent
     assert cfg.agent.terminal_marker == '"type":"result"'
 
 
+def test_agent_config_should_default_sigterm_grace_s_to_10_when_absent(tmp_path: Path) -> None:
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path)
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.agent.sigterm_grace_s == 10
+
+
+def test_agent_config_should_accept_sigterm_grace_s_when_set_in_toml(tmp_path: Path) -> None:
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path, agent_extra="sigterm_grace_s = 12\n")
+
+    cfg = load_config(cfg_path)
+
+    assert cfg.agent.sigterm_grace_s == 12
+
+
+@pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
+def test_sigterm_grace_s_should_reject_non_positive_or_bool_values(
+    tmp_path: Path, bad: str
+) -> None:
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(tmp_path, agent_extra=f"sigterm_grace_s = {bad}\n")
+
+    with pytest.raises(ValueError, match="sigterm_grace_s"):
+        load_config(cfg_path)
+
+
+def test_sigterm_grace_s_should_reject_values_above_round_term_grace(tmp_path: Path) -> None:
+    from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
+    from tests._test_helpers import write_min_config
+
+    cfg_path = write_min_config(
+        tmp_path, agent_extra=f"sigterm_grace_s = {_MAX_SIGTERM_GRACE_S + 1}\n"
+    )
+
+    with pytest.raises(ValueError, match="sigterm_grace_s"):
+        load_config(cfg_path)
+
+
 def test_runtime_config_should_expose_round_budget_s_when_constructed(tmp_path):
     from agent_runner.config import RuntimeConfig
 

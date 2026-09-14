@@ -32,6 +32,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `prompt_delivery` | `Literal['argv', 'stdin']` | 'argv' |
 | `exec_prefix` | `list[str]` | [] |
 | `terminal_marker` | `str` | '"type":"result"' |
+| `sigterm_grace_s` | `int` | 10 |
 
 ### `[runtime]`
 
@@ -183,6 +184,20 @@ the default claude token never appears in their output, so marker-based
 grace-kill never engages and a round runs to the wall-clock
 `round_budget_s` ceiling instead. An empty string disables the marker scan
 outright — an honest opt-out, not an empty-string-matches-everything trap.
+
+### `agent.sigterm_grace_s` (0.3.5+)
+
+Type: int, default `10`, max `15`
+
+The SIGTERM→SIGKILL grace the round leader gives ITS AGENT — but only when
+the configured agent's preset declares `sigterm_cooperative = true` (the
+built-in `gemini` preset does; see `peek --json`'s `plugins.sigterm_cooperative`
+or `doctor`'s "cooperative presets" line). A non-cooperative agent (e.g.
+`claude`) always gets the fixed 5s grace regardless of this setting. Capped
+at 15 (the supervisor's own wait for the round leader, `_ROUND_TERM_GRACE_S`)
+— a config above that is rejected at boot, not silently clamped: a grace
+longer than the supervisor waits for the leader would let the supervisor
+SIGKILL the leader mid-wrap-up, defeating the point.
 
 ### `runtime.round_log_retention`
 

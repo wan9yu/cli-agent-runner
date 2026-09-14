@@ -28,6 +28,20 @@ _VALID_PROMPT_DELIVERY: frozenset[str] = frozenset({"argv", "stdin"})
 # this literal but is decoupled to avoid an agent_runtime -> config import.
 DEFAULT_TERMINAL_MARKER = '"type":"result"'
 
+# Default [agent] sigterm_grace_s: the SIGTERM->SIGKILL grace a cooperative
+# agent's preset gets from the round leader (see AgentConfig.sigterm_grace_s).
+DEFAULT_SIGTERM_GRACE_S = 10
+
+# Ceiling for [agent] sigterm_grace_s: must never exceed _serve_policy's
+# _ROUND_TERM_GRACE_S (the supervisor's own wait for the round leader) --
+# a longer configured grace would let the supervisor SIGKILL the leader
+# mid-wrap-up. config/ cannot import _serve_policy (a cycle: _serve_policy
+# already imports agent_runner.config for ConfigError), so this is a
+# LITERAL mirror, pinned by tests/invariants/test_timeout_budget_invariant.py
+# against drift, the same pattern _serve_policy uses for its own
+# agent_runtime.REAP_GRACE_S / vcs_state.GIT_COMMIT_TIMEOUT_S mirrors.
+_MAX_SIGTERM_GRACE_S = 15
+
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -42,6 +56,13 @@ class AgentConfig:
     the agent's terminal record (see ``agent_runtime.run``'s marker scan).
     Defaults to claude's own JSONL token so existing configs are unaffected;
     an empty string opts out of the marker scan entirely (wall-clock-ceiling-only)."""
+    sigterm_grace_s: int = DEFAULT_SIGTERM_GRACE_S
+    """The SIGTERM->SIGKILL grace this round's leader gives its agent, applied
+    only when the agent's preset declares itself cooperative (sigterm_cooperative
+    on its PluginManifest) -- a non-cooperative agent always gets the fixed
+    agent_runtime.REAP_GRACE_S instead. Capped at _MAX_SIGTERM_GRACE_S (a mirror
+    of _serve_policy._ROUND_TERM_GRACE_S, the supervisor's own wait for the round
+    leader) -- a value above that is rejected at boot, not clamped."""
 
     @property
     def binary(self) -> str | None:
