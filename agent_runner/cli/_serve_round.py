@@ -223,17 +223,24 @@ def _spawn_view(work_dir, profile) -> hooks.SpawnView:
     )
 
 
-def _run_one_spawn_hook(h, ctx, log_dir, view) -> SpawnDecision | None:
+def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox) -> SpawnDecision | None:
     """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
     isolates a raising dirty handler: emit ``hook_failed`` and return None (the
-    caller omits None from the collapse — treated as proceed). Trampoline-vs-
-    in-process is decided by per-handler provenance (``hooks._SPAWN_HOOK_BUILTIN``
-    keyed on the hook OBJECT, never the collidable owner name): a genuine builtin
-    runs in-process, everything else (unknown → third-party, fail-closed) is
-    confined by the Landlock+seccomp trampoline."""
+    caller omits None from the collapse — treated as proceed).
+
+    Trampoline-vs-in-process mirrors ``dispatch_dirty`` on BOTH axes: a hook is
+    confined by the Landlock+seccomp trampoline only when ``sandbox != "off"`` AND
+    it is third-party (per-handler provenance via ``hooks._SPAWN_HOOK_BUILTIN``,
+    keyed on the hook OBJECT — never the collidable owner name — so unknown →
+    third-party → confined, fail-closed). Under the operator's explicit
+    ``sandbox = "off"`` opt-out, and for a genuine builtin, the hook runs
+    in-process — the same ``view`` is passed either way, so ``env`` stays
+    names-only (no secret value) on both paths. (The ``require`` path is
+    unchanged: ``gate_serve_boot`` already aborts serve when confinement is
+    unenforceable, and ``run_hook_sandboxed`` fails closed on a kill.)"""
     third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
     try:
-        if third_party:
+        if sandbox != "off" and third_party:
             owner = hooks._SPAWN_HOOK_OWNER.get(id(h), "")
             return run_hook_sandboxed("spawn_hook", owner, h.name, ctx, log_dir=log_dir, view=view)
         return h.before_spawn(ctx, view)
@@ -275,7 +282,7 @@ def _maybe_defer_for_spawn_hooks(
     allow = set(cfg.plugins.spawn_override_allow)
     named: list[tuple[str, SpawnDecision]] = []
     for h in registered:
-        decision = _run_one_spawn_hook(h, ctx, log_dir, view)
+        decision = _run_one_spawn_hook(h, ctx, log_dir, view, sandbox=cfg.plugins.sandbox)
         if decision is None:
             continue  # hook_failed already emitted; omit from collapse (== proceed)
         if decision.action != "proceed" and h.name not in allow:

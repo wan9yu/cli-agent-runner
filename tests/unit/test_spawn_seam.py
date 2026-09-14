@@ -250,3 +250,53 @@ def test_seam_should_collapse_skip_over_defer_across_hooks(tmp_path, monkeypatch
     decision = _events(tmp_path, "plugin_spawn_decision")
     assert consumed is True
     assert decision[-1]["action"] == "skip" and decision[-1]["hook"] == "gate_skip"
+
+
+def test_seam_should_run_third_party_hook_in_process_when_sandbox_off(tmp_path, monkeypatch):
+    seen = []
+    gate = type(
+        "Gate",
+        (),
+        {
+            "name": "gate_a",
+            "before_spawn": lambda self, ctx, view: (
+                seen.append(view) or SpawnDecision("skip", reason="halt")
+            ),
+        },
+    )()
+    hooks.register_spawn_hook(gate, owner="acme", builtin=False)
+
+    def _must_not_trampoline(*a, **k):
+        raise AssertionError("sandbox=off must run a third-party hook in-process, not trampoline")
+
+    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", _must_not_trampoline)
+    cfg = make_cfg(tmp_path, plugins=PluginsConfig(sandbox="off", spawn_override_allow=["gate_a"]))
+
+    consumed = _serve_round._maybe_defer_for_spawn_hooks(
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+    )
+
+    decision = _events(tmp_path, "plugin_spawn_decision")
+    assert consumed is True
+    assert seen and all(value == "" for value in seen[0].env.values())
+    assert decision[-1]["action"] == "skip" and decision[-1]["hook"] == "gate_a"
+
+
+def test_seam_should_trampoline_third_party_hook_when_sandbox_require(tmp_path, monkeypatch):
+    _register("gate_a", SpawnDecision("proceed"))
+    routed = []
+    monkeypatch.setattr(
+        _serve_round,
+        "run_hook_sandboxed",
+        lambda *a, **k: routed.append(a[0]) or SpawnDecision("skip", reason="halt"),
+    )
+    cfg = make_cfg(
+        tmp_path, plugins=PluginsConfig(sandbox="require", spawn_override_allow=["gate_a"])
+    )
+
+    consumed = _serve_round._maybe_defer_for_spawn_hooks(
+        cfg, tmp_path, {"requested": False}, phase=None, work_dir=tmp_path, clock=FakeClock()
+    )
+
+    assert consumed is True
+    assert routed == ["spawn_hook"]
