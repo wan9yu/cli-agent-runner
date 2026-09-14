@@ -129,7 +129,15 @@ def test_terminate_round_should_reap_pgroup_and_setsid_grandchild_when_leader_ig
             f"leader's process group {pgid} still has a live member after "
             "_terminate_round returned -- the pgroup was not actually reaped"
         )
-        assert not _alive(gc_pid), (
+        # Poll, don't assert-immediately: _kill_stray_descendants SIGKILLs the
+        # grandchild synchronously, but it is the leader's own child, so once the
+        # leader is reaped the killed grandchild is reparented to init (ppid 1)
+        # and init reaps its zombie asynchronously -- a sub-30ms teardown window
+        # in which os.kill(gc_pid, 0) still succeeds on the reaping pid (measured
+        # ~19% of runs on a busy host). A genuinely ORPHANED (still-running)
+        # grandchild would ride out its full 60s sleep, so this poll fails after
+        # the timeout for the real bug while tolerating the reap-teardown race.
+        assert _poll_until(lambda: not _alive(gc_pid), timeout_s=10), (
             "setsid()'d grandchild was orphaned by _terminate_round -- it left the leader's "
             "pgroup (killpg(pgid, SIGKILL) alone never reaches it) and must be reaped via "
             "_kill_stray_descendants's captured-pgid path instead"
