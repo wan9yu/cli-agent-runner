@@ -221,7 +221,15 @@ def test_kill_should_reap_round_and_agent_pgroup_when_using_holder_sidecar(
 
         assert result.active is False
         round_proc.wait(timeout=20)  # own child: an OS condition, not an event
-        assert not pid_alive(agent_pid[0]), "the round's agent was orphaned by kill()"
+        # Poll, don't assert-immediately: the agent (a grandchild reparented to
+        # init once the leader is reaped) is SIGKILLed by the holder-sidecar reap,
+        # but init reaps its zombie asynchronously -- a sub-30ms window where
+        # pid_alive() still reads the reaping pid as alive (surfaced as a flake
+        # only under CI load). A genuinely orphaned agent rides out its lifetime,
+        # so this poll fails after the timeout for the real bug.
+        assert poll_until(lambda: not pid_alive(agent_pid[0]), timeout_s=10), (
+            "the round's agent was orphaned by kill()"
+        )
         assert serve_stub.poll() is not None  # the serve stand-in was reaped too
     finally:
         for p in (round_proc, serve_stub):
