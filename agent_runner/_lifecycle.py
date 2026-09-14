@@ -181,17 +181,26 @@ def _terminate_round_pid(pid: int) -> None:
     """TERM-first -> grace -> SIGKILL a bare round-child pid.
 
     Mirrors ``serve_cmd._terminate_round``'s shape, but this runs from a
-    SEPARATE CLI process (``kill()``) that only has the pid — not serve's own
+    SEPARATE CLI process (``kill()``) that only has the pid -- not serve's own
     ``Popen`` handle. Never ``killpg``: the round is ``start_new_session=True``,
-    so its own pgid holds only itself, and even a killpg on it cannot reach the
-    agent (itself a separate session again, ``agent_runtime.py``) — only the
-    round's own SIGTERM -> KeyboardInterrupt handler (``round_cmd.py``) walks
-    that link and reaps the agent pgroup via ``_kill_pgroup``. A plain SIGTERM
-    here fires exactly that handler; SIGKILL is only the last-resort escalation
-    for a round that doesn't even get to run its handler."""
+    so a plain SIGTERM here fires the round's own SIGTERM -> KeyboardInterrupt
+    handler (``round_cmd.py``), which walks the link to the agent pgroup and
+    reaps it via ``_kill_pgroup`` (itself snapshotting and reaping any stray).
+    SIGKILL is only the last-resort escalation for a round that never even runs
+    its handler -- and on THAT path the leader's own cooperative reap never
+    happened, so we snapshot the leader's descendants up front (while the leader
+    subtree is still resolvable) via a bare-pid shim and reap the strays here:
+    a descendant that ``setsid()``'d off the leader's pgroup would otherwise
+    survive the leader's death, orphaned. Symmetric with ``serve stop``."""
+    import types
+
+    from agent_runner import agent_runtime
+
+    stray = agent_runtime._snapshot_stray_descendants(types.SimpleNamespace(pid=pid))
     send_signal_to_pid(pid, signal.SIGTERM)
     if _await_pid_exit(pid, _ROUND_TERM_GRACE_S):
         send_signal_to_pid(pid, signal.SIGKILL)
+        agent_runtime._kill_stray_descendants(stray)
 
 
 def stop(project: str | Path) -> ServiceStatus:

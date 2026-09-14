@@ -151,3 +151,64 @@ def test_terminate_round_should_reap_pgroup_and_setsid_grandchild_when_leader_ig
             proc.wait(timeout=5)
         except (subprocess.TimeoutExpired, OSError):
             pass
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(90)
+def test_terminate_round_pid_should_reap_pgroup_and_setsid_grandchild_when_leader_ignores_term(
+    tmp_path, monkeypatch
+):
+    if not hasattr(os, "killpg") or not hasattr(os, "setsid"):
+        pytest.skip("no killpg/setsid on this platform -- POSIX-only property")
+
+    from agent_runner import _lifecycle
+
+    monkeypatch.setattr(_lifecycle, "_ROUND_TERM_GRACE_S", 1)
+    grandchild_pid_file = tmp_path / "grandchild.pid"
+    grandchild_py = tmp_path / "grandchild.py"
+    _write_grandchild_script(grandchild_py, grandchild_pid_file)
+    leader_py = tmp_path / "leader.py"
+    _write_leader_script(leader_py, grandchild_py)
+
+    proc = subprocess.Popen([sys.executable, str(leader_py)], start_new_session=True)
+    pgid = proc.pid
+
+    try:
+        gc_recorded = _poll_until(
+            lambda: grandchild_pid_file.exists() and grandchild_pid_file.read_text().strip() != ""
+        )
+        assert gc_recorded, "setsid'd grandchild never recorded its pid"
+        gc_pid = int(grandchild_pid_file.read_text())
+        assert _alive(gc_pid), "grandchild recorded but not alive to test against"
+
+        _lifecycle._terminate_round_pid(proc.pid)
+
+        # _terminate_round_pid only ever holds a bare pid (no Popen handle) and
+        # deliberately never reaps the leader itself -- in production a SEPARATE
+        # process (serve, or init after reparenting) eventually does that. Here
+        # the test IS the real OS parent, so it must reap before checking pgroup
+        # liveness: verified directly against a real subprocess on both Linux and
+        # macOS, killpg(pgid, 0) against an UNREAPED zombie's group does NOT raise
+        # ESRCH regardless of whether the leader already died (Linux: succeeds
+        # silently; macOS: raises EPERM) -- reaping first is what makes the ESRCH
+        # check below actually test pgroup death, not zombie-vs-permission noise.
+        proc.wait(timeout=5)
+
+        with pytest.raises((ProcessLookupError, OSError)) as exc_info:
+            os.killpg(pgid, 0)
+        assert exc_info.value.errno == errno.ESRCH, (
+            f"leader group {pgid} still live after _terminate_round_pid -- pgroup not reaped"
+        )
+        assert _poll_until(lambda: not _alive(gc_pid), timeout_s=10), (
+            "setsid()'d grandchild was orphaned by the out-of-process kill path -- it must be "
+            "reaped via _kill_stray_descendants's captured-pgid path on the SIGKILL escalation"
+        )
+    finally:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
