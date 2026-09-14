@@ -96,3 +96,35 @@ def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, m
     # merely signaled — _terminate_round's post-killpg proc.wait() confirms exit.
     with pytest.raises(ProcessLookupError):
         os.kill(wedged[0]["pid"], 0)
+
+
+def test_wedged_round_should_widen_grace_by_extra_grace_s_when_given(tmp_path, monkeypatch):
+    """extra_grace_s threads through _spawn_round's wedged-timeout escalation
+    call site (the R1128 branch) into _terminate_round's proc.wait(timeout=...)
+    -- proving the plumbing, not a new decision: the round is still TERM'd and
+    still escalates to killpg, only the wait widens."""
+    monkeypatch.setattr(_serve_round, "_ROUND_TERM_GRACE_S", 1)
+    waits: list[int | None] = []
+    original_wait = subprocess.Popen.wait
+
+    def spy_wait(self, timeout=None):
+        waits.append(timeout)
+        return original_wait(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", spy_wait)
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [
+        sys.executable,
+        "-c",
+        "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(30)\n",
+    ]
+
+    serve_cmd._spawn_round(
+        argv, log_dir / "round-1.log", {}, timeout_s=1, round_num=1, extra_grace_s=1
+    )
+
+    # waits[0] is the loop's own pre-escalation poll tick (proc.wait(timeout=
+    # _ROUND_POLL_TICK_S), unrelated to extra_grace_s); the widened wait is
+    # _terminate_round's own call once the outer ceiling trips.
+    assert _serve_round._ROUND_TERM_GRACE_S + 1 in waits

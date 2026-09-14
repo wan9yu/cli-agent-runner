@@ -454,6 +454,7 @@ def _spawn_round(
     round_num: int,
     host_health_cfg=None,
     defer_to_cgroup: bool = False,
+    extra_grace_s: int = 0,
     clock: Clock = SYSTEM_CLOCK,
     sample_fn=metrics.sample,
 ) -> int:
@@ -641,7 +642,7 @@ def _spawn_round(
                             host_health_cfg, defer_to_cgroup, critical_streak
                         )
                         if action == "terminate":
-                            returncode = _terminate_round(proc)
+                            returncode = _terminate_round(proc, extra_grace_s=extra_grace_s)
                             emit_round_mem_terminated(
                                 log_dir,
                                 pid=proc.pid,
@@ -666,14 +667,15 @@ def _spawn_round(
                         cgroup_defer_notified = False
                     next_mem_check = clock.monotonic() + _MEM_CHECK_INTERVAL_S
         except BaseException:
-            _terminate_round(proc)  # exception-path cleanup: never orphan the round pgroup
+            # exception-path cleanup: never orphan the round pgroup
+            _terminate_round(proc, extra_grace_s=extra_grace_s)
             raise
         # Safety kill BEFORE the observability write: the wedged round must not
         # keep burning wall-clock (and, if its own reap hangs, its agent's
         # budget) waiting on the least-reliable step (a disk write) to finish
         # first. emit_round_supervisor_wedged reads proc.pid, which stays a
         # valid attribute after the process has already been terminated.
-        returncode = _terminate_round(proc)
+        returncode = _terminate_round(proc, extra_grace_s=extra_grace_s)
         emit_round_supervisor_wedged(
             log_dir, pid=proc.pid, timeout_s=timeout_s, log_path=round_log_path
         )
