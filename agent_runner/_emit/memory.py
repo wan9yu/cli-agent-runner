@@ -106,6 +106,7 @@ def emit_host_cgroup_memory_limit(
     swap_cap_pct: float | None = None,
     memory_high: int | None = None,
     advisory: str | None = None,
+    cgroup_delegated: bool | None = None,
 ) -> None:
     """Emit once at serve startup: this process's cgroup v2 memory budget
     (``metrics.cgroup_memory_limits``). ``None`` fields mean unlimited (or
@@ -128,7 +129,11 @@ def emit_host_cgroup_memory_limit(
     fire: a ``memory.swap.max`` that looks implausibly tight against host
     swap, and a ``memory.max`` set on this process's OWN cgroup without a
     ``memory.high``, which recommends adding one (below ``memory.max``) for
-    graceful pre-OOM throttling instead of a hard kill."""
+    graceful pre-OOM throttling instead of a hard kill. ``cgroup_delegated``
+    (``metrics.cgroup_delegated``) is the READ-ONLY delegation-readiness
+    probe: ``True``/``False`` when cgroup v2 is present, ``None`` when it
+    isn't or the leaf couldn't be resolved -- an append-only field, unrelated
+    to whether the floor defers."""
     from agent_runner.events import HOST_CGROUP_MEMORY_LIMIT, emit
 
     emit(
@@ -141,6 +146,7 @@ def emit_host_cgroup_memory_limit(
         swap_cap_pct=swap_cap_pct,
         memory_high=memory_high,
         advisory=advisory,
+        cgroup_delegated=cgroup_delegated,
     )
 
 

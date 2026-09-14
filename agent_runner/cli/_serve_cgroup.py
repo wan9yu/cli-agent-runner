@@ -190,6 +190,16 @@ def _maybe_emit_oom_killed(
 # report ask #3). Advisory only -- never changes the operator's cgroup/unit.
 _SWAP_CAP_ADVISORY_PCT = 25.0
 
+# The delegation-readiness advisory: memory.max/memory.high are bound on this
+# cgroup, but metrics.cgroup_delegated found the leaf is NOT delegated
+# (systemd Delegate=yes) -- a future release that wants to write memory.high
+# on a round-scoped nested cgroup needs delegation first. Advisory only; this
+# probe and its hint never write to the cgroup or the unit.
+_UNDELEGATED_HINT = (
+    "this cgroup is not delegated (systemd Delegate=yes) -- memory.high can be "
+    "read but not managed here until it is"
+)
+
 
 def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     """Probe this process's cgroup v2 memory budget once at serve startup,
@@ -252,6 +262,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
     # `self_cgroup=limits["cgroup_path"]` dead-ends at the same place either
     # way as calling with no override would.
     memory_high = metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"])
+    delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
     swap_max = limits["memory_swap_max"]
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
@@ -288,6 +299,8 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
                 "throttle's PSI-full rise doesn't trip the mid-round floor"
             )
         advisories.append(hint)
+    if delegated is False and (memory_high is not None or own_scope):
+        advisories.append(_UNDELEGATED_HINT)
     advisory = "; ".join(advisories) or None
     if advisory is not None:
         print(f"agent-runner: {advisory}", file=sys.stderr)
@@ -300,5 +313,6 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
         swap_cap_pct=swap_cap_pct,
         memory_high=memory_high,
         advisory=advisory,
+        cgroup_delegated=delegated,
     )
     return defer

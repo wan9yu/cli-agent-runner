@@ -323,6 +323,7 @@ def _patch_probe(
     memory_high: int | None = None,
     cgroup_path: str | None = "/x",
     bounding_cgroup_path: str | None = "/x",
+    delegated: bool | None = None,
 ):
     monkeypatch.setattr(
         metrics,
@@ -337,6 +338,7 @@ def _patch_probe(
     monkeypatch.setattr(metrics, "mem_total_bytes", lambda: mem_total)
     monkeypatch.setattr(metrics, "swap_total_bytes", lambda: swap_total)
     monkeypatch.setattr(metrics, "cgroup_memory_high", lambda **_k: memory_high)
+    monkeypatch.setattr(metrics, "cgroup_delegated", lambda **_k: delegated)
 
 
 @pytest.mark.parametrize(
@@ -699,3 +701,130 @@ def test_cgroup_delegated_should_return_true_when_uid_owned_and_both_files_writa
     result = metrics.cgroup_delegated(root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup)
 
     assert result is True
+
+
+# --- v0.3.3 T1: cgroup_delegated wired onto host_cgroup_memory_limit + advisory ---
+#
+# The probe above is pure metrics; these exercise _probe_and_emit_cgroup_defer
+# actually calling it, carrying the result on the SAME host_cgroup_memory_limit
+# event (never a new kind), and firing the undelegated advisory only for the
+# supervisor's OWN leaf when a memory bound already exists.
+
+
+def test_probe_and_emit_cgroup_defer_should_carry_cgroup_delegated_on_every_branch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=None,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        cgroup_path=None,
+        bounding_cgroup_path=None,
+        delegated=None,
+    )
+
+    assert _only_event(tmp_path)["cgroup_delegated"] is None
+
+
+def test_probe_and_emit_cgroup_defer_should_report_delegated_false_when_leaf_not_delegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+        delegated=False,
+    )
+
+    assert _only_event(tmp_path)["cgroup_delegated"] is False
+
+
+def test_advisory_should_hint_undelegated_when_not_delegated_and_bound_already_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # memory_high already set -> own_scope's "add memory.high" hint stays silent,
+    # so the ONLY advisory possible here is the new undelegated hint.
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+        delegated=False,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] == (
+        "this cgroup is not delegated (systemd Delegate=yes) -- memory.high can "
+        "be read but not managed here until it is"
+    )
+
+
+def test_advisory_should_omit_undelegated_hint_when_already_delegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+        delegated=True,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is None
+
+
+def test_advisory_should_omit_undelegated_hint_when_cgroup_v2_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=None,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        cgroup_path=None,
+        bounding_cgroup_path=None,
+        delegated=None,
+    )
+
+    ev = _only_event(tmp_path)
+    assert ev["advisory"] is None
+
+
+def test_advisory_should_join_swap_and_undelegated_hints_with_semicolon_when_both_fire(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # swap_cap_pct = 200_000_000 / 1_600_000_000 * 100 = 12.5% -> below the 25%
+    # advisory floor, so the swap-caveat clause ALSO fires alongside the new one.
+
+    _run_probe(
+        monkeypatch,
+        tmp_path,
+        memory_max=256_000_000,
+        memory_swap_max=200_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+        delegated=False,
+    )
+
+    ev = _only_event(tmp_path)
+    assert "swap.max is far below host swap" in ev["advisory"]
+    assert "Delegate=yes" in ev["advisory"]
+    assert "; " in ev["advisory"]
