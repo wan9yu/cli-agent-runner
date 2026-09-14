@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2]
+
+### Added
+- Opt-in confinement for third-party plugin code (the hooks the supervisor runs in its own process — NOT the agent): a per-call Landlock+seccomp trampoline around third-party spawn hooks and dirty handlers, behind the `[sandbox]` extra. `[plugins] sandbox = require|prefer|off` (default `prefer`: run unconfined but announce it; `require` refuses boot when the sandbox can't engage). Built-in plugins are trusted by module provenance, not by name.
+- Checksum pinning: `[plugins.pin]` verifies a third-party plugin's sha256 before import and fails closed on a mismatch; `doctor` prints each third-party plugin's computed hash to paste in.
+- A `SpawnHook` plugin family that can defer or skip a round's spawn, gated by `[plugins] spawn_override_allow` (empty by default — no plugin alters a spawn until named).
+- `peek --json` (schema `2.2`) and `doctor` report the achieved sandbox tier, `libseccomp` presence, and per-plugin pin status, naming only the families actually confined.
+- New events: `plugin_checksum_mismatch`, `plugin_sandbox_degraded`, `plugin_sandbox_kill`, `plugin_spawn_decision`, `plugin_spawn_override_ignored`, `plugin_builtin_name_squat`.
+
 ## [0.3.1] - 2026-09-14
 
 ### Added
