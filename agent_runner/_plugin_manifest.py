@@ -62,6 +62,12 @@ def cooperative_manifest_names() -> list[str]:
     return [m.name for m in _LOADED_MANIFESTS if m.sigterm_cooperative]
 
 
+def is_cooperative_agent(agent_binary: str | None) -> bool:
+    """Whether the agent's preset declares itself SIGTERM-cooperative.
+    `None in [...]` is safely False, so no None-guard is needed."""
+    return agent_binary in cooperative_manifest_names()
+
+
 def resolve_sigterm_grace_s(agent_binary: str | None, sigterm_grace_s: int) -> int:
     """The SIGTERM->SIGKILL grace this round's agent actually gets:
     `sigterm_grace_s` (config's [agent] sigterm_grace_s, boot-capped at
@@ -71,7 +77,7 @@ def resolve_sigterm_grace_s(agent_binary: str | None, sigterm_grace_s: int) -> i
     (what the agent actually gets) and doctor/peek (what an operator sees)."""
     from agent_runner.agent_runtime import REAP_GRACE_S
 
-    if agent_binary is not None and agent_binary in cooperative_manifest_names():
+    if is_cooperative_agent(agent_binary):
         return sigterm_grace_s
     return REAP_GRACE_S
 

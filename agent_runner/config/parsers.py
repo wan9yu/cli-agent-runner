@@ -69,6 +69,22 @@ from agent_runner.config.validators import (
 )
 
 
+def _validate_sigterm_grace_s(value: Any, *, field: str) -> int:
+    """Validate [agent] sigterm_grace_s (or a per-phase override): positive
+    int, capped at _MAX_SIGTERM_GRACE_S (the supervisor's own wait for the
+    round leader). Mirrors _validate_remote_failure_tolerance's
+    require-then-cap shape; `field` is threaded through (unlike that single-
+    call-site validator) since this one validates both the base [agent]
+    table and each [phases.<name>.agent] override, under different prefixes."""
+    v = _require_positive_int(value, field=field)
+    if v > _MAX_SIGTERM_GRACE_S:
+        raise ConfigError(
+            f"{field}: must be <= {_MAX_SIGTERM_GRACE_S} "
+            f"(the supervisor's own wait for the round leader), got {v}"
+        )
+    return v
+
+
 def _parse_agent(
     agent_d: dict, *, field_prefix: str, require_prompt_placeholder: bool = True
 ) -> AgentConfig:
@@ -121,15 +137,10 @@ def _parse_agent(
         agent_d.get("exec_prefix", []), field=f"{field_prefix} exec_prefix"
     )
     terminal_marker = str(agent_d.get("terminal_marker", DEFAULT_TERMINAL_MARKER))
-    sigterm_grace_s = _require_positive_int(
+    sigterm_grace_s = _validate_sigterm_grace_s(
         agent_d.get("sigterm_grace_s", DEFAULT_SIGTERM_GRACE_S),
         field=f"{field_prefix} sigterm_grace_s",
     )
-    if sigterm_grace_s > _MAX_SIGTERM_GRACE_S:
-        raise ConfigError(
-            f"{field_prefix} sigterm_grace_s: must be <= {_MAX_SIGTERM_GRACE_S} "
-            f"(the supervisor's own wait for the round leader), got {sigterm_grace_s}"
-        )
     return AgentConfig(
         command=command,
         prompt_arg_template=prompt_arg_template,

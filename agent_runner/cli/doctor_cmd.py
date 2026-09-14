@@ -66,9 +66,7 @@ def cmd_doctor(args) -> int:
     from agent_runner._sandbox_probe import doctor_snapshot
 
     cfg = cfg_from_args(args)
-    is_cooperative = cfg.agent.binary is not None and (
-        cfg.agent.binary in _plugin_manifest.cooperative_manifest_names()
-    )
+    is_cooperative = _plugin_manifest.is_cooperative_agent(cfg.agent.binary)
     sigterm_grace = {
         "agent": cfg.agent.binary,
         "cooperative": is_cooperative,

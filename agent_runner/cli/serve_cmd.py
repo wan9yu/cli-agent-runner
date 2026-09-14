@@ -598,16 +598,48 @@ def _apply_round_num_env(round_env: dict, round_num: int) -> None:
     round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
 
 
-def _apply_reap_grace_env(cfg, round_env: dict, phase_arg: str | None) -> None:
-    """Resolve this round's agent's SIGTERM grace and publish it via
+def _resolve_reap_grace_by_phase(cfg) -> dict[str | None, int]:
+    """Precompute this serve lifetime's per-phase SIGTERM grace ONCE --
+    boot-invariant like cgroup_probe_defer/overlaps below (for a fixed
+    phase_arg, resolve_sigterm_grace_s depends only on the per-phase-static
+    agent binary + sigterm_grace_s + the once-populated plugin-manifest
+    registry), so _apply_reap_grace_env does a single dict lookup per round
+    instead of re-resolving from scratch. Keyed by the finite known
+    phase_arg set: None (base) plus every configured [phases.<name>]
+    override."""
+    from agent_runner._plugin_manifest import resolve_sigterm_grace_s
+
+    phase_args: list[str | None] = [None, *cfg.phases.overrides.keys()]
+    return {
+        phase_arg: resolve_sigterm_grace_s(
+            cfg.profile_for(phase_arg).agent.binary,
+            cfg.profile_for(phase_arg).agent.sigterm_grace_s,
+        )
+        for phase_arg in phase_args
+    }
+
+
+def _apply_reap_grace_env(
+    cfg, round_env: dict, phase_arg: str | None, grace_by_phase: dict[str | None, int]
+) -> None:
+    """Publish this round's agent's SIGTERM grace via
     AGENT_RUNNER_REAP_GRACE_S -- the same single-source-from-serve pattern
     AGENT_RUNNER_ROUND_NUM uses, so the round child's grace can't skew from
     the phase serve actually selected this round (see
-    _plugin_manifest.resolve_sigterm_grace_s for the decision itself)."""
+    _plugin_manifest.resolve_sigterm_grace_s for the decision itself). The
+    grace is looked up in `grace_by_phase` (precomputed once per serve
+    lifetime by _resolve_reap_grace_by_phase) rather than re-resolved here --
+    but the env write itself stays UNCONDITIONAL every round, so a
+    cooperative<->non-cooperative phase transition still overwrites the
+    previous round's value."""
     from agent_runner._plugin_manifest import resolve_sigterm_grace_s
 
-    agent = cfg.profile_for(phase_arg).agent
-    grace = resolve_sigterm_grace_s(agent.binary, agent.sigterm_grace_s)
+    grace = grace_by_phase.get(phase_arg)
+    if grace is None:
+        # Defensive only -- every phase_arg serve can select is one of the
+        # keys _resolve_reap_grace_by_phase precomputed from this same cfg.
+        agent = cfg.profile_for(phase_arg).agent
+        grace = resolve_sigterm_grace_s(agent.binary, agent.sigterm_grace_s)
     round_env["AGENT_RUNNER_REAP_GRACE_S"] = str(grace)
 
 
@@ -702,6 +734,9 @@ def cmd(args) -> int:
     # Static config check -- phase-window collisions can't change mid-lifetime, so
     # (like the cgroup probe above) this runs once at boot, not once per round.
     overlaps = phase_select.find_phase_window_overlaps(cfg)
+    # Boot-invariant per-phase SIGTERM grace -- resolved once here, looked up
+    # (not re-resolved) every round by _apply_reap_grace_env below.
+    grace_by_phase = _resolve_reap_grace_by_phase(cfg)
     if overlaps:
         detail = phase_select.describe_overlaps(overlaps)
         _release_serve_lock(serve_lock_fd)
@@ -769,7 +804,7 @@ def cmd(args) -> int:
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="before")
             _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
             _apply_round_num_env(round_env, round_num)
-            _apply_reap_grace_env(cfg, round_env, phase_arg)
+            _apply_reap_grace_env(cfg, round_env, phase_arg, grace_by_phase)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [

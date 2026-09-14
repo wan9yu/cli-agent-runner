@@ -133,6 +133,24 @@ def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
     assert default_dirty_handler.PLUGIN.sigterm_cooperative is False
 
 
+def test_is_cooperative_agent_should_return_true_when_binary_names_a_cooperative_manifest():
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        is_cooperative_agent,
+        register_manifest,
+    )
+
+    register_manifest(PluginManifest(name="fake_coop_2", sigterm_cooperative=True))
+
+    assert is_cooperative_agent("fake_coop_2") is True
+
+
+def test_is_cooperative_agent_should_return_false_when_binary_is_none():
+    from agent_runner._plugin_manifest import is_cooperative_agent
+
+    assert is_cooperative_agent(None) is False
+
+
 def test_resolve_sigterm_grace_s_should_return_configured_grace_when_agent_is_cooperative():
     from agent_runner._plugin_manifest import (
         PluginManifest,
