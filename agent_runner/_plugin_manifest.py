@@ -71,13 +71,12 @@ def manifest_sigterm_cooperative(binary: str | None) -> bool:
     when binary is None, no manifest is registered under that name, or the
     matching manifest declares False. See this module's docstring note on
     the claude_rate_limit name/binary mismatch: an unmatched binary reads as
-    non-cooperative by omission, never by a guess."""
-    if binary is None:
-        return False
-    for m in _LOADED_MANIFESTS:
-        if m.name == binary:
-            return m.sigterm_cooperative
-    return False
+    non-cooperative by omission, never by a guess.
+
+    register_manifest enforces unique manifest .name, so 'the manifest named
+    binary is cooperative' is exactly 'binary is in cooperative_manifest_names()'
+    -- reuse it rather than re-scanning _LOADED_MANIFESTS a second time."""
+    return binary is not None and binary in cooperative_manifest_names()
 
 
 def register_manifest(

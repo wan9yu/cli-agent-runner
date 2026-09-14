@@ -121,7 +121,7 @@ def _format(report: DoctorReport) -> str:
         for name, digest in sorted(hashes.items()):
             lines.append(f'    {name} = "{digest}"')
     cooperative = _plugin_manifest.cooperative_manifest_names()
-    lines.append(f"  cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
+    lines.append(f"cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
     cgroup = report.cgroup
     lines.append("cgroup:")
     lines.append(f"  cgroup_path: {cgroup['cgroup_path']}")
