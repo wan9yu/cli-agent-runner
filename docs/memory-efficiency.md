@@ -429,16 +429,55 @@ No new growth — `test_round_alloc_growth.py` green across both versions. 0.3.3
 
 ### Efficiency (internal wait)
 
-Unchanged this cycle — the serve loop's ~1s busy-poll (`_spawn_round`'s `proc.wait(timeout=_ROUND_POLL_TICK_S)`) is still synchronous. The event-driven/async migration that removes the internal waits is the 0.3.4 work; its efficiency numbers land there.
+Unchanged this cycle — as of 0.3.3 the serve loop's round-exit wait was still a ~1 s busy-poll. The event-driven migration that removes that internal wait is the 0.3.4 work; its efficiency numbers are the next section.
 
 ### Constrained-host (honesty)
 
 Numbers are dev-host-relative (the macOS harness this page has used since 0.2.17). The 462MB / 256MB constrained-host confirmation stays deferred while that host is offline — measured on dev/CI, documented as deferred for the constrained host, never reported as zero-cost.
 
+## 0.3.3 → 0.3.4 (2026-09-14)
+
+The event-driven serve core: the round-exit wait, the terminate/reap grace waits, and serve's pause + restart-delay sleeps all block on a single OS event (a process-exit fd via `pidfd`/`kqueue`, plus a FIFO doorbell) instead of a ~1 s busy-poll. Same macOS `kqueue` harness (§ methodology above).
+
+### 1. Import/startup RSS
+
+| | 0.3.3 | 0.3.4 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.9 MB | 24.0 MB | ~0 MB (flat, within run-to-run noise) |
+| RSS range | 23.8–24.0 MB | 23.95–24.12 MB | |
+
+Flat, and deliberately so. The two new modules on the cold-startup graph — `_notify` (the FIFO doorbell) and `_procwait` (the process-exit fd wait) — are pure-stdlib leaves: they import only `os`/`select`/`selectors`/`errno`/`pathlib`/`subprocess` plus the already-loaded `clock`. `select`/`selectors` are already resident (`psutil` pulls them — verified: `import psutil` alone brings `select` in), so adding these two modules to the eager graph costs ~0 RSS. The `test_import_footprint.py` allowlist gained exactly those two entries, no others.
+
+The reduction that matters here is the one **avoided**: the round-3 design measured a stdlib-`asyncio` version of this same core at **+5.2 MB RSS** (`import asyncio` alone). Choosing `selectors`/`pidfd`/`kqueue` over `asyncio` keeps that 5.2 MB off every install — and a new `test_no_asyncio_select.py` invariant now forbids an `asyncio` import anywhere in `agent_runner/`, so the saving can't silently regress. `asyncio` is confirmed absent from the cold graph.
+
+### 2. Base dependencies
+
+Unchanged: `psutil>=5.9` is still the only runtime dependency. No new dependency and no new extra — the event-driven core is entirely stdlib (`select`/`selectors`/`os.pidfd_open`/`os.mkfifo`). Clean-room-verified.
+
+### 3. Per-round allocation growth
+
+`test_round_alloc_growth.py` green — no new retained per-round growth. The rewrite also **reduces transient per-round work**: the old mid-round loop iterated once per ~1 s tick for the whole round (hundreds of loop bodies over a long round), whereas the new loop blocks in one `wait_exit` and wakes only when the round exits, the ~10 s mem-check is due, or a signal/doorbell fires. Idle-round loop iterations drop from ~`round_budget_s` to ~`round_budget_s/10` (host-health armed) or 1 (unarmed).
+
+### Efficiency (internal wait) — the headline
+
+This is the release whose whole point is removing an internal wait, and it does. On the fast path (`pidfd`/`kqueue` — the CI and production norm):
+- **Idle CPU wakeups during a round drop from ~1/s to ~0** — the supervisor sleeps in one `select`/`kqueue` call until something real happens instead of waking every second to re-check a clock.
+- **Signal reaction goes from up-to-`chunk_s` (≤30 s) to near-instant** — a `SIGTERM`/`serve stop` during a schedule/memory/phase pause or the restart delay wakes the wait immediately (via `signal.set_wakeup_fd` on the same doorbell fd) instead of riding out the current 30 s chunk.
+- **`events --tail` latency drops from ≤1 s to one drain cycle (sub-ms).**
+- A regression test pins the failure mode this could have introduced: an un-drained level-triggered doorbell would busy-spin the mid-round loop (measured 445,795 `wait_exit` calls in a 1.5 s round); the drained implementation makes ~2 — a permanent guard against the efficiency win silently inverting.
+
+The decision surface is byte-identical: none of this changes *when* a round is deferred, terminated, or reaped — only how promptly (and how cheaply) the supervisor notices.
+
+### Constrained-host (honesty)
+
+Numbers are dev-host-relative (the macOS `kqueue` harness). The Linux `pidfd` fast path is exercised only on CI (ubuntu runners); the real 462 MB / 256 MB constrained-host wake-latency and `pidfd`/`kqueue`-under-swap-pressure confirmation stays deferred to 0.3.5 while that host is offline — measured on dev/CI, documented as deferred for the constrained host, never reported as zero-cost.
+
 ## Enforcement
 
-Three invariant tests keep these numbers from drifting silently:
+Four invariant tests keep these numbers from drifting silently:
 `tests/invariants/test_import_footprint.py` (forbidden-module allowlist +
 frozen startup import graph), `tests/invariants/test_round_alloc_growth.py`
-(64 KB per-round growth ceiling), and `tests/invariants/test_module_sizes.py`
-(1,000-line-per-module ceiling).
+(64 KB per-round growth ceiling), `tests/invariants/test_module_sizes.py`
+(1,000-line-per-module ceiling), and `tests/invariants/test_no_asyncio_select.py`
+(no `asyncio` anywhere — protects the 0.3.4 decision to use `selectors`/`pidfd`/`kqueue`
+over the +5.2 MB `asyncio` alternative — plus `select`/`selectors`/`pidfd` confinement).

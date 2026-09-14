@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4]
+
+### Changed
+- While a round runs, the supervisor now blocks on the round process's exit instead of polling about once a second — it uses no CPU while waiting and notices a round's exit immediately.
+- A stop (`SIGTERM` / `agent-runner serve stop`) during a schedule, memory, or phase pause, or during the inter-round restart delay, now takes effect near-instantly instead of after the current pause chunk (up to 30 s).
+- `agent-runner events --tail` shows a new matching event within a drain cycle of its being written, instead of on a ~1 s poll.
+
+No change to when a round is deferred, terminated, or reaped — only how promptly and how cheaply the supervisor reacts.
+
 ## [0.3.3] - 2026-09-14
 
 ### Added
