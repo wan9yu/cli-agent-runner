@@ -208,3 +208,57 @@ def peek_snapshot(cfg) -> dict:
         "pins": pins,
         "spawn_override_allow": list(cfg.plugins.spawn_override_allow),
     }
+
+
+def doctor_snapshot(cfg) -> dict:
+    """``doctor``'s read-only sandbox report -- the SINGLE source for
+    ``doctor``'s sandbox block (folds what were two doctor_cmd-local helpers,
+    ``_sandbox_report`` and ``_third_party_plugin_checksums``, into one).
+
+    ``libseccomp_present`` is a cheap presence probe
+    (``ctypes.util.find_library``) distinct from ``probe_sandbox_capability``'s
+    filter-CONSTRUCTING check -- it answers "is ``libseccomp.so.2`` even
+    installed on this host" rather than "can this process actually build a
+    filter with it," since ``pyseccomp`` is a ctypes shim over that shared
+    library.
+
+    ``third_party_plugin_hashes`` gives every discovered THIRD-PARTY
+    (non-builtin) plugin's computed sha256, keyed by entry-point name -- the
+    same name and the same recipe ``verify_pin`` checks against, so an
+    operator can copy-paste a printed value straight into ``[plugins.pin]``.
+    Iterates every DISCOVERED entry (not only successfully-loaded manifests)
+    so a plugin refused by the load gate still gets a hash an operator can
+    act on.
+
+    Classification uses ``is_builtin_provenance(name, module_path)``, NEVER a
+    bare ``name in BUILTIN_PLUGIN_NAMES`` -- a name-squatter (reserved name,
+    foreign module) must still surface here so an operator can catch it;
+    keying on the name alone would hide a squatter as a trusted builtin,
+    masking exactly the threat this report exists to make visible. Mirrors
+    ``peek_snapshot``'s identical recipe.
+    """
+    import ctypes.util
+
+    import agent_runner
+    from agent_runner._plugin_checksum import compute_plugin_checksum
+    from agent_runner._registry import is_builtin_provenance
+
+    probe = probe_sandbox_capability()
+    hashes: dict[str, str] = {}
+    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
+        module_path = agent_runner._entry_point_module_path(value)
+        if is_builtin_provenance(name, module_path):
+            continue
+        try:
+            hashes[name] = compute_plugin_checksum(module_path)
+        except Exception as e:  # noqa: BLE001 — doctor reports, never crashes, on a broken plugin
+            hashes[name] = f"<unresolvable: {e}>"
+    return {
+        "requested": cfg.plugins.sandbox,
+        "achieved_tier": probe.achieved_tier,
+        "landlock_abi": probe.landlock_abi,
+        "seccomp": probe.seccomp,
+        "libseccomp_present": ctypes.util.find_library("seccomp") is not None,
+        "unconfined_reason": probe.unconfined_reason,
+        "third_party_plugin_hashes": hashes,
+    }

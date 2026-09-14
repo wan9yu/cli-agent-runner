@@ -208,7 +208,7 @@ def test_doctor_should_emit_json_with_sandbox_and_plugin_checksums_keys(tmp_path
 
     payload = json.loads(capsys.readouterr().out)
     assert "sandbox" in payload and "achieved_tier" in payload["sandbox"]
-    assert "plugin_checksums" in payload
+    assert "third_party_plugin_hashes" in payload["sandbox"]
 
 
 def test_doctor_should_report_phase_window_overlap_as_a_failing_check_when_present(tmp_path):

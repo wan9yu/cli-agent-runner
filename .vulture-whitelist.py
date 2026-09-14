@@ -156,7 +156,6 @@ checks
 overlaps
 plan
 sandbox
-plugin_checksums
 
 # agent_runner.config.models.AgentConfig
 command

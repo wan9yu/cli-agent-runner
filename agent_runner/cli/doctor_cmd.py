@@ -16,7 +16,6 @@ class DoctorReport:
     overlaps: list[phase_select.WindowOverlap]
     plan: list[dict]
     sandbox: dict
-    plugin_checksums: dict[str, str]
 
 
 def add_parser(sub, parent) -> None:
@@ -44,51 +43,15 @@ def _plan(cfg, rounds: int) -> list[dict]:
     return out
 
 
-def _sandbox_report() -> dict:
-    """Achieved-capability summary for the Tier-B (Landlock+seccomp)
-    trampoline, so an operator can see what THIS host can actually confine
-    before setting ``[plugins] sandbox = "require"``."""
-    from agent_runner._sandbox_probe import TIER_B_PROTOCOLS, probe_sandbox_capability
-
-    probe = probe_sandbox_capability()
-    return {
-        "achieved_tier": probe.achieved_tier,
-        "landlock_abi": probe.landlock_abi,
-        "seccomp": probe.seccomp,
-        "unconfined_reason": probe.unconfined_reason,
-        "protocols": list(TIER_B_PROTOCOLS),
-    }
-
-
-def _third_party_plugin_checksums() -> dict[str, str]:
-    """Every discovered THIRD-PARTY (non-builtin) plugin's computed sha256,
-    keyed by entry-point name — the same name and the same recipe
-    ``verify_pin`` checks against, so an operator can copy-paste a printed
-    value straight into ``[plugins.pin]`` and have it verify."""
-    import agent_runner
-    from agent_runner._plugin_checksum import compute_plugin_checksum
-    from agent_runner._registry import is_builtin_provenance
-
-    out: dict[str, str] = {}
-    for name, value in agent_runner._DISCOVERED_PLUGIN_ENTRIES:
-        module_path = agent_runner._entry_point_module_path(value)
-        if is_builtin_provenance(name, module_path):
-            continue
-        try:
-            out[name] = compute_plugin_checksum(module_path)
-        except Exception as e:  # noqa: BLE001 — doctor reports, never crashes, on a broken plugin
-            out[name] = f"<unresolvable: {e}>"
-    return out
-
-
 def cmd_doctor(args) -> int:
+    from agent_runner._sandbox_probe import doctor_snapshot
+
     cfg = cfg_from_args(args)
     report = DoctorReport(
         checks=startup_check.run_battery(cfg),
         overlaps=phase_select.find_phase_window_overlaps(cfg),
         plan=_plan(cfg, args.rounds),
-        sandbox=_sandbox_report(),
-        plugin_checksums=_third_party_plugin_checksums(),
+        sandbox=doctor_snapshot(cfg),
     )
     json_mode = getattr(args, "json", False)
     if json_mode:
@@ -122,13 +85,20 @@ def _format(report: DoctorReport) -> str:
         else:
             where = step["phase"] or "base"
         lines.append(f"  round {step['round']}: {where}")
+    from agent_runner._sandbox_probe import TIER_B_PROTOCOLS
+
     sb = report.sandbox
     tier_detail = f" — {sb['unconfined_reason']}" if sb["unconfined_reason"] else ""
+    lines.append("sandbox:")
+    lines.append(f"  requested: {sb['requested']}")
     lines.append(
-        f"sandbox: {sb['achieved_tier']}{tier_detail} (confines: {', '.join(sb['protocols'])})"
+        f"  achieved_tier: {sb['achieved_tier']}{tier_detail}"
+        f" (confines: {', '.join(TIER_B_PROTOCOLS)})"
     )
-    if report.plugin_checksums:
-        lines.append("third-party plugin checksums (paste into [plugins.pin]):")
-        for name, digest in sorted(report.plugin_checksums.items()):
-            lines.append(f'  {name} = "{digest}"')
+    lines.append(f"  libseccomp_present: {sb['libseccomp_present']}")
+    hashes = sb["third_party_plugin_hashes"]
+    if hashes:
+        lines.append("  third-party plugin checksums (paste into [plugins.pin]):")
+        for name, digest in sorted(hashes.items()):
+            lines.append(f'    {name} = "{digest}"')
     return "\n".join(lines)
