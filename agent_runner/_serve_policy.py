@@ -324,7 +324,5 @@ def timeout_budget(round_budget_s: int, *, wrapup_grace_s: int = 0) -> tuple[int
       TimeoutStopSec render.
     """
     outer_ceiling_s = round_budget_s + _REAP_GRACE_S + _GIT_COMMIT_TIMEOUT_S + _HOOK_ALLOWANCE_S
-    timeout_stop_sec = (
-        outer_ceiling_s + _ROUND_TERM_GRACE_S + wrapup_grace_s + _STOP_GRACE_MARGIN_S
-    )
+    timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + wrapup_grace_s + _STOP_GRACE_MARGIN_S
     return timeout_stop_sec, outer_ceiling_s
