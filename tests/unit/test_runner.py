@@ -641,6 +641,17 @@ def _make_mock_runtime(fake_run):  # type: ignore[no-untyped-def]
     return type("M", (), {"run": staticmethod(fake_run), "RunResult": _ar.RunResult})()
 
 
+def _register_default_dirty_handler() -> None:
+    """Register the genuine-builtin default dirty handler for a test that calls
+    ``runner._run_one_round_inner`` directly -- bypassing ``load_config``, which
+    is where the supervisor registers it. ``builtin=True`` grants the in-process
+    dispatch trust a genuine builtin gets."""
+    from agent_runner._plugin_manifest import register_manifest
+    from agent_runner.builtin_plugins.default_dirty_handler import PLUGIN
+
+    register_manifest(PLUGIN, builtin=True)
+
+
 def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -675,6 +686,7 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
         vcs=VcsConfig(dirty_action="stash"),
         phases=PhasesConfig(),
     )
+    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 
@@ -752,6 +764,7 @@ def test_run_one_round_inner_should_create_git_commit_when_dirty_action_is_auto_
         vcs=VcsConfig(dirty_action="auto_commit"),
         phases=PhasesConfig(),
     )
+    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 
@@ -791,6 +804,7 @@ def test_run_one_round_inner_should_emit_dirty_commit_failed_when_git_identity_u
         vcs=VcsConfig(dirty_action="auto_commit"),
         phases=PhasesConfig(),
     )
+    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 

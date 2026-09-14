@@ -10,6 +10,54 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_plugin_registries():
+    """Snapshot, clear, and restore every process-global plugin registry around
+    each test.
+
+    Plugin registration now happens at ``load_config`` time, not package import,
+    so ``import agent_runner`` leaves these registries EMPTY. A test that
+    registers a hook/handler/detector (directly, or by calling ``load_config``)
+    would otherwise LEAK it into later tests -- an order- and worker-dependent
+    flake. This resets every test to that real baseline (empty unless the test
+    itself registers) and contains any registration it makes.
+
+    Containers are copied at the container level (a fresh list/dict holding the
+    SAME element references) -- never element-deep-copied: the owner/builtin/
+    module dicts are keyed on ``id(handler)``, so cloning the handler objects
+    would change their identities and break the keying.
+    """
+    from agent_runner import _plugin_manifest, events, hooks, monitor
+
+    registries: list = [
+        hooks._DIRTY_HANDLERS,
+        hooks._SPAWN_HOOKS,
+        hooks._PRE_ROUND_HOOKS,
+        hooks._CONTEXT_ENRICHERS,
+        hooks._POST_ROUND_HOOKS,
+        hooks._SERVE_STARTUP_HOOKS,
+        monitor._PLUGIN_DETECTORS,
+        hooks._DIRTY_HANDLER_OWNER,
+        hooks._SPAWN_HOOK_OWNER,
+        hooks._DIRTY_HANDLER_BUILTIN,
+        hooks._SPAWN_HOOK_BUILTIN,
+        _plugin_manifest._LOADED_MANIFESTS,
+        events._PLUGIN_KINDS,
+    ]
+    saved = [reg.copy() if isinstance(reg, dict) else list(reg) for reg in registries]
+    for reg in registries:
+        reg.clear()
+    try:
+        yield
+    finally:
+        for reg, snap in zip(registries, saved, strict=True):
+            reg.clear()
+            if isinstance(reg, dict):
+                reg.update(snap)
+            else:
+                reg.extend(snap)
+
+
 @pytest.fixture
 def tmp_git_repo(tmp_path: Path) -> Path:
     """Create a real git repo in tmp_path (commits enabled)."""

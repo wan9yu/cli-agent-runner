@@ -91,6 +91,13 @@ def test_round_should_orphan_stash_dirty_tree_when_fake_agent_leaves_it_dirty(
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
     cfg = _cfg(tmp_git_repo, fake_agent_script)
+    # run_one_round dispatches the dirty tree through hooks.dispatch_dirty; the
+    # genuine-builtin default handler is registered by load_config in production,
+    # which this direct call bypasses -- so register it here.
+    from agent_runner._plugin_manifest import register_manifest
+    from agent_runner.builtin_plugins.default_dirty_handler import PLUGIN as _DIRTY_PLUGIN
+
+    register_manifest(_DIRTY_PLUGIN, builtin=True)
 
     result = run_one_round(cfg)
 
