@@ -113,13 +113,14 @@ def test_render_serve_unit_should_restrict_restart_prevention_to_giveup_exits_wh
 
 @pytest.mark.parametrize(
     "round_budget_s,expected",
-    [(600, 810), (1800, 2010)],
+    [(600, 820), (1800, 2020)],
     ids=["timeout-600", "timeout-1800"],
 )
 def test_render_serve_unit_should_add_grace_budget_to_timeout_when_rendered(
     tmp_path: Path, round_budget_s: int, expected: int
 ) -> None:
-    """TimeoutStopSec = round_budget_s + 210 budget (_serve_policy.timeout_budget)."""
+    """TimeoutStopSec = round_budget_s + 220 budget (_serve_policy.timeout_budget --
+    the reap margin now covers the worst-case cooperative sigterm grace, 15s not 5s)."""
     cfg = _cfg(tmp_path, round_budget_s=round_budget_s)
 
     body = render_serve_unit(
@@ -222,7 +223,7 @@ def test_render_serve_unit_should_use_max_round_timeout_across_phases_when_phase
     )
 
     # max(1800, 3600) + 210 = 3810
-    assert "TimeoutStopSec=3810" in unit
+    assert "TimeoutStopSec=3820" in unit
 
 
 def test_render_serve_unit_should_include_user_directive_when_user_arg_given(
