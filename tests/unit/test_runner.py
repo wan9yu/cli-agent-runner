@@ -1084,3 +1084,29 @@ def test_run_one_round_should_preserve_orphan_state_when_dirty_check_times_out(
     run_one_round(cfg)
 
     assert context_store.read_orphan_state(cfg.runtime.log_dir) == orphan
+
+
+def test_resolve_reap_grace_s_should_read_the_published_env_value(monkeypatch):
+    from agent_runner import runner
+
+    monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "13")
+
+    assert runner._resolve_reap_grace_s() == 13
+
+
+def test_resolve_reap_grace_s_should_fall_back_to_reap_grace_s_when_env_absent(monkeypatch):
+    from agent_runner import runner
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    monkeypatch.delenv("AGENT_RUNNER_REAP_GRACE_S", raising=False)
+
+    assert runner._resolve_reap_grace_s() == REAP_GRACE_S
+
+
+def test_resolve_reap_grace_s_should_fall_back_when_env_value_is_unparseable(monkeypatch):
+    from agent_runner import runner
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "not-a-number")
+
+    assert runner._resolve_reap_grace_s() == REAP_GRACE_S

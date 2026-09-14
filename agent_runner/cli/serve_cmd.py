@@ -598,6 +598,19 @@ def _apply_round_num_env(round_env: dict, round_num: int) -> None:
     round_env["AGENT_RUNNER_ROUND_NUM"] = str(round_num)
 
 
+def _apply_reap_grace_env(cfg, round_env: dict, phase_arg: str | None) -> None:
+    """Resolve this round's agent's SIGTERM grace and publish it via
+    AGENT_RUNNER_REAP_GRACE_S -- the same single-source-from-serve pattern
+    AGENT_RUNNER_ROUND_NUM uses, so the round child's grace can't skew from
+    the phase serve actually selected this round (see
+    _plugin_manifest.resolve_sigterm_grace_s for the decision itself)."""
+    from agent_runner._plugin_manifest import resolve_sigterm_grace_s
+
+    agent = cfg.profile_for(phase_arg).agent
+    grace = resolve_sigterm_grace_s(agent.binary, agent.sigterm_grace_s)
+    round_env["AGENT_RUNNER_REAP_GRACE_S"] = str(grace)
+
+
 def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
     """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
     git_head = compute_git_head(work_dir)
@@ -756,6 +769,7 @@ def cmd(args) -> int:
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="before")
             _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
             _apply_round_num_env(round_env, round_num)
+            _apply_reap_grace_env(cfg, round_env, phase_arg)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [

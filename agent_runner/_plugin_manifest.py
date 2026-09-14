@@ -62,6 +62,20 @@ def cooperative_manifest_names() -> list[str]:
     return [m.name for m in _LOADED_MANIFESTS if m.sigterm_cooperative]
 
 
+def resolve_sigterm_grace_s(agent_binary: str | None, sigterm_grace_s: int) -> int:
+    """The SIGTERM->SIGKILL grace this round's agent actually gets:
+    `sigterm_grace_s` (config's [agent] sigterm_grace_s, boot-capped at
+    _ROUND_TERM_GRACE_S) when `agent_binary` names a manifest declaring
+    sigterm_cooperative=True, else agent_runtime.REAP_GRACE_S (5s)
+    unchanged. One function, two callers: cli.serve_cmd._apply_reap_grace_env
+    (what the agent actually gets) and doctor/peek (what an operator sees)."""
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    if agent_binary is not None and agent_binary in cooperative_manifest_names():
+        return sigterm_grace_s
+    return REAP_GRACE_S
+
+
 def register_manifest(
     manifest: PluginManifest,
     *,

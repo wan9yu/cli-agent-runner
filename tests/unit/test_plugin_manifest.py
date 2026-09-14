@@ -131,3 +131,29 @@ def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
     assert codewhale.PLUGIN.sigterm_cooperative is False
     assert pi.PLUGIN.sigterm_cooperative is False
     assert default_dirty_handler.PLUGIN.sigterm_cooperative is False
+
+
+def test_resolve_sigterm_grace_s_should_return_configured_grace_when_agent_is_cooperative():
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        register_manifest,
+        resolve_sigterm_grace_s,
+    )
+
+    register_manifest(PluginManifest(name="fake_coop", sigterm_cooperative=True))
+
+    assert resolve_sigterm_grace_s("fake_coop", 9) == 9
+
+
+def test_resolve_sigterm_grace_s_should_return_default_when_agent_is_not_cooperative():
+    from agent_runner._plugin_manifest import resolve_sigterm_grace_s
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    assert resolve_sigterm_grace_s("claude", 9) == REAP_GRACE_S
+
+
+def test_resolve_sigterm_grace_s_should_return_default_when_agent_binary_is_none():
+    from agent_runner._plugin_manifest import resolve_sigterm_grace_s
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    assert resolve_sigterm_grace_s(None, 9) == REAP_GRACE_S

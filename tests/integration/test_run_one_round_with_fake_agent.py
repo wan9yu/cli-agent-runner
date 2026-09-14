@@ -197,6 +197,32 @@ def test_round_should_apply_phase_override_timeout_when_phase_has_override(
     )
 
 
+def test_round_should_pass_the_published_reap_grace_s_to_agent_runtime_run(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "succeed")
+    monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "13")
+    cfg = _cfg(tmp_git_repo, fake_agent_script)
+
+    captured: list[int] = []
+    import agent_runner.agent_runtime as agent_runtime_mod
+
+    original_run = agent_runtime_mod.run
+
+    def capturing_run(**kwargs):
+        captured.append(kwargs["reap_grace_s"])
+        return original_run(**kwargs)
+
+    monkeypatch.setattr(agent_runtime_mod, "run", capturing_run)
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0
+    assert captured == [13]
+
+
 def test_round_should_pass_agent_env_to_subprocess_when_cfg_has_env(
     tmp_git_repo: Path,
 ) -> None:

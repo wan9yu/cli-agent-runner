@@ -190,6 +190,24 @@ def _resolve_round_num(log_dir: Path) -> int:
     return next_round_num(log_dir)
 
 
+def _resolve_reap_grace_s() -> int:
+    """The SIGTERM->SIGKILL grace this round's agent gets, published by serve
+    via AGENT_RUNNER_REAP_GRACE_S (cli/serve_cmd.py's _apply_reap_grace_env)
+    so the child never re-derives (and skews) serve's own cooperative-manifest
+    resolution; a standalone `agent-runner round` (no env) falls back to
+    agent_runtime.REAP_GRACE_S -- the same non-cooperative default -- when the
+    env var is absent or unparseable."""
+    from agent_runner.agent_runtime import REAP_GRACE_S
+
+    raw = os.environ.get("AGENT_RUNNER_REAP_GRACE_S")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return REAP_GRACE_S
+
+
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
     if prev is None:
         return None
@@ -573,6 +591,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         on_grace_extended=_grace_extended_emit,
         grace_kill_ignore_patterns=grace_kill_ignore_patterns,
         on_container_orphan_risk=_container_orphan_risk_emit,
+        reap_grace_s=_resolve_reap_grace_s(),
     )
     events.emit(
         log_dir,
