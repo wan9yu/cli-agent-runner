@@ -156,6 +156,7 @@ checks
 overlaps
 plan
 sandbox
+cgroup
 
 # agent_runner.config.models.AgentConfig
 command
