@@ -504,9 +504,12 @@ Two closed lifecycle gaps, not a new subsystem: `kill` now reaps a stuck round's
 
 | | 0.3.5 | 0.3.6 | Δ |
 |---|---|---|---|
-| RSS (avg of 5 cold runs) | 24.1 MB | <measured at close-out> | <measured at close-out> |
+| RSS (avg of 5 cold runs) | 24.12 MB | 24.18 MB | +0.06 MB (flat, within noise) |
+| RSS range | 24.03–24.19 MB* | 24.00–24.34 MB | |
 
-Expected flat: `_plugin_sandbox` (added in 0.3.2) stays lazy and off the cold-startup graph — it's only imported when a third-party spawn hook or dirty handler actually runs sandboxed — no new module joins the eager import set, and the base dependency stays `psutil>=5.9`. `test_import_footprint.py` + `test_round_alloc_growth.py` green.
+\* one v0.3.5 run came in at 27.17 MB — the same first-invocation cold-page-cache outlier this page excludes elsewhere (see Caveats); dropped from the average/range as noise.
+
+Flat, and no new import edge. `_plugin_sandbox`/`_procwait`/`_notify` are NOT on the bare `import agent_runner` graph, but they ARE on the `import agent_runner.cli` (serve/round) startup graph — frozen in `test_import_footprint.py`'s `EXPECTED_STARTUP_PKG_MODULES` allowlist since the v0.3.2 SpawnHook seam (`_serve_round` imports `run_hook_sandboxed` at module level) and the v0.3.4 doorbell. v0.3.6 adds no new module to that graph — only new NAMES within those already-imported modules (`wake_fd`/`should_stop`/`SpawnHookInterrupted`/`_DRAIN_JOIN_S`/`_join_drain_threads`) — so the allowlist is unchanged and `test_import_footprint.py` + `test_round_alloc_growth.py` are green. Base dependency stays `psutil>=5.9`. (The raw `sys.modules` count shows +1, `agent_runner._version` — a generated file a fresh throwaway worktree lacks, a measurement artifact, not a code change.)
 
 ### 2. Efficiency
 
@@ -514,6 +517,8 @@ No headline RSS number here — the win is in wakeups and reaction latency, and 
 
 - **Per engaged third-party spawn hook, the trampoline wait drops from ~20 wakeups/s to exactly 1.** The old confinement trampoline joined a stdlib `subprocess.Popen.wait()`, which sleep-polls internally (~20 Hz); the rewrite blocks the trampoline on the same `wait_exit` fd primitive the rest of `serve` already uses, so it wakes exactly once, on the hook's actual exit — asserted by `test_plugin_sandbox_wire.py`'s `calls["n"] == 1` property test.
 - **A stop during a confined hook or a plugin `defer` now takes effect immediately instead of after up to 30 s**, and the confined hook's child process is always reaped, never left running — closing the two lifecycle gaps this release targets. Behavioral, not an RSS change.
+
+The trampoline bounds its post-reap pipe drain to `_DRAIN_JOIN_S` (`agent_runner/_plugin_sandbox.py`): if a process the hook itself `fork()`'d keeps the reaped child's output pipe open, the drain thread stays blocked in `read()` and is abandoned (a daemon thread) rather than stalling the stop. That leaks at most one drain-thread pair per such invocation, bounded by the plugin's own process leak and negligible in RSS (an untouched thread stack); the thread dies when the fork()'d holder exits or when `serve` itself does. Reaping the hook's own `fork()`'d descendants is a recorded internal follow-up.
 
 ### 3. Constrained-host (honesty)
 
