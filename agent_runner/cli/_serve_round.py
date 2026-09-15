@@ -707,6 +707,19 @@ def _spawn_round(
                     else:
                         warning_streak = 0
                         none_streak += 1
+                        if (
+                            brake_engaged
+                            and brake_previous is not None
+                            and none_streak >= host_health_cfg.brake.warning_consecutive_samples
+                        ):
+                            if metrics.restore_leaf_memory_high(brake_previous):
+                                emit_memory_high_released(
+                                    log_dir, round_num=round_num, reason="recovered"
+                                )
+                                brake_engaged = False
+                                brake_previous = None
+                            else:
+                                emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
                     brake_step = _brake_step_for(log_dir, host_health_cfg)
                     if (
                         pressure is not None

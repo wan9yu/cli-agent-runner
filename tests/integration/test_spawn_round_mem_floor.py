@@ -942,6 +942,114 @@ def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path
     assert failed and failed[0]["errno"] == 0
 
 
+def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(
+    tmp_path, monkeypatch
+):
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+    seq = {"n": 0}
+    restores = []
+
+    def _sample():
+        seq["n"] += 1
+        return _WARNING_SAMPLE if seq["n"] <= 3 else _HEALTHY_SAMPLE  # 3 warn engage, then heal
+
+    def _fake_restore(previous, **_k):
+        restores.append(previous)
+        sentinel.touch()  # let the leader exit once the recovery release has fired
+        return True
+
+    monkeypatch.setattr(
+        metrics,
+        "engage_leaf_memory_high",
+        lambda *, step_pct: {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        },
+    )
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=_sample,
+    )
+
+    events = read_events_for_current_month(log_dir)
+    released = [e for e in events if e.get("event") == "memory_high_released"]
+    assert any(e["reason"] == "recovered" for e in released)
+
+
+def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engage(
+    tmp_path, monkeypatch
+):
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+    seq = {"n": 0}
+
+    def _sample():
+        seq["n"] += 1
+        if seq["n"] <= 3:
+            return _WARNING_SAMPLE  # engage
+        if seq["n"] == 4:
+            sentinel.touch()  # end the round on the critical tick
+            return _CRITICAL_SAMPLE  # a critical sample must NOT release the brake
+        return _CRITICAL_SAMPLE
+
+    monkeypatch.setattr(
+        metrics,
+        "engage_leaf_memory_high",
+        lambda *, step_pct: {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        },
+    )
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", lambda p, **_k: True)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=_sample,
+    )
+
+    events = read_events_for_current_month(log_dir)
+    released = [e for e in events if e.get("event") == "memory_high_released"]
+    # NO "recovered" -- held through critical
+    assert [e["reason"] for e in released] == ["round_end"]
+
+
 def test_spawn_round_should_skip_sampling_when_host_health_cfg_is_none(tmp_path):
     """host_health_cfg defaults to None: existing callers (no mid-round floor
     wired) get byte-identical behavior -- the sampler is never even invoked."""
