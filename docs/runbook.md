@@ -582,6 +582,10 @@ To reclaim space without enabling pruning, delete or archive old files under
 `{log_dir}` / `{log_dir}/rounds` yourself; nothing in the supervisor depends on
 their presence.
 
+`{log_dir}/.notify/` is a runtime-only directory holding a live FIFO doorbell
+(no durable data) — exclude it from any content-reading backup of `{log_dir}`;
+a stale FIFO there self-heals on the next event.
+
 ### `round_logs_prune_deferred` — a bulk prune was refused
 
 Only reachable when you have opted into pruning. A prune that would delete more

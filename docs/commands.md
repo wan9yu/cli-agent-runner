@@ -89,6 +89,10 @@ there:
 - `start` is idempotent.
 - `stop` waits up to `round_budget_s` for the current round.
 - `kill` (and `restart --force`) is for a stuck round only — 5s grace then SIGKILL.
+- `agent-runner kill` does NOT honor `[agent] sigterm_grace_s`: under a systemd
+  `--user` unit it `systemctl kill`s the whole cgroup after a fixed 5 s, so a
+  cooperative agent (e.g. `gemini`) that needs its full grace to flush should be
+  stopped with `agent-runner serve stop` (drain-aware) rather than `kill`.
 - `restart` against a `--system`-installed unit refuses, printing the
   `sudo systemctl restart ...` command to run instead (it manages user-scope
   units only). `status` still reports it correctly — a `--system` install

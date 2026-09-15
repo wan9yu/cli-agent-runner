@@ -496,6 +496,29 @@ No new internal wait — the grace window rides the v0.3.4 `wait_exit` deadline 
 
 Dev-host-relative (macOS). The grace's real value shows on the constrained fleet (a `gemini` round flushing under memory pressure before an early-SIGTERM nudge) — that nudge is the 462 MB-constrained-host-gated v0.3.7 work; this release ships only the correct, configurable grace it will use. No new constrained-host claim.
 
+## 0.3.5 → 0.3.6 (2026-09-15)
+
+Two closed lifecycle gaps, not a new subsystem: `kill` now reaps a stuck round's detached descendants the way `serve stop` already did, and the sandboxed spawn-hook trampoline wait now joins the same `wait_exit` fd primitive as the rest of `serve`, so a stop during a confined third-party hook (or a plugin `defer`) reacts immediately instead of riding out the old poll. Same macOS harness (§ methodology above).
+
+### 1. Import/startup RSS
+
+| | 0.3.5 | 0.3.6 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 24.1 MB | <measured at close-out> | <measured at close-out> |
+
+Expected flat: `_plugin_sandbox` (added in 0.3.2) stays lazy and off the cold-startup graph — it's only imported when a third-party spawn hook or dirty handler actually runs sandboxed — no new module joins the eager import set, and the base dependency stays `psutil>=5.9`. `test_import_footprint.py` + `test_round_alloc_growth.py` green.
+
+### 2. Efficiency
+
+No headline RSS number here — the win is in wakeups and reaction latency, and it's conditional on workload. For the first-party plugin fleet, which runs no third-party spawn hooks, this release is flat, same as 0.3.5. The number that moves is scoped to whoever *does* run one:
+
+- **Per engaged third-party spawn hook, the trampoline wait drops from ~20 wakeups/s to exactly 1.** The old confinement trampoline joined a stdlib `subprocess.Popen.wait()`, which sleep-polls internally (~20 Hz); the rewrite blocks the trampoline on the same `wait_exit` fd primitive the rest of `serve` already uses, so it wakes exactly once, on the hook's actual exit — asserted by `test_plugin_sandbox_wire.py`'s `calls["n"] == 1` property test.
+- **A stop during a confined hook or a plugin `defer` now takes effect immediately instead of after up to 30 s**, and the confined hook's child process is always reaped, never left running — closing the two lifecycle gaps this release targets. Behavioral, not an RSS change.
+
+### 3. Constrained-host (honesty)
+
+Dev-host-relative (macOS). Neither closed gap is constrained-host-specific — both are plain process-lifecycle correctness fixes exercised on CI (Linux, where the sandbox trampoline actually engages) and dev. No new constrained-host claim; the 462 MB `memory.high` write stays 0.3.7, Pi-gated.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:
