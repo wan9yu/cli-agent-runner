@@ -245,8 +245,9 @@ class _HostHealthPressureConfig:
 @dataclass(frozen=True)
 class _HostHealthBrakeConfig:
     """cgroup v2 memory.high soft-brake (a NEW write mechanism, its own knobs).
-    Default-OFF: the write path cannot arm without opt-in (the 0.2.15/16 lesson —
-    a default-ON floor killed every ArgusPi round in ~9s)."""
+    Default-OFF: the write path cannot arm without opt-in — a default-ON pressure
+    floor once killed every round on the smallest constrained host until it was
+    calibrated there, so the write ships inert until an operator enables it."""
 
     memory_high: bool = False  # the WRITE switch — default OFF
     # engage value = leaf memory.current x (1 - step/100); boot-cap 50
