@@ -94,6 +94,37 @@ def test_load_config_should_raise_configerror_when_brake_step_pct_over_cap(
         load_config(p)
 
 
+def test_load_config_should_accept_brake_step_pct_zero_for_cap_at_current(
+    tmp_path: Path,
+) -> None:
+    p = _write(
+        tmp_path,
+        '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "[monitor.host_health.brake]\nmemory_high_step_pct = 0\n",
+    )
+
+    cfg = load_config(p)
+
+    assert cfg.monitor.host_health.brake.memory_high_step_pct == 0
+
+
+def test_load_config_should_raise_configerror_when_brake_step_pct_negative(
+    tmp_path: Path,
+) -> None:
+    p = _write(
+        tmp_path,
+        '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
+        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
+        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
+        "[monitor.host_health.brake]\nmemory_high_step_pct = -1\n",
+    )
+
+    with pytest.raises(ConfigError, match=r"must be >= 0"):
+        load_config(p)
+
+
 def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
     tmp_path: Path,
 ) -> None:

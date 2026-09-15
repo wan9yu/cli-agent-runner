@@ -905,6 +905,15 @@ def test_brake_high_value_should_step_below_current_when_current_large() -> None
     assert metrics._brake_high_value(current, 10) == int(current * 0.9)
 
 
+def test_brake_high_value_should_cap_at_current_when_step_pct_zero() -> None:
+    current = 300 * 1024 * 1024
+
+    # step_pct=0 = cap-at-current: write memory.high == memory.current, so the
+    # kernel throttles further growth without a synchronous reclaim burst below
+    # current (the gentle mode for SD-backed latency-sensitive hosts).
+    assert metrics._brake_high_value(current, 0) == current
+
+
 def test_brake_high_value_should_floor_at_64mib_when_step_would_go_lower() -> None:
     current = 130 * 1024 * 1024  # just over the 128MiB engage floor; 10% off = ~117MiB, fine
 

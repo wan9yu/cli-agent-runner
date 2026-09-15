@@ -92,14 +92,19 @@ _MAX_BRAKE_STEP_PCT = 50
 
 
 def _validate_brake_step_pct(value: Any, *, field: str) -> int:
-    """Validate memory_high_step_pct: a positive int, boot-capped at 50 — a step
-    above half the leaf's current memory.high would write a value so far below
-    memory.current that reclaim thrashes (the north-star hazard); a value above
-    the cap is rejected at boot, not clamped."""
-    v = _require_positive_int(value, field=field)
-    if v > _MAX_BRAKE_STEP_PCT:
-        raise ConfigError(f"{field}: must be <= {_MAX_BRAKE_STEP_PCT}, got {v}")
-    return v
+    """Validate memory_high_step_pct: an int in [0, 50]. ``0`` = cap-at-current
+    (write memory.high == memory.current: throttle further growth WITHOUT a
+    synchronous reclaim burst — the gentle mode for latency-sensitive SD-backed
+    hosts). A step above 50 would write a value so far below memory.current that
+    the engage-time reclaim thrashes (the north-star hazard) — rejected at boot,
+    not clamped. Negatives and non-ints (incl. bool) are rejected."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{field}: must be an integer, got {type(value).__name__} ({value!r})")
+    if value < 0:
+        raise ConfigError(f"{field}: must be >= 0, got {value}")
+    if value > _MAX_BRAKE_STEP_PCT:
+        raise ConfigError(f"{field}: must be <= {_MAX_BRAKE_STEP_PCT}, got {value}")
+    return value
 
 
 def _parse_agent(
