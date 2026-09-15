@@ -21,7 +21,7 @@ import inspect
 SERVE_LOOP_BUDGET = 145  # cmd() wires the process-lifetime doorbell listener into
 # every serve wait -- mid-round, both pauses, phase-select, and the restart
 # delay -- so a SIGTERM/ring wakes each near-instantly instead of riding out a
-# 30s chunk (0.3.4 event-driven-core, Component 5); current 143 LOC + 2 headroom
+# 30s chunk (0.3.4 event-driven-core, Component 5); current 145 LOC, zero headroom
 
 
 def test_serve_loop_should_stay_minimal():

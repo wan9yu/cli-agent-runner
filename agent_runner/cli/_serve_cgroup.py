@@ -190,11 +190,26 @@ def _maybe_emit_oom_killed(
 # report ask #3). Advisory only -- never changes the operator's cgroup/unit.
 _SWAP_CAP_ADVISORY_PCT = 25.0
 
-# The delegation-readiness advisory: memory.max/memory.high are bound on this
-# cgroup, but metrics.cgroup_delegated found the leaf is NOT delegated
-# (systemd Delegate=yes) -- a future release that wants to write memory.high
-# on a round-scoped nested cgroup needs delegation first. Advisory only; this
-# probe and its hint never write to the cgroup or the unit.
+# The delegation-readiness / brake-inert advisory. Fires in two DISTINCT
+# cases, both meaning "memory.high can't be written from here":
+#   (1) delegated is False (CONFIRMED not delegated -- systemd Delegate=yes
+#       is absent) AND memory.max/memory.high are already bound (memory_high
+#       set, or the own_scope "add memory.high" hint above just fired) --
+#       the existing config is informational-only without delegation.
+#   (2) the operator explicitly turned the soft-brake on
+#       ([monitor.host_health.brake] memory_high=true, threaded in here as
+#       brake_memory_high) but delegated is not True (False OR None) -- the
+#       brake will silently do nothing, worth announcing at boot even with
+#       no memory.max/memory.high configured yet.
+# Deliberately NOT ``delegated is not True`` across the board: cgroup_delegated
+# returns None for two different reasons -- cgroup v2 unavailable (harmless)
+# AND the leaf's own os.stat() raising OSError (delegation status genuinely
+# UNKNOWN, even though memory_high/own_scope's ancestor-walk resolved fine).
+# Broadening case (1) to None would assert "not writable" where we actually
+# don't know -- an overclaim this release can't afford. Case (2) is the one
+# exception: the operator asked for the brake, so ANY non-confirmed-delegated
+# state (False or unknown) is worth flagging as "may be inert" up front.
+# Advisory only; this probe and its hint never write to the cgroup or the unit.
 _UNDELEGATED_HINT = (
     "memory.high on this cgroup is not writable by this process; the soft-brake "
     "is inert. Run serve as a user-mode unit (`systemctl --user` + `loginctl "
@@ -250,8 +265,22 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
     the bounding ancestor's ``memory.high`` soft-throttle threshold
     (``metrics.cgroup_memory_high``), ``None`` when unset -- for the same
     reason: an operator asking "is MemoryHigh even set" is exactly this
-    release's field ask. Advisory only -- this never changes the operator's
-    cgroup or systemd unit."""
+    release's field ask.
+
+    A THIRD advisory, ``_UNDELEGATED_HINT``, reads ``brake_memory_high`` --
+    the caller-supplied ``[monitor.host_health.brake] memory_high`` config
+    switch -- alongside ``delegated``: when the operator turned that brake
+    on but this process's own cgroup leaf isn't confirmed delegated
+    (``delegated is not True``), the brake would silently write nothing, so
+    boot announces it up front even with no memory.max/memory.high
+    configured. Independently of the brake, the SAME hint also covers the
+    pre-existing "config is informational without delegation" case
+    (``delegated is False`` -- CONFIRMED not delegated, never the merely
+    unresolved ``None``) when memory_high is already set or the own_scope
+    hint above just fired. See the comment block above ``_UNDELEGATED_HINT``
+    for why those two triggers use different ``delegated`` strictness.
+    Advisory only -- this never changes the operator's cgroup or systemd
+    unit."""
     limits = metrics.cgroup_memory_limits()
     swap_total = metrics.swap_total_bytes()
     # Reuse the leaf cgroup_memory_limits already resolved above -- skips
@@ -300,7 +329,9 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
                 "throttle's PSI-full rise doesn't trip the mid-round floor"
             )
         advisories.append(hint)
-    if delegated is not True and (brake_memory_high or memory_high is not None or own_scope):
+    if (brake_memory_high and delegated is not True) or (
+        delegated is False and (memory_high is not None or own_scope)
+    ):
         advisories.append(_UNDELEGATED_HINT)
     advisory = "; ".join(advisories) or None
     if advisory is not None:

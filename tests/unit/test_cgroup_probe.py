@@ -558,12 +558,7 @@ def test_advisory_should_not_hint_memory_high_when_bound_is_an_inherited_ancesto
 def test_advisory_should_omit_memory_high_hint_when_high_already_set(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # high already set -> no hint (and no swap-cap advisory here either).
-    # delegated=True pins the realistic "delegation confirmed" case so this
-    # stays isolated to the own_scope suppression it tests -- a `delegated`
-    # left at the fixture default (None) would now also trip the broadened
-    # undelegated/brake-inert clause (`delegated is not True`), which is
-    # this task's own_scope-independent concern, not this test's.
+    # high already set -> no hint (and no swap-cap advisory here either)
 
     _run_probe(
         monkeypatch,
@@ -573,7 +568,6 @@ def test_advisory_should_omit_memory_high_hint_when_high_already_set(
         mem_total=462_000_000,
         swap_total=1_600_000_000,
         memory_high=224_000_000,
-        delegated=True,
     )
 
     ev = _only_event(tmp_path)
@@ -858,17 +852,29 @@ def test_advisory_should_join_swap_and_undelegated_hints_with_semicolon_when_bot
     assert "; " in ev["advisory"]
 
 
-def test_advisory_should_announce_brake_inert_when_brake_on_and_undelegated(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    "undelegated_state",
+    [False, None],
+    ids=["not_delegated", "delegation_unknown"],
+)
+def test_advisory_should_announce_brake_inert_when_brake_on_and_not_confirmed_delegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, undelegated_state: bool | None
 ) -> None:
+    """The brake-inert announce is triggered by brake_memory_high ALONE --
+    no pre-existing memory.high or own_scope hint needed -- so this isolates
+    it from the pre-existing (delegated is False AND memory_high-or-own_scope)
+    trigger by leaving memory_high unset and memory_max unset (own_scope
+    False). It fires for BOTH delegated=False (confirmed not delegated) and
+    delegated=None (unknown, e.g. the leaf's own os.stat() failed) -- either
+    way the brake can't confirm it can write memory.high."""
     _patch_probe(
         monkeypatch,
-        memory_max=256_000_000,
-        memory_swap_max=1_280_000_000,
+        memory_max=None,
+        memory_swap_max=None,
         mem_total=462_000_000,
         swap_total=1_600_000_000,
-        memory_high=192_000_000,
-        delegated=False,
+        memory_high=None,
+        delegated=undelegated_state,
     )
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -877,5 +883,29 @@ def test_advisory_should_announce_brake_inert_when_brake_on_and_undelegated(
 
     _probe_and_emit_cgroup_defer(log_dir, brake_memory_high=True)
 
-    assert "the soft-brake\nis inert" not in _only_event(tmp_path)["advisory"]
-    assert "soft-brake" in _only_event(tmp_path)["advisory"]
+    assert "not writable by this process" in _only_event(tmp_path)["advisory"]
+
+
+def test_advisory_should_omit_brake_inert_announce_when_brake_off_and_undelegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The counterpart of the isolating case above: same undelegated/unknown
+    leaf, same absent memory_high/own_scope, but brake_memory_high defaults
+    False (the operator never asked for the brake) -- no advisory at all."""
+    _patch_probe(
+        monkeypatch,
+        memory_max=None,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=None,
+        delegated=False,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
+
+    _probe_and_emit_cgroup_defer(log_dir)
+
+    assert _only_event(tmp_path)["advisory"] is None
