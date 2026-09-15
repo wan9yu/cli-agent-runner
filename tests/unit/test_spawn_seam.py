@@ -95,7 +95,7 @@ def test_run_hook_sandboxed_should_send_env_names_only_when_spawn_view_given(tmp
 
     captured: dict = {}
 
-    def _fake_child(argv, stdin_bytes, timeout_s):
+    def _fake_child(argv, stdin_bytes, timeout_s, *, wake_fd=None, should_stop=None):
         captured["payload"] = json.loads(stdin_bytes.decode("utf-8"))
         return (
             0,

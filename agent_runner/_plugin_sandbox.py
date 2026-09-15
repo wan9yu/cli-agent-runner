@@ -146,6 +146,8 @@ def run_hook_sandboxed(
     dirty_files: list[str] | None = None,
     view: hooks.SpawnView | None = None,
     timeout_s: float = _TRAMPOLINE_TIMEOUT_S,
+    wake_fd: int | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> SpawnDecision | DirtyOutcome | None:
     """Launch the confinement child for one third-party hook call and return its
     validated outcome. ``module_path``/``attr_path`` locate the plugin the child
@@ -181,6 +183,8 @@ def run_hook_sandboxed(
         ],
         json.dumps(payload).encode("utf-8"),
         timeout_s,
+        wake_fd=wake_fd,
+        should_stop=should_stop,
     )
     if returncode < 0:
         from agent_runner.api import emit_plugin_sandbox_kill
