@@ -227,6 +227,9 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `mem_loop`
 - `mem_loop_persistent`
 - `mem_pressure_deferred_to_cgroup`
+- `memory_high_engaged`
+- `memory_high_released`
+- `memory_high_write_failed`
 - `monitor_alert_emitted`
 - `monitor_auto_stop_failed`
 - `monitor_auto_stop_triggered`

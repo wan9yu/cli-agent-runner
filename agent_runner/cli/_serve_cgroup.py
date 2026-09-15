@@ -37,6 +37,27 @@ from agent_runner.api import (
 # round.
 _ROUND_CGROUP_STATE_BY_LOG_DIR: dict[Path, dict] = {}
 
+# Boot-armed soft-brake gate: True iff the brake is configured on AND this
+# process's own cgroup leaf is delegated (memory.high writable) -- probed ONCE
+# at serve boot (_probe_and_emit_cgroup_defer already reads cgroup_delegated),
+# read every mid-round tick by _serve_round via _brake_step_for. Same
+# per-log_dir stable-default pattern as _ROUND_CGROUP_STATE_BY_LOG_DIR (one
+# entry per serve process in production); cmd() cannot grow to thread it (145
+# budget), so it rides in a module dict, not an argument.
+_BRAKE_ARMED_BY_LOG_DIR: dict[Path, bool] = {}
+
+
+def _brake_step_for(log_dir: Path, host_health_cfg) -> int | None:
+    """The armed soft-brake step_pct for this log_dir, or None when the brake is
+    disarmed: config off, or the boot probe found the leaf undelegated / no
+    cgroup v2. The step itself is single-sourced from config; the dict only
+    carries the boot-time delegated-and-on decision."""
+    if not host_health_cfg.brake.memory_high:
+        return None
+    if not _BRAKE_ARMED_BY_LOG_DIR.get(log_dir, False):
+        return None
+    return host_health_cfg.brake.memory_high_step_pct
+
 
 def _stash_round_cgroup_state(
     log_dir: Path, cg_base: dict, peak_current: int, peak_swap: int
@@ -293,6 +314,8 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
     # way as calling with no override would.
     memory_high = metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"])
     delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
+    if brake_memory_high:
+        _BRAKE_ARMED_BY_LOG_DIR[log_dir] = delegated is True
     swap_max = limits["memory_swap_max"]
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None

@@ -52,6 +52,7 @@ class _FakeCgroup:
         memory_max: str | None = None,
         memory_swap_max: str | None = None,
         memory_high: str | None = None,
+        memory_current: str | None = None,
     ) -> None:
         d = self._dir_for(cgroup_path)
         if memory_max is not None:
@@ -60,6 +61,8 @@ class _FakeCgroup:
             (d / "memory.swap.max").write_text(memory_swap_max)
         if memory_high is not None:
             (d / "memory.high").write_text(memory_high)
+        if memory_current is not None:
+            (d / "memory.current").write_text(memory_current)
 
     def __call__(
         self,
@@ -67,6 +70,7 @@ class _FakeCgroup:
         memory_max: str | None = None,
         memory_swap_max: str | None = None,
         memory_high: str | None = None,
+        memory_current: str | None = None,
         v2: bool = True,
     ) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -77,6 +81,7 @@ class _FakeCgroup:
             memory_max=memory_max,
             memory_swap_max=memory_swap_max,
             memory_high=memory_high,
+            memory_current=memory_current,
         )
 
 
@@ -884,6 +889,119 @@ def test_advisory_should_announce_brake_inert_when_brake_on_and_not_confirmed_de
     _probe_and_emit_cgroup_defer(log_dir, brake_memory_high=True)
 
     assert "not writable by this process" in _only_event(tmp_path)["advisory"]
+
+
+# --- 0.3.7 Task 3: the leaf memory.high soft-brake read/stash/write/restore ---
+#
+# The brake writes ONLY serve's OWN resolved leaf cgroup -- never an
+# ancestor. _brake_high_value is the pure arithmetic (floor/clamp/min-current
+# guard); engage_leaf_memory_high/restore_leaf_memory_high do the actual
+# reversible file I/O, fail-OPEN on any OSError.
+
+
+def test_brake_high_value_should_step_below_current_when_current_large() -> None:
+    current = 300 * 1024 * 1024
+
+    assert metrics._brake_high_value(current, 10) == int(current * 0.9)
+
+
+def test_brake_high_value_should_floor_at_64mib_when_step_would_go_lower() -> None:
+    current = 130 * 1024 * 1024  # just over the 128MiB engage floor; 10% off = ~117MiB, fine
+
+    assert metrics._brake_high_value(60 * 1024 * 1024 + 1, 10) is None  # below engage floor
+    assert metrics._brake_high_value(current, 90) == 64 * 1024 * 1024  # clamp up to the 64MiB floor
+
+
+def test_brake_high_value_should_return_none_when_current_below_engage_floor() -> None:
+    assert metrics._brake_high_value(127 * 1024 * 1024, 10) is None
+
+
+def test_engage_leaf_memory_high_should_write_leaf_and_stash_leaf_prior_when_delegated(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(memory_high="536870912")  # leaf's own memory.high = 512M (the stash target)
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+    fake_cgroup.set_limit("/system.slice", memory_high="805306368")  # ancestor: MUST NOT be touched
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result["engaged"] is True
+    assert result["previous"] == "536870912"
+    assert result["written"] == int(300 * 1024 * 1024 * 0.9)
+    assert (leaf / "memory.high").read_text().strip() == str(result["written"])
+    assert (fake_cgroup.root / "system.slice" / "memory.high").read_text().strip() == "805306368"
+
+
+def test_engage_leaf_memory_high_should_not_engage_when_leaf_current_below_floor(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(memory_high="max")
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(100 * 1024 * 1024))  # below 128MiB engage floor
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result == {}
+    assert (leaf / "memory.high").read_text().strip() == "max"  # untouched
+
+
+def test_restore_leaf_memory_high_should_write_back_stashed_max_token(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    fake_cgroup(memory_high="123456789")  # engage overwrote it; restore must put "max" back
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+
+    ok = metrics.restore_leaf_memory_high(
+        "max", root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert ok is True
+    assert (leaf / "memory.high").read_text().strip() == "max"
+
+
+def test_engage_leaf_memory_high_should_fail_open_when_write_raises_oserror(
+    fake_cgroup: _FakeCgroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cgroup(memory_high="536870912")
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+    import errno as errno_mod
+
+    def _raise(*_a, **_k):
+        raise OSError(errno_mod.EACCES, "denied")
+
+    monkeypatch.setattr(metrics.os, "open", _raise)
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result == {"engaged": False, "errno": errno_mod.EACCES}
+
+
+def test_engage_leaf_memory_high_should_only_ever_write_the_resolved_leaf_never_ancestor(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """The ONE hard safety invariant: engage writes the resolved leaf, never
+    an ancestor -- even the cgroup ROOT itself, one level above /system.slice."""
+    fake_cgroup(memory_high="536870912")
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+    fake_cgroup.set_limit("/", memory_high="999999999")
+    fake_cgroup.set_limit("/system.slice", memory_high="888888888")
+
+    metrics.engage_leaf_memory_high(
+        step_pct=25, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert (fake_cgroup.root / "memory.high").read_text().strip() == "999999999"
+    assert (fake_cgroup.root / "system.slice" / "memory.high").read_text().strip() == "888888888"
+    assert (leaf / "memory.high").read_text().strip() == str(int(300 * 1024 * 1024 * 0.75))
 
 
 def test_advisory_should_omit_brake_inert_announce_when_brake_off_and_undelegated(

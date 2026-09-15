@@ -246,6 +246,56 @@ def emit_mem_pressure_deferred_to_cgroup(
     emit(log_dir, MEM_PRESSURE_DEFERRED_TO_CGROUP, pid=pid, signal=signal, message=message)
 
 
+def emit_memory_high_engaged(
+    log_dir: Path,
+    *,
+    round_num: int,
+    previous: str,
+    written: int,
+    memory_current: int,
+    write_ms: int,
+    signal: str,
+    context: dict,
+    rate_mb_per_min: float | None,
+) -> None:
+    """Emit when the reversible cgroup memory.high soft-brake engaged on serve's
+    own leaf under sustained warning pressure. ``previous``/``written`` bracket
+    the reversible write; ``signal``/``context`` are the triggering Pressure;
+    ``rate_mb_per_min`` rides along as growth-rate context for Pi calibration."""
+    from agent_runner.events import MEMORY_HIGH_ENGAGED, emit
+
+    emit(
+        log_dir,
+        MEMORY_HIGH_ENGAGED,
+        round_num=round_num,
+        previous=previous,
+        written=written,
+        memory_current=memory_current,
+        write_ms=write_ms,
+        signal=signal,
+        context=context,
+        rate_mb_per_min=rate_mb_per_min,
+    )
+
+
+def emit_memory_high_released(log_dir: Path, *, round_num: int, reason: str) -> None:
+    """Emit when the soft-brake was restored to its stashed value. ``reason`` is
+    ``recovered`` (N healthy ticks), ``round_end`` (the finally restore), or
+    ``serve_exit``."""
+    from agent_runner.events import MEMORY_HIGH_RELEASED, emit
+
+    emit(log_dir, MEMORY_HIGH_RELEASED, round_num=round_num, reason=reason)
+
+
+def emit_memory_high_write_failed(log_dir: Path, *, round_num: int, errno: int) -> None:
+    """Emit once when a memory.high write (engage or restore) hit an OSError --
+    fail-open: the brake disarms for the round and serve continues unthrottled,
+    exactly as when the brake is configured off."""
+    from agent_runner.events import MEMORY_HIGH_WRITE_FAILED, emit
+
+    emit(log_dir, MEMORY_HIGH_WRITE_FAILED, round_num=round_num, errno=errno)
+
+
 def emit_cgroup_growth_rate_warning(
     log_dir: Path,
     *,

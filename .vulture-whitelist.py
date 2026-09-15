@@ -195,6 +195,7 @@ supervisor_stale_threshold_s
 disk
 memory
 pressure
+brake
 
 # agent_runner.config.models.PhaseOverride
 round_budget_s
@@ -255,6 +256,11 @@ pause_windows
 stash_idempotency_s
 dirty_action
 
+# agent_runner.config.models._HostHealthBrakeConfig
+memory_high
+memory_high_step_pct
+warning_consecutive_samples
+
 # agent_runner.config.models._HostHealthDiskConfig
 warning_pct
 critical_pct
@@ -270,6 +276,7 @@ some_avg10_warning
 critical_consecutive_samples
 in_round_terminate
 cgroup_growth_rate_warning_mb_per_min
+in_round_nudge
 
 # agent_runner.context_store.OrphanState
 round_num

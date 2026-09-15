@@ -43,6 +43,7 @@ from agent_runner import _procwait
 from agent_runner.cli import serve_cmd
 from agent_runner.config import (
     MonitorHostHealthConfig,
+    _HostHealthBrakeConfig,
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,
 )
@@ -647,6 +648,69 @@ def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path):
     kinds = [e.get("event") for e in events]
     assert kinds.count("round_mem_terminated") == 1
     assert "mem_pressure_deferred_to_cgroup" not in kinds
+
+
+_WARNING_SAMPLE = {
+    "psi_some_avg10": 10.0,  # >= some_avg10_warning (5.0), < full_avg10_critical (60.0)
+    "psi_full_avg10": 10.0,
+    "mem_free_mb": 4000,
+    "mem_available_mb": 4000,
+    "swap_sout": 0,
+}
+
+
+def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained_and_armed(
+    tmp_path, monkeypatch
+):
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+    calls = {"engage": 0, "restore": []}
+
+    def _fake_engage(*, step_pct):
+        calls["engage"] += 1
+        sentinel.touch()  # let the sentinel-child leader exit right after engage
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    def _fake_restore(previous, **_k):
+        calls["restore"].append(previous)
+        return True
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    rc = serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=lambda: _WARNING_SAMPLE,
+    )
+
+    assert rc == 0
+    assert calls["engage"] == 1
+    assert calls["restore"] == ["max"]  # finally restored the stashed token
+    events = read_events_for_current_month(log_dir)
+    engaged = [e for e in events if e.get("event") == "memory_high_engaged"]
+    released = [e for e in events if e.get("event") == "memory_high_released"]
+    assert len(engaged) == 1 and engaged[0]["written"] == 999
+    assert released and released[0]["reason"] == "round_end"
 
 
 def test_spawn_round_should_skip_sampling_when_host_health_cfg_is_none(tmp_path):

@@ -315,7 +315,7 @@ The transforms `migrate` applies (generated from the registry):
 - monitor.host_health.psi_some_avg10_warning → monitor.host_health.pressure.some_avg10_warning
 - monitor.host_health.mem_critical_consecutive_samples → monitor.host_health.pressure.critical_consecutive_samples
 - monitor.host_health.in_round_mem_terminate → monitor.host_health.pressure.in_round_terminate
-- unknown [monitor.host_health] key(s) rejected in 0.3.0; delete them (allowed: ['disk', 'memory', 'pressure'])
+- unknown [monitor.host_health] key(s) rejected in 0.3.0; delete them (allowed: ['brake', 'disk', 'memory', 'pressure'])
 <!-- /gen:migrate-transforms -->
 
 ### `agent-runner doctor [--rounds N]`

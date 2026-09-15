@@ -62,6 +62,9 @@ from agent_runner.api import (
     emit_mem_loop,
     emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
+    emit_memory_high_engaged,
+    emit_memory_high_released,
+    emit_memory_high_write_failed,
     emit_plugin_spawn_decision,
     emit_plugin_spawn_override_ignored,
     emit_round_deferred,
@@ -74,6 +77,7 @@ from agent_runner.api import (
 )
 from agent_runner.api_types import SpawnDecision
 from agent_runner.cli._serve_cgroup import (
+    _brake_step_for,
     _emit_round_cgroup_memory,
     _maybe_emit_oom_killed,
     _stash_round_cgroup_state,
@@ -586,6 +590,11 @@ def _spawn_round(
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        brake_engaged = False
+        brake_previous: str | None = None
+        brake_disarmed = False
+        warning_streak = 0
+        none_streak = 0
         try:
             deadline = clock.monotonic() + timeout_s
             next_mem_check = (
@@ -644,6 +653,7 @@ def _spawn_round(
                         cur_sample, prev_tick_sample, host_health_cfg
                     )
                     prev_tick_sample = cur_sample
+                    rate_mb_per_min: float | None = None
                     if cg_base:
                         cg_now = metrics.cgroup_memory_usage(bounding_cgroup=cg_bounding)
                         cg_peak_current = max(cg_peak_current, cg_now.get("memory_current", 0))
@@ -655,7 +665,6 @@ def _spawn_round(
                         mem_source = "rss_sum"
                     now_mono = clock.monotonic()
                     if cur_mem_bytes is not None:
-                        rate_mb_per_min = None
                         if prev_mem_bytes is not None and prev_mem_mono is not None:
                             elapsed_s = max(now_mono - prev_mem_mono, 0.0)
                             rate_mb_per_min = (
@@ -692,6 +701,41 @@ def _spawn_round(
                     # (a {}/None source read). Keep prev_mem_bytes/prev_mem_mono
                     # untouched so the NEXT successful tick still diffs against
                     # the last real reading, not a spurious reset.
+                    if pressure is not None:
+                        warning_streak += 1
+                        none_streak = 0
+                    else:
+                        warning_streak = 0
+                        none_streak += 1
+                    brake_step = _brake_step_for(log_dir, host_health_cfg)
+                    if (
+                        brake_step is not None
+                        and not brake_disarmed
+                        and not brake_engaged
+                        and warning_streak >= host_health_cfg.brake.warning_consecutive_samples
+                    ):
+                        t0 = clock.monotonic()
+                        result = metrics.engage_leaf_memory_high(step_pct=brake_step)
+                        write_ms = int((clock.monotonic() - t0) * 1000)
+                        if result.get("engaged"):
+                            brake_engaged = True
+                            brake_previous = result["previous"]
+                            emit_memory_high_engaged(
+                                log_dir,
+                                round_num=round_num,
+                                previous=result["previous"],
+                                written=result["written"],
+                                memory_current=result["memory_current"],
+                                write_ms=write_ms,
+                                signal=pressure.signal,
+                                context=pressure.context,
+                                rate_mb_per_min=rate_mb_per_min,
+                            )
+                        elif "errno" in result:
+                            emit_memory_high_write_failed(
+                                log_dir, round_num=round_num, errno=result["errno"]
+                            )
+                            brake_disarmed = True
                     if pressure is not None and pressure.severity == "critical":
                         critical_streak += 1
                         if (
@@ -736,6 +780,18 @@ def _spawn_round(
             # exception-path cleanup: never orphan the round pgroup
             _terminate_round(proc, clock=clock)
             raise
+        finally:
+            # Unconditional restore, mirroring _stash_cgroup's discipline:
+            # runs on every exit path out of the try above -- the two mid-loop
+            # returns, the exception re-raise (AFTER it propagates), and the
+            # break-to-wedged-path fall-through below. A skipped write here
+            # would leave the operator's cgroup throttled below its real
+            # memory.high indefinitely.
+            if brake_engaged and brake_previous is not None:
+                if metrics.restore_leaf_memory_high(brake_previous):
+                    emit_memory_high_released(log_dir, round_num=round_num, reason="round_end")
+                else:
+                    emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
         # Safety kill BEFORE the observability write: the wedged round must not
         # keep burning wall-clock (and, if its own reap hangs, its agent's
         # budget) waiting on the least-reliable step (a disk write) to finish

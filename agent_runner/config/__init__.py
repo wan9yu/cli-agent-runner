@@ -49,6 +49,7 @@ from agent_runner.config.models import (  # noqa: F401 — public re-export
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _HostHealthBrakeConfig,
     _HostHealthDiskConfig,
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,

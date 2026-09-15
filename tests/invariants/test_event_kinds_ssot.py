@@ -94,6 +94,11 @@ _ALLOWED_KIND_SPELLINGS: dict[tuple[str, str], str] = {
     # Task 2 renamed it round_outcome_exit_code -> post_round_verdicts and
     # widened it to run the give-up breakers itself.)
     ("agent_runner/cli/_serve_round.py", "post_round_verdicts"): "restart-action enum",
+    # memory_high_released's own reason enum: "round_end" (this finally-restore)
+    # vs "recovered" / "serve_exit" (other release-triggers). Shares a spelling
+    # with events.ROUND_END by coincidence -- it is a reason= field value on
+    # memory_high_released, never an emitted event kind itself.
+    ("agent_runner/cli/_serve_round.py", "_spawn_round"): "reason-value enum",
 }
 
 

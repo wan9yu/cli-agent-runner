@@ -478,6 +478,111 @@ def cgroup_memory_usage(
     }
 
 
+_MIN_MEMORY_HIGH_BYTES = 64 * 1024 * 1024  # never write memory.high below this
+_MIN_BRAKE_CURRENT_BYTES = 128 * 1024 * 1024  # don't engage when the leaf is too small to matter
+
+
+def _brake_high_value(memory_current: int, step_pct: int) -> int | None:
+    """The soft-brake memory.high to write: ``current x (1 - step_pct/100)``,
+    floored at :data:`_MIN_MEMORY_HIGH_BYTES`. ``None`` when the leaf's
+    ``memory.current`` is below :data:`_MIN_BRAKE_CURRENT_BYTES` -- too small to
+    be the host's problem, so the brake does not engage. Pure arithmetic, off
+    the cold import graph."""
+    if memory_current < _MIN_BRAKE_CURRENT_BYTES:
+        return None
+    return max(int(memory_current * (1 - step_pct / 100)), _MIN_MEMORY_HIGH_BYTES)
+
+
+def _leaf_dir(root: Path, proc_self_cgroup: Path, self_cgroup: str | None) -> Path | None:
+    """This process's OWN resolved cgroup v2 leaf directory (never an
+    ancestor), or ``None`` when cgroup v2 is unavailable / the leaf can't be
+    resolved. The soft-brake's write target -- shared by the read/stash and the
+    write below so both address the identical path."""
+    resolved = _resolve_cgroup(root, proc_self_cgroup, self_cgroup)
+    if resolved is None:
+        return None
+    cgroup_path, _ancestors = resolved
+    return root / cgroup_path.lstrip("/")
+
+
+def _read_cgroup_raw(path: Path) -> str | None:
+    """The raw stripped token of a cgroup file (``"max"`` or a decimal), or
+    ``None`` on OSError. Distinct from :func:`_read_finite_cgroup_limit` (which
+    collapses ``"max"`` to ``None``): the stash must preserve ``"max"`` so
+    restore writes back exactly what systemd last set, never a blind finite value."""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def engage_leaf_memory_high(
+    *,
+    step_pct: int,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> dict[str, Any]:
+    """Reversibly write the soft-brake ``memory.high`` on serve's OWN leaf
+    cgroup -- NEVER an ancestor. Reads the leaf's ``memory.current`` (re-read
+    live, never a cached loop value -- systemd re-applies ``MemoryHigh=`` on
+    daemon-reload), computes :func:`_brake_high_value`, stashes the leaf's own
+    prior ``memory.high`` raw token for restore, and writes via
+    ``os.open(O_WRONLY|O_TRUNC)`` + ``os.write`` of a decimal byte count.
+
+    Fail-OPEN. Returns ``{}`` (no engage: unresolvable leaf, or ``memory.current``
+    below the engage floor / unreadable), ``{"engaged": True, "previous",
+    "written", "memory_current"}`` on a successful write, or ``{"engaged":
+    False, "errno"}`` on an OSError at read or write (the caller emits
+    ``memory_high_write_failed`` once and disarms for the round)."""
+    leaf = _leaf_dir(root, proc_self_cgroup, self_cgroup)
+    if leaf is None:
+        return {}
+    current = _read_finite_cgroup_limit(leaf / "memory.current")
+    if current is None:
+        return {}
+    target = _brake_high_value(current, step_pct)
+    if target is None:
+        return {}
+    previous = _read_cgroup_raw(leaf / "memory.high")
+    if previous is None:
+        return {}
+    try:
+        fd = os.open(str(leaf / "memory.high"), os.O_WRONLY | os.O_TRUNC)
+        try:
+            os.write(fd, str(target).encode("ascii"))
+        finally:
+            os.close(fd)
+    except OSError as e:
+        return {"engaged": False, "errno": e.errno}
+    return {"engaged": True, "previous": previous, "written": target, "memory_current": current}
+
+
+def restore_leaf_memory_high(
+    previous: str,
+    *,
+    root: Path = _CGROUP_ROOT,
+    proc_self_cgroup: Path = _PROC_SELF_CGROUP,
+    self_cgroup: str | None = None,
+) -> bool:
+    """Write the STASHED raw token (``"max"`` or a decimal) back to the leaf's
+    own ``memory.high``. Fail-OPEN: returns ``False`` on an unresolvable leaf or
+    OSError (the caller emits loudly and retries at the next round boundary +
+    serve exit). Write target is ALWAYS the resolved leaf, never an ancestor."""
+    leaf = _leaf_dir(root, proc_self_cgroup, self_cgroup)
+    if leaf is None:
+        return False
+    try:
+        fd = os.open(str(leaf / "memory.high"), os.O_WRONLY | os.O_TRUNC)
+        try:
+            os.write(fd, str(previous).encode("ascii"))
+        finally:
+            os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
 def log_metrics(
     log_dir: Path,
     *,
