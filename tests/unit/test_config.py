@@ -1601,7 +1601,7 @@ def test_host_health_config_should_default_brake_off_and_nudge_off_when_table_ab
     cfg = MonitorHostHealthConfig()
 
     assert cfg.brake.memory_high is False
-    assert cfg.brake.memory_high_step_pct == 10
+    assert cfg.brake.memory_high_step_pct == 0  # cap-at-current: no reclaim burst by default
     assert cfg.brake.warning_consecutive_samples == 3
     assert cfg.pressure.in_round_nudge is False
 

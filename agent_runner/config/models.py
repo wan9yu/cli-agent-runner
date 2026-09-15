@@ -250,8 +250,12 @@ class _HostHealthBrakeConfig:
     calibrated there, so the write ships inert until an operator enables it."""
 
     memory_high: bool = False  # the WRITE switch — default OFF
-    # engage value = leaf memory.current x (1 - step/100); boot-cap 50
-    memory_high_step_pct: int = 10
+    # engage value = leaf memory.current x (1 - step/100); boot-cap 50. Default 0
+    # = cap-at-current: throttle further growth WITHOUT a synchronous reclaim
+    # burst below current (the north-star-safe default for SD-backed hosts).
+    # step >= 1 is opt-in aggressive reclaim (dumps ~step% of the leaf to swap
+    # at engage — a burst that can stall an SD-backed host's page-ins).
+    memory_high_step_pct: int = 0
     # ticks of any Pressure to engage; ticks of none to release
     warning_consecutive_samples: int = 3
 

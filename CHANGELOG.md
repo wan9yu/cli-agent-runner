@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.7]
 
 ### Added
-- Opt-in cgroup v2 `memory.high` soft-brake (`[monitor.host_health.brake] memory_high`, default off): under sustained warning-level memory pressure the supervisor reversibly lowers `memory.high` on its OWN cgroup leaf to throttle a growing round before the host swaps, then restores it on recovery or at round end. Fail-open; arms only when the leaf is delegated.
+- Opt-in cgroup v2 `memory.high` soft-brake (`[monitor.host_health.brake] memory_high`, default off): under sustained warning-level memory pressure the supervisor reversibly writes `memory.high` on its OWN cgroup leaf to throttle a growing round before the host swaps, then restores it on recovery or at round end. `memory_high_step_pct` defaults to `0` = cap-at-current (throttle further growth with no synchronous reclaim burst — safe for SD-backed hosts); `step_pct >= 1` is opt-in aggressive reclaim that dumps ~step% of the leaf to swap at engage. Fail-open; arms only when the leaf is delegated.
 - Opt-in early cooperative SIGTERM (`[monitor.host_health.pressure] in_round_nudge`, default off): fires the hard floor's SIGTERM two samples earlier so a cooperative agent gets its wrap-up grace; recorded as `round_mem_terminated` with a new `tier` field so the mem-loop give-up still converges.
 - New events `memory_high_engaged` / `memory_high_released` / `memory_high_write_failed`; `doctor` and `peek --json` (schema `2.5`) report the brake as `off | armed | inert(<reason>)`.
 

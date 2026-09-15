@@ -579,7 +579,7 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
                 field="monitor.host_health.brake.memory_high",
             ),
             memory_high_step_pct=_validate_brake_step_pct(
-                brake_d.get("memory_high_step_pct", 10),
+                brake_d.get("memory_high_step_pct", 0),
                 field="monitor.host_health.brake.memory_high_step_pct",
             ),
             warning_consecutive_samples=_require_positive_int(
