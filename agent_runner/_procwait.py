@@ -96,12 +96,13 @@ def wait_exit(
     *,
     deadline: float,
     clock: Clock = SYSTEM_CLOCK,
-) -> Literal["exited", "timeout"]:
-    """Block until ``proc`` exits or ``deadline`` (a ``clock.monotonic()``
-    timestamp) is reached, whichever is soonest. Never calls
-    ``os.waitpid``/``proc.wait``/``proc.poll`` on the fast path -- a caller
-    that gets back ``"exited"`` must reap ``proc`` itself right after this
-    returns (see the module docstring).
+    wake_fd: int | None = None,
+) -> Literal["exited", "timeout", "woken"]:
+    """Block until ``proc`` exits, ``deadline`` (a ``clock.monotonic()``
+    timestamp) is reached, or ``wake_fd`` becomes readable -- whichever is
+    soonest. Never calls ``os.waitpid``/``proc.wait``/``proc.poll`` on the
+    fast path -- a caller that gets back ``"exited"`` must reap ``proc``
+    itself right after this returns (see the module docstring).
 
     Opens and closes its own ``exit_fd(proc)`` registration internally, once
     per call, in a single ``select.select`` -- callers invoke this at most
@@ -110,18 +111,27 @@ def wait_exit(
     across calls.
 
     Returns ``"exited"`` (the caller should immediately reap, e.g.
-    ``proc.wait()``) or ``"timeout"`` (deadline reached, proc still running,
-    caller re-evaluates its own logic). When ``proc`` has already exited by
-    the time ``deadline`` is reached, the exit fd is ready in the SAME
-    ``select`` call that also times out -- the exit always wins that tie, so
-    an already-dead proc is never mistakenly reported as ``"timeout"``.
+    ``proc.wait()``), ``"timeout"`` (deadline reached, proc still running,
+    caller re-evaluates its own logic), or ``"woken"`` (only possible when
+    ``wake_fd`` is given: it became readable before either of the other two).
+    When ``proc`` has already exited by the time ``deadline`` is reached, the
+    exit fd is ready in the SAME ``select`` call that also times out -- the
+    exit always wins that tie, so an already-dead proc is never mistakenly
+    reported as ``"timeout"``. Likewise, when both the exit fd and
+    ``wake_fd`` are ready in the same ``select`` call, the exit fd wins --
+    an already-dead proc is never mistakenly reported as ``"woken"``.
+    ``wake_fd`` is caller-owned: this function neither opens, closes, nor
+    drains it (the caller drains it after a ``"woken"`` return); ``_procwait``
+    never imports ``_notify``.
 
     Fallback (``exit_fd(proc)`` is ``None``): polls ``proc.poll()`` at a
     short, fixed cadence via ``clock.sleep``, with the same two return
-    meanings, so a test driving this path with a fake clock still makes
-    progress without blocking on real wall time. The same poll fallback is
-    also used when the fast path's ``select.select`` raises ``ValueError``
-    (a fd >= ``FD_SETSIZE``, 1024, is unselectable) instead of crashing.
+    meanings (``wake_fd`` is IGNORED on this path -- a documented latency
+    degrade, not a "woken" report), so a test driving this path with a fake
+    clock still makes progress without blocking on real wall time. The same
+    poll fallback is also used when the fast path's ``select.select`` raises
+    ``ValueError`` (a fd >= ``FD_SETSIZE``, 1024, is unselectable) instead of
+    crashing.
 
     Short-circuits to ``"exited"`` when ``proc.returncode`` is already set:
     this owner has already reaped it, so its pid is freed (and may be reused).
@@ -141,14 +151,19 @@ def wait_exit(
 
     try:
         remaining = max(0.0, deadline - clock.monotonic())
+        rlist = [fd, wake_fd] if wake_fd is not None else [fd]
         try:
-            ready, _, _ = select.select([fd], [], [], remaining)
+            ready, _, _ = select.select(rlist, [], [], remaining)
         except ValueError:
             # fd >= FD_SETSIZE (1024) makes select.select raise ValueError --
             # degrade to the poll fallback (its documented latency) instead
             # of crashing.
             return _wait_exit_by_polling(proc, deadline=deadline, clock=clock)
-        return "exited" if ready else "timeout"
+        if fd in ready:
+            return "exited"
+        if ready:
+            return "woken"
+        return "timeout"
     finally:
         os.close(fd)
 

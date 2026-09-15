@@ -7,11 +7,17 @@ Linux (tests/linux/test_plugin_sandbox_kill.py)."""
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
+import threading
+import time
+from pathlib import Path
 
 import pytest
 
-from agent_runner import events
+from agent_runner import _notify, _plugin_sandbox, events
+from agent_runner._notify import Listener
 from tests._test_helpers import make_hook_context, read_events_for_current_month
 
 
@@ -311,3 +317,136 @@ def test_run_hook_sandboxed_should_bound_child_output_when_plugin_floods_stdout(
             log_dir=tmp_path,
             dirty_files=[],
         )
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _poll_until(predicate, *, timeout_s: float = 10.0, interval_s: float = 0.05) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval_s)
+    return bool(predicate())
+
+
+def _pid_recording_child(pidfile: Path, sleep_s: float) -> list[str]:
+    return [
+        sys.executable,
+        "-c",
+        f"import os,time; open({str(pidfile)!r},'w').write(str(os.getpid())); time.sleep({sleep_s})",
+    ]
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(30)
+def test_run_child_process_should_reap_child_and_raise_when_stop_fires_on_wake(tmp_log_dir, tmp_path):
+    from agent_runner._plugin_sandbox import SpawnHookInterrupted, _run_child_process
+
+    pidfile = tmp_path / "child.pid"
+    argv = _pid_recording_child(pidfile, 30)
+    with Listener(tmp_log_dir) as listener:
+        if listener.fd is None:
+            pytest.skip("no live FIFO listener on this host")
+        stop_flag = {"v": False}
+
+        def _ring_after_pid():
+            for _ in range(300):
+                if pidfile.exists() and pidfile.read_text().strip():
+                    break
+                time.sleep(0.05)
+            stop_flag["v"] = True
+            _notify.ring(tmp_log_dir)
+
+        ringer = threading.Thread(target=_ring_after_pid, daemon=True)
+        ringer.start()
+
+        with pytest.raises(SpawnHookInterrupted):
+            _run_child_process(argv, b"", 30, wake_fd=listener.fd, should_stop=lambda: stop_flag["v"])
+        ringer.join(timeout=5)
+
+    pid = int(pidfile.read_text())
+    assert _poll_until(lambda: not _alive(pid)), "confined child outlived an interrupted hook"
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(30)
+def test_run_child_process_should_preserve_deadline_when_woken_without_stop(
+    tmp_log_dir, tmp_path, monkeypatch
+):
+    from agent_runner._plugin_sandbox import _run_child_process
+
+    pidfile = tmp_path / "child.pid"
+    argv = _pid_recording_child(pidfile, 1.0)
+    calls = {"n": 0}
+    real = _plugin_sandbox.wait_exit
+
+    def _counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(_plugin_sandbox, "wait_exit", _counting)
+    with Listener(tmp_log_dir) as listener:
+        if listener.fd is None:
+            pytest.skip("no live FIFO listener on this host")
+        _notify.ring(tmp_log_dir)
+
+        rc, _out, _err = _run_child_process(
+            argv, b"", 30, wake_fd=listener.fd, should_stop=lambda: False
+        )
+
+    assert rc == 0
+    assert calls["n"] >= 2
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(30)
+def test_run_child_process_should_reap_child_when_keyboardinterrupt_through_wait(
+    tmp_path, monkeypatch
+):
+    from agent_runner._plugin_sandbox import _run_child_process
+
+    pidfile = tmp_path / "child.pid"
+    argv = _pid_recording_child(pidfile, 30)
+
+    def _raise_ki_once_pid_recorded(*_a, **_k):
+        for _ in range(300):
+            if pidfile.exists() and pidfile.read_text().strip():
+                break
+            time.sleep(0.05)
+        raise KeyboardInterrupt("stop during trampoline wait")
+
+    monkeypatch.setattr(_plugin_sandbox, "wait_exit", _raise_ki_once_pid_recorded)
+    with pytest.raises(KeyboardInterrupt):
+        _run_child_process(argv, b"", 30)
+
+    pid = int(pidfile.read_text())
+    assert _poll_until(lambda: not _alive(pid)), "confined child outlived a KeyboardInterrupt"
+
+
+@pytest.mark.timeout(30)
+def test_run_child_process_should_wait_once_when_child_exits_without_wake(tmp_path, monkeypatch):
+    from agent_runner._plugin_sandbox import _run_child_process
+
+    calls = {"n": 0}
+    real = _plugin_sandbox.wait_exit
+
+    def _counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(_plugin_sandbox, "wait_exit", _counting)
+    argv = [sys.executable, "-c", "import time; time.sleep(2)"]
+
+    rc, _out, _err = _run_child_process(argv, b"", 30)
+
+    assert rc == 0
+    assert calls["n"] == 1

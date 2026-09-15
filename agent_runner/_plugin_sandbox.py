@@ -18,11 +18,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
-from agent_runner import hooks
+from agent_runner import _notify, hooks
+from agent_runner._procwait import wait_exit
 from agent_runner._registry import resolve_entry_target
 from agent_runner.api_types import DirtyOutcome, SpawnDecision
+from agent_runner.clock import SYSTEM_CLOCK
 
 _TRAMPOLINE_TIMEOUT_S = 30.0  # wall-clock; not config-tunable this release
 _MAX_WIRE_BYTES = 64 * 1024
@@ -126,6 +128,13 @@ def _ctx_from_wire(data: dict) -> hooks.HookContext:
 # ---------------------------------------------------------------------------
 
 
+class SpawnHookInterrupted(Exception):
+    """Raised by ``_run_child_process`` when ``should_stop()`` fires on a wake
+    during a sandboxed spawn hook -- distinct from a plugin failure so the seam
+    returns ``None`` WITHOUT emitting ``hook_failed`` (a stop is not the plugin's
+    fault). Never raised on the dirty round path, which passes no ``wake_fd``."""
+
+
 def run_hook_sandboxed(
     hook_kind: Literal["spawn_hook", "dirty_handler"],
     module_path: str,
@@ -225,13 +234,28 @@ def _drain_capped(stream, cap: int, out: list[bytes]) -> None:
 
 
 def _run_child_process(
-    argv: list[str], stdin_bytes: bytes, timeout_s: float
+    argv: list[str],
+    stdin_bytes: bytes,
+    timeout_s: float,
+    *,
+    wake_fd: int | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> tuple[int, bytes, bytes]:
     """Spawn the confined child with the minimal env and read BOUNDED stdout/stderr
     concurrently (a thread per stream), so a plugin printing without limit within
     the wall-timeout cannot exhaust supervisor memory. Concurrent draining also
-    avoids a full-pipe deadlock. On timeout the child is killed and
-    ``TimeoutExpired`` propagates (the caller isolates it as ``hook_failed``)."""
+    avoids a full-pipe deadlock.
+
+    The exit wait is the fd-driven ``_procwait.wait_exit`` (not a sleep-poll):
+    ``"exited"`` reaps and returns; ``"timeout"`` kills and raises
+    ``TimeoutExpired`` (the caller isolates it as ``hook_failed``); ``"woken"``
+    (only when ``wake_fd`` is set) drains the advisory byte and, if
+    ``should_stop()`` is now true, kills the child and raises
+    ``SpawnHookInterrupted`` -- otherwise a stray ring re-enters the wait on the
+    SAME ABSOLUTE deadline so it never shortens the hook's budget. The whole wait
+    is wrapped so the confined child NEVER outlives its parent: any BaseException
+    (a round ``KeyboardInterrupt``, a timeout, an interrupt) kills and reaps the
+    child before propagating."""
     import threading
 
     proc = subprocess.Popen(
@@ -243,7 +267,6 @@ def _run_child_process(
     )
     out_box: list[bytes] = []
     err_box: list[bytes] = []
-    # +1 so an over-cap stdout stays over the limit and _parse_dirty_stdout rejects it.
     t_out = threading.Thread(target=_drain_capped, args=(proc.stdout, _MAX_WIRE_BYTES + 1, out_box))
     t_err = threading.Thread(target=_drain_capped, args=(proc.stderr, _MAX_STDERR_BYTES, err_box))
     t_out.start()
@@ -255,8 +278,18 @@ def _run_child_process(
             pass
         finally:
             proc.stdin.close()
-        proc.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
+        deadline = SYSTEM_CLOCK.monotonic() + timeout_s
+        while True:
+            outcome = wait_exit(proc, deadline=deadline, wake_fd=wake_fd)
+            if outcome == "exited":
+                proc.wait()
+                break
+            if outcome == "timeout":
+                raise subprocess.TimeoutExpired(proc.args, timeout_s)
+            _notify.drain(wake_fd)
+            if should_stop is not None and should_stop():
+                raise SpawnHookInterrupted(f"spawn hook interrupted for {argv[0]!r}")
+    except BaseException:
         proc.kill()
         proc.wait()
         t_out.join()
