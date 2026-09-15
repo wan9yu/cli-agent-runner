@@ -146,7 +146,6 @@ ALLOWED_SERVE_ROUND_FROM = [
             "emit_mem_loop_persistent",
             "emit_mem_pressure_deferred_to_cgroup",
             "emit_memory_high_engaged",
-            "emit_memory_high_released",
             "emit_memory_high_write_failed",
             "emit_plugin_spawn_decision",
             "emit_plugin_spawn_override_ignored",
@@ -165,6 +164,7 @@ ALLOWED_SERVE_ROUND_FROM = [
             "_brake_step_for",
             "_emit_round_cgroup_memory",
             "_maybe_emit_oom_killed",
+            "_release_brake",
             "_stash_round_cgroup_state",
         },
     ),
@@ -183,7 +183,13 @@ ALLOWED_SERVE_CGROUP_FROM = [
     ("agent_runner._serve_policy", {"_ROUND_UNREAPED_RC"}),
     (
         "agent_runner.api",
-        {"emit_host_cgroup_memory_limit", "emit_round_cgroup_memory", "emit_round_oom_killed"},
+        {
+            "emit_host_cgroup_memory_limit",
+            "emit_memory_high_released",
+            "emit_memory_high_write_failed",
+            "emit_round_cgroup_memory",
+            "emit_round_oom_killed",
+        },
     ),
 ]
 

@@ -22,6 +22,8 @@ from agent_runner import metrics
 from agent_runner._serve_policy import _ROUND_UNREAPED_RC
 from agent_runner.api import (
     emit_host_cgroup_memory_limit,
+    emit_memory_high_released,
+    emit_memory_high_write_failed,
     emit_round_cgroup_memory,
     emit_round_oom_killed,
 )
@@ -247,6 +249,30 @@ def brake_report_state(enabled: bool, delegated: bool | None) -> str:
     if delegated is True:
         return "armed"
     return "inert(undelegated)" if delegated is False else "inert(no cgroup v2)"
+
+
+def current_brake_state(cfg) -> str:
+    """Resolve the soft-brake state string for `cfg` from live cgroup facts --
+    the one-shot ``cgroup_memory_limits() -> cgroup_delegated(self_cgroup=...) ->
+    brake_report_state`` sequence, shared by peek (cli.common.emit) and doctor
+    so neither re-derives it inline."""
+    limits = metrics.cgroup_memory_limits()
+    delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
+    return brake_report_state(cfg.monitor.host_health.brake.memory_high, delegated)
+
+
+def _release_brake(log_dir: Path, round_num: int, previous: str, *, reason: str) -> bool:
+    """Restore memory.high on serve's own leaf to `previous` and emit the
+    matching event: ``memory_high_released`` on success, ``memory_high_write_failed``
+    (errno None -- restore only yields a bool) on OSError. Returns whether the
+    restore succeeded; callers own their own brake_engaged/brake_previous/
+    brake_restore_failed transitions off that result. Shared by _spawn_round's
+    mid-round recovery-release site and its unconditional round-end finally."""
+    if metrics.restore_leaf_memory_high(previous):
+        emit_memory_high_released(log_dir, round_num=round_num, reason=reason)
+        return True
+    emit_memory_high_write_failed(log_dir, round_num=round_num, errno=None)
+    return False
 
 
 def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = False) -> bool:

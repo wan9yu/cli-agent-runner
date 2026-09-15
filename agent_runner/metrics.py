@@ -181,6 +181,20 @@ def _cgroup_ancestors(cgroup_path: str) -> list[str]:
     return ancestors
 
 
+def _parse_cgroup_token(text: str) -> int | None:
+    """Collapse a cgroup limit token to a finite byte count. ``"max"``, empty,
+    or unparseable content all mean unlimited (``None``). Shared by
+    :func:`_read_finite_cgroup_limit` (which reads the token off a path) and by
+    the soft-brake's monotone clamp (which already holds the raw token as its
+    restore stash)."""
+    if text == "max" or not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
 def _read_finite_cgroup_limit(path: Path) -> int | None:
     """Read a cgroup ``memory.*`` limit file. ``"max"``, a missing file, or
     unparseable content all mean unlimited (``None``) -- that ancestor then
@@ -189,12 +203,7 @@ def _read_finite_cgroup_limit(path: Path) -> int | None:
         text = path.read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    if text == "max" or not text:
-        return None
-    try:
-        return int(text)
-    except ValueError:
-        return None
+    return _parse_cgroup_token(text)
 
 
 def _min_ancestor_candidate(
@@ -549,13 +558,9 @@ def engage_leaf_memory_high(
     previous = _read_cgroup_raw(leaf / "memory.high")
     if previous is None:
         return {}
-    if previous != "max":
-        try:
-            previous_int: int | None = int(previous)
-        except ValueError:
-            previous_int = None
-        if previous_int is not None and target >= previous_int:
-            return {}  # a soft-brake is monotone: never raise an existing tighter high
+    previous_int = _parse_cgroup_token(previous)
+    if previous_int is not None and target >= previous_int:
+        return {}  # a soft-brake is monotone: never raise an existing tighter high
     try:
         fd = os.open(str(leaf / "memory.high"), os.O_WRONLY | os.O_TRUNC)
         try:

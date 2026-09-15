@@ -63,7 +63,6 @@ from agent_runner.api import (
     emit_mem_loop_persistent,
     emit_mem_pressure_deferred_to_cgroup,
     emit_memory_high_engaged,
-    emit_memory_high_released,
     emit_memory_high_write_failed,
     emit_plugin_spawn_decision,
     emit_plugin_spawn_override_ignored,
@@ -80,6 +79,7 @@ from agent_runner.cli._serve_cgroup import (
     _brake_step_for,
     _emit_round_cgroup_memory,
     _maybe_emit_oom_killed,
+    _release_brake,
     _stash_round_cgroup_state,
 )
 from agent_runner.clock import SYSTEM_CLOCK, Clock
@@ -731,16 +731,12 @@ def _spawn_round(
                             and not brake_restore_failed
                             and none_streak >= host_health_cfg.brake.warning_consecutive_samples
                         ):
-                            if metrics.restore_leaf_memory_high(brake_previous):
-                                emit_memory_high_released(
-                                    log_dir, round_num=round_num, reason="recovered"
-                                )
+                            if _release_brake(
+                                log_dir, round_num, brake_previous, reason="recovered"
+                            ):
                                 brake_engaged = False
                                 brake_previous = None
                             else:
-                                emit_memory_high_write_failed(
-                                    log_dir, round_num=round_num, errno=None
-                                )
                                 brake_restore_failed = True
                     brake_step = _brake_step_for(log_dir, host_health_cfg)
                     if (
@@ -833,16 +829,12 @@ def _spawn_round(
         finally:
             # Unconditional restore (mirrors _stash_cgroup): runs on every exit path out of the try
             # above -- both mid-loop returns, the exception re-raise, and the wedged fall-through
-            # below. A skipped write here leaves the cgroup throttled indefinitely. The restore call
-            # is fail-open and stays OUTSIDE the try/except; only the best-effort emit is shielded,
-            # so a disk-full OSError here never replaces the ORIGINAL exception.
+            # below. A skipped write here leaves the cgroup throttled indefinitely. _release_brake's
+            # restore is fail-open (never raises); its best-effort emit is shielded here, so a
+            # disk-full OSError can never replace the ORIGINAL propagating exception.
             if brake_engaged and brake_previous is not None:
-                restored = metrics.restore_leaf_memory_high(brake_previous)
                 try:
-                    if restored:
-                        emit_memory_high_released(log_dir, round_num=round_num, reason="round_end")
-                    else:
-                        emit_memory_high_write_failed(log_dir, round_num=round_num, errno=None)
+                    _release_brake(log_dir, round_num, brake_previous, reason="round_end")
                 except Exception:
                     pass
         # Safety kill BEFORE the observability write: the wedged round must not

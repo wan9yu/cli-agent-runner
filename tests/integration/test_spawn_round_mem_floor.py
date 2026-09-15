@@ -840,7 +840,6 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
     exception with an emit error."""
     from agent_runner import metrics
     from agent_runner.cli import _serve_cgroup
-    from agent_runner.cli import _serve_round as serve_round_module
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -864,7 +863,7 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
 
     monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
     monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
-    monkeypatch.setattr(serve_round_module, "emit_memory_high_released", _raise_on_release)
+    monkeypatch.setattr(_serve_cgroup, "emit_memory_high_released", _raise_on_release)
     _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
 
     hh = MonitorHostHealthConfig(

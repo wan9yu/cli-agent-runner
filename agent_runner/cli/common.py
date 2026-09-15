@@ -124,14 +124,9 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
                 **_to_jsonable(value),
             }
             if cfg is not None:
-                from agent_runner import metrics
-                from agent_runner.cli._serve_cgroup import brake_report_state
+                from agent_runner.cli._serve_cgroup import current_brake_state
 
-                _limits = metrics.cgroup_memory_limits()
-                wrapped["brake"] = brake_report_state(
-                    cfg.monitor.host_health.brake.memory_high,
-                    metrics.cgroup_delegated(self_cgroup=_limits["cgroup_path"]),
-                )
+                wrapped["brake"] = current_brake_state(cfg)
             print(json.dumps(wrapped, indent=2, default=str))
         else:
             print(json.dumps(_to_jsonable(value), indent=2, default=str))

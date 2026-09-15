@@ -290,8 +290,8 @@ def emit_memory_high_engaged(
 
 def emit_memory_high_released(log_dir: Path, *, round_num: int, reason: str) -> None:
     """Emit when the soft-brake was restored to its stashed value. ``reason`` is
-    ``recovered`` (N healthy ticks), ``round_end`` (the finally restore), or
-    ``serve_exit``."""
+    ``recovered`` (N healthy ticks) or ``round_end`` (the finally restore, which
+    covers every exit path out of the round incl. wedged/exception)."""
     from agent_runner.events import MEMORY_HIGH_RELEASED, emit
 
     emit(log_dir, MEMORY_HIGH_RELEASED, round_num=round_num, reason=reason)
