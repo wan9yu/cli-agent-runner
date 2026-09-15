@@ -511,6 +511,17 @@ Two closed lifecycle gaps, not a new subsystem: `kill` now reaps a stuck round's
 
 Flat, and no new import edge. `_plugin_sandbox`/`_procwait`/`_notify` are NOT on the bare `import agent_runner` graph, but they ARE on the `import agent_runner.cli` (serve/round) startup graph — frozen in `test_import_footprint.py`'s `EXPECTED_STARTUP_PKG_MODULES` allowlist since the v0.3.2 SpawnHook seam (`_serve_round` imports `run_hook_sandboxed` at module level) and the v0.3.4 doorbell. v0.3.6 adds no new module to that graph — only new NAMES within those already-imported modules (`wake_fd`/`should_stop`/`SpawnHookInterrupted`/`_DRAIN_JOIN_S`/`_join_drain_threads`) — so the allowlist is unchanged and `test_import_footprint.py` + `test_round_alloc_growth.py` are green. Base dependency stays `psutil>=5.9`. (The raw `sys.modules` count shows +1, `agent_runner._version` — a generated file a fresh throwaway worktree lacks, a measurement artifact, not a code change.)
 
+**The reducible floor (why flat is the floor, not a lack of effort).** The startup graph sits at the CPython interpreter floor (~16.4 MB, irreducible) plus a small, shared, already-minimized set of modules — `hashlib`/`zoneinfo`/`importlib.metadata`/`ssl` were removed and are locked out by `test_import_footprint.py`'s `FORBIDDEN_AT_STARTUP`. Every remaining reduction lever, measured as *marginal* cost inside the real serve graph:
+
+| lever | marginal RSS | status |
+|---|---|---|
+| drop `psutil` (+ its `socket`) | 0.92 + 0.42 MB | **blocked (safety)** — `psutil.Process.create_time()` is the PID-reuse identity guard (`lifecycle.create_time_matches`); a hand-rolled `/proc` starttime parser is the PID-reuse failure class with a new author, and macOS has no `/proc`, so the shipped guard would escape the (macOS) reap property tests |
+| drop the `inspect` tail (`inspect`/`ast`/`dis`/`tokenize`/`token`/`opcode`) | 0.95 MB | **blocked (ABI)** — it enters solely via `dataclasses`, which is the frozen `PluginManifest` kind + the config field-validation surface; removing it from the resident process is a v0.4 breaking-release item, not a 0.3.x slice |
+| per-command lazy dispatch | 0.17 MB | inside the ±0.1–0.2 MB noise band — "flat within noise" by this page's own gate |
+| `importlib.resources` / `sysconfig` / `tempfile` / `shutil` tail | ≤0.09 MB each | noise |
+
+So at the 0.3.x ABI every ≥0.5 MB lever is either safety-negative or ABI-breaking, and everything else is measurement noise: the ~24 MB is a measured floor. Import RSS (axis 1) is a proxy; the property this page protects is **axis 2 — the resident RSS the supervisor holds in the agent's shared cgroup** (serve-startup RSS, below), which the psutil-lazy cold-import lever moves by 0 (serve loads psutil at startup regardless). Reduction resumes at the v0.4 language fork, where `/proc` parsing is native (unblocking psutil) and the whole suite runs on Linux.
+
 ### 2. Efficiency
 
 No headline RSS number here — the win is in wakeups and reaction latency, and it's conditional on workload. For the first-party plugin fleet, which runs no third-party spawn hooks, this release is flat, same as 0.3.5. The number that moves is scoped to whoever *does* run one:
