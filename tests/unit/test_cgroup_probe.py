@@ -984,6 +984,39 @@ def test_engage_leaf_memory_high_should_fail_open_when_write_raises_oserror(
     assert result == {"engaged": False, "errno": errno_mod.EACCES}
 
 
+def test_engage_leaf_memory_high_should_fail_open_and_close_fd_when_write_raises_oserror(
+    fake_cgroup: _FakeCgroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the try/finally around os.write: an OSError raised
+    DURING the write (not at open) must still close the fd (no leak) via the
+    inner try/finally, then fail open through the outer except -- distinct
+    from the open-raises test above, which never gets a real fd at all."""
+    fake_cgroup(memory_high="536870912")
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+    import errno as errno_mod
+
+    real_close = metrics.os.close
+    closed_fds: list[int] = []
+
+    def _raise_write(*_a, **_k):
+        raise OSError(errno_mod.ENOSPC, "no space left on device")
+
+    def _spy_close(fd: int) -> None:
+        closed_fds.append(fd)
+        real_close(fd)
+
+    monkeypatch.setattr(metrics.os, "write", _raise_write)
+    monkeypatch.setattr(metrics.os, "close", _spy_close)
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result == {"engaged": False, "errno": errno_mod.ENOSPC}
+    assert len(closed_fds) == 1  # the fd os.open() returned was closed, not leaked
+
+
 def test_engage_leaf_memory_high_should_only_ever_write_the_resolved_leaf_never_ancestor(
     fake_cgroup: _FakeCgroup,
 ) -> None:

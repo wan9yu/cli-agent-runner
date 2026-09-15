@@ -713,6 +713,235 @@ def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained
     assert released and released[0]["reason"] == "round_end"
 
 
+def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_and_pressure_absent(
+    tmp_path, monkeypatch
+):
+    """Review Minor 1 regression: warning_streak resets to 0 on a no-pressure
+    tick, so `warning_streak >= warning_consecutive_samples` is trivially true
+    every tick when a directly-constructed config (bypassing the TOML parser's
+    _require_positive_int validation) sets warning_consecutive_samples=0. Without
+    the engage guard's own `pressure is not None` conjunct, this would engage
+    the brake on a HEALTHY sample and then crash reading None.signal/.context --
+    a fail-CLOSED crash on the reap-adjacent path. Must neither engage nor crash."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "exit.sentinel"
+    argv = _sentinel_child_argv(sentinel)
+    calls = {"engage": 0}
+
+    def _fake_engage(*, step_pct):
+        calls["engage"] += 1
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=0)
+    )
+    calls_n = {"n": 0}
+
+    def _sample_fn():
+        calls_n["n"] += 1
+        if calls_n["n"] >= 3:  # a few no-pressure ticks with the zeroed threshold
+            sentinel.touch()
+        return _HEALTHY_SAMPLE  # memory_pressure() returns None for this sample
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=_sample_fn,
+    )
+
+    assert rc == 0  # completed cleanly -- no AttributeError crash
+    assert calls["engage"] == 0  # never engaged on a no-pressure tick
+
+
+def test_spawn_round_should_restore_soft_brake_when_terminated_by_sustained_critical_pressure(
+    tmp_path, monkeypatch
+):
+    """Review Minor 3 coverage: the "terminate"-verdict return is a SEPARATE
+    exit point inside the try from the clean-exit return already covered above
+    -- prove the finally's restore runs there too."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    calls = {"restore": []}
+
+    def _fake_engage(*, step_pct):
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    def _fake_restore(previous, **_k):
+        calls["restore"].append(previous)
+        return True
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+    calls_n = {"n": 0}
+
+    def _sample_fn():
+        calls_n["n"] += 1
+        # 3 warning ticks engage the brake, then sustained critical pressure
+        # (default critical_consecutive_samples=3) hard-terminates the round.
+        return _WARNING_SAMPLE if calls_n["n"] <= 3 else _CRITICAL_SAMPLE
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=_sample_fn,
+    )
+
+    assert rc != 0  # terminated, not a clean exit
+    assert calls["restore"] == ["max"]
+    events = read_events_for_current_month(log_dir)
+    assert len([e for e in events if e.get("event") == "round_mem_terminated"]) == 1
+    released = [e for e in events if e.get("event") == "memory_high_released"]
+    assert released and released[0]["reason"] == "round_end"
+
+
+def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_body_raises(
+    tmp_path, monkeypatch
+):
+    """Review Minor 2 + Minor 3 coverage together: the except-BaseException
+    unwind path also restores the brake via the finally, AND a shielded emit
+    failure during that cleanup must never replace the ORIGINAL propagating
+    exception with an emit error."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+    from agent_runner.cli import _serve_round as serve_round_module
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    calls = {"restore": []}
+
+    def _fake_engage(*, step_pct):
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    def _fake_restore(previous, **_k):
+        calls["restore"].append(previous)
+        return True
+
+    def _raise_on_release(*_a, **_k):
+        raise OSError("disk full during emit -- must not mask the original exception")
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    monkeypatch.setattr(serve_round_module, "emit_memory_high_released", _raise_on_release)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=1)
+    )
+    calls_n = {"n": 0}
+
+    def _sample_fn():
+        calls_n["n"] += 1
+        if calls_n["n"] >= 2:
+            raise RuntimeError("the original round-body exception")
+        return _WARNING_SAMPLE  # tick 1: engages the brake (threshold=1)
+
+    with pytest.raises(RuntimeError, match="the original round-body exception"):
+        serve_cmd._spawn_round(
+            argv,
+            log_dir / "round-1.log",
+            {},
+            timeout_s=300,
+            round_num=1,
+            host_health_cfg=hh,
+            clock=_TickingClock(),
+            sample_fn=_sample_fn,
+        )
+
+    assert calls["restore"] == ["max"]  # cleanup still ran despite the shielded emit raising
+
+
+def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path, monkeypatch):
+    """Review Minor 3 coverage: restore_leaf_memory_high returning False (a
+    restore-time OSError, fail-open) must emit memory_high_write_failed with
+    errno=0 (the finally has no real errno to report -- restore_leaf_memory_high
+    swallows it), never memory_high_released."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+
+    def _fake_engage(*, step_pct):
+        sentinel.touch()
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    def _fake_restore(previous, **_k):
+        return False  # simulates a restore-time OSError, fail-open
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    rc = serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=lambda: _WARNING_SAMPLE,
+    )
+
+    assert rc == 0
+    events = read_events_for_current_month(log_dir)
+    assert [e for e in events if e.get("event") == "memory_high_released"] == []
+    failed = [e for e in events if e.get("event") == "memory_high_write_failed"]
+    assert failed and failed[0]["errno"] == 0
+
+
 def test_spawn_round_should_skip_sampling_when_host_health_cfg_is_none(tmp_path):
     """host_health_cfg defaults to None: existing callers (no mid-round floor
     wired) get byte-identical behavior -- the sampler is never even invoked."""

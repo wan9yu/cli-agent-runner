@@ -709,7 +709,8 @@ def _spawn_round(
                         none_streak += 1
                     brake_step = _brake_step_for(log_dir, host_health_cfg)
                     if (
-                        brake_step is not None
+                        pressure is not None
+                        and brake_step is not None
                         and not brake_disarmed
                         and not brake_engaged
                         and warning_streak >= host_health_cfg.brake.warning_consecutive_samples
@@ -786,12 +787,20 @@ def _spawn_round(
             # returns, the exception re-raise (AFTER it propagates), and the
             # break-to-wedged-path fall-through below. A skipped write here
             # would leave the operator's cgroup throttled below its real
-            # memory.high indefinitely.
+            # memory.high indefinitely. The restore call itself is fail-open
+            # (never raises) and stays OUTSIDE the shield below; only the
+            # best-effort observability emit is shielded, so a disk-full
+            # emit() OSError on the except-BaseException unwind path can
+            # never replace the ORIGINAL propagating exception.
             if brake_engaged and brake_previous is not None:
-                if metrics.restore_leaf_memory_high(brake_previous):
-                    emit_memory_high_released(log_dir, round_num=round_num, reason="round_end")
-                else:
-                    emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
+                restored = metrics.restore_leaf_memory_high(brake_previous)
+                try:
+                    if restored:
+                        emit_memory_high_released(log_dir, round_num=round_num, reason="round_end")
+                    else:
+                        emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
+                except Exception:
+                    pass
         # Safety kill BEFORE the observability write: the wedged round must not
         # keep burning wall-clock (and, if its own reap hangs, its agent's
         # budget) waiting on the least-reliable step (a disk write) to finish
