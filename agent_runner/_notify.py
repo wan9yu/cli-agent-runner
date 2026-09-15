@@ -78,11 +78,14 @@ def drain(fd: int) -> None:
     ``select()`` on it instantly ready -- an undrained fd busy-spins its
     caller at 100% CPU forever after the first wake, since a level-triggered
     fd stays readable until read. Advisory: the bytes carry no payload and are
-    discarded. Used only by :meth:`Listener.wait` (its own timeout branch) --
-    the pause/sleep waits (``_interruptible_sleep``/``_pause_poll``) are the
-    sole consumers of a live ``Listener``. Nothing watches this fd mid-round
-    (``_spawn_round`` only ever waits on the round leader's own exit fd), so
-    there is no other caller that must drain it itself.
+    discarded. Two callers: :meth:`Listener.wait` self-drains its own fd on the
+    wake branch (the pause/sleep waits ``_interruptible_sleep``/``_pause_poll``
+    are the consumers of a live ``Listener``); and the sandboxed-hook trampoline
+    (``_plugin_sandbox._run_child_process``, P3) drains the CALLER-OWNED wake fd
+    it was handed on the ``"woken"`` branch of its exit wait, before re-checking
+    ``should_stop()`` -- that fd is the serve listener's, watched by
+    ``wait_exit`` for the duration of the hook, so the trampoline must drain it
+    itself rather than leave the next wait instantly ready.
     """
     while True:
         try:
