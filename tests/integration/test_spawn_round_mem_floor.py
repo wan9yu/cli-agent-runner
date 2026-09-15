@@ -1039,7 +1039,12 @@ def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_e
         _sentinel_child_argv(sentinel),
         log_dir / "round-1.log",
         {},
-        timeout_s=300,
+        # This test runs the most mid-round ticks in the file (engage at 1-3,
+        # then healthy 4..9), so the _TickingClock's fake elapsed time climbs
+        # high; 3000s (matching the 11-tick test above) keeps the round ceiling
+        # well clear of it, so a slow CI child's exit is always the round's end,
+        # never a spurious timeout SIGTERM (the py3.11/macOS flake).
+        timeout_s=3000,
         round_num=1,
         host_health_cfg=hh,
         clock=_TickingClock(),
