@@ -179,7 +179,13 @@ class Listener:
         """
         deadline = clock.monotonic() + timeout_s
         remaining = max(0.0, deadline - clock.monotonic())
-        ready, _, _ = select.select([self.fd], [], [], remaining)
+        try:
+            ready, _, _ = select.select([self.fd], [], [], remaining)
+        except ValueError:
+            # fd >= FD_SETSIZE (1024) makes select.select raise ValueError --
+            # degrade to a plain timed sleep instead of crashing.
+            clock.sleep(remaining)
+            return False
         if not ready:
             return False
 

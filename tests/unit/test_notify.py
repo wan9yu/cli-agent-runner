@@ -172,3 +172,19 @@ def test_listener_enter_should_degrade_to_null_listener_when_race_exhausts_retri
     listener = _notify.open_listener(tmp_log_dir)
 
     assert isinstance(listener, NullListener)
+
+
+def test_listener_wait_should_degrade_to_sleep_when_select_raises_valueerror(
+    tmp_log_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def _raise_value_error(*_args, **_kwargs):
+        raise ValueError("filedescriptor out of range in select()")
+
+    monkeypatch.setattr(_notify.select, "select", _raise_value_error)
+    fake = FakeClock()
+
+    with Listener(tmp_log_dir) as listener:
+        woken = listener.wait(3.0, clock=fake)
+
+    assert woken is False
+    assert fake.monotonic() == 3.0
