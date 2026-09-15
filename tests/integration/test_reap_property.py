@@ -153,6 +153,106 @@ def test_terminate_round_should_reap_pgroup_and_setsid_grandchild_when_leader_ig
             pass
 
 
+def _write_argv_grandchild_script(path: Path) -> None:
+    """setsid()s into its OWN process group before recording its pid (read from
+    ``argv[1]``), so each of the leader's N grandchildren detaches onto its own
+    pgid -- the exact shape ``_snapshot_stray_descendants`` must capture IN FULL
+    (uncapped), not just the first five."""
+    path.write_text(
+        "import os, sys, time\n"
+        "os.setsid()\n"
+        "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+
+
+def _write_multi_leader_script(path: Path, grandchild_py: Path, pid_files: list[Path]) -> None:
+    """Ignores SIGTERM (forces the terminate path's killpg(SIGKILL) escalation)
+    and spawns one setsid'd grandchild per pidfile before sleeping."""
+    spawns = "".join(
+        f"subprocess.Popen([sys.executable, {str(grandchild_py)!r}, {str(pf)!r}])\n"
+        for pf in pid_files
+    )
+    path.write_text(
+        "import signal, subprocess, sys, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" + spawns + "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(120)
+def test_terminate_round_pid_should_reap_all_of_more_than_five_setsid_grandchildren(
+    tmp_path, monkeypatch
+):
+    if not hasattr(os, "killpg") or not hasattr(os, "setsid"):
+        pytest.skip("no killpg/setsid on this platform -- POSIX-only property")
+
+    from agent_runner import _lifecycle
+
+    monkeypatch.setattr(_lifecycle, "_ROUND_TERM_GRACE_S", 1)
+
+    n = 7  # > _live_children's default max_n=5, so a capped snapshot misses two
+    grandchild_py = tmp_path / "grandchild.py"
+    _write_argv_grandchild_script(grandchild_py)
+    pid_files = [tmp_path / f"gc-{i}.pid" for i in range(n)]
+    leader_py = tmp_path / "leader.py"
+    _write_multi_leader_script(leader_py, grandchild_py, pid_files)
+
+    proc = subprocess.Popen([sys.executable, str(leader_py)], start_new_session=True)
+    pgid = proc.pid
+
+    try:
+        recorded = _poll_until(
+            lambda: all(pf.exists() and pf.read_text().strip() for pf in pid_files),
+            timeout_s=30,
+        )
+        assert recorded, "not all setsid'd grandchildren recorded their pids"
+        gc_pids = [int(pf.read_text()) for pf in pid_files]
+        assert all(_alive(p) for p in gc_pids), "a grandchild recorded but is not alive to test"
+
+        # Mutation: reverting agent_runtime.py's _snapshot_stray_descendants call
+        # `_live_children(proc, max_n=None)` -> `_live_children(proc)` re-imposes the
+        # default max_n=5 cap, so only 5 of the 7 detached grandchildren are
+        # snapshotted+reaped and the other 2 ride out their 60s sleep -- the
+        # per-grandchild poll-for-gone below then fails for the missed ones.
+        _lifecycle._terminate_round_pid(proc.pid)
+
+        # The test is the real OS parent (see the single-grandchild variant): reap
+        # the leader before the pgroup-liveness check so killpg(pgid, 0) tests
+        # pgroup death, not zombie-vs-permission noise.
+        proc.wait(timeout=5)
+
+        with pytest.raises((ProcessLookupError, OSError)) as exc_info:
+            os.killpg(pgid, 0)
+        assert exc_info.value.errno == errno.ESRCH, (
+            f"leader group {pgid} still live after _terminate_round_pid -- pgroup not reaped"
+        )
+        for gc_pid in gc_pids:
+            assert _poll_until(lambda p=gc_pid: not _alive(p), timeout_s=10), (
+                f"a setsid()'d grandchild ({gc_pid}) of {n} was orphaned by the out-of-process "
+                "kill path -- the reap snapshot must be UNCAPPED (max_n=None) so a "
+                ">5-descendant subtree is fully reaped, not just the first five"
+            )
+    finally:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            pass
+        for pf in pid_files:
+            try:
+                text = pf.read_text().strip() if pf.exists() else ""
+                if text:
+                    os.kill(int(text), signal.SIGKILL)
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+
 @pytest.mark.serial
 @pytest.mark.timeout(90)
 def test_terminate_round_pid_should_reap_pgroup_and_setsid_grandchild_when_leader_ignores_term(
