@@ -491,9 +491,11 @@ def _mid_round_action(
     - ``"nudge"`` -- ``in_round_nudge`` is on and this is the FIRST critical
       sample (``critical_streak == 1``, ``nudged`` still False) of a streak whose
       hard verdict WOULD be ``terminate`` (``in_round_terminate`` and not
-      ``defer_to_cgroup``): fire the hard floor's SIGTERM two samples early so a
-      cooperative agent gets its wrap-up grace. ``defer_to_cgroup`` disables the
-      nudge (no terminate to move earlier) but NOT the brake.
+      ``defer_to_cgroup``): fire the hard floor's SIGTERM at the first critical
+      sample (not the sustained threshold) so a cooperative agent gets its
+      wrap-up grace. ``defer_to_cgroup`` disables the nudge (no terminate to
+      move earlier) but NOT the brake -- so does ``critical_consecutive_samples
+      == 1``, since the hard verdict above already matches at streak 1.
     """
     if (
         cfg.pressure.in_round_terminate
