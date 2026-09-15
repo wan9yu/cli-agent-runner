@@ -1595,6 +1595,17 @@ def test_monitor_host_health_config_should_expose_grouped_defaults_when_construc
     assert cfg.pressure.in_round_terminate is True
 
 
+def test_host_health_config_should_default_brake_off_and_nudge_off_when_table_absent() -> None:
+    from agent_runner.config import MonitorHostHealthConfig
+
+    cfg = MonitorHostHealthConfig()
+
+    assert cfg.brake.memory_high is False
+    assert cfg.brake.memory_high_step_pct == 10
+    assert cfg.brake.warning_consecutive_samples == 3
+    assert cfg.pressure.in_round_nudge is False
+
+
 def test_load_config_should_parse_grouped_host_health_tables_when_present(
     tmp_path: Path,
 ) -> None:
@@ -1609,6 +1620,11 @@ def test_load_config_should_parse_grouped_host_health_tables_when_present(
             "avail_min_mb = 100\n"
             "[monitor.host_health.pressure]\n"
             "in_round_terminate = false\n"
+            "in_round_nudge = true\n"
+            "[monitor.host_health.brake]\n"
+            "memory_high = true\n"
+            "memory_high_step_pct = 20\n"
+            "warning_consecutive_samples = 2\n"
         ),
     )
 
@@ -1618,6 +1634,10 @@ def test_load_config_should_parse_grouped_host_health_tables_when_present(
     assert cfg.monitor.host_health.memory.avail_min_mb == 100
     assert cfg.monitor.host_health.pressure.in_round_terminate is False
     assert cfg.monitor.host_health.disk.critical_pct == 95.0  # untouched default
+    assert cfg.monitor.host_health.pressure.in_round_nudge is True
+    assert cfg.monitor.host_health.brake.memory_high is True
+    assert cfg.monitor.host_health.brake.memory_high_step_pct == 20
+    assert cfg.monitor.host_health.brake.warning_consecutive_samples == 2
 
 
 def test_monitor_host_health_defaults_should_match_detector_defaults(

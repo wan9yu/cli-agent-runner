@@ -19,6 +19,7 @@ from agent_runner.config.models import (
     _DEFAULT_AUTH_PATTERNS,
     _DEFAULT_AUTO_STOP_ON,
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
+    _HOST_HEALTH_BRAKE_ALLOWED_FIELDS,
     _HOST_HEALTH_DISK_ALLOWED_FIELDS,
     _HOST_HEALTH_MEMORY_ALLOWED_FIELDS,
     _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS,
@@ -48,6 +49,7 @@ from agent_runner.config.models import (
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _HostHealthBrakeConfig,
     _HostHealthDiskConfig,
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,
@@ -83,6 +85,20 @@ def _validate_sigterm_grace_s(value: Any, *, field: str) -> int:
             f"{field}: must be <= {_MAX_SIGTERM_GRACE_S} "
             f"(strictly inside the supervisor's own wait for the round leader), got {v}"
         )
+    return v
+
+
+_MAX_BRAKE_STEP_PCT = 50
+
+
+def _validate_brake_step_pct(value: Any, *, field: str) -> int:
+    """Validate memory_high_step_pct: a positive int, boot-capped at 50 — a step
+    above half the leaf's current memory.high would write a value so far below
+    memory.current that reclaim thrashes (the north-star hazard); a value above
+    the cap is rejected at boot, not clamped."""
+    v = _require_positive_int(value, field=field)
+    if v > _MAX_BRAKE_STEP_PCT:
+        raise ConfigError(f"{field}: must be <= {_MAX_BRAKE_STEP_PCT}, got {v}")
     return v
 
 
@@ -503,6 +519,8 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
     _reject_unknown_fields(
         pres_d, _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS, "monitor.host_health.pressure"
     )
+    brake_d = _require_table(hh_d, "brake", label="monitor.host_health.brake")
+    _reject_unknown_fields(brake_d, _HOST_HEALTH_BRAKE_ALLOWED_FIELDS, "monitor.host_health.brake")
     host_health = MonitorHostHealthConfig(
         disk=_HostHealthDiskConfig(
             warning_pct=_require_pct(
@@ -544,6 +562,24 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
             cgroup_growth_rate_warning_mb_per_min=_require_positive_float(
                 pres_d.get("cgroup_growth_rate_warning_mb_per_min", 512.0),
                 field="monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min",
+            ),
+            in_round_nudge=_require_bool(
+                pres_d.get("in_round_nudge", False),
+                field="monitor.host_health.pressure.in_round_nudge",
+            ),
+        ),
+        brake=_HostHealthBrakeConfig(
+            memory_high=_require_bool(
+                brake_d.get("memory_high", False),
+                field="monitor.host_health.brake.memory_high",
+            ),
+            memory_high_step_pct=_validate_brake_step_pct(
+                brake_d.get("memory_high_step_pct", 10),
+                field="monitor.host_health.brake.memory_high_step_pct",
+            ),
+            warning_consecutive_samples=_require_positive_int(
+                brake_d.get("warning_consecutive_samples", 3),
+                field="monitor.host_health.brake.warning_consecutive_samples",
             ),
         ),
     )

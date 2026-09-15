@@ -236,6 +236,23 @@ class _HostHealthPressureConfig:
     # release: no critical/terminate action exists for it yet, see
     # host_health.cgroup_growth_rate_pressure.
     cgroup_growth_rate_warning_mb_per_min: float = 512.0
+    # Early cooperative SIGTERM at critical streak 1 (the hard floor's SIGTERM,
+    # two samples earlier) — default OFF; own switch, distinct from the hard
+    # terminate at in_round_terminate.
+    in_round_nudge: bool = False
+
+
+@dataclass(frozen=True)
+class _HostHealthBrakeConfig:
+    """cgroup v2 memory.high soft-brake (a NEW write mechanism, its own knobs).
+    Default-OFF: the write path cannot arm without opt-in (the 0.2.15/16 lesson —
+    a default-ON floor killed every ArgusPi round in ~9s)."""
+
+    memory_high: bool = False  # the WRITE switch — default OFF
+    # engage value = leaf memory.current x (1 - step/100); boot-cap 50
+    memory_high_step_pct: int = 10
+    # ticks of any Pressure to engage; ticks of none to release
+    warning_consecutive_samples: int = 3
 
 
 @dataclass(frozen=True)
@@ -248,6 +265,7 @@ class MonitorHostHealthConfig:
     disk: _HostHealthDiskConfig = field(default_factory=_HostHealthDiskConfig)
     memory: _HostHealthMemoryConfig = field(default_factory=_HostHealthMemoryConfig)
     pressure: _HostHealthPressureConfig = field(default_factory=_HostHealthPressureConfig)
+    brake: _HostHealthBrakeConfig = field(default_factory=_HostHealthBrakeConfig)
 
 
 @dataclass(frozen=True)
@@ -375,8 +393,11 @@ _HOST_HEALTH_MEMORY_ALLOWED_FIELDS = frozenset(
 _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS = frozenset(
     f.name for f in dataclasses.fields(_HostHealthPressureConfig)
 )
-# Keys allowed under [monitor.host_health] itself — just the three sub-tables.
-_MONITOR_HOST_HEALTH_ALLOWED_FIELDS = frozenset({"disk", "memory", "pressure"})
+_HOST_HEALTH_BRAKE_ALLOWED_FIELDS = frozenset(
+    f.name for f in dataclasses.fields(_HostHealthBrakeConfig)
+)
+# Keys allowed under [monitor.host_health] itself — just the four sub-tables.
+_MONITOR_HOST_HEALTH_ALLOWED_FIELDS = frozenset({"disk", "memory", "pressure", "brake"})
 
 # Keys allowed under a [phases.<name>.prompt] sub-table — `files` only
 # (docs/configuration.md's per-phase table already promised this; the loader
