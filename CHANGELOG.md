@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7]
+
+### Added
+- Opt-in cgroup v2 `memory.high` soft-brake (`[monitor.host_health.brake] memory_high`, default off): under sustained warning-level memory pressure the supervisor reversibly lowers `memory.high` on its OWN cgroup leaf to throttle a growing round before the host swaps, then restores it on recovery or at round end. Fail-open; arms only when the leaf is delegated.
+- Opt-in early cooperative SIGTERM (`[monitor.host_health.pressure] in_round_nudge`, default off): fires the hard floor's SIGTERM two samples earlier so a cooperative agent gets its wrap-up grace; recorded as `round_mem_terminated` with a new `tier` field so the mem-loop give-up still converges.
+- New events `memory_high_engaged` / `memory_high_released` / `memory_high_write_failed`; `doctor` and `peek --json` (schema `2.5`) report the brake as `off | armed | inert(<reason>)`.
+
 ## [0.3.6] - 2026-09-15
 
 ### Changed

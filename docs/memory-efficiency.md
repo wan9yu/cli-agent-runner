@@ -535,6 +535,28 @@ The trampoline bounds its post-reap pipe drain to `_DRAIN_JOIN_S` (`agent_runner
 
 Dev-host-relative (macOS). Neither closed gap is constrained-host-specific — both are plain process-lifecycle correctness fixes exercised on CI (Linux, where the sandbox trampoline actually engages) and dev. No new constrained-host claim; the 462 MB `memory.high` write stays 0.3.7, Pi-gated.
 
+## 0.3.6 → 0.3.7
+
+The cgroup `memory.high` soft-brake and the early cooperative-SIGTERM nudge — both opt-in, default off. Same macOS harness (§ methodology above), comparing the tagged `v0.3.6` commit (measured in a throwaway worktree) against this branch's tip.
+
+### 1. Import/startup RSS
+
+| | 0.3.6 | 0.3.7 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.72 MB | 23.67 MB | −0.05 MB (flat, within noise) |
+| RSS range | 23.58–23.84 MB | 23.56–23.78 MB | |
+| `sys.modules` count | 212 | 212 | +0 |
+
+Flat, and expected to be: no new dependency (base install stays `psutil>=5.9` only), and no new module joins the cold-startup graph. The brake's write helpers (`engage_leaf_memory_high` / `restore_leaf_memory_high`) are plain `os.open`/`os.write`/`os.close` functions added beside the existing cgroup readers in the already-resident `metrics` module; the config additions (`[monitor.host_health.brake]`, `pressure.in_round_nudge`) are new fields on the already-imported `config` dataclasses, not a new module. `test_import_footprint.py`'s `EXPECTED_STARTUP_PKG_MODULES` allowlist is unchanged this release.
+
+### 2. Per-round allocation growth
+
+`test_round_alloc_growth.py` green, unmodified harness. The brake only writes when armed (default off, so the shipped default takes this path zero times per round) and, when armed, its per-tick work is the same shape as the existing pressure read it rides alongside — no new retained per-round state.
+
+### 3. Constrained-host (honesty)
+
+Dev-host-relative (macOS) numbers only. This is the release that finally exercises the write path this page has flagged as deferred since 0.3.3 (previously: "the 462 MB `memory.high` write stays Pi-gated") — it now ships, but still default-off and verified so far only against a fake cgroup-v2 tree (unit tests) and Linux CI (the E2E nudge test). The real smallest-field-host confirmation — the brake actually engaging under genuine memory pressure on the ~462 MB constrained host, and its effect on that host's swap behavior — stays deferred until that host is back online for a prerelease verification pass. Documented as deferred, not skipped as passing.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:
