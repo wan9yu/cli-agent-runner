@@ -558,7 +558,12 @@ def test_advisory_should_not_hint_memory_high_when_bound_is_an_inherited_ancesto
 def test_advisory_should_omit_memory_high_hint_when_high_already_set(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # high already set -> no hint (and no swap-cap advisory here either)
+    # high already set -> no hint (and no swap-cap advisory here either).
+    # delegated=True pins the realistic "delegation confirmed" case so this
+    # stays isolated to the own_scope suppression it tests -- a `delegated`
+    # left at the fixture default (None) would now also trip the broadened
+    # undelegated/brake-inert clause (`delegated is not True`), which is
+    # this task's own_scope-independent concern, not this test's.
 
     _run_probe(
         monkeypatch,
@@ -568,6 +573,7 @@ def test_advisory_should_omit_memory_high_hint_when_high_already_set(
         mem_total=462_000_000,
         swap_total=1_600_000_000,
         memory_high=224_000_000,
+        delegated=True,
     )
 
     ev = _only_event(tmp_path)
@@ -786,8 +792,9 @@ def test_advisory_should_hint_undelegated_when_not_delegated_and_bound_already_s
 
     ev = _only_event(tmp_path)
     assert ev["advisory"] == (
-        "this cgroup is not delegated (systemd Delegate=yes) -- memory.high can "
-        "be read but not managed here until it is"
+        "memory.high on this cgroup is not writable by this process; the soft-brake "
+        "is inert. Run serve as a user-mode unit (`systemctl --user` + `loginctl "
+        "enable-linger`) or as a root system unit."
     )
 
 
@@ -847,5 +854,28 @@ def test_advisory_should_join_swap_and_undelegated_hints_with_semicolon_when_bot
 
     ev = _only_event(tmp_path)
     assert "swap.max is far below host swap" in ev["advisory"]
-    assert "Delegate=yes" in ev["advisory"]
+    assert "not writable by this process" in ev["advisory"]
     assert "; " in ev["advisory"]
+
+
+def test_advisory_should_announce_brake_inert_when_brake_on_and_undelegated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_probe(
+        monkeypatch,
+        memory_max=256_000_000,
+        memory_swap_max=1_280_000_000,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+        memory_high=192_000_000,
+        delegated=False,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
+
+    _probe_and_emit_cgroup_defer(log_dir, brake_memory_high=True)
+
+    assert "the soft-brake\nis inert" not in _only_event(tmp_path)["advisory"]
+    assert "soft-brake" in _only_event(tmp_path)["advisory"]

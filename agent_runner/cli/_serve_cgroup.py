@@ -196,12 +196,13 @@ _SWAP_CAP_ADVISORY_PCT = 25.0
 # on a round-scoped nested cgroup needs delegation first. Advisory only; this
 # probe and its hint never write to the cgroup or the unit.
 _UNDELEGATED_HINT = (
-    "this cgroup is not delegated (systemd Delegate=yes) -- memory.high can be "
-    "read but not managed here until it is"
+    "memory.high on this cgroup is not writable by this process; the soft-brake "
+    "is inert. Run serve as a user-mode unit (`systemctl --user` + `loginctl "
+    "enable-linger`) or as a root system unit."
 )
 
 
-def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
+def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = False) -> bool:
     """Probe this process's cgroup v2 memory budget once at serve startup,
     emit host_cgroup_memory_limit for observability, and return whether the
     mid-round hard floor should defer to kernel cgroup-OOM: True only when
@@ -299,7 +300,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path) -> bool:
                 "throttle's PSI-full rise doesn't trip the mid-round floor"
             )
         advisories.append(hint)
-    if delegated is False and (memory_high is not None or own_scope):
+    if delegated is not True and (brake_memory_high or memory_high is not None or own_scope):
         advisories.append(_UNDELEGATED_HINT)
     advisory = "; ".join(advisories) or None
     if advisory is not None:

@@ -744,7 +744,8 @@ def cmd(args) -> int:
     work_dir = cfg.runtime.work_dir
     # Emitted exactly once per serve lifetime -- the per-round defer decision below
     # reuses this bool rather than re-probing/re-emitting every round.
-    cgroup_probe_defer = _probe_and_emit_cgroup_defer(log_dir)
+    brake_memory_high = cfg.monitor.host_health.brake.memory_high
+    cgroup_probe_defer = _probe_and_emit_cgroup_defer(log_dir, brake_memory_high=brake_memory_high)
     # Static config check -- phase-window collisions can't change mid-lifetime, so
     # (like the cgroup probe above) this runs once at boot, not once per round.
     overlaps = phase_select.find_phase_window_overlaps(cfg)

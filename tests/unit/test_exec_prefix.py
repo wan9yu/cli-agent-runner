@@ -75,7 +75,7 @@ def test_serve_should_disable_cgroup_defer_when_agent_exec_prefix_is_a_container
     cfg_path = write_min_config(
         tmp_path, agent_extra='exec_prefix = ["docker", "run", "--rm", "img"]\n'
     )
-    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir: True)
+    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir, **_kw: True)
     captured = {}
 
     def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **kwargs):
@@ -97,7 +97,7 @@ def test_serve_should_leave_cgroup_defer_governed_by_probe_when_exec_prefix_is_n
     from agent_runner.cli import serve_cmd
 
     cfg_path = write_min_config(tmp_path, agent_extra='exec_prefix = ["nice", "-n", "10"]\n')
-    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir: True)
+    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir, **_kw: True)
     captured = {}
 
     def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **kwargs):
@@ -131,7 +131,7 @@ def test_serve_should_compute_defer_to_cgroup_per_round_from_the_phase_actually_
             '[phases.container.agent]\ncommand = ["docker", "run", "--rm", "img"]\n'
         ),
     )
-    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir: True)
+    monkeypatch.setattr(serve_cmd, "_probe_and_emit_cgroup_defer", lambda log_dir, **_kw: True)
     captured = {}
 
     def fake_spawn(round_argv, round_log_path, round_env, *, timeout_s, **kwargs):
