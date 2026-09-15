@@ -249,6 +249,19 @@ def _drain_capped(stream, cap: int, out: list[bytes]) -> None:
         out.append(bytes(data))
 
 
+def _join_drain_threads(threads: tuple, budget_s: float) -> bool:
+    """Join the drain threads under ONE absolute deadline -- the whole set is
+    bounded by ``budget_s``, NOT ``budget_s`` each -- so a process the hook
+    ``fork()``'d that still holds the reaped child's output pipe open cannot stall
+    the join past ``budget_s``. Returns True iff every thread finished draining
+    within the budget (the normal-exit path raises on False; the ``BaseException``
+    cleanup path ignores it, since it is already unwinding)."""
+    join_deadline = SYSTEM_CLOCK.monotonic() + budget_s
+    for t in threads:
+        t.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
+    return not any(t.is_alive() for t in threads)
+
+
 def _run_child_process(
     argv: list[str],
     stdin_bytes: bytes,
@@ -325,14 +338,9 @@ def _run_child_process(
     except BaseException:
         proc.kill()
         proc.wait()
-        join_deadline = SYSTEM_CLOCK.monotonic() + _DRAIN_JOIN_S
-        t_out.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
-        t_err.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
+        _join_drain_threads((t_out, t_err), _DRAIN_JOIN_S)
         raise
-    join_deadline = SYSTEM_CLOCK.monotonic() + _DRAIN_JOIN_S
-    t_out.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
-    t_err.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
-    if t_out.is_alive() or t_err.is_alive():
+    if not _join_drain_threads((t_out, t_err), _DRAIN_JOIN_S):
         raise RuntimeError(
             "drain timed out: a process the hook forked still holds its output pipe (not reaped)"
         )

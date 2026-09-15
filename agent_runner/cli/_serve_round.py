@@ -252,7 +252,7 @@ def _spawn_view(work_dir, profile) -> hooks.SpawnView:
 
 
 def _run_one_spawn_hook(
-    h, ctx, log_dir, view, *, sandbox, engaged, listener=NULL_LISTENER, stop=None
+    h, ctx, log_dir, view, *, sandbox, engaged, listener=NULL_LISTENER, stop
 ) -> SpawnDecision | None:
     """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
     isolates a raising dirty handler: emit ``hook_failed`` and return None (the
@@ -291,7 +291,7 @@ def _run_one_spawn_hook(
                 log_dir=log_dir,
                 view=view,
                 wake_fd=listener.fd,
-                should_stop=(lambda: stop["requested"]) if stop is not None else None,
+                should_stop=lambda: stop["requested"],
             )
         return h.before_spawn(ctx, view)
     except SpawnHookInterrupted:
