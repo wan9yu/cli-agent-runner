@@ -609,6 +609,7 @@ def _spawn_round(
         brake_engaged = False
         brake_previous: str | None = None
         brake_disarmed = False
+        brake_restore_failed = False
         warning_streak = 0
         none_streak = 0
         try:
@@ -727,6 +728,7 @@ def _spawn_round(
                         if (
                             brake_engaged
                             and brake_previous is not None
+                            and not brake_restore_failed
                             and none_streak >= host_health_cfg.brake.warning_consecutive_samples
                         ):
                             if metrics.restore_leaf_memory_high(brake_previous):
@@ -736,7 +738,10 @@ def _spawn_round(
                                 brake_engaged = False
                                 brake_previous = None
                             else:
-                                emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
+                                emit_memory_high_write_failed(
+                                    log_dir, round_num=round_num, errno=None
+                                )
+                                brake_restore_failed = True
                     brake_step = _brake_step_for(log_dir, host_health_cfg)
                     if (
                         pressure is not None
@@ -826,23 +831,18 @@ def _spawn_round(
             _terminate_round(proc, clock=clock)
             raise
         finally:
-            # Unconditional restore, mirroring _stash_cgroup's discipline:
-            # runs on every exit path out of the try above -- the two mid-loop
-            # returns, the exception re-raise (AFTER it propagates), and the
-            # break-to-wedged-path fall-through below. A skipped write here
-            # would leave the operator's cgroup throttled below its real
-            # memory.high indefinitely. The restore call itself is fail-open
-            # (never raises) and stays OUTSIDE the shield below; only the
-            # best-effort observability emit is shielded, so a disk-full
-            # emit() OSError on the except-BaseException unwind path can
-            # never replace the ORIGINAL propagating exception.
+            # Unconditional restore (mirrors _stash_cgroup): runs on every exit path out of the try
+            # above -- both mid-loop returns, the exception re-raise, and the wedged fall-through
+            # below. A skipped write here leaves the cgroup throttled indefinitely. The restore call
+            # is fail-open and stays OUTSIDE the try/except; only the best-effort emit is shielded,
+            # so a disk-full OSError here never replaces the ORIGINAL exception.
             if brake_engaged and brake_previous is not None:
                 restored = metrics.restore_leaf_memory_high(brake_previous)
                 try:
                     if restored:
                         emit_memory_high_released(log_dir, round_num=round_num, reason="round_end")
                     else:
-                        emit_memory_high_write_failed(log_dir, round_num=round_num, errno=0)
+                        emit_memory_high_write_failed(log_dir, round_num=round_num, errno=None)
                 except Exception:
                     pass
         # Safety kill BEFORE the observability write: the wedged round must not

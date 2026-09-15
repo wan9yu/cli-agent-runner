@@ -297,10 +297,13 @@ def emit_memory_high_released(log_dir: Path, *, round_num: int, reason: str) -> 
     emit(log_dir, MEMORY_HIGH_RELEASED, round_num=round_num, reason=reason)
 
 
-def emit_memory_high_write_failed(log_dir: Path, *, round_num: int, errno: int) -> None:
+def emit_memory_high_write_failed(log_dir: Path, *, round_num: int, errno: int | None) -> None:
     """Emit once when a memory.high write (engage or restore) hit an OSError --
     fail-open: the brake disarms for the round and serve continues unthrottled,
-    exactly as when the brake is configured off."""
+    exactly as when the brake is configured off. ``errno`` is the real OSError
+    code from the engage path; the restore path (which only sees a bool from
+    :func:`agent_runner.metrics.restore_leaf_memory_high`) passes ``None`` --
+    never ``0``, which conventionally reads as POSIX success."""
     from agent_runner.events import MEMORY_HIGH_WRITE_FAILED, emit
 
     emit(log_dir, MEMORY_HIGH_WRITE_FAILED, round_num=round_num, errno=errno)

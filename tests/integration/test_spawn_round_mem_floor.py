@@ -894,10 +894,11 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
 
 
 def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path, monkeypatch):
-    """Review Minor 3 coverage: restore_leaf_memory_high returning False (a
-    restore-time OSError, fail-open) must emit memory_high_write_failed with
-    errno=0 (the finally has no real errno to report -- restore_leaf_memory_high
-    swallows it), never memory_high_released."""
+    """Review Minor 3 coverage, updated for fix-wave Minor 4: restore_leaf_memory_high
+    returning False (a restore-time OSError, fail-open) must emit memory_high_write_failed
+    with errno=None -- never the misleading errno=0 (reads as POSIX success), since the
+    finally has no real errno to report (restore_leaf_memory_high swallows it into a bare
+    bool) -- and never memory_high_released."""
     from agent_runner import metrics
     from agent_runner.cli import _serve_cgroup
 
@@ -940,7 +941,121 @@ def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path
     events = read_events_for_current_month(log_dir)
     assert [e for e in events if e.get("event") == "memory_high_released"] == []
     failed = [e for e in events if e.get("event") == "memory_high_write_failed"]
-    assert failed and failed[0]["errno"] == 0
+    assert failed and failed[0]["errno"] is None
+
+
+def test_spawn_round_should_carry_the_real_errno_when_engage_itself_fails(tmp_path, monkeypatch):
+    """Fix-wave Minor 4 counterpart: the engage-fail site (a real OSError from
+    metrics.engage_leaf_memory_high's write) must keep forwarding the real
+    errno unchanged -- only the restore-fail sites (which never see a real
+    errno) switched to the None sentinel."""
+    import errno as errno_mod
+
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+
+    def _fake_engage(*, step_pct):
+        sentinel.touch()
+        return {"engaged": False, "errno": errno_mod.EACCES}
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    rc = serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=lambda: _WARNING_SAMPLE,
+    )
+
+    assert rc == 0
+    events = read_events_for_current_month(log_dir)
+    failed = [e for e in events if e.get("event") == "memory_high_write_failed"]
+    assert failed and failed[0]["errno"] == errno_mod.EACCES
+
+
+def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_each_healthy_tick(
+    tmp_path, monkeypatch
+):
+    """Fix-wave Minor 2: when the recovery-path restore keeps failing, the
+    engage path already had brake_disarmed to stop retry-and-re-emit every
+    tick; the recovery path had no equivalent, so none_streak kept growing
+    past the threshold and memory_high_write_failed re-fired on EVERY
+    subsequent healthy tick (~one per 10s) for the rest of the round -- a
+    flood. brake_restore_failed latches after the first recovery-path
+    failure. The finally at round end is a separate, distinct restore
+    attempt and may add exactly one more emission -- that one is NOT part
+    of the flood this fix removes."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = tmp_path / "go"
+    seq = {"n": 0}
+    restore_calls = {"n": 0}
+
+    def _sample():
+        seq["n"] += 1
+        if seq["n"] <= 3:
+            return _WARNING_SAMPLE  # 3 warning ticks -> engage
+        if seq["n"] >= 9:
+            sentinel.touch()  # a few failing-restore healthy ticks past the threshold
+        return _HEALTHY_SAMPLE
+
+    def _fake_restore(previous, **_k):
+        restore_calls["n"] += 1
+        return False  # a persistently-failing restore, fail-open
+
+    monkeypatch.setattr(
+        metrics,
+        "engage_leaf_memory_high",
+        lambda *, step_pct: {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        },
+    )
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+
+    hh = MonitorHostHealthConfig(
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3)
+    )
+
+    rc = serve_cmd._spawn_round(
+        _sentinel_child_argv(sentinel),
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=hh,
+        clock=_TickingClock(),
+        sample_fn=_sample,
+    )
+
+    assert rc == 0
+    # exactly 2 restore attempts: the ONE latched recovery attempt (tick 6, when
+    # none_streak first reaches the threshold) + the finally's own attempt at
+    # round end -- never one per healthy tick (6 healthy ticks ran: 4..9).
+    assert restore_calls["n"] == 2
+    events = read_events_for_current_month(log_dir)
+    failed = [e for e in events if e.get("event") == "memory_high_write_failed"]
+    assert len(failed) == 2
+    assert all(e["errno"] is None for e in failed)
 
 
 def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(

@@ -950,6 +950,62 @@ def test_engage_leaf_memory_high_should_not_engage_when_leaf_current_below_floor
     assert (leaf / "memory.high").read_text().strip() == "max"  # untouched
 
 
+def test_engage_leaf_memory_high_should_skip_engage_when_existing_high_is_tighter_than_target(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """The operator already runs a tighter MemoryHigh=200M than our computed
+    target (~270MiB from a 300MiB current at step_pct=10) -- engaging would
+    LOOSEN the operator's own throttle, so the brake must skip entirely."""
+    fake_cgroup(memory_high="209715200")  # 200MiB
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result == {}
+    assert (leaf / "memory.high").read_text().strip() == "209715200"  # untouched
+
+
+def test_engage_leaf_memory_high_should_lower_high_when_existing_high_is_looser_than_target(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """The operator's existing MemoryHigh=400M is looser than our computed
+    target (~270MiB) -- the brake still engages and tightens it."""
+    fake_cgroup(memory_high="419430400")  # 400MiB
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result["engaged"] is True
+    assert result["previous"] == "419430400"
+    assert result["written"] == int(300 * 1024 * 1024 * 0.9)
+    assert result["written"] < 400 * 1024 * 1024
+    assert (leaf / "memory.high").read_text().strip() == str(result["written"])
+
+
+def test_engage_leaf_memory_high_should_brake_from_max_high(
+    fake_cgroup: _FakeCgroup,
+) -> None:
+    """No pre-existing finite high (``"max"``, unset) -- the monotone-clamp
+    skip never applies, so the brake engages exactly as before."""
+    fake_cgroup(memory_high="max")
+    leaf = fake_cgroup.root / _LEAF.lstrip("/")
+    (leaf / "memory.current").write_text(str(300 * 1024 * 1024))
+
+    result = metrics.engage_leaf_memory_high(
+        step_pct=10, root=fake_cgroup.root, self_cgroup=fake_cgroup.self_cgroup
+    )
+
+    assert result["engaged"] is True
+    assert result["written"] == int(300 * 1024 * 1024 * 0.9)
+    assert (leaf / "memory.high").read_text().strip() == str(result["written"])
+
+
 def test_restore_leaf_memory_high_should_write_back_stashed_max_token(
     fake_cgroup: _FakeCgroup,
 ) -> None:

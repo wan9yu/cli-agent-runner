@@ -530,10 +530,12 @@ def engage_leaf_memory_high(
     prior ``memory.high`` raw token for restore, and writes via
     ``os.open(O_WRONLY|O_TRUNC)`` + ``os.write`` of a decimal byte count.
 
-    Fail-OPEN. Returns ``{}`` (no engage: unresolvable leaf, or ``memory.current``
-    below the engage floor / unreadable), ``{"engaged": True, "previous",
-    "written", "memory_current"}`` on a successful write, or ``{"engaged":
-    False, "errno"}`` on an OSError at read or write (the caller emits
+    Fail-OPEN. Returns ``{}`` (no engage: unresolvable leaf, ``memory.current``
+    below the engage floor / unreadable, or the leaf's existing finite
+    ``memory.high`` is already at/below the computed target -- the brake
+    never raises a throttle), ``{"engaged": True, "previous", "written",
+    "memory_current"}`` on a successful write, or ``{"engaged": False,
+    "errno"}`` on an OSError at read or write (the caller emits
     ``memory_high_write_failed`` once and disarms for the round)."""
     leaf = _leaf_dir(root, proc_self_cgroup, self_cgroup)
     if leaf is None:
@@ -547,6 +549,13 @@ def engage_leaf_memory_high(
     previous = _read_cgroup_raw(leaf / "memory.high")
     if previous is None:
         return {}
+    if previous != "max":
+        try:
+            previous_int: int | None = int(previous)
+        except ValueError:
+            previous_int = None
+        if previous_int is not None and target >= previous_int:
+            return {}  # a soft-brake is monotone: never raise an existing tighter high
     try:
         fd = os.open(str(leaf / "memory.high"), os.O_WRONLY | os.O_TRUNC)
         try:

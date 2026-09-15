@@ -147,7 +147,16 @@ def _format(report: DoctorReport) -> str:
     lines.append(f"  memory_high: {cgroup['memory_high']}")
     lines.append(f"  delegated: {cgroup['delegated']}")
     lines.append(f"  brake: {cgroup['brake']}")
-    if cgroup["delegated"] is False:
+    # Scoped like serve's own advisory (_serve_cgroup._probe_and_emit_cgroup_defer):
+    # only surface the "soft-brake is inert" hint when it could actually apply --
+    # the brake is enabled (report.cgroup["brake"] != "off") or a memory_high/
+    # memory_max limit is already bound. Otherwise the brake is at its default
+    # (off) with nothing bound, and the hint would contradict "brake: off" above.
+    if cgroup["delegated"] is False and (
+        cgroup["brake"] != "off"
+        or cgroup["memory_high"] is not None
+        or cgroup["memory_max"] is not None
+    ):
         from agent_runner.cli._serve_cgroup import _UNDELEGATED_HINT
 
         lines.append(f"  hint: {_UNDELEGATED_HINT}")

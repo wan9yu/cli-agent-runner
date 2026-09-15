@@ -300,6 +300,27 @@ def test_doctor_should_print_cooperative_preset_names(tmp_path, capsys):
     assert "cooperative presets:" in out
 
 
+def test_doctor_should_omit_the_inert_hint_when_brake_off_and_nothing_bound(
+    tmp_path, capsys, monkeypatch
+):
+    from agent_runner import metrics
+
+    monkeypatch.setattr(
+        metrics,
+        "cgroup_memory_limits",
+        lambda **_k: {"cgroup_path": "/x.service", "memory_max": None, "memory_swap_max": None},
+    )
+    monkeypatch.setattr(metrics, "cgroup_memory_high", lambda **_k: None)
+    monkeypatch.setattr(metrics, "cgroup_delegated", lambda **_k: False)
+    args = _args(_write_min_config(tmp_path))
+
+    doctor_cmd.cmd_doctor(args)
+
+    out = capsys.readouterr().out
+    assert "brake: off" in out
+    assert "soft-brake is inert" not in out
+
+
 def test_doctor_should_print_resolved_sigterm_grace(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path))
 
