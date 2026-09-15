@@ -111,3 +111,17 @@ def test_wait_exit_should_return_timeout_during_poll_fallback_with_no_extra_fds(
     finally:
         proc.terminate()
         proc.wait()
+
+
+def test_wait_exit_should_degrade_to_poll_when_select_raises_valueerror(monkeypatch):
+    def _raise_value_error(*_args, **_kwargs):
+        raise ValueError("filedescriptor out of range in select()")
+
+    monkeypatch.setattr(_procwait.select, "select", _raise_value_error)
+    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.05)
+    proc = subprocess.Popen(["sleep", "0.2"])
+
+    outcome = wait_exit(proc, deadline=SYSTEM_CLOCK.monotonic() + 5)
+
+    assert outcome == "exited"
+    assert proc.returncode == 0

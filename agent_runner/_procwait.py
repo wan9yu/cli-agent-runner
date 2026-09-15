@@ -119,7 +119,9 @@ def wait_exit(
     Fallback (``exit_fd(proc)`` is ``None``): polls ``proc.poll()`` at a
     short, fixed cadence via ``clock.sleep``, with the same two return
     meanings, so a test driving this path with a fake clock still makes
-    progress without blocking on real wall time.
+    progress without blocking on real wall time. The same poll fallback is
+    also used when the fast path's ``select.select`` raises ``ValueError``
+    (a fd >= ``FD_SETSIZE``, 1024, is unselectable) instead of crashing.
 
     Short-circuits to ``"exited"`` when ``proc.returncode`` is already set:
     this owner has already reaped it, so its pid is freed (and may be reused).
@@ -139,7 +141,13 @@ def wait_exit(
 
     try:
         remaining = max(0.0, deadline - clock.monotonic())
-        ready, _, _ = select.select([fd], [], [], remaining)
+        try:
+            ready, _, _ = select.select([fd], [], [], remaining)
+        except ValueError:
+            # fd >= FD_SETSIZE (1024) makes select.select raise ValueError --
+            # degrade to the poll fallback (its documented latency) instead
+            # of crashing.
+            return _wait_exit_by_polling(proc, deadline=deadline, clock=clock)
         return "exited" if ready else "timeout"
     finally:
         os.close(fd)
