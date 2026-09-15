@@ -36,6 +36,7 @@ def emit_round_mem_terminated(
     message: str,
     consecutive: int,
     context: dict,
+    tier: str = "terminate",
 ) -> None:
     """Emit when _spawn_round's mid-round hard floor terminated a ballooning
     round on critical host_health pressure -- the actual coma-preventer (a
@@ -45,7 +46,15 @@ def emit_round_mem_terminated(
     ``consecutive`` (the critical_streak that crossed the threshold)
     and ``context`` (Pressure.context -- the actual psi/mem numbers, e.g.
     psi_full_avg10) make the kill legible from the event stream alone, so an
-    operator can retune host_health thresholds without SSH."""
+    operator can retune host_health thresholds without SSH.
+
+    ``tier`` (``"terminate"`` | ``"nudge"``) distinguishes the hard floor's
+    ``_terminate_round`` (TERM -> grace -> killpg) from the early cooperative
+    nudge (a bare ``proc.terminate()`` two samples earlier, no wait, no
+    killpg) -- both fire this SAME event kind so ``round_was_mem_terminated``
+    and the ``mem_loop`` give-up breaker count a nudged round exactly like a
+    hard-terminated one; the default keeps every existing caller byte-
+    compatible."""
     from agent_runner.events import ROUND_MEM_TERMINATED, emit
 
     emit(
@@ -57,6 +66,7 @@ def emit_round_mem_terminated(
         message=message,
         consecutive=consecutive,
         context=context,
+        tier=tier,
     )
 
 

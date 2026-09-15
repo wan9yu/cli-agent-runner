@@ -465,8 +465,8 @@ _MEM_CHECK_INTERVAL_S = 10
 
 
 def _mid_round_action(
-    cfg, defer_to_cgroup: bool, critical_streak: int
-) -> Literal["terminate", "defer", "count_only"]:
+    cfg, defer_to_cgroup: bool, critical_streak: int, nudged: bool
+) -> Literal["terminate", "defer", "count_only", "nudge"]:
     """Pure, subprocess-free verdict for a critical mid-round
     tick, once the caller has already incremented ``critical_streak`` and
     (when the streak is within the emit cap) emitted
@@ -488,13 +488,27 @@ def _mid_round_action(
     - ``"terminate"`` — sustained critical pressure, no cgroup containment to
       defer to: the caller ``_terminate_round``s and emits
       ``round_mem_terminated``.
+    - ``"nudge"`` -- ``in_round_nudge`` is on and this is the FIRST critical
+      sample (``critical_streak == 1``, ``nudged`` still False) of a streak whose
+      hard verdict WOULD be ``terminate`` (``in_round_terminate`` and not
+      ``defer_to_cgroup``): fire the hard floor's SIGTERM two samples early so a
+      cooperative agent gets its wrap-up grace. ``defer_to_cgroup`` disables the
+      nudge (no terminate to move earlier) but NOT the brake.
     """
-    if not (
+    if (
         cfg.pressure.in_round_terminate
         and critical_streak >= cfg.pressure.critical_consecutive_samples
     ):
-        return "count_only"
-    return "defer" if defer_to_cgroup else "terminate"
+        return "defer" if defer_to_cgroup else "terminate"
+    if (
+        cfg.pressure.in_round_nudge
+        and not nudged
+        and critical_streak == 1
+        and cfg.pressure.in_round_terminate
+        and not defer_to_cgroup
+    ):
+        return "nudge"
+    return "count_only"
 
 
 def _spawn_round(
@@ -609,6 +623,7 @@ def _spawn_round(
             # terminates the round.
             prev_tick_sample: dict | None = None
             critical_streak = 0
+            nudged = False
             cgroup_defer_notified = False
             prev_mem_bytes: int | None = None
             prev_mem_mono: float | None = None
@@ -763,9 +778,22 @@ def _spawn_round(
                                 context=pressure.context,
                             )
                         action = _mid_round_action(
-                            host_health_cfg, defer_to_cgroup, critical_streak
+                            host_health_cfg, defer_to_cgroup, critical_streak, nudged
                         )
-                        if action == "terminate":
+                        if action == "nudge":
+                            nudged = True
+                            proc.terminate()  # bare SIGTERM to the leader -- NO wait, NO killpg
+                            emit_round_mem_terminated(
+                                log_dir,
+                                pid=proc.pid,
+                                severity=pressure.severity,
+                                signal=pressure.signal,
+                                message=pressure.message,
+                                consecutive=critical_streak,
+                                context=pressure.context,
+                                tier="nudge",
+                            )
+                        elif action == "terminate":
                             returncode = _terminate_round(proc, clock=clock)
                             emit_round_mem_terminated(
                                 log_dir,
@@ -775,10 +803,11 @@ def _spawn_round(
                                 message=pressure.message,
                                 consecutive=critical_streak,
                                 context=pressure.context,
+                                tier="terminate",
                             )
                             _stash_cgroup()
                             return returncode
-                        if action == "defer" and not cgroup_defer_notified:
+                        elif action == "defer" and not cgroup_defer_notified:
                             emit_mem_pressure_deferred_to_cgroup(
                                 log_dir,
                                 pid=proc.pid,

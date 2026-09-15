@@ -17,12 +17,14 @@ from pathlib import Path
 import pytest
 
 from agent_runner import _round_outcome, _throttle
+from agent_runner._serve_policy import MEM_LOOP_THRESHOLD, _mem_loop_decision
 from agent_runner._throttle import (
     RoundOutcome,
     round_had_no_progress,
     round_outcome,
     round_was_mem_terminated,
 )
+from agent_runner.api import emit_round_mem_terminated, emit_round_substrate_before
 from agent_runner.cli import serve_cmd
 from agent_runner.config import load_config
 from tests._clock import FakeClock
@@ -345,3 +347,46 @@ def test_ran_agent_throttled_should_match_fresh_scan_when_given_precomputed_acti
     assert serve_cmd._ran_agent_throttled(cfg, None, log_dir, active=active) == (
         serve_cmd._ran_agent_throttled(cfg, None, log_dir)
     )
+
+
+# --- 0.3.7 Task 5: the early-SIGTERM nudge's round_mem_terminated{tier} breaker ---
+
+
+def test_round_was_mem_terminated_should_count_a_nudged_round_like_a_hard_terminated_one(
+    tmp_path: Path,
+) -> None:
+    """The nudge (a bare `proc.terminate()` two samples before the hard floor)
+    emits the SAME round_mem_terminated event kind as a hard-terminated round --
+    only the additive `tier` field differs -- so round_was_mem_terminated (a
+    timestamp-scoped scan of the event KIND, not `tier`) must count a nudged
+    round exactly like a hard-terminated one, else a persistently-pressured
+    host nudges every round forever with no give-up."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    emit_round_substrate_before(log_dir, round_num=1, git_head=None, paths_hash=None)
+    emit_round_mem_terminated(
+        log_dir,
+        pid=123,
+        severity="critical",
+        signal="psi",
+        message="nudged",
+        consecutive=1,
+        context={},
+        tier="nudge",
+    )
+
+    assert round_was_mem_terminated(log_dir) is True
+
+
+def test_mem_loop_breaker_should_trip_after_threshold_nudged_rounds() -> None:
+    """The PROPERTY, not a call-arg: feeding MEM_LOOP_THRESHOLD nudged rounds
+    (mem_terminated=True, as round_was_mem_terminated reports above) through
+    _mem_loop_decision converges to `mem_loop` exactly like that many
+    hard-terminated rounds would."""
+    consecutive = 0
+    verdict = "continue"
+    for _ in range(MEM_LOOP_THRESHOLD):
+        verdict, consecutive = _mem_loop_decision(mem_terminated=True, consecutive=consecutive)
+
+    assert verdict == "mem_loop"
+    assert consecutive == MEM_LOOP_THRESHOLD

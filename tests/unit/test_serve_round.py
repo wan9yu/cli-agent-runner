@@ -15,20 +15,67 @@ def test_mid_round_action_should_match_2x2_matrix_at_threshold() -> None:
     off = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(in_round_terminate=False))
     streak = on.pressure.critical_consecutive_samples  # at threshold
 
-    assert _mid_round_action(on, False, streak) == "terminate"
-    assert _mid_round_action(on, True, streak) == "defer"
+    assert _mid_round_action(on, False, streak, nudged=False) == "terminate"
+    assert _mid_round_action(on, True, streak, nudged=False) == "defer"
     # THE load-bearing cell: in_round_terminate=False must win even when
     # defer_to_cgroup=True -- the off switch means no action at all (no
     # terminate, no mem_pressure_deferred_to_cgroup emit), matching current
     # _serve_round.py behavior (the defer branch is nested INSIDE the
     # in_round_terminate guard, never reachable when it's False).
-    assert _mid_round_action(off, True, streak) == "count_only"
-    assert _mid_round_action(off, False, streak) == "count_only"
+    assert _mid_round_action(off, True, streak, nudged=False) == "count_only"
+    assert _mid_round_action(off, False, streak, nudged=False) == "count_only"
 
 
 def test_mid_round_action_should_be_count_only_when_below_threshold() -> None:
     cfg = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(in_round_terminate=True))
     below = cfg.pressure.critical_consecutive_samples - 1
 
-    assert _mid_round_action(cfg, False, below) == "count_only"
-    assert _mid_round_action(cfg, True, below) == "count_only"
+    assert _mid_round_action(cfg, False, below, nudged=False) == "count_only"
+    assert _mid_round_action(cfg, True, below, nudged=False) == "count_only"
+
+
+def _cfg(**pressure):
+    return MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(**pressure))
+
+
+def test_mid_round_action_should_nudge_at_streak_one_when_nudge_on_and_hard_would_terminate() -> (
+    None
+):
+    cfg = _cfg(in_round_nudge=True)
+
+    assert _mid_round_action(cfg, defer_to_cgroup=False, critical_streak=1, nudged=False) == "nudge"
+
+
+def test_mid_round_action_should_not_nudge_again_once_nudged() -> None:
+    cfg = _cfg(in_round_nudge=True)
+
+    assert (
+        _mid_round_action(cfg, defer_to_cgroup=False, critical_streak=1, nudged=True)
+        == "count_only"
+    )
+
+
+def test_mid_round_action_should_not_nudge_when_cgroup_defer_disables_the_hard_verdict() -> None:
+    cfg = _cfg(in_round_nudge=True)
+
+    assert (
+        _mid_round_action(cfg, defer_to_cgroup=True, critical_streak=1, nudged=False)
+        == "count_only"
+    )
+
+
+def test_mid_round_action_should_still_terminate_at_the_hard_threshold() -> None:
+    cfg = _cfg(in_round_nudge=True)
+
+    assert (
+        _mid_round_action(cfg, defer_to_cgroup=False, critical_streak=3, nudged=True) == "terminate"
+    )
+
+
+def test_mid_round_action_should_not_nudge_when_nudge_off() -> None:
+    cfg = _cfg(in_round_nudge=False)
+
+    assert (
+        _mid_round_action(cfg, defer_to_cgroup=False, critical_streak=1, nudged=False)
+        == "count_only"
+    )

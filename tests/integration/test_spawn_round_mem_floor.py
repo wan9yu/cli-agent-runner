@@ -196,6 +196,7 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
     # can retune host_health thresholds from the event stream alone.
     assert terminated[0]["consecutive"] == 3
     assert terminated[0]["context"]["psi_full_avg10"] == 70.0
+    assert terminated[0]["tier"] == "terminate"
 
     # The calibration signal: every critical tick emits round_mem_critical_sample
     # up to the 2x pressure.critical_consecutive_samples cap (0.2.17); this terminate
