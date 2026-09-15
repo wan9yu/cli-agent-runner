@@ -6,12 +6,31 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from agent_runner.cli import doctor_cmd
+from agent_runner.cli._serve_cgroup import brake_report_state
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import load_config
 from tests._test_helpers import make_toml_with_sections, write_min_config
 
 TZ = ZoneInfo("Asia/Shanghai")
+
+
+@pytest.mark.parametrize(
+    "enabled, delegated, expected",
+    [
+        (False, True, "off"),
+        (False, None, "off"),
+        (True, True, "armed"),
+        (True, False, "inert(undelegated)"),
+        (True, None, "inert(no cgroup v2)"),
+    ],
+)
+def test_brake_report_state_should_map_config_and_delegation_to_a_label(
+    enabled, delegated, expected
+) -> None:
+    assert brake_report_state(enabled, delegated) == expected
 
 
 class _FakeProc:
@@ -238,6 +257,26 @@ def test_doctor_should_report_cgroup_delegation_state_in_json(tmp_path, capsys):
     assert "delegated" in payload["cgroup"]
     assert "cgroup_path" in payload["cgroup"]
     assert "memory_high" in payload["cgroup"]
+
+
+def test_doctor_should_report_brake_state_in_text_and_json(tmp_path, capsys):
+    args = _args(_write_min_config(tmp_path), json=True)
+
+    doctor_cmd.cmd_doctor(args)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert "brake" in payload["cgroup"]
+    assert payload["cgroup"]["brake"] in (
+        "off",
+        "armed",
+        "inert(undelegated)",
+        "inert(no cgroup v2)",
+    )
+
+    text_args = _args(_write_min_config(tmp_path))
+    doctor_cmd.cmd_doctor(text_args)
+    out = capsys.readouterr().out
+    assert "brake:" in out
 
 
 def test_doctor_should_never_emit_an_event_when_probing_cgroup(tmp_path, monkeypatch):

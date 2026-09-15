@@ -19,7 +19,7 @@ from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_r
 from agent_runner.monitor import plugin_detectors
 from agent_runner.vcs_state import plugin_owned_paths
 
-PEEK_SCHEMA_VERSION = "2.4"
+PEEK_SCHEMA_VERSION = "2.5"
 
 
 def cfg_from_args(args) -> Config:
@@ -123,6 +123,15 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
                 "plugins": plugins_block,
                 **_to_jsonable(value),
             }
+            if cfg is not None:
+                from agent_runner import metrics
+                from agent_runner.cli._serve_cgroup import brake_report_state
+
+                _limits = metrics.cgroup_memory_limits()
+                wrapped["brake"] = brake_report_state(
+                    cfg.monitor.host_health.brake.memory_high,
+                    metrics.cgroup_delegated(self_cgroup=_limits["cgroup_path"]),
+                )
             print(json.dumps(wrapped, indent=2, default=str))
         else:
             print(json.dumps(_to_jsonable(value), indent=2, default=str))

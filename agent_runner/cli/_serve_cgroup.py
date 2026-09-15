@@ -238,6 +238,17 @@ _UNDELEGATED_HINT = (
 )
 
 
+def brake_report_state(enabled: bool, delegated: bool | None) -> str:
+    """The operator-facing soft-brake state for doctor/peek: ``off`` (not
+    configured), ``armed`` (on AND the leaf is delegated so memory.high is
+    writable), or ``inert(<reason>)`` (on but the write path can't arm)."""
+    if not enabled:
+        return "off"
+    if delegated is True:
+        return "armed"
+    return "inert(undelegated)" if delegated is False else "inert(no cgroup v2)"
+
+
 def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = False) -> bool:
     """Probe this process's cgroup v2 memory budget once at serve startup,
     emit host_cgroup_memory_limit for observability, and return whether the

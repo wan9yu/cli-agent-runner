@@ -45,20 +45,23 @@ def _plan(cfg, rounds: int) -> list[dict]:
     return out
 
 
-def _cgroup_report() -> dict:
+def _cgroup_report(cfg) -> dict:
     """Read-only cgroup delegation-readiness snapshot for `doctor` -- never
     emits an event (unlike serve's `_probe_and_emit_cgroup_defer`, which
     shares the same underlying `metrics` probes but writes
     `host_cgroup_memory_limit`). `doctor` never launches the agent or writes
     anything; this section is the same discipline applied to cgroup state."""
     from agent_runner import metrics
+    from agent_runner.cli._serve_cgroup import brake_report_state
 
     limits = metrics.cgroup_memory_limits()
+    delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
     return {
         "cgroup_path": limits["cgroup_path"],
         "memory_max": limits["memory_max"],
         "memory_high": metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"]),
-        "delegated": metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"]),
+        "delegated": delegated,
+        "brake": brake_report_state(cfg.monitor.host_health.brake.memory_high, delegated),
     }
 
 
@@ -79,7 +82,7 @@ def cmd_doctor(args) -> int:
         overlaps=phase_select.find_phase_window_overlaps(cfg),
         plan=_plan(cfg, args.rounds),
         sandbox=doctor_snapshot(cfg),
-        cgroup=_cgroup_report(),
+        cgroup=_cgroup_report(cfg),
         sigterm_grace=sigterm_grace,
     )
     json_mode = getattr(args, "json", False)
@@ -143,6 +146,7 @@ def _format(report: DoctorReport) -> str:
     lines.append(f"  memory_max: {cgroup['memory_max']}")
     lines.append(f"  memory_high: {cgroup['memory_high']}")
     lines.append(f"  delegated: {cgroup['delegated']}")
+    lines.append(f"  brake: {cgroup['brake']}")
     if cgroup["delegated"] is False:
         from agent_runner.cli._serve_cgroup import _UNDELEGATED_HINT
 
