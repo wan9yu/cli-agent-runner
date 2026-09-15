@@ -543,8 +543,8 @@ The cgroup `memory.high` soft-brake and the early cooperative-SIGTERM nudge — 
 
 | | 0.3.6 | 0.3.7 | Δ |
 |---|---|---|---|
-| RSS (avg of 5 cold runs) | 23.72 MB | 23.67 MB | −0.05 MB (flat, within noise) |
-| RSS range | 23.58–23.84 MB | 23.56–23.78 MB | |
+| RSS (avg of 5 cold runs) | 23.72 MB | 23.72 MB | ~0 MB (flat) |
+| RSS range | 23.58–23.84 MB | 23.61–23.92 MB | |
 | `sys.modules` count | 212 | 212 | +0 |
 
 Flat, and expected to be: no new dependency (base install stays `psutil>=5.9` only), and no new module joins the cold-startup graph. The brake's write helpers (`engage_leaf_memory_high` / `restore_leaf_memory_high`) are plain `os.open`/`os.write`/`os.close` functions added beside the existing cgroup readers in the already-resident `metrics` module; the config additions (`[monitor.host_health.brake]`, `pressure.in_round_nudge`) are new fields on the already-imported `config` dataclasses, not a new module. `test_import_footprint.py`'s `EXPECTED_STARTUP_PKG_MODULES` allowlist is unchanged this release.
