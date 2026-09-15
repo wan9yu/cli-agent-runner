@@ -17,8 +17,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 from agent_runner import _notify, hooks
 from agent_runner._procwait import wait_exit
@@ -128,7 +129,7 @@ def _ctx_from_wire(data: dict) -> hooks.HookContext:
 # ---------------------------------------------------------------------------
 
 
-class SpawnHookInterrupted(Exception):
+class SpawnHookInterrupted(Exception):  # noqa: N818 -- a control-flow signal, not an error
     """Raised by ``_run_child_process`` when ``should_stop()`` fires on a wake
     during a sandboxed spawn hook -- distinct from a plugin failure so the seam
     returns ``None`` WITHOUT emitting ``hook_failed`` (a stop is not the plugin's

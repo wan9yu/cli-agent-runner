@@ -225,6 +225,66 @@ def test_seam_should_isolate_failing_hook_as_proceed(tmp_path, monkeypatch):
     assert failures and failures[-1]["hook_kind"] == "spawn_hook"
 
 
+def test_seam_should_return_false_without_hook_failed_when_a_hook_is_interrupted(
+    tmp_path, monkeypatch
+):
+    from agent_runner._plugin_sandbox import SpawnHookInterrupted
+
+    _register("gate_a", SpawnDecision("skip", reason="halt"))
+    stop = {"requested": False}
+
+    def _interrupt(*a, **k):
+        stop["requested"] = True
+        raise SpawnHookInterrupted("stop landed mid-hook")
+
+    monkeypatch.setattr(_serve_round, "run_hook_sandboxed", _interrupt)
+    cfg = make_cfg(
+        tmp_path, plugins=PluginsConfig(sandbox="require", spawn_override_allow=["gate_a"])
+    )
+
+    consumed = _serve_round._maybe_defer_for_spawn_hooks(
+        cfg, tmp_path, stop, phase=None, work_dir=tmp_path, engaged=True
+    )
+
+    assert consumed is False
+    assert not _events(tmp_path, "hook_failed")
+    assert not _events(tmp_path, "plugin_spawn_decision")
+
+
+def test_seam_should_forward_listener_into_the_defer_sleep_when_a_hook_defers(
+    tmp_path, monkeypatch
+):
+    from agent_runner._notify import Listener
+
+    _register("gate_a", SpawnDecision("defer", defer_s=5, reason="window"))
+    monkeypatch.setattr(
+        _serve_round,
+        "run_hook_sandboxed",
+        lambda *a, **k: SpawnDecision("defer", defer_s=5, reason="window"),
+    )
+    seen = {}
+
+    def _capturing_sleep(total_s, stop, *, clock=None, listener=None, **_k):
+        seen["listener"] = listener
+        return False
+
+    monkeypatch.setattr(_serve_round, "_interruptible_sleep", _capturing_sleep)
+    cfg = make_cfg(tmp_path, plugins=PluginsConfig(spawn_override_allow=["gate_a"]))
+    with Listener(tmp_path) as listener:
+        _serve_round._maybe_defer_for_spawn_hooks(
+            cfg,
+            tmp_path,
+            {"requested": False},
+            phase=None,
+            work_dir=tmp_path,
+            engaged=True,
+            clock=FakeClock(),
+            listener=listener,
+        )
+
+    assert seen["listener"] is listener
+
+
 def test_seam_should_run_builtin_hook_in_process_not_trampoline(tmp_path, monkeypatch):
     _register("gate_b", SpawnDecision("skip", reason="builtin-halt"), builtin=True)
 

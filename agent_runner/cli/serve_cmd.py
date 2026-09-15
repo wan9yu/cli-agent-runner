@@ -456,7 +456,7 @@ def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int 
     return frozenset(), None
 
 
-def _spawn_gate(cfg, log_dir, stop, phase, *, sandbox_engaged: bool):
+def _spawn_gate(cfg, log_dir, stop, phase, *, sandbox_engaged: bool, listener=NULL_LISTENER):
     """The final admission gate: run the pre-spawn hooks for the resolved
     ``phase`` and translate a defer/skip into the ``_PAUSED_CONTINUE`` sentinel
     (caller re-admits next iteration); a proceed returns ``phase`` unchanged.
@@ -465,9 +465,17 @@ def _spawn_gate(cfg, log_dir, stop, phase, *, sandbox_engaged: bool):
     already paused, and it is the LAST gate (after memory / schedule / throttle
     have all resolved a concrete phase to spawn). ``sandbox_engaged`` is the
     boot probe verdict threaded from ``cmd()`` so the seam routes without
-    re-probing per round."""
+    re-probing per round. ``listener`` forwards into the sandboxed spawn-hook
+    wait and any defer/skip sleep, so a stop lands immediately instead of
+    riding out the trampoline's 30s wall-timeout."""
     if _maybe_defer_for_spawn_hooks(
-        cfg, log_dir, stop, phase=phase, work_dir=cfg.runtime.work_dir, engaged=sandbox_engaged
+        cfg,
+        log_dir,
+        stop,
+        phase=phase,
+        work_dir=cfg.runtime.work_dir,
+        engaged=sandbox_engaged,
+        listener=listener,
     ):
         return _PAUSED_CONTINUE
     return phase
@@ -505,11 +513,15 @@ def _select_and_gate(
     if args.ignore_schedule:
         # rotation self-resolves in the round; no --phase, but the pre-spawn gate
         # still runs on the concrete (None) outcome.
-        return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
+        return _spawn_gate(
+            cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged, listener=listener
+        )
     if not _phase_aware(cfg):
         if _maybe_pause_for_schedule(cfg, log_dir, stop, listener=listener):
             return _PAUSED_CONTINUE
-        return _spawn_gate(cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged)
+        return _spawn_gate(
+            cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged, listener=listener
+        )
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
     sel = phase_select.select_phase(
@@ -548,7 +560,9 @@ def _select_and_gate(
             chosen=sel.phase,
             active_window=sel.active_window or "",
         )
-    return _spawn_gate(cfg, log_dir, stop, sel.phase, sandbox_engaged=sandbox_engaged)
+    return _spawn_gate(
+        cfg, log_dir, stop, sel.phase, sandbox_engaged=sandbox_engaged, listener=listener
+    )
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:

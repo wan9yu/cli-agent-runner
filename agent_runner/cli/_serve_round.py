@@ -28,7 +28,7 @@ from typing import Literal
 
 from agent_runner import _resolve, events, hooks, host_health, metrics
 from agent_runner._notify import NULL_LISTENER, Listener, NullListener
-from agent_runner._plugin_sandbox import run_hook_sandboxed
+from agent_runner._plugin_sandbox import SpawnHookInterrupted, run_hook_sandboxed
 from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
@@ -251,7 +251,9 @@ def _spawn_view(work_dir, profile) -> hooks.SpawnView:
     )
 
 
-def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDecision | None:
+def _run_one_spawn_hook(
+    h, ctx, log_dir, view, *, sandbox, engaged, listener=NULL_LISTENER, stop=None
+) -> SpawnDecision | None:
     """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
     isolates a raising dirty handler: emit ``hook_failed`` and return None (the
     caller omits None from the collapse — treated as proceed).
@@ -265,7 +267,9 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDeci
     in-process (unconfined — announced once at serve boot) and ``require`` refuses
     it (belt-and-braces; ``gate_serve_boot`` already aborts serve under
     require+can't-engage). The same ``view`` is passed on every path, so ``env``
-    stays names-only (no secret value)."""
+    stays names-only (no secret value). A sandboxed hook interrupted by a stop
+    (``should_stop`` fires on the serve doorbell) returns None WITHOUT emitting
+    ``hook_failed`` -- a stop is not a plugin failure."""
     third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
     try:
         from agent_runner._sandbox_probe import hook_route
@@ -279,9 +283,19 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDeci
         if route == "trampoline":
             module_path, attr_path = hooks._SPAWN_HOOK_MODULE.get(id(h), ("", ""))
             return run_hook_sandboxed(
-                "spawn_hook", module_path, attr_path, h.name, ctx, log_dir=log_dir, view=view
+                "spawn_hook",
+                module_path,
+                attr_path,
+                h.name,
+                ctx,
+                log_dir=log_dir,
+                view=view,
+                wake_fd=listener.fd,
+                should_stop=(lambda: stop["requested"]) if stop is not None else None,
             )
         return h.before_spawn(ctx, view)
+    except SpawnHookInterrupted:
+        return None
     except Exception as exc:  # noqa: BLE001 — isolate; omit from collapse (== proceed)
         events.emit(
             log_dir,
@@ -294,7 +308,15 @@ def _run_one_spawn_hook(h, ctx, log_dir, view, *, sandbox, engaged) -> SpawnDeci
 
 
 def _maybe_defer_for_spawn_hooks(
-    cfg, log_dir, stop, *, phase, work_dir, engaged: bool, clock: Clock = SYSTEM_CLOCK
+    cfg,
+    log_dir,
+    stop,
+    *,
+    phase,
+    work_dir,
+    engaged: bool,
+    clock: Clock = SYSTEM_CLOCK,
+    listener: Listener | NullListener = NULL_LISTENER,
 ) -> bool:
     """The LAST serve-admission gate: run every registered SpawnHook over a
     read-only view of the resolved spawn and collapse their verdicts
@@ -321,8 +343,17 @@ def _maybe_defer_for_spawn_hooks(
     named: list[tuple[str, SpawnDecision]] = []
     for h in registered:
         decision = _run_one_spawn_hook(
-            h, ctx, log_dir, view, sandbox=cfg.plugins.sandbox, engaged=engaged
+            h,
+            ctx,
+            log_dir,
+            view,
+            sandbox=cfg.plugins.sandbox,
+            engaged=engaged,
+            listener=listener,
+            stop=stop,
         )
+        if stop["requested"]:
+            return False  # a stop landed during a hook -- serve_cmd's stop-check refuses the spawn
         if decision is None:
             continue  # hook_failed already emitted; omit from collapse (== proceed)
         if decision.action != "proceed" and h.name not in allow:
@@ -351,13 +382,13 @@ def _maybe_defer_for_spawn_hooks(
             defer_s=collapsed.defer_s,
             reason=collapsed.reason,
         )
-        if not _interruptible_sleep(collapsed.defer_s, stop, clock=clock):
+        if not _interruptible_sleep(collapsed.defer_s, stop, clock=clock, listener=listener):
             emit_round_resumed(log_dir, deferred_for_s=int(clock.monotonic() - started))
         return True
     emit_plugin_spawn_decision(
         log_dir, hook=winner, action="skip", defer_s=0, reason=collapsed.reason
     )
-    _interruptible_sleep(_SPAWN_SKIP_REPOLL_S, stop, clock=clock)
+    _interruptible_sleep(_SPAWN_SKIP_REPOLL_S, stop, clock=clock, listener=listener)
     return True
 
 

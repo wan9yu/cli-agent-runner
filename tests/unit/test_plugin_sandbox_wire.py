@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -342,13 +341,16 @@ def _pid_recording_child(pidfile: Path, sleep_s: float) -> list[str]:
     return [
         sys.executable,
         "-c",
-        f"import os,time; open({str(pidfile)!r},'w').write(str(os.getpid())); time.sleep({sleep_s})",
+        f"import os,time; open({str(pidfile)!r},'w').write(str(os.getpid()));"
+        f" time.sleep({sleep_s})",
     ]
 
 
 @pytest.mark.serial
 @pytest.mark.timeout(30)
-def test_run_child_process_should_reap_child_and_raise_when_stop_fires_on_wake(tmp_log_dir, tmp_path):
+def test_run_child_process_should_reap_child_and_raise_when_stop_fires_on_wake(
+    tmp_log_dir, tmp_path
+):
     from agent_runner._plugin_sandbox import SpawnHookInterrupted, _run_child_process
 
     pidfile = tmp_path / "child.pid"
@@ -370,7 +372,9 @@ def test_run_child_process_should_reap_child_and_raise_when_stop_fires_on_wake(t
         ringer.start()
 
         with pytest.raises(SpawnHookInterrupted):
-            _run_child_process(argv, b"", 30, wake_fd=listener.fd, should_stop=lambda: stop_flag["v"])
+            _run_child_process(
+                argv, b"", 30, wake_fd=listener.fd, should_stop=lambda: stop_flag["v"]
+            )
         ringer.join(timeout=5)
 
     pid = int(pidfile.read_text())
