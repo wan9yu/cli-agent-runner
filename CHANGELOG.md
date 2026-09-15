@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.7]
+## [0.3.7] - 2026-09-15
 
 ### Added
 - Opt-in cgroup v2 `memory.high` soft-brake (`[monitor.host_health.brake] memory_high`, default off): under sustained warning-level memory pressure the supervisor reversibly writes `memory.high` on its OWN cgroup leaf to throttle a growing round before the host swaps, then restores it on recovery or at round end. `memory_high_step_pct` defaults to `0` = cap-at-current (throttle further growth with no synchronous reclaim burst — safe for SD-backed hosts); `step_pct >= 1` is opt-in aggressive reclaim that dumps ~step% of the leaf to swap at engage. Fail-open; arms only when the leaf is delegated.
