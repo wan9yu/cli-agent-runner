@@ -147,11 +147,15 @@ def _format(report: DoctorReport) -> str:
     lines.append(f"  memory_high: {cgroup['memory_high']}")
     lines.append(f"  delegated: {cgroup['delegated']}")
     lines.append(f"  brake: {cgroup['brake']}")
-    # Scoped like serve's own advisory (_serve_cgroup._probe_and_emit_cgroup_defer):
+    # Approximates serve's own advisory (_serve_cgroup._probe_and_emit_cgroup_defer):
     # only surface the "soft-brake is inert" hint when it could actually apply --
     # the brake is enabled (report.cgroup["brake"] != "off") or a memory_high/
     # memory_max limit is already bound. Otherwise the brake is at its default
     # (off) with nothing bound, and the hint would contradict "brake: off" above.
+    # Coarser than serve's own_scope (which additionally requires the bound to
+    # originate from the caller's OWN leaf, not an inherited ancestor) -- doctor's
+    # _cgroup_report never tracks the bounding cgroup path, so this errs toward
+    # showing the readiness hint in the ancestor-bound case.
     if cgroup["delegated"] is False and (
         cgroup["brake"] != "off"
         or cgroup["memory_high"] is not None
