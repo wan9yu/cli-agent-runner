@@ -11,7 +11,7 @@ outer_round_ceiling_s derivation both call it, so they cannot drift apart.
 
 from __future__ import annotations
 
-from agent_runner import _serve_policy
+from agent_runner import _lifecycle, _plugin_sandbox, _serve_policy
 from agent_runner._lifecycle import _ROUND_TERM_GRACE_S
 from agent_runner.agent_runtime import REAP_GRACE_S
 from agent_runner.cli._serve_cgroup import _ROUND_UNREAPED_RC as _SERVE_CGROUP_UNREAPED_RC
@@ -99,3 +99,14 @@ def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     # _MAX_SIGTERM_GRACE_S is a mirror-WITH-MARGIN, not an equality mirror.
     assert _MAX_SIGTERM_GRACE_S < _serve_policy._ROUND_TERM_GRACE_S
     assert _serve_policy._ROUND_TERM_GRACE_S - _MAX_SIGTERM_GRACE_S >= 3
+
+
+def test_drain_join_budget_should_leave_stop_confirm_window_for_the_unwind():
+    """The sandboxed-hook trampoline bounds its post-reap pipe drain to
+    _plugin_sandbox._DRAIN_JOIN_S so a fork()'d pipe-holder can't stall the stop.
+    That bound must fit inside the stop/kill confirm window (_PID_SIGNAL_GRACE_S)
+    with >=3 s left for the rest of the unwind. _plugin_sandbox must NOT import
+    _lifecycle in production (it is a leaf on the confinement path), so
+    _DRAIN_JOIN_S is a literal mirror pinned here -- same shape as
+    _MAX_SIGTERM_GRACE_S's mirror-with-margin above."""
+    assert _plugin_sandbox._DRAIN_JOIN_S + 3 <= _lifecycle._PID_SIGNAL_GRACE_S

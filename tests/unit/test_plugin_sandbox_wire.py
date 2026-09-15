@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import threading
 import time
@@ -454,3 +455,110 @@ def test_run_child_process_should_wait_once_when_child_exits_without_wake(tmp_pa
 
     assert rc == 0
     assert calls["n"] == 1
+
+
+# A confined child that fork()s a grandchild inheriting fd 1/2 (the drain pipes)
+# and holds them open past its own death -- seccomp does NOT block fork and the
+# child has no session of its own. The grandchild records its pid (argv[1]) so
+# the test can reap it, then sleeps; without a bounded drain join the parent's
+# read() never sees EOF and the stop hangs forever.
+_FORK_PIPE_HOLDER_EXIT = (
+    "import os, sys, time\n"
+    "gc_pidfile = sys.argv[1]\n"
+    "pid = os.fork()\n"
+    "if pid == 0:\n"
+    "    open(gc_pidfile, 'w').write(str(os.getpid()))\n"
+    "    time.sleep(60)\n"
+    "    os._exit(0)\n"
+    "os._exit(0)\n"  # child exits 0; the grandchild still holds the drain pipes
+)
+_FORK_PIPE_HOLDER_SLEEP = (
+    "import os, sys, time\n"
+    "gc_pidfile = sys.argv[1]\n"
+    "pid = os.fork()\n"
+    "if pid == 0:\n"
+    "    open(gc_pidfile, 'w').write(str(os.getpid()))\n"
+    "    time.sleep(60)\n"
+    "    os._exit(0)\n"
+    "time.sleep(60)\n"  # child stays alive so it must be killed on the interrupt
+)
+
+
+def _reap_gc(gc_pidfile: Path) -> None:
+    try:
+        gc_pid = int(gc_pidfile.read_text())
+    except (FileNotFoundError, ValueError):
+        return
+    try:
+        os.kill(gc_pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(30)
+def test_run_child_process_should_raise_drain_timeout_when_forked_grandchild_holds_pipe(tmp_path):
+    from agent_runner._plugin_sandbox import _DRAIN_JOIN_S, _run_child_process
+
+    if not hasattr(os, "fork"):
+        pytest.skip("no os.fork on this platform -- POSIX-only property")
+
+    gc_pidfile = tmp_path / "grandchild.pid"
+    script = tmp_path / "fork_holder_exit.py"
+    script.write_text(_FORK_PIPE_HOLDER_EXIT, encoding="utf-8")
+    argv = [sys.executable, str(script), str(gc_pidfile)]
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(RuntimeError, match="drain timed out"):
+            _run_child_process(argv, b"", 30)
+        elapsed = time.monotonic() - started
+
+        assert elapsed < _DRAIN_JOIN_S + 5, (
+            "the post-reap drain join must be BOUNDED to _DRAIN_JOIN_S -- reverting it to an "
+            "unbounded `t_out.join(); t_err.join()` makes read() block on the grandchild's "
+            "held pipe forever, so @pytest.mark.timeout above fails this test (hang -> fail) "
+            "instead of it returning here"
+        )
+    finally:
+        _reap_gc(gc_pidfile)
+
+
+@pytest.mark.serial
+@pytest.mark.timeout(30)
+@pytest.mark.xfail(
+    strict=True,
+    reason="Option B follow-up: spawn-hook fork()'d grandchild is not yet reaped",
+)
+def test_run_child_process_should_reap_forked_grandchild_when_hook_stopped(tmp_path, monkeypatch):
+    from agent_runner._plugin_sandbox import _run_child_process
+
+    if not hasattr(os, "fork"):
+        pytest.skip("no os.fork on this platform -- POSIX-only property")
+
+    gc_pidfile = tmp_path / "grandchild.pid"
+    script = tmp_path / "fork_holder_sleep.py"
+    script.write_text(_FORK_PIPE_HOLDER_SLEEP, encoding="utf-8")
+    argv = [sys.executable, str(script), str(gc_pidfile)]
+
+    def _raise_ki_once_gc_recorded(*_a, **_k):
+        for _ in range(300):
+            if gc_pidfile.exists() and gc_pidfile.read_text().strip():
+                break
+            time.sleep(0.05)
+        raise KeyboardInterrupt("stop during trampoline wait")
+
+    monkeypatch.setattr(_plugin_sandbox, "wait_exit", _raise_ki_once_gc_recorded)
+
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            _run_child_process(argv, b"", 30)
+
+        gc_pid = int(gc_pidfile.read_text())
+
+        assert _poll_until(lambda: not _alive(gc_pid), timeout_s=2), (
+            "the hook-fork()'d grandchild was reaped -- Option B (subtree reap) has landed; "
+            "remove this xfail marker and the Item 4 follow-up"
+        )
+    finally:
+        _reap_gc(gc_pidfile)

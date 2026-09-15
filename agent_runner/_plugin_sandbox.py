@@ -33,6 +33,17 @@ _MAX_STDERR_BYTES = 8 * 1024  # hard read cap; a runaway child can't OOM the sup
 _REF_CAP = 256
 _STDERR_CAP = 512
 
+# Total wall budget for draining a confined child's pipes AFTER it is reaped. A
+# process the hook itself fork()'d inherits the child's stdout/stderr and can hold
+# them open past the child's own death, so the drain join is BOUNDED, not
+# unbounded -- otherwise a single such pipe-holder stalls the stop forever. The
+# pair of joins shares ONE absolute deadline (not _DRAIN_JOIN_S each), and
+# _DRAIN_JOIN_S + 3 <= _lifecycle._PID_SIGNAL_GRACE_S leaves >=3 s of the
+# stop-confirm window for the rest of the unwind (pinned by
+# tests/invariants/test_timeout_budget_invariant.py; a literal mirror -- this
+# module must never import _lifecycle in production).
+_DRAIN_JOIN_S = 2
+
 # The child's environment is built default-DENY from this allowlist -- NOT copied
 # from the parent's, which holds the real agent secrets (ANTHROPIC_*, and every
 # *_API_KEY/*_TOKEN/*_SECRET agent_runtime injects). A confined plugin is Python
@@ -260,7 +271,15 @@ def _run_child_process(
     SAME ABSOLUTE deadline so it never shortens the hook's budget. The whole wait
     is wrapped so the confined child NEVER outlives its parent: any BaseException
     (a round ``KeyboardInterrupt``, a timeout, an interrupt) kills and reaps the
-    child before propagating."""
+    child before propagating.
+
+    A process the hook itself ``fork()``s is NOT reaped (that child has no process
+    group of its own -- see the Option-B follow-up), and it can inherit and hold
+    the child's stdout/stderr open past the child's own death; so the drain joins
+    are BOUNDED (``_DRAIN_JOIN_S``, one absolute deadline across the pair) at BOTH
+    the normal-exit tail and the ``BaseException`` cleanup -- such a pipe-holder can
+    never stall the parent. On the normal path a timed-out drain surfaces as a
+    ``RuntimeError`` the seam isolates as ``hook_failed``."""
     import threading
 
     proc = subprocess.Popen(
@@ -272,8 +291,17 @@ def _run_child_process(
     )
     out_box: list[bytes] = []
     err_box: list[bytes] = []
-    t_out = threading.Thread(target=_drain_capped, args=(proc.stdout, _MAX_WIRE_BYTES + 1, out_box))
-    t_err = threading.Thread(target=_drain_capped, args=(proc.stderr, _MAX_STDERR_BYTES, err_box))
+    # daemon=True is load-bearing, not cosmetic: nothing in agent_runner/ calls
+    # os._exit, so a non-daemon drain thread still blocked on a fork()'d
+    # pipe-holder's read() would be joined by threading._shutdown() at interpreter
+    # exit and re-hang the stop the bounded join below just rescued. Matches the
+    # repo's other pump threads (remote_relay._pump, agent_runtime._write_stdin).
+    t_out = threading.Thread(
+        target=_drain_capped, args=(proc.stdout, _MAX_WIRE_BYTES + 1, out_box), daemon=True
+    )
+    t_err = threading.Thread(
+        target=_drain_capped, args=(proc.stderr, _MAX_STDERR_BYTES, err_box), daemon=True
+    )
     t_out.start()
     t_err.start()
     try:
@@ -297,11 +325,17 @@ def _run_child_process(
     except BaseException:
         proc.kill()
         proc.wait()
-        t_out.join()
-        t_err.join()
+        join_deadline = SYSTEM_CLOCK.monotonic() + _DRAIN_JOIN_S
+        t_out.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
+        t_err.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
         raise
-    t_out.join()
-    t_err.join()
+    join_deadline = SYSTEM_CLOCK.monotonic() + _DRAIN_JOIN_S
+    t_out.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
+    t_err.join(max(0.0, join_deadline - SYSTEM_CLOCK.monotonic()))
+    if t_out.is_alive() or t_err.is_alive():
+        raise RuntimeError(
+            "drain timed out: a process the hook forked still holds its output pipe (not reaped)"
+        )
     return proc.returncode, out_box[0], err_box[0]
 
 

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `agent-runner kill` now reaps a stuck round's detached descendants (a child that `setsid()`'d off its process group) the same way `serve stop` already does, so a forced stop never leaves an orphan behind.
-- A stop (`SIGTERM` / `serve stop`) during a sandboxed third-party spawn hook, or during a plugin-requested `defer`, now takes effect immediately instead of after up to 30 s — and the confined hook's child process is always reaped, never left running.
+- A stop (`SIGTERM` / `serve stop`) during a sandboxed third-party spawn hook, or during a plugin-requested `defer`, now takes effect immediately instead of after up to 30 s — and the confined hook's child process is always reaped, never left running. A background process the hook itself forks is not reaped; its abandoned output pipe is dropped after a bounded 2 s drain wait (surfaced as `hook_failed`) rather than stalling the stop.
 
 ## [0.3.5] - 2026-09-15
 
