@@ -311,6 +311,7 @@ The transforms `migrate` applies (generated from the registry):
 - unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_budget_s', 'round_log_retention', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
 - unknown [vcs] key(s) rejected in 0.2.13; delete them (allowed: ['dirty_action', 'stash_idempotency_s'])
 - unknown [monitor] key(s) rejected in 0.2.13; delete them (allowed: ['anomaly_repetitive_threshold', 'anomaly_repetitive_window', 'auth_fail_hint', 'auth_fail_patterns', 'auto_stop_on', 'host_health', 'remote_failure_tolerance_s', 'round_progress_interval_s', 'supervisor_stale_threshold_s'])
+- unknown [plugins] key(s) rejected in 0.3.9; delete them (allowed: ['disable'])
 - [phases] key(s) ['<name>'] must be phase sub-tables ([phases.<name>]); only 'list'/'phase_policy' are scalar [phases] fields
 - unknown [phases.<name>.prompt] key(s) rejected in 0.2.13; delete them (allowed: ['files'])
 - [agent] prompt_arg_template has no {prompt} placeholder; the prompt is never delivered to the agent — add {prompt} to one of the argv tokens

@@ -575,6 +575,82 @@ Flat, and expected: no new dependency (base install stays `psutil>=5.9` only). T
 
 `test_round_alloc_growth.py` green, unmodified harness. The event_log refactor is behavior-preserving — the follow loop's per-drain offset dict is the same bounded per-poll state the pre-refactor tailers already carried, not new retained state — and the backlog-decision changes touch commit-time and detector-arm paths, not any per-round allocation.
 
+## 0.3.8 → 0.3.9
+
+Plugin surface subtraction: dropped 6 zero-producer `PluginManifest` fields
+(`pre_round_hooks`, `context_enrichers`, `serve_startup_hooks`, `spawn_hooks`,
+`detectors`, `event_kinds`), the `DirtyHandler` seam, the whole third-party
+sandbox subsystem (`_plugin_sandbox.py`, `_sandbox_probe.py`,
+`_plugin_checksum.py`, the opt-in `[sandbox]` extra), and the plugin-owned-paths
+registry — none had a real producer. Same macOS harness (§ methodology above),
+comparing **v0.3.8** = `10a665b` (remeasured fresh in a throwaway worktree this
+session, same interpreter) against **0.3.9**, the tip of this branch.
+
+### 1. Import/startup RSS
+
+| | v0.3.8 (remeasured) | 0.3.9 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.45 MB | 23.44 MB | ~0 MB (flat, within noise) |
+| RSS range | 23.31–23.64 MB | 23.28–23.64 MB | |
+| `sys.modules` count | 211 | 211 | +0 |
+
+Honestly flat, not a drop — for the same reason this page already recorded
+when the sandbox subsystem was *added* in 0.3.2: it was always behind the
+opt-in `[sandbox]` extra, and its trampoline/probe/checksum modules import
+lazily (only when a sandboxed spawn hook actually runs), so they were never
+on the `import agent_runner.cli` cold-startup graph this axis measures —
+removing them can't move a number they never contributed to. A direct
+`sys.modules` set diff (not just the count) confirms it: the `agent_runner.*`
+module set `import agent_runner.cli` loads is byte-for-byte identical, 70
+modules, before and after. This page's previously-recorded v0.3.8 figure
+(23.65 MB / 212 modules, a different measurement session) differs from the
+23.45 MB / 211 remeasured here by less than the page's own documented
+±0.2–0.4 MB run-to-run noise band — sampling variance, not a regression.
+
+### 2. Module count, source LOC, largest module
+
+Tracked source only, both sides via `git ls-files`/`git ls-tree` — NOT a
+working-tree `find`, which on the 0.3.9 side would silently count the
+gitignored generated `agent_runner/_version.py` (24 lines) that a fresh
+checkout of the v0.3.8 tag doesn't have, understating the real delta by
+exactly that file.
+
+| | v0.3.8 | 0.3.9 | Δ |
+|---|---|---|---|
+| `.py` files | 86 | 81 | **−5** |
+| total LOC | 22,257 | 20,225 | **−2,032 (−9%)** |
+| largest module | `cli/_serve_round.py`, 991 | `migrations.py`, 998 | n/a — different module |
+
+This is where the subtraction actually shows up. `_plugin_sandbox.py`,
+`_sandbox_probe.py`, `_plugin_checksum.py`, the `SpawnHook`/`DirtyHandler`
+seams, and the owned-paths registry are gone from `agent_runner/`, alongside
+~700 LOC of their tests (not counted in this source-only table).
+`migrations.py` becomes the release's largest module at 998/1000 lines — the
+0.3.9 removal-migration entries pushed it close to the ceiling
+`tests/invariants/test_module_sizes.py` enforces; a split is a housekeeping
+item for whichever future release next grows it.
+
+### 3. Base dependencies
+
+Unchanged base: `psutil>=5.9` is still the only runtime dependency. 0.3.9
+also drops the opt-in `[sandbox]` extra (`py-landlock`/`pyseccomp`)
+entirely — the third-party trampoline that extra served no longer exists, so
+there is nothing left to opt into.
+
+### 4. Per-round allocation growth
+
+`test_round_alloc_growth.py` green, unmodified harness. No per-round reader
+changed shape this release — the subtraction removes dispatch branches
+(spawn-hook check, dirty-handler dispatch, sandbox-mode gate) rather than
+adding any.
+
+### Constrained-host (honesty)
+
+Dev-host-relative (macOS) numbers only, same methodology as every release
+since 0.2.17. No constrained-host-specific claim this release — the
+subtraction is host-independent code removal, not a runtime-behavior change
+under pressure.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:

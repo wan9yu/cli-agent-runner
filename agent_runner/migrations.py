@@ -16,6 +16,7 @@ from agent_runner.config import (
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
     _PHASE_PROMPT_ALLOWED_FIELDS,
+    _PLUGINS_ALLOWED_FIELDS,
     _PROMPT_ALLOWED_FIELDS,
     _RUNTIME_ALLOWED_FIELDS,
     _SCHEDULE_ALLOWED_FIELDS,
@@ -27,6 +28,10 @@ from agent_runner.config import (
 # ONLY a legacy key isn't double-reported as both a rename AND an unknown key.
 _RUNTIME_LEGACY_FIELDS = frozenset({"round_timeout_per_phase", "rate_limit_action"})
 _VCS_LEGACY_FIELDS = frozenset({"orphan_action"})
+# 0.3.9: sandbox/pin/spawn_override_allow each get their own dedicated,
+# specifically-worded Migration below -- excluded here so a config using one
+# isn't ALSO reported by the generic [plugins] unknown-key check.
+_PLUGINS_LEGACY_FIELDS = frozenset({"sandbox", "pin", "spawn_override_allow"})
 
 # [plugins] disable used to key on a hook's OWN .name (e.g. the PostRoundHook
 # class's `name` attribute); the PluginManifest ABI disables by the owning
@@ -785,6 +790,17 @@ MIGRATIONS: list[Migration] = [
         detect=lambda p: bool(set(_table(p, "monitor")) - _MONITOR_ALLOWED_FIELDS),
         apply=None,
         describe=_unknown_key_desc("monitor", _MONITOR_ALLOWED_FIELDS, year="0.2.13"),
+    ),
+    # 0.3.9: [plugins]'s `.raw` catch-all is gone -- any key it used to
+    # silently absorb is now rejected outright, like every sibling table.
+    Migration(
+        detect=lambda p: bool(
+            set(_table(p, "plugins")) - _PLUGINS_ALLOWED_FIELDS - _PLUGINS_LEGACY_FIELDS
+        ),
+        apply=None,
+        describe=_unknown_key_desc(
+            "plugins", _PLUGINS_ALLOWED_FIELDS, legacy=_PLUGINS_LEGACY_FIELDS, year="0.3.9"
+        ),
     ),
     Migration(
         detect=lambda p: bool(_phases_scalar_keys(p)),

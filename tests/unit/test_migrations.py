@@ -568,6 +568,48 @@ def test_renamed_claude_plugin_disable_name_should_be_flagged_manual_when_migrat
     assert any("claude_rate_limit" in m and "'claude'" in m for m in r.manual)
 
 
+@pytest.mark.parametrize(
+    ("text", "needle"),
+    [
+        ('[plugins]\nsandbox = "prefer"\n', "plugins.sandbox"),
+        ('[plugins]\npin = { my_plugin = "sha256:abc" }\n', "plugins.pin"),
+        ('[plugins]\nspawn_override_allow = ["my_hook"]\n', "plugins.spawn_override_allow"),
+    ],
+    ids=["sandbox", "pin", "spawn_override_allow"],
+)
+def test_removed_plugins_sandbox_key_should_be_flagged_manual_when_migrated(text, needle):
+    """0.3.9 dropped the third-party sandbox trampoline's three [plugins] keys
+    with no replacement -- detect() must actually FIRE on each (not just be
+    described in the registry) and route to `manual`, never `applied`."""
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert any(needle in m and "removed 0.3.9" in m for m in r.manual)
+    assert r.new_text == _stamped(text)  # manual-only: the key is left in place
+
+
+def test_removed_plugins_raw_leftover_key_should_be_flagged_manual_when_migrated():
+    """0.3.9 dropped [plugins]'s `.raw` forward-compat catch-all: any key that
+    used to be silently absorbed into it (anything other than `disable` and the
+    three sandbox keys above, each covered by their own dedicated case) is now
+    an unknown key -- the generic [plugins] unknown-key detector must fire."""
+    text = '[plugins]\nmy_plugin_setting = "value"\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert any("my_plugin_setting" in m and "[plugins]" in m and "0.3.9" in m for m in r.manual)
+
+
+def test_removed_plugins_sandbox_key_should_not_double_report_via_generic_detector():
+    """sandbox/pin/spawn_override_allow are excluded from the generic [plugins]
+    unknown-key check (_PLUGINS_LEGACY_FIELDS) so a config using only one of
+    them is reported exactly once, by its own dedicated Migration."""
+    text = '[plugins]\nsandbox = "prefer"\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert sum("sandbox" in m for m in r.manual) == 1
+
+
 def test_migrate_should_stamp_schema_version_one_when_absent():
     text = '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
 

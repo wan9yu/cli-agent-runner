@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `PluginManifest` narrows to 3 fields (`name`, `post_round_hooks`, `cooperative_stop`) — dropped 6 zero-producer hook seams, the `DirtyHandler` seam (dirty-tree resolution is now plain core), the sandbox subsystem, and the owned-paths registry, all with zero real producers.
+- `sigterm_cooperative: bool` is now typed `cooperative_stop: Literal["SIGTERM", "SIGINT"] | None`: `claude` now drains on SIGINT (SIGTERM abandoned its turn), `gemini`/`pi` stay on SIGTERM; the hard-wall kill path stays SIGTERM-first regardless.
+- The `claude` builtin plugin's manifest/entry-point name changed from `claude_rate_limit` to `claude` (`agent-runner migrate` flags any `[plugins] disable` entry still naming the old value).
+- `peek --json` schema bumps to `2.6`.
+
+### Removed
+- `[plugins]` `sandbox`/`pin`/`spawn_override_allow`/`raw` config keys and `[runtime]`/`[phases.<name>]` `disable_pre_round_hooks` — run `agent-runner migrate` before upgrading.
+
 ## [0.3.8] - 2026-09-16
 
 ### Changed

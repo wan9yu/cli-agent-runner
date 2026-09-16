@@ -7,6 +7,7 @@ are pinned once here instead of in each plugin's own test file.
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,20 @@ def test_terminal_json_record_should_not_be_evicted_when_followed_by_blank_flood
     log.write_text('{"type":"terminal","n":9}\n' + "\n" * (_TAIL_LINES + 100), encoding="utf-8")
 
     assert list(json_events(log)) == [{"type": "terminal", "n": 9}]
+
+
+def test_json_events_should_not_split_a_line_on_embedded_line_separator(tmp_path: Path) -> None:
+    """A JSON string may legally contain a raw U+2028 LINE SEPARATOR / U+2029
+    PARAGRAPH SEPARATOR character unescaped -- unlike control chars, JSON's
+    spec permits them literally inside a string. ``str.splitlines()``
+    (Unicode-aware) would wrongly cut the record there, turning one valid
+    JSON line into unparseable fragments. This reader must split on a literal
+    newline only, the same discipline plain text-mode file iteration
+    (``round_log.open_round_log``) already gives it -- unlike
+    ``str.splitlines()``, file iteration does NOT treat U+2028/U+2029 as a
+    line terminator."""
+    payload = {"type": "note", "text": "para one line two para two"}
+    log = tmp_path / "R1-test.log"
+    log.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert list(json_events(log)) == [payload]
