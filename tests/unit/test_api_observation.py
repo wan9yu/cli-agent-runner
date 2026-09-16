@@ -615,7 +615,7 @@ def test_emit_should_include_disabled_plugins_block_when_json_mode(
     assert isinstance(out["plugins"]["disabled"], list)
 
 
-def test_emit_should_include_sigterm_cooperative_plugins_block_when_json_mode(
+def test_emit_should_include_cooperative_stop_plugins_block_when_json_mode(
     tmp_git_repo: Path,
     capsys,
 ) -> None:
@@ -636,7 +636,8 @@ def test_emit_should_include_sigterm_cooperative_plugins_block_when_json_mode(
     emit(state, json_mode=True)
 
     out = json.loads(capsys.readouterr().out)
-    # Typed cooperative_stop reporting: {preset: signal} under the kept-stable
-    # key (no peek schema bump for a value change under an existing key).
-    assert "sigterm_cooperative" in out["plugins"]
-    assert isinstance(out["plugins"]["sigterm_cooperative"], dict)
+    # Typed cooperative_stop reporting: {preset: signal} under the renamed
+    # peek key (was sigterm_cooperative -- self-contradictory once the value
+    # became a signal-per-preset map; no schema bump, 2.6 already covers it).
+    assert "cooperative_stop" in out["plugins"]
+    assert isinstance(out["plugins"]["cooperative_stop"], dict)

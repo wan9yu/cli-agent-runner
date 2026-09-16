@@ -1,7 +1,6 @@
-"""Executable config migrations. A registry of transforms; each detects a
-removed/renamed key in the parsed TOML and either renames it on the raw file
-text (auto) or reports a manual instruction. Rewriting is targeted regex on the
-raw text so comments and formatting are preserved — no TOML writer dependency."""
+"""Executable config migrations: a registry of transforms, each detecting a
+removed/renamed key in the parsed TOML and either rewriting it (targeted regex on
+raw text, so comments/formatting survive -- no TOML writer) or reporting a manual fix."""
 
 from __future__ import annotations
 
@@ -24,23 +23,20 @@ from agent_runner.config import (
 )
 
 # Legacy keys already handled by their own dedicated (auto-fixable) Migration
-# below — excluded from the generic "unknown key" detectors so a config using
-# ONLY a legacy key isn't double-reported as both a rename AND an unknown key.
+# below -- excluded from the generic "unknown key" detectors so a legacy-only
+# config isn't double-reported as both a rename AND an unknown key.
 _RUNTIME_LEGACY_FIELDS = frozenset({"round_timeout_per_phase", "rate_limit_action"})
 _VCS_LEGACY_FIELDS = frozenset({"orphan_action"})
-# 0.3.9: sandbox/pin/spawn_override_allow each get their own dedicated,
-# specifically-worded Migration below -- excluded here so a config using one
-# isn't ALSO reported by the generic [plugins] unknown-key check.
+# 0.3.9: these each get their own dedicated, specifically-worded Migration
+# below -- excluded here so a config using one isn't ALSO reported generically.
 _PLUGINS_LEGACY_FIELDS = frozenset({"sandbox", "pin", "spawn_override_allow"})
 
 # [plugins] disable used to key on a hook's OWN .name (e.g. the PostRoundHook
 # class's `name` attribute); the PluginManifest ABI disables by the owning
-# plugin's manifest name instead. Renaming this automatically would mean
-# guessing operator intent from an arbitrary list-value string -- the same
-# reasoning that keeps unknown-key rejection manual elsewhere in this file --
-# so this is a MANUAL-only instruction (see the Migration below).
+# plugin's manifest name instead. Auto-renaming would mean guessing operator
+# intent from an arbitrary list-value string, so this is MANUAL-only (below).
 _OLD_PLUGIN_DISABLE_NAMES = {
-    # Terminal names are the CURRENT plugin (manifest) names — claude's is
+    # Terminal names are the CURRENT plugin (manifest) names -- claude's is
     # "claude" as of the 0.3.9 rename (was "claude_rate_limit"), so the ancient
     # hook-level name maps straight to the final name, not the intermediate one.
     "claude_error_detector": "claude",
@@ -51,9 +47,8 @@ _OLD_PLUGIN_DISABLE_NAMES = {
 }
 
 # 0.3.9: the claude builtin plugin's manifest+entry-point name went
-# claude_rate_limit -> claude (so its cooperative_stop="SIGINT" and
-# sigterm_grace_s join onto the "claude" agent binary). A config disabling the
-# old name in [plugins] disable would otherwise become silently ineffective.
+# claude_rate_limit -> claude, so a config disabling the old name in
+# [plugins] disable would otherwise become silently ineffective.
 _RENAMED_PLUGIN_DISABLE_NAMES = {"claude_rate_limit": "claude"}
 
 
@@ -192,10 +187,9 @@ _TABLE_HEADER = re.compile(r"^\s*\[(?P<name>[^\]]+)\]")
 
 def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], str]:
     """Rename `old = ...` to `new = ...` inside [table]. `table` may be a
-    compiled pattern fullmatched against the current `[header]` name (e.g.
-    `re.compile(r"phases\\.[^.\\]]+")` for a per-phase walker) — every matching
-    table's hit is rewritten. A literal str `table` keeps the original
-    exactly-one-hit-or-refuse discipline."""
+    compiled pattern fullmatched against the current `[header]` name (e.g. a
+    per-phase walker) — every matching table's hit is rewritten. A literal
+    str `table` keeps the original exactly-one-hit-or-refuse discipline."""
     assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=)")
 
     def _table_matches(name: str) -> bool:
@@ -226,12 +220,11 @@ def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], 
 
 
 def _drop_key(key: str, table: str | re.Pattern) -> Callable[[str], str]:
-    """Delete `key = ...` (the whole line) from [table] -- for a key that was
-    removed with no replacement (contrast `_rename_key`, which keeps the
-    value under a new name). Same table-matching + single-hit-or-refuse
-    discipline as `_rename_key`: a Pattern `table` drops every matching
-    table's hit, a literal str `table` refuses (leaves the line in place,
-    routing the caller to a manual report) unless there is exactly one hit."""
+    """Delete `key = ...` (the whole line) from [table] -- for a key removed
+    with no replacement (contrast `_rename_key`, which keeps the value under
+    a new name). Same table-matching + single-hit-or-refuse discipline as
+    `_rename_key`: a Pattern `table` drops every matching hit, a literal str
+    `table` refuses (routing the caller to manual) unless there's one hit."""
     assign = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=")
 
     def _table_matches(name: str) -> bool:
@@ -263,10 +256,9 @@ def _drop_key(key: str, table: str | re.Pattern) -> Callable[[str], str]:
 
 def _relocate_key(old: str, new: str, from_table: str, to_table: str) -> Callable[[str], str]:
     """Move `old = value` out of [from_table] into [to_table] as `new = value`,
-    creating [to_table] (appended at EOF) if it doesn't already exist. Refuses
-    (returns text unchanged, routing to manual) unless the source line is a
-    single unambiguous hit in [from_table] — same refusal discipline as
-    _rename_key."""
+    creating [to_table] (appended at EOF) if absent. Refuses (returns text
+    unchanged, routing to manual) unless the source line is a single
+    unambiguous hit in [from_table] — same refusal discipline as _rename_key."""
     assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=[ \t]*)(?P<rest>.*)$")
 
     def _apply(text: str) -> str:
@@ -316,22 +308,20 @@ def _relocate_key(old: str, new: str, from_table: str, to_table: str) -> Callabl
 def _wrap_bare_string_list(
     key: str, table: str | re.Pattern, *, skip_space: bool = False
 ) -> Callable[[str], str]:
-    """Wrap `key = "val"` into `key = ["val"]` inside [table], preserving the
-    quote style and any inline comment. Auto-fix for a single-value list field
-    (command="claude", list="dev", files="main.md"). `table` may instead be a
-    compiled pattern full-matched against the current `[header]` name (e.g. a
-    walker over `[phases.<name>.agent]`) — in that case EVERY matching
-    single-line assignment across matching tables is wrapped; the plain-string
-    form keeps its exactly-one-hit refusal.
+    """Wrap `key = "val"` into `key = ["val"]` inside [table], preserving quote
+    style and any inline comment -- the auto-fix for a single-value list field
+    (command="claude", list="dev"). `table` may instead be a compiled pattern
+    full-matched against the current `[header]` (e.g. a walker over
+    `[phases.<name>.agent]`), wrapping EVERY matching hit; a plain-string
+    `table` keeps the exactly-one-hit refusal.
 
-    `skip_space=True` leaves a space-bearing value's line untouched (the walker
-    over N sibling tables would otherwise auto-wrap a DIFFERENT phase's unsafe
-    `command = "claude -p"` just because some OTHER phase's space-free value
-    tripped this migration's detect — silently producing a technically-valid
-    but semantically-wrong single-token argv while a sibling manual-only
-    Migration also reports it. Used for command/prompt_arg_template, where a
-    space is the argv-splitting footgun the manual-only Migration owns; not
-    used for list/files, where a space is just an ordinary value character."""
+    `skip_space=True` leaves a space-bearing value untouched so a walker over
+    N sibling tables doesn't auto-wrap a DIFFERENT phase's unsafe
+    `command = "claude -p"` into a wrong single-token argv just because some
+    OTHER phase's space-free value tripped detect. Used for
+    command/prompt_arg_template (a space there is the argv-splitting footgun
+    a sibling manual-only Migration owns); not list/files, where a space is
+    just an ordinary value character."""
     assign = re.compile(
         rf"^(?P<indent>[ \t]*){re.escape(key)}(?P<sp>[ \t]*=[ \t]*)"
         rf'(?P<q>["\'])(?P<val>.*?)(?P=q)(?P<rest>.*)$'
@@ -401,10 +391,9 @@ def _unknown_key_desc(
     """Build a `parsed -> str` description for an unknown-key-under-[table]
     Migration: names the exact offending key(s) found in THIS config, and
     degrades to a generic (still correct) instruction when called with no
-    config in hand (docgen's static registry render calls every describe with
-    `{}`, where there is nothing yet to name). `legacy` excludes key names
-    already reported by their own dedicated rename Migration, so a config
-    using only a legacy key isn't ALSO reported here."""
+    config in hand (docgen's static registry render calls every describe
+    with `{}`). `legacy` excludes key names already reported by their own
+    dedicated rename Migration, so a legacy-only config isn't ALSO reported."""
 
     def _describe(parsed: dict) -> str:
         bad = sorted(set(_table(parsed, table)) - allowed - legacy)
@@ -426,12 +415,10 @@ def _unknown_key_desc_nested(
 ) -> Callable[[dict], str]:
     """Nested-table variant of ``_unknown_key_desc``: ``_table`` only reads a
     TOP-LEVEL key, so this walks ``path`` (e.g. ``("monitor", "host_health")``)
-    through nested ``_table`` calls before diffing against ``allowed``.
-    ``label`` is the dotted-bracket name in the message (e.g.
-    ``"monitor.host_health"``). MANUAL by design like every sibling
-    unknown-key entry: auto-deleting an unknown threshold key would silently
-    discard the operator's intended value — the exact harm this rejection
-    exists to prevent."""
+    through nested ``_table`` calls before diffing against ``allowed``, with
+    ``label`` as the dotted-bracket name in the message. MANUAL by design like
+    every sibling: auto-deleting an unknown threshold key would silently
+    discard the operator's intended value — the harm this rejection prevents."""
 
     def _describe(parsed: dict) -> str:
         cur = parsed
@@ -538,9 +525,8 @@ MIGRATIONS: list[Migration] = [
         ),
         advisory=True,  # a valid, permanent alias — never blocks `upgrade`
     ),
-    # --- 0.3.9: the third-party sandbox trampoline + spawn seam is removed
-    # (0 third-party plugins ever existed to need it) — its three [plugins]
-    # keys are gone with no replacement. MANUAL-only: `pin`/`spawn_override_allow`
+    # --- 0.3.9: the third-party sandbox trampoline + spawn seam is removed (0
+    # third-party plugins ever existed) — MANUAL-only: `pin`/`spawn_override_allow`
     # can be multi-line TOML values a single-line auto-drop could corrupt. ---
     Migration(
         detect=lambda p: "sandbox" in _table(p, "plugins"),
@@ -634,11 +620,9 @@ MIGRATIONS: list[Migration] = [
         ),
     ),
     # 0.3.9 claude plugin rename. MANUAL-only, matching the sibling above: a
-    # specific quoted element inside a list VALUE isn't something the
-    # key-anchored rewrite helpers here touch (auto-guessing intent from a
-    # list-value string is exactly what those helpers avoid). Reported by
-    # `migrate` and blocks `upgrade`, so `disable = ["claude_rate_limit"]` is
-    # never left silently ineffective after the rename.
+    # quoted element inside a list VALUE isn't something the key-anchored
+    # rewrite helpers touch. Reported by `migrate` and blocks `upgrade`, so
+    # `disable = ["claude_rate_limit"]` is never left silently ineffective.
     Migration(
         detect=lambda p: bool(_renamed_plugin_disable_names(p)),
         apply=None,
@@ -753,10 +737,9 @@ MIGRATIONS: list[Migration] = [
             "lower the threshold or raise the window so the detector can fire"
         ),
     ),
-    # --- Strictness completion: table-as-scalar, base-table unknown
-    # keys, [phases] scalar keys, per-phase prompt unknown keys, argv {prompt}
-    # placeholder. Every rejection below has a config.py counterpart; see
-    # config.py's docstring cross-references for the exact raise site. ---
+    # --- Strictness completion: table-as-scalar, base-table unknown keys,
+    # [phases] scalar keys, per-phase prompt unknown keys, argv {prompt}
+    # placeholder -- each rejection below has a config.py raise-site counterpart. ---
     Migration(
         detect=lambda p: bool(_scalar_tables(p)),
         apply=None,
@@ -851,11 +834,9 @@ MIGRATIONS: list[Migration] = [
         )
         for old, new, sub in _HOST_HEALTH_RELOCATIONS
     ],
-    # --- Strictness completion: [monitor.host_health] unknown keys (any key
-    # that isn't one of the three sub-tables above, or wasn't one of the 9
-    # relocated names either). MANUAL like every sibling above — auto-deleting
-    # an unknown threshold key would silently discard the operator's intended
-    # value, the exact harm this rejection exists to prevent. ---
+    # --- Strictness completion: [monitor.host_health] unknown keys (not one
+    # of the three sub-tables or the 9 relocated names). MANUAL like every
+    # sibling above -- auto-deleting a threshold key would discard operator intent. ---
     Migration(
         detect=lambda p: bool(
             set(_table(_table(p, "monitor"), "host_health")) - _MONITOR_HOST_HEALTH_ALLOWED_FIELDS
@@ -921,24 +902,21 @@ def _run_migrations_pass(text: str, parsed: dict) -> tuple[str, list[str], list[
 
 # A rewrite can expose a footgun that only a re-parse reveals, so migration runs
 # to a fixpoint (see run_migrations). Generous bound: each pass must apply at
-# least one NEW rewrite to continue, and the distinct footgun count is small — so
-# only a pathological apply/detect cycle could exhaust this.
+# least one NEW rewrite to continue, and the footgun count is small, so only a
+# pathological apply/detect cycle could exhaust this.
 _MAX_MIGRATION_PASSES = 12
 
 
 def run_migrations(text: str, parsed: dict) -> MigrationResult:
-    """Apply migrations to a FIXPOINT.
-
-    A single pass can rewrite one footgun into a shape that only THEN trips a
-    second detector — e.g. a bare-string ``prompt_arg_template = "-p"`` is wrapped
-    to ``["-p"]``, which the re-parse reveals has no ``{prompt}`` placeholder. A
-    one-shot pass would print the rewrite and exit clean on a config that still
-    won't ``load_config`` (``upgrade`` then proceeds on the false-clean and the
-    new serve exits 78). So re-parse the rewritten text and re-run detectors until
-    a pass applies no further rewrite; only that terminal pass's ``manual`` /
-    ``advisory`` reports are returned (an intermediate pass may flag a blocker a
-    later rewrite resolves). Bounded so an apply/detect cycle can't loop forever.
-    """
+    """Apply migrations to a FIXPOINT. A single pass can rewrite one footgun
+    into a shape that only THEN trips a second detector — e.g. a bare-string
+    ``prompt_arg_template = "-p"`` is wrapped to ``["-p"]``, which the re-parse
+    reveals has no ``{prompt}`` placeholder; a one-shot pass would exit clean
+    on a config that still won't ``load_config``. So re-parse and re-run
+    detectors until a pass applies no further rewrite; only that terminal
+    pass's ``manual``/``advisory`` reports are returned (an intermediate pass
+    may flag a blocker a later rewrite resolves). Bounded so an apply/detect
+    cycle can't loop forever."""
     new_text = text
     cur = parsed
     applied: list[str] = []
@@ -967,15 +945,12 @@ def _stamp_schema_version(text: str, parsed: dict) -> tuple[str, str | None]:
     """Stamp ``schema_version = <_CURRENT_SCHEMA_VERSION>``. A no-op (returns
     text unchanged, None) only when a top-level INTEGER ``schema_version`` is
     already current (``type(v) is int`` -- a bool is never "current" even
-    though ``True == 1`` in Python) or already NEWER (never downgrade a
-    config stamped by a future agent-runner).
-
-    Any other pre-existing top-level ``schema_version`` line (a stale int, a
-    string, a bool, ...) is REPLACED in place, mirroring ``_rename_key``'s
+    though ``True == 1``) or already NEWER (never downgrade a config stamped
+    by a future agent-runner). Any other pre-existing top-level
+    ``schema_version`` line is REPLACED in place, mirroring ``_rename_key``'s
     discipline -- never blindly prepended, or a non-canonical existing line
-    would leave two top-level ``schema_version`` keys behind (a duplicate key
-    is invalid TOML, so the next load would raise instead of the migrate run
-    reporting success). Only truly absent does this prepend a fresh line."""
+    would leave a duplicate key behind (invalid TOML). Only truly absent
+    does this prepend a fresh line."""
     version = parsed.get("schema_version")
     if type(version) is int and version >= _CURRENT_SCHEMA_VERSION:
         return text, None

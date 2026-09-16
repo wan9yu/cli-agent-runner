@@ -195,10 +195,11 @@ outright — an honest opt-out, not an empty-string-matches-everything trap.
 Type: int, default `10`, max `12`
 
 The SIGTERM→SIGKILL grace the round leader gives ITS AGENT — but only when
-the configured agent's preset declares `sigterm_cooperative = true` (the
-built-in `gemini` preset does; see `peek --json`'s `plugins.sigterm_cooperative`
-or `doctor`'s "cooperative presets" line). A non-cooperative agent (e.g.
-`claude`) always gets the fixed 5s grace regardless of this setting. Capped
+the configured agent's preset declares `cooperative_stop` (the built-in
+`gemini`/`pi` presets declare `SIGTERM`, `claude` declares `SIGINT`; see
+`peek --json`'s `plugins.cooperative_stop` or `doctor`'s "cooperative
+presets" line). An agent whose preset declares no `cooperative_stop` always
+gets the fixed 5s grace regardless of this setting. Capped
 at 12 — 3 s inside the supervisor's own 15 s wait for the round
 (`_ROUND_TERM_GRACE_S`) — a config above that is rejected at boot, not
 silently clamped: a grace longer than the supervisor waits for the leader
