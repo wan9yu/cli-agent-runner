@@ -557,6 +557,24 @@ Flat, and expected to be: no new dependency (base install stays `psutil>=5.9` on
 
 Dev-host-relative (macOS) numbers only. This is the release that finally exercises the write path this page has flagged as deferred since 0.3.3 (previously: "the 462 MB `memory.high` write stays Pi-gated") — it now ships, but still default-off and verified so far only against a fake cgroup-v2 tree (unit tests) and Linux CI (the E2E nudge test). The real smallest-field-host confirmation — the brake actually engaging under genuine memory pressure on the ~462 MB constrained host, and its effect on that host's swap behavior — stays deferred until that host is back online for a prerelease verification pass. Documented as deferred, not skipped as passing.
 
+## 0.3.7 → 0.3.8
+
+Two independent changes: the decided backlog directions (`auto_commit` owned-paths exclusion, the `events_oom_kill_delta` canonical alias, the `claude` preset arming the repetitive-anomaly detector — all new fields/branches on already-imported config, preset, and vcs modules) and the event_log read-layer consolidation (a behavior-preserving refactor: a new `agent_runner.event_log` module owns the `events-*.jsonl` read layout + offset tail machinery, shared by the CLI `events --tail`/`--since`, the monitor poll, and the throttle detectors, replacing three hand-rolled copies). Same macOS harness (§ methodology); the v0.3.7 figures are carried from its close-out row above (same harness).
+
+### 1. Import/startup RSS
+
+| | 0.3.7 | 0.3.8 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.72 MB | 23.65 MB | −0.07 MB (flat, within noise) |
+| RSS range | 23.61–23.92 MB | 23.47–23.75 MB | |
+| `sys.modules` count | 212 | 212 | +0 |
+
+Flat, and expected: no new dependency (base install stays `psutil>=5.9` only). The consolidation adds exactly one `agent_runner` module to the cold-startup graph — `agent_runner.event_log` — and `test_import_footprint.py`'s `EXPECTED_STARTUP_PKG_MODULES` allowlist gains that one entry (the only allowlist change this release). Total `sys.modules` is a wash because the relocated read core (`read_new`, moved out of `events.py`) is the same code under a new home, not additional code loaded; the three consumers each shed their own copy of the read/offset loop. The backlog-decision changes add no new import.
+
+### 2. Per-round allocation growth
+
+`test_round_alloc_growth.py` green, unmodified harness. The event_log refactor is behavior-preserving — the follow loop's per-drain offset dict is the same bounded per-poll state the pre-refactor tailers already carried, not new retained state — and the backlog-decision changes touch commit-time and detector-arm paths, not any per-round allocation.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:
