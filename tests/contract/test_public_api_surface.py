@@ -40,7 +40,6 @@ EXPECTED_API_TYPES = {
     "ServiceMode",
     "ServiceStatus",
     "Severity",
-    "SpawnDecision",
     "SystemMetrics",
     "select_path",
 }
@@ -55,13 +54,8 @@ EXPECTED_EVENTS_API = {
 EXPECTED_HOOKS_API = {
     "HookContext",
     "PostRoundHook",
-    "SpawnHook",
-    "SpawnView",
     "register_post_round_hook",
-    "register_spawn_hook",
     "post_round_hooks",
-    "spawn_hooks",
-    "collapse_spawn_decisions",
 }
 
 EXPECTED_MONITOR_API = {
@@ -205,15 +199,6 @@ EXPECTED_API_SURFACE = {
     "emit_memory_high_engaged",
     "emit_memory_high_released",
     "emit_memory_high_write_failed",
-    "emit_plugin_builtin_name_squat",
-    "emit_plugin_checksum_mismatch",
-    "emit_plugin_sandbox_degraded",
-    "emit_plugin_sandbox_kill",
-    # emit_plugin_spawn_decision / emit_plugin_spawn_override_ignored: the
-    # serve-admission SpawnHook seam's two events (the collapsed defer/skip
-    # verdict, and a non-allow-listed hook's blocking power being denied).
-    "emit_plugin_spawn_decision",
-    "emit_plugin_spawn_override_ignored",
     "emit_rate_limit_stop",
     "emit_round_cgroup_memory",
     "emit_round_container_orphan_risk",

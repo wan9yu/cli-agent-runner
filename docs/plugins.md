@@ -97,7 +97,7 @@ Its field set is stable across releases (additions only).
 
 ```json
 {
-  "schema_version": "2.5",
+  "schema_version": "2.6",
   "plugins": {
     "post_round_hooks": ["claude_rate_limit"],
     "disabled": [],
@@ -116,7 +116,7 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 {
   "event": "hook_failed",
   "hook_name": "<plugin's name attribute>",
-  "hook_kind": "post_round | spawn_hook",
+  "hook_kind": "post_round",
   "error_type": "<exception class>",
   "error_message": "<str(exc)>",
   "traceback": "<head 1KB + ... [truncated] ... + tail 1KB>"
@@ -151,18 +151,6 @@ echo "done: round complete" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
 
 These contracts are stable; agents in any language / framework can rely
 on them.
-
-### `[plugins]` additional first-class knobs
-
-```toml
-[plugins]
-disable = [...]                       # existing
-spawn_override_allow = ["<hook>"]     # NEW — hooks allowed to defer/skip a spawn
-sandbox = "prefer"                    # NEW — require | prefer | off
-
-[plugins.pin]                         # NEW — third-party checksum pins
-"<third_party_plugin_name>" = "sha256:<hex>"
-```
 
 ## Built-in post_round_hooks
 

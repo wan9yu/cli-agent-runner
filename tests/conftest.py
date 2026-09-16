@@ -23,18 +23,12 @@ def _isolate_plugin_registries():
     itself registers) and contains any registration it makes.
 
     Containers are copied at the container level (a fresh list/dict holding the
-    SAME element references) -- never element-deep-copied: the owner/builtin/
-    module dicts are keyed on ``id(handler)``, so cloning the handler objects
-    would change their identities and break the keying.
+    SAME element references) -- never element-deep-copied.
     """
     from agent_runner import _plugin_manifest, hooks
 
     registries: list = [
-        hooks._SPAWN_HOOKS,
         hooks._POST_ROUND_HOOKS,
-        hooks._SPAWN_HOOK_OWNER,
-        hooks._SPAWN_HOOK_BUILTIN,
-        hooks._SPAWN_HOOK_MODULE,
         _plugin_manifest._LOADED_MANIFESTS,
     ]
     saved = [reg.copy() if isinstance(reg, dict) else list(reg) for reg in registries]

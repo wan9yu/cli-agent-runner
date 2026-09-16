@@ -15,7 +15,6 @@ class DoctorReport:
     checks: list[startup_check.CheckResult]
     overlaps: list[phase_select.WindowOverlap]
     plan: list[dict]
-    sandbox: dict
     cgroup: dict
     sigterm_grace: dict
 
@@ -66,8 +65,6 @@ def _cgroup_report(cfg) -> dict:
 
 
 def cmd_doctor(args) -> int:
-    from agent_runner._sandbox_probe import doctor_snapshot
-
     cfg = cfg_from_args(args)
     is_cooperative = _plugin_manifest.is_cooperative_agent(cfg.agent.binary)
     sigterm_grace = {
@@ -81,7 +78,6 @@ def cmd_doctor(args) -> int:
         checks=startup_check.run_battery(cfg),
         overlaps=phase_select.find_phase_window_overlaps(cfg),
         plan=_plan(cfg, args.rounds),
-        sandbox=doctor_snapshot(cfg),
         cgroup=_cgroup_report(cfg),
         sigterm_grace=sigterm_grace,
     )
@@ -117,22 +113,6 @@ def _format(report: DoctorReport) -> str:
         else:
             where = step["phase"] or "base"
         lines.append(f"  round {step['round']}: {where}")
-    from agent_runner._sandbox_probe import TIER_B_PROTOCOLS
-
-    sb = report.sandbox
-    tier_detail = f" — {sb['unconfined_reason']}" if sb["unconfined_reason"] else ""
-    lines.append("sandbox:")
-    lines.append(f"  requested: {sb['requested']}")
-    lines.append(
-        f"  achieved_tier: {sb['achieved_tier']}{tier_detail}"
-        f" (confines: {', '.join(TIER_B_PROTOCOLS)})"
-    )
-    lines.append(f"  libseccomp_present: {sb['libseccomp_present']}")
-    hashes = sb["third_party_plugin_hashes"]
-    if hashes:
-        lines.append("  third-party plugin checksums (paste into [plugins.pin]):")
-        for name, digest in sorted(hashes.items()):
-            lines.append(f'    {name} = "{digest}"')
     cooperative = _plugin_manifest.cooperative_manifest_names()
     lines.append(f"cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
     sg = report.sigterm_grace

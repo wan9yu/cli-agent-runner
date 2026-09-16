@@ -43,9 +43,9 @@ def test_hooks_module_docstring_should_list_every_protocol_when_scanned() -> Non
 
     doc = hooks.__doc__ or ""
     protocols = _protocol_names()
-    words = {"Two": 2, "Three": 3, "Four": 4, "Five": 5, "Six": 6}
+    words = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5, "Six": 6}
 
-    m = re.search(r"\b(Two|Three|Four|Five|Six) Protocol-typed extension points\b", doc)
+    m = re.search(r"\b(One|Two|Three|Four|Five|Six) Protocol-typed extension points?\b", doc)
 
     assert m, "hooks.py docstring no longer states an extension-point count"
     assert words[m.group(1)] == len(protocols), (

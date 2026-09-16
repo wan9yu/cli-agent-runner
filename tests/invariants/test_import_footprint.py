@@ -72,9 +72,6 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner._emit",
         "agent_runner._emit.agent",
         "agent_runner._emit.memory",
-        # plugins: emit_plugin_sandbox_kill, re-exported by the _emit facade like
-        # its siblings -- one new module, no new transitive dependency.
-        "agent_runner._emit.plugins",
         "agent_runner._emit.rounds",
         "agent_runner._emit.serve",
         # _install/_lifecycle/_observe: api.py's split into a thin re-export
@@ -94,12 +91,6 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         # this adds the one leaf module, not a new transitive dependency.
         "agent_runner._notify",
         "agent_runner._observe",
-        # _plugin_sandbox: the serve-admission SpawnHook seam (cli/_serve_round)
-        # imports run_hook_sandboxed at module scope so the seam is monkeypatchable
-        # in place. It pulls only stdlib + already-loaded hooks/api_types (no
-        # bindings — those stay lazy inside the child's restrict path), so this
-        # adds the one module, not a new transitive dependency.
-        "agent_runner._plugin_sandbox",
         "agent_runner._plugin_scan",
         # _procwait: cli/_serve_round.py imports wait_exit at module scope for
         # the mid-round wait (0.3.4). It pulls only stdlib (os/select/

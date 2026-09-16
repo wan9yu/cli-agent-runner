@@ -16,7 +16,6 @@ buffer
 # agent_runner._plugin_manifest.PluginManifest
 name
 post_round_hooks
-spawn_hooks
 sigterm_cooperative
 
 # agent_runner._round_outcome.RoundOutcome
@@ -29,12 +28,6 @@ ran_agent
 usage_capable_by_agent
 newest_usage_ts_by_agent
 backoff_exponent_by_agent
-
-# agent_runner._sandbox_probe.SandboxProbe
-achieved_tier
-landlock_abi
-seccomp
-unconfined_reason
 
 # agent_runner.agent_runtime.RunResult
 exit_code
@@ -125,11 +118,6 @@ unit_file
 rate_limit
 system_managed
 
-# agent_runner.api_types.SpawnDecision
-action
-defer_s
-reason
-
 # agent_runner.api_types.SystemMetrics
 mem_total_mb
 mem_available_mb
@@ -150,7 +138,6 @@ phase
 checks
 overlaps
 plan
-sandbox
 cgroup
 sigterm_grace
 
@@ -204,9 +191,6 @@ phase_policy
 
 # agent_runner.config.models.PluginsConfig
 disable
-spawn_override_allow
-sandbox
-pin
 
 # agent_runner.config.models.Profile
 agent
@@ -306,10 +290,6 @@ dry_run
 anomaly_repetitive_window
 anomaly_repetitive_threshold
 vcs
-
-# agent_runner.hooks.SpawnView
-argv
-env
 
 # agent_runner.hooks.VcsHookView
 dirty_action

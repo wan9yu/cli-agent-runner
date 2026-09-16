@@ -63,15 +63,6 @@ dev = [
 e2e = [
     "pytest>=8",
 ]
-sandbox = [
-    # Opt-in confinement bindings for the third-party plugin-hook trampoline.
-    # Linux-only (Landlock + seccomp are Linux kernel features); a base install
-    # stays psutil-only and the trampoline degrades where they are absent.
-    # Exact pins: the confinement policy is safety-critical, so a silent upgrade
-    # must not change enforcement -- re-verify on every bump.
-    "py-landlock==0.1.1; sys_platform == 'linux'",
-    "pyseccomp==0.1.2; sys_platform == 'linux'",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_runner"]
@@ -94,10 +85,9 @@ extend-exclude = ["agent_runner/_version.py", ".vulture-whitelist.py"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "TID"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"subprocess".msg = "Only _plugin_sandbox.py, _procwait.py, _substrate.py, agent_runtime.py, api.py, cli/install_cmd.py, cli/_serve_round.py, cli/upgrade_cmd.py, lifecycle.py, metrics.py, monitor.py, remote_relay.py, scaffold.py, and vcs_state.py may use subprocess"
+"subprocess".msg = "Only _procwait.py, _substrate.py, agent_runtime.py, api.py, cli/install_cmd.py, cli/_serve_round.py, cli/upgrade_cmd.py, lifecycle.py, metrics.py, monitor.py, remote_relay.py, scaffold.py, and vcs_state.py may use subprocess"
 
 [tool.ruff.lint.per-file-ignores]
-"agent_runner/_plugin_sandbox.py" = ["TID251"]
 "agent_runner/_procwait.py" = ["TID251"]
 "agent_runner/agent_runtime.py" = ["TID251"]
 "agent_runner/vcs_state.py" = ["TID251"]

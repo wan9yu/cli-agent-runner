@@ -1,11 +1,8 @@
 """Plugin hook surface for agent-runner.
 
-Two Protocol-typed extension points loaded via setuptools entry_points at
+One Protocol-typed extension point loaded via setuptools entry_points at
 package import:
   * PostRoundHook   — runs after agent exits, after the round_end event
-  * SpawnHook       — runs at the serve admission gate, before a round spawns;
-                      a read-only view of the resolved spawn (argv + env NAMES)
-                      that may return proceed / defer / skip
 
 Each hook's failure is contained: runner wraps every call in try/except and
 emits a built-in ``hook_failed`` event with truncated traceback. A broken
@@ -15,25 +12,20 @@ Dirty-tree resolution (stash / ignore / auto_commit) is plain core, not a
 plugin extension point — see ``agent_runner.vcs_state.resolve_dirty_tree``.
 
 Public API:
-  * HookContext                — narrowed runtime context passed to all hooks
-  * PostRoundHook / SpawnHook — Protocols
-  * SpawnView / SpawnDecision   — the read-only spawn view + a SpawnHook's verdict
-  * register_post_round_hook / register_spawn_hook
-  * post_round_hooks() / spawn_hooks()
-  * collapse_spawn_decisions()  — pure fold of SpawnHook verdicts
-                                  (skip > defer > proceed)
+  * HookContext        — narrowed runtime context passed to all hooks
+  * PostRoundHook       — Protocol
+  * register_post_round_hook
+  * post_round_hooks()
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from agent_runner._redact import redact_secrets
 from agent_runner._registry import ensure_unique
-from agent_runner.api_types import SpawnDecision
 
 _HEAD_BYTES = 1024
 _TAIL_BYTES = 1024
@@ -125,30 +117,7 @@ class PostRoundHook(Protocol):
     # avoid a circular import (api_types itself does not import hooks).
 
 
-@runtime_checkable
-class SpawnHook(Protocol):
-    """Runs immediately before a round would spawn. Read-only view of the
-    resolved spawn — cannot mutate argv/env. Return None ⇒ proceed."""
-
-    name: str
-
-    def before_spawn(self, ctx: HookContext, view: SpawnView) -> SpawnDecision | None: ...
-
-
-@dataclass(frozen=True)
-class SpawnView:
-    """Every value in ``env`` is the empty string — a hook may check which
-    names are set but can never read a secret's value through this view."""
-
-    argv: tuple[str, ...]
-    env: Mapping[str, str]
-
-
 _POST_ROUND_HOOKS: list[PostRoundHook] = []
-_SPAWN_HOOKS: list[SpawnHook] = []
-_SPAWN_HOOK_OWNER: dict[int, str] = {}  # id(hook) -> manifest .name; "" = unknown/legacy
-_SPAWN_HOOK_BUILTIN: dict[int, bool] = {}  # id(hook) -> genuine-builtin trust; absent = False
-_SPAWN_HOOK_MODULE: dict[int, tuple[str, str]] = {}  # id(hook) -> (module_path, attr_path)
 
 
 def register_post_round_hook(hook: PostRoundHook) -> None:
@@ -158,49 +127,6 @@ def register_post_round_hook(hook: PostRoundHook) -> None:
 
 def post_round_hooks() -> list[PostRoundHook]:
     return list(_POST_ROUND_HOOKS)
-
-
-def register_spawn_hook(
-    hook: SpawnHook,
-    *,
-    owner: str = "",
-    builtin: bool = False,
-    module_path: str = "",
-    attr_path: str = "",
-) -> None:
-    """``builtin`` grants in-process (non-trampolined) dispatch trust, keyed on
-    ``id(hook)`` — the hook OBJECT, never the collidable ``owner`` name.
-    Defaults to False (fail-closed): a hook registered without it is confined
-    as third-party. No first-party plugin declares ``spawn_hooks`` today, so
-    every spawn hook is third-party and trampolined; the flag keeps the trust
-    provenance-keyed and future-proof rather than name-based.
-
-    ``module_path``/``attr_path`` are the DISCOVERED entry point's resolvable
-    location (``module:attr``), threaded here so the trampoline re-imports the
-    plugin from that path rather than from the collidable ``owner`` name — an
-    entry-point name that differs from ``manifest.name`` (legal for third-party
-    plugins) then still resolves."""
-    ensure_unique(hook.name, _SPAWN_HOOKS, "spawn_hook")
-    _SPAWN_HOOKS.append(hook)
-    _SPAWN_HOOK_OWNER[id(hook)] = owner
-    _SPAWN_HOOK_BUILTIN[id(hook)] = builtin
-    _SPAWN_HOOK_MODULE[id(hook)] = (module_path, attr_path)
-
-
-def spawn_hooks() -> list[SpawnHook]:
-    return list(_SPAWN_HOOKS)
-
-
-def collapse_spawn_decisions(named: list[tuple[str, SpawnDecision]]) -> SpawnDecision:
-    """Pure, subprocess-free. skip > defer(max defer_s) > proceed; ties broken
-    by ``named``'s own order (== registration/manifest-load order)."""
-    skips = [d for _, d in named if d.action == "skip"]
-    if skips:
-        return skips[0]
-    defers = [d for _, d in named if d.action == "defer"]
-    if defers:
-        return max(defers, key=lambda d: d.defer_s)
-    return SpawnDecision(action="proceed")
 
 
 def _summarize_error(exc: BaseException, tb: str) -> dict[str, str]:

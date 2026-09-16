@@ -515,6 +515,34 @@ MIGRATIONS: list[Migration] = [
         ),
         advisory=True,  # a valid, permanent alias — never blocks `upgrade`
     ),
+    # --- 0.3.9: the third-party sandbox trampoline + spawn seam is removed
+    # (0 third-party plugins ever existed to need it) — its three [plugins]
+    # keys are gone with no replacement. MANUAL-only: `pin`/`spawn_override_allow`
+    # can be multi-line TOML values a single-line auto-drop could corrupt. ---
+    Migration(
+        detect=lambda p: "sandbox" in _table(p, "plugins"),
+        apply=None,
+        describe=(
+            "plugins.sandbox (removed 0.3.9 — the third-party sandbox trampoline "
+            "was dropped); delete the key"
+        ),
+    ),
+    Migration(
+        detect=lambda p: "spawn_override_allow" in _table(p, "plugins"),
+        apply=None,
+        describe=(
+            "plugins.spawn_override_allow (removed 0.3.9 — the SpawnHook seam "
+            "was dropped); delete the key"
+        ),
+    ),
+    Migration(
+        detect=lambda p: "pin" in _table(p, "plugins"),
+        apply=None,
+        describe=(
+            "[plugins.pin] (removed 0.3.9 — the third-party checksum-pin gate "
+            "was dropped); delete the table"
+        ),
+    ),
     # --- top-level bare-string-list footguns (D1 hard-rejects these; the safe
     # ones auto-fix by wrapping in a single-element list) ---
     Migration(

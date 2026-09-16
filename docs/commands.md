@@ -282,6 +282,9 @@ The transforms `migrate` applies (generated from the registry):
 - phases.<name>.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)
 - phases.<name>.runtime.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)
 - flat round_budget_s under [phases.<name>] should move under a nested [phases.<name>.runtime] sub-table (the flat form still works as an alias)
+- plugins.sandbox (removed 0.3.9 — the third-party sandbox trampoline was dropped); delete the key
+- plugins.spawn_override_allow (removed 0.3.9 — the SpawnHook seam was dropped); delete the key
+- [plugins.pin] (removed 0.3.9 — the third-party checksum-pin gate was dropped); delete the table
 - agent.command "x" → ["x"]
 - [agent] command is a quoted string with spaces; rewrite it as an argv list, e.g. command = ["claude", "-p"] (auto-split is unsafe — shell quoting rules differ)
 - agent.prompt_arg_template "x" → ["x"]

@@ -177,8 +177,6 @@ _DEFAULT_AUTO_STOP_ON: tuple[str, ...] = ("oauth_fail", "disk_critical")
 # 0 = opt-out (the first ssh exit is fatal, no reconnect).
 _DEFAULT_REMOTE_FAILURE_TOLERANCE_S: int = 90
 
-_VALID_SANDBOX_MODES: frozenset[str] = frozenset({"require", "prefer", "off"})
-
 
 @dataclass(frozen=True)
 class PluginsConfig:
@@ -188,7 +186,10 @@ class PluginsConfig:
     typed dataclass. All keys are first-class fields; an unknown ``[plugins]``
     key is rejected at load time (see ``_PLUGINS_ALLOWED_FIELDS`` below). The
     former ``.raw`` forward-compat catch-all was dropped as ecosystem-orphaned
-    (no plugin ever shipped a `[plugins.*]` sub-key to read from it).
+    (no plugin ever shipped a `[plugins.*]` sub-key to read from it); the
+    third-party sandbox trampoline's `spawn_override_allow`/`sandbox`/`pin`
+    keys were dropped for the same reason (0 third-party plugins ever
+    existed to need them).
 
     ``disable`` is read by core through a local variable in ``load_config``,
     not via this attribute, so it will read as dead to a reader grepping for
@@ -197,9 +198,6 @@ class PluginsConfig:
     """
 
     disable: list[str] = field(default_factory=list)
-    spawn_override_allow: list[str] = field(default_factory=list)
-    sandbox: Literal["require", "prefer", "off"] = "prefer"
-    pin: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

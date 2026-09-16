@@ -16,7 +16,7 @@ from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, ConfigError, load_config
 from agent_runner.hooks import post_round_hooks
 
-PEEK_SCHEMA_VERSION = "2.5"
+PEEK_SCHEMA_VERSION = "2.6"
 
 
 def cfg_from_args(args) -> Config:
@@ -94,7 +94,7 @@ def install_term_handler(message: str) -> None:
 def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
     if json_mode:
         if isinstance(value, ProjectState):
-            from agent_runner import _sandbox_probe, disabled_plugin_names
+            from agent_runner import disabled_plugin_names
             from agent_runner._plugin_manifest import (
                 cooperative_manifest_names,
                 resolve_sigterm_grace_s,
@@ -106,7 +106,6 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
                 "sigterm_cooperative": cooperative_manifest_names(),
             }
             if cfg is not None:
-                plugins_block.update(_sandbox_probe.peek_snapshot(cfg))
                 plugins_block["resolved_sigterm_grace_s"] = resolve_sigterm_grace_s(
                     cfg.agent.binary, cfg.agent.sigterm_grace_s
                 )

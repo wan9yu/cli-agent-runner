@@ -1,8 +1,7 @@
 """Dataclasses for the Python API state tree.
 
 These are the public types that ``agent_runner.api`` returns and that
-``cli/`` formats. Plugins (post-round hooks, dirty handlers, spawn hooks)
-consume them.
+``cli/`` formats. Plugins (post-round hooks) consume them.
 
 All frozen — state is immutable, no in-place mutation.
 """
@@ -39,17 +38,6 @@ class DirtyOutcome:
 
     kind: Literal["stashed", "committed", "ignored"]
     ref: str | None = None
-
-
-@dataclass(frozen=True)
-class SpawnDecision:
-    """A SpawnHook's verdict on whether this round should spawn. Wire-format
-    for the trampoline's stdout line too — the closed vocabulary structurally
-    cannot carry a raw argv splice."""
-
-    action: Literal["proceed", "defer", "skip"]
-    defer_s: int = 0
-    reason: str = ""
 
 
 @dataclass(frozen=True)

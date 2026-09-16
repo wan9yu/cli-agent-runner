@@ -59,8 +59,8 @@ def cmd_peek(args) -> int:
     select = args.select
     try:
         # Load config ONCE and thread it into peek so it doesn't re-load
-        # (re-running plugin load/checksum/probe) internally — the emit block
-        # needs the same cfg for the plugins.sandbox snapshot.
+        # (re-running plugin load) internally — the emit block needs the
+        # same cfg to resolve the sigterm grace.
         cfg = cfg_from_args(args)
         result = api.peek(
             work_dir_from_args(args),

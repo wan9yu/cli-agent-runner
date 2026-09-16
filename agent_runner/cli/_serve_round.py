@@ -1,8 +1,7 @@
 """Round-lifecycle helpers for the serve loop: spawn/terminate the round
-subprocess, pre-round + mid-round memory-pressure gating, the pre-spawn hook
-admission gate (SpawnHook proceed/defer/skip over a read-only view of the
-resolved spawn), and the post-round give-up decision (config_broken / mem_loop
-/ mem_loop_persistent / crash_loop / stalled_no_progress -> exit code).
+subprocess, pre-round + mid-round memory-pressure gating, and the post-round
+give-up decision (config_broken / mem_loop / mem_loop_persistent / crash_loop
+/ stalled_no_progress -> exit code).
 
 Split out of ``serve_cmd.py`` purely to buy LOC headroom
 under the module-size gate (``test_module_sizes.py``) and ``cmd()``'s
@@ -22,13 +21,11 @@ from __future__ import annotations
 import os
 import signal
 import subprocess  # noqa: TID251
-import traceback as tb_mod
 from pathlib import Path
 from typing import Literal
 
-from agent_runner import _resolve, events, hooks, host_health, metrics
+from agent_runner import host_health, metrics
 from agent_runner._notify import NULL_LISTENER, Listener, NullListener
-from agent_runner._plugin_sandbox import SpawnHookInterrupted, run_hook_sandboxed
 from agent_runner._procwait import wait_exit
 from agent_runner._serve_policy import (
     _MEM_LOOP_PERSIST_THRESHOLD,
@@ -45,7 +42,6 @@ from agent_runner._serve_policy import (
     post_round_decision,
 )
 from agent_runner._throttle import (
-    _interruptible_sleep,
     mem_loop_events_in_window,
     pending_recovered,
     round_had_no_progress,
@@ -64,8 +60,6 @@ from agent_runner.api import (
     emit_mem_pressure_deferred_to_cgroup,
     emit_memory_high_engaged,
     emit_memory_high_write_failed,
-    emit_plugin_spawn_decision,
-    emit_plugin_spawn_override_ignored,
     emit_round_deferred,
     emit_round_mem_critical_sample,
     emit_round_mem_terminated,
@@ -74,7 +68,6 @@ from agent_runner.api import (
     emit_stalled_no_progress,
     emit_transient_error_recovered,
 )
-from agent_runner.api_types import SpawnDecision
 from agent_runner.cli._serve_cgroup import (
     _brake_step_for,
     _emit_round_cgroup_memory,
@@ -216,184 +209,6 @@ def _maybe_emit_recovered(log_dir, active=None) -> None:
         emit_transient_error_recovered(
             log_dir, classification=classification, agent=agent, throttled_for_s=throttled_for_s
         )
-
-
-# How long a `skip` verdict idles before the caller re-admits (re-running the
-# hooks): a busy-loop guard so a persistent `skip` does not spin the serve loop
-# at 100% CPU re-selecting a phase it will only skip again.
-_SPAWN_SKIP_REPOLL_S = 5
-
-
-def _spawn_hook_context(cfg, log_dir, work_dir, phase, profile) -> hooks.HookContext:
-    """The narrow HookContext a SpawnHook sees at the pre-spawn admission gate.
-    ``round_num`` is 0: this gate runs before a round is committed, so no round
-    number is assigned to this view yet (the hook keys on argv/env, not the
-    round counter)."""
-    return hooks.HookContext(
-        work_dir=work_dir,
-        log_dir=log_dir,
-        project=_resolve.project_name(work_dir, strict=False),
-        round_num=0,
-        phase=phase,
-        agent_name=profile.agent.name
-        or (profile.agent.command[0] if profile.agent.command else None),
-        agent_binary=profile.agent.binary,
-        vcs=hooks.VcsHookView(
-            dirty_action=cfg.vcs.dirty_action, stash_idempotency_s=cfg.vcs.stash_idempotency_s
-        ),
-    )
-
-
-def _spawn_view(work_dir, profile) -> hooks.SpawnView:
-    """Read-only view of the resolved spawn: the effective argv plus env NAMES
-    with every value forced to "" — a hook may check which names are set (e.g.
-    whether an API key is present) but can never read a secret's value."""
-    names = os.environ.keys() | profile.agent.env.keys()
-    return hooks.SpawnView(
-        argv=tuple(profile.agent.spawn_command(work_dir)),
-        env=dict.fromkeys(names, ""),
-    )
-
-
-def _run_one_spawn_hook(
-    h, ctx, log_dir, view, *, sandbox, engaged, listener=NULL_LISTENER, stop
-) -> SpawnDecision | None:
-    """Run one spawn hook, isolating any failure exactly as ``dispatch_dirty``
-    isolates a raising dirty handler: emit ``hook_failed`` and return None (the
-    caller omits None from the collapse — treated as proceed).
-
-    Routing mirrors ``dispatch_dirty`` symmetrically via ``hook_route`` on the
-    BOOT PROBE VERDICT ``engaged`` (True iff the Tier-B trampoline can fully
-    engage): a genuine builtin (``hooks._SPAWN_HOOK_BUILTIN``, keyed on the hook
-    OBJECT — never the collidable owner name, so unknown → third-party) and the
-    operator's ``sandbox = "off"`` opt-out run in-process; a third-party hook
-    trampolines only when the sandbox actually ENGAGES, else ``prefer`` runs it
-    in-process (unconfined — announced once at serve boot) and ``require`` refuses
-    it (belt-and-braces; ``gate_serve_boot`` already aborts serve under
-    require+can't-engage). The same ``view`` is passed on every path, so ``env``
-    stays names-only (no secret value). A sandboxed hook interrupted by a stop
-    (``should_stop`` fires on the serve doorbell) returns None WITHOUT emitting
-    ``hook_failed`` -- a stop is not a plugin failure."""
-    third_party = not hooks._SPAWN_HOOK_BUILTIN.get(id(h), False)
-    try:
-        from agent_runner._sandbox_probe import hook_route
-
-        route = hook_route(sandbox, third_party=third_party, engaged=bool(engaged))
-        if route == "refuse":
-            raise RuntimeError(
-                "sandbox=require but Landlock+seccomp confinement cannot engage on "
-                f"this host; refusing to run spawn hook {h.name!r} unconfined"
-            )
-        if route == "trampoline":
-            module_path, attr_path = hooks._SPAWN_HOOK_MODULE.get(id(h), ("", ""))
-            return run_hook_sandboxed(
-                "spawn_hook",
-                module_path,
-                attr_path,
-                h.name,
-                ctx,
-                log_dir=log_dir,
-                view=view,
-                wake_fd=listener.fd,
-                should_stop=lambda: stop["requested"],
-            )
-        return h.before_spawn(ctx, view)
-    except SpawnHookInterrupted:
-        return None
-    except Exception as exc:  # noqa: BLE001 — isolate; omit from collapse (== proceed)
-        events.emit(
-            log_dir,
-            events.HOOK_FAILED,
-            hook_name=h.name,
-            hook_kind="spawn_hook",
-            **hooks._summarize_error(exc, tb=tb_mod.format_exc()),
-        )
-        return None
-
-
-def _maybe_defer_for_spawn_hooks(
-    cfg,
-    log_dir,
-    stop,
-    *,
-    phase,
-    work_dir,
-    engaged: bool,
-    clock: Clock = SYSTEM_CLOCK,
-    listener: Listener | NullListener = NULL_LISTENER,
-) -> bool:
-    """The LAST serve-admission gate: run every registered SpawnHook over a
-    read-only view of the resolved spawn and collapse their verdicts
-    (skip > defer(max defer_s) > proceed). Returns True (the caller ``continue``s
-    the loop and re-admits next iteration) on defer/skip, False on proceed.
-
-    ``spawn_override_allow`` is applied PER-HOOK, before the collapse: a hook NOT
-    on the operator's allow-list has any non-``proceed`` verdict downgraded to
-    ``proceed`` (emitting ``plugin_spawn_override_ignored``) — blocking a round is
-    an operator-granted capability, not a default one.
-
-    A ``defer`` reuses the existing ``round_deferred``/``round_resumed`` pair (so a
-    long defer does not trip ``detect_supervisor_stale``) plus ``plugin_spawn_decision``,
-    sleeps ``defer_s``, and re-runs the hooks on the NEXT admission — once per
-    round, no internal re-poll. A ``skip`` emits ``plugin_spawn_decision`` and idles
-    ``_SPAWN_SKIP_REPOLL_S`` (the busy-loop guard) before likewise re-admitting."""
-    registered = hooks.spawn_hooks()
-    if not registered:
-        return False
-    profile = cfg.profile_for(phase)
-    ctx = _spawn_hook_context(cfg, log_dir, work_dir, phase, profile)
-    view = _spawn_view(work_dir, profile)
-    allow = set(cfg.plugins.spawn_override_allow)
-    named: list[tuple[str, SpawnDecision]] = []
-    for h in registered:
-        decision = _run_one_spawn_hook(
-            h,
-            ctx,
-            log_dir,
-            view,
-            sandbox=cfg.plugins.sandbox,
-            engaged=engaged,
-            listener=listener,
-            stop=stop,
-        )
-        if stop["requested"]:
-            return False  # a stop landed during a hook -- serve_cmd's stop-check refuses the spawn
-        if decision is None:
-            continue  # hook_failed already emitted; omit from collapse (== proceed)
-        if decision.action != "proceed" and h.name not in allow:
-            emit_plugin_spawn_override_ignored(log_dir, hook=h.name, action=decision.action)
-            decision = SpawnDecision(action="proceed")
-        named.append((h.name, decision))
-    collapsed = hooks.collapse_spawn_decisions(named)
-    if collapsed.action == "proceed":
-        return False
-    # The winning hook by the collapse's own precedence — value-equality finds
-    # the FIRST named entry matching it, which is exactly the registration-order
-    # tiebreak collapse itself uses.
-    winner = next((n for n, d in named if d == collapsed), "")
-    if collapsed.action == "defer":
-        started = clock.monotonic()
-        emit_round_deferred(
-            log_dir,
-            severity="warning",
-            signal=f"plugin_spawn:{winner}",
-            message=collapsed.reason,
-        )
-        emit_plugin_spawn_decision(
-            log_dir,
-            hook=winner,
-            action="defer",
-            defer_s=collapsed.defer_s,
-            reason=collapsed.reason,
-        )
-        if not _interruptible_sleep(collapsed.defer_s, stop, clock=clock, listener=listener):
-            emit_round_resumed(log_dir, deferred_for_s=int(clock.monotonic() - started))
-        return True
-    emit_plugin_spawn_decision(
-        log_dir, hook=winner, action="skip", defer_s=0, reason=collapsed.reason
-    )
-    _interruptible_sleep(_SPAWN_SKIP_REPOLL_S, stop, clock=clock, listener=listener)
-    return True
 
 
 # Grace after TERMing a wedged round before killpg: the round's own SIGTERM handler

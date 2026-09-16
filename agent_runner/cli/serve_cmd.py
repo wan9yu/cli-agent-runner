@@ -48,7 +48,6 @@ from agent_runner.api import (
 )
 from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
 from agent_runner.cli._serve_round import (
-    _maybe_defer_for_spawn_hooks,
     _maybe_emit_recovered,
     _maybe_pause_for_memory_pressure,
     _pause_poll,
@@ -455,31 +454,6 @@ def _round_throttle_gate(cfg, args, log_dir, stop) -> tuple[frozenset[str], int 
     return frozenset(), None
 
 
-def _spawn_gate(cfg, log_dir, stop, phase, *, sandbox_engaged: bool, listener=NULL_LISTENER):
-    """The final admission gate: run the pre-spawn hooks for the resolved
-    ``phase`` and translate a defer/skip into the ``_PAUSED_CONTINUE`` sentinel
-    (caller re-admits next iteration); a proceed returns ``phase`` unchanged.
-    Runs only on a concrete phase outcome — every pause path in ``_select_and_gate``
-    returns ``_PAUSED_CONTINUE`` before reaching here, so this never runs while
-    already paused, and it is the LAST gate (after memory / schedule / throttle
-    have all resolved a concrete phase to spawn). ``sandbox_engaged`` is the
-    boot probe verdict threaded from ``cmd()`` so the seam routes without
-    re-probing per round. ``listener`` forwards into the sandboxed spawn-hook
-    wait and any defer/skip sleep, so a stop lands immediately instead of
-    riding out the trampoline's 30s wall-timeout."""
-    if _maybe_defer_for_spawn_hooks(
-        cfg,
-        log_dir,
-        stop,
-        phase=phase,
-        work_dir=cfg.runtime.work_dir,
-        engaged=sandbox_engaged,
-        listener=listener,
-    ):
-        return _PAUSED_CONTINUE
-    return phase
-
-
 def _select_and_gate(
     cfg,
     args,
@@ -489,7 +463,6 @@ def _select_and_gate(
     *,
     throttled_phases: frozenset[str] = frozenset(),
     wake_epoch: int | None = None,
-    sandbox_engaged: bool = False,
     sample_fn=metrics.sample,
     listener: Listener | NullListener = NULL_LISTENER,
 ):
@@ -500,27 +473,21 @@ def _select_and_gate(
 
     Returns the phase name (``str``), ``None`` (no ``--phase``: legacy or
     --ignore-schedule), or the ``_PAUSED_CONTINUE`` sentinel meaning the caller
-    paused and should ``continue`` from the loop top. ``sandbox_engaged`` is the
-    boot probe verdict threaded through to the pre-spawn hook seam. ``listener``
-    forwards unchanged into every pause gate below (see :func:`_pause_poll`'s
-    docstring for the wake/byte-identical contract)."""
+    paused and should ``continue`` from the loop top. ``listener`` forwards
+    unchanged into every pause gate below (see :func:`_pause_poll`'s docstring
+    for the wake/byte-identical contract)."""
     # Checked first, ahead of --ignore-schedule: that flag bypasses [schedule]
     # windows only — a safety gate on a different axis (memory pressure) must
     # not be bypassable by a scheduling override.
     if _maybe_pause_for_memory_pressure(cfg, log_dir, stop, sample_fn=sample_fn, listener=listener):
         return _PAUSED_CONTINUE
     if args.ignore_schedule:
-        # rotation self-resolves in the round; no --phase, but the pre-spawn gate
-        # still runs on the concrete (None) outcome.
-        return _spawn_gate(
-            cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged, listener=listener
-        )
+        # rotation self-resolves in the round; no --phase.
+        return None
     if not _phase_aware(cfg):
         if _maybe_pause_for_schedule(cfg, log_dir, stop, listener=listener):
             return _PAUSED_CONTINUE
-        return _spawn_gate(
-            cfg, log_dir, stop, None, sandbox_engaged=sandbox_engaged, listener=listener
-        )
+        return None
     # Pass the clock explicitly (call-time lookup) so tests can monkeypatch
     # schedule.now_in_zone; a default arg would capture the original at import.
     sel = phase_select.select_phase(
@@ -559,9 +526,7 @@ def _select_and_gate(
             chosen=sel.phase,
             active_window=sel.active_window or "",
         )
-    return _spawn_gate(
-        cfg, log_dir, stop, sel.phase, sandbox_engaged=sandbox_engaged, listener=listener
-    )
+    return sel.phase
 
 
 def _prune_serve_round_logs(log_dir: Path, retention: int) -> None:
@@ -701,17 +666,6 @@ def cmd(args) -> int:
         print(f"agent-runner serve already running for {cfg.runtime.work_dir}", file=sys.stderr)
         return 1
 
-    from agent_runner._sandbox_probe import gate_serve_boot
-
-    # gate_serve_boot probes ONCE here; sandbox_engaged is threaded to the
-    # per-round spawn seam so it never re-probes (see _sandbox_probe.hook_route).
-    proceed, sandbox_engaged = gate_serve_boot(cfg, log_dir)
-    if not proceed:
-        # sandbox = "require" and the Tier-B trampoline can't fully confine --
-        # loud, deterministic, no restart-loop.
-        _release_serve_lock(serve_lock_fd)
-        return PERMANENT_CONFIG_EXIT
-
     pid_file = PIDFile(log_dir / "serve.pid")
     stop = {"requested": False}
 
@@ -799,7 +753,6 @@ def cmd(args) -> int:
                 round_num,
                 throttled_phases=throttled_phases,
                 wake_epoch=wake_epoch,
-                sandbox_engaged=sandbox_engaged,
                 listener=listener,
             )
             if phase_arg is _PAUSED_CONTINUE:

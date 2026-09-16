@@ -181,61 +181,6 @@ def test_doctor_should_not_render_resume_when_paused_round_has_no_resume_at(tmp_
     assert "at None" not in out
 
 
-def test_doctor_should_report_a_sandbox_tier_and_confined_protocols(tmp_path, capsys):
-    args = _args(_write_min_config(tmp_path))
-
-    doctor_cmd.cmd_doctor(args)
-
-    out = capsys.readouterr().out
-    assert "sandbox:" in out
-    assert "dirty_handlers" in out
-
-
-def test_doctor_should_print_third_party_plugin_checksum_for_pinning(tmp_path, capsys, monkeypatch):
-    import agent_runner
-    from agent_runner._plugin_checksum import compute_plugin_checksum
-
-    monkeypatch.setattr(
-        agent_runner,
-        "_DISCOVERED_PLUGIN_ENTRIES",
-        [("acme", "agent_runner._plugin_checksum:compute_plugin_checksum")],
-    )
-    expected = compute_plugin_checksum("agent_runner._plugin_checksum")
-    args = _args(_write_min_config(tmp_path))
-
-    doctor_cmd.cmd_doctor(args)
-
-    out = capsys.readouterr().out
-    assert "third-party plugin checksums" in out
-    assert f'acme = "{expected}"' in out
-
-
-def test_doctor_should_omit_builtin_plugins_from_the_checksum_print(tmp_path, capsys, monkeypatch):
-    import agent_runner
-
-    monkeypatch.setattr(
-        agent_runner,
-        "_DISCOVERED_PLUGIN_ENTRIES",
-        [("pi", "agent_runner.builtin_plugins.pi:PLUGIN")],
-    )
-    args = _args(_write_min_config(tmp_path))
-
-    doctor_cmd.cmd_doctor(args)
-
-    out = capsys.readouterr().out
-    assert "third-party plugin checksums" not in out
-
-
-def test_doctor_should_emit_json_with_sandbox_and_third_party_plugin_hashes_keys(tmp_path, capsys):
-    args = _args(_write_min_config(tmp_path), json=True)
-
-    doctor_cmd.cmd_doctor(args)
-
-    payload = json.loads(capsys.readouterr().out)
-    assert "sandbox" in payload and "achieved_tier" in payload["sandbox"]
-    assert "third_party_plugin_hashes" in payload["sandbox"]
-
-
 def test_doctor_should_report_phase_window_overlap_as_a_failing_check_when_present(tmp_path):
     from agent_runner import startup_check
 

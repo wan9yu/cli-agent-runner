@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent_runner._registry import ensure_unique
-from agent_runner.hooks import PostRoundHook, SpawnHook
+from agent_runner.hooks import PostRoundHook
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,6 @@ class PluginManifest:
 
     name: str
     post_round_hooks: tuple[PostRoundHook, ...] = ()
-    spawn_hooks: tuple[SpawnHook, ...] = ()
     sigterm_cooperative: bool = False
     """Declares that this preset's CLI cooperatively drains/cleans up on
     SIGTERM -- source-verified per preset, NEVER assumed from a CLI's
@@ -36,7 +35,7 @@ _LOADED_MANIFESTS: list[PluginManifest] = []
 def loaded_manifest_names() -> list[str]:
     """Names of every currently-registered manifest (order-preserving).
     Mirrors the ``list(_LOADED_MANIFESTS)`` pattern; used by the loader for
-    idempotent re-load skipping and by doctor for third-party hash listing."""
+    idempotent re-load skipping."""
     return [m.name for m in _LOADED_MANIFESTS]
 
 
@@ -68,30 +67,10 @@ def resolve_sigterm_grace_s(agent_binary: str | None, sigterm_grace_s: int) -> i
     return REAP_GRACE_S
 
 
-def register_manifest(
-    manifest: PluginManifest,
-    *,
-    builtin: bool = False,
-    module_path: str = "",
-    attr_path: str = "",
-) -> None:
+def register_manifest(manifest: PluginManifest) -> None:
     """Register every capability a manifest declares into its own registry.
     No import-time side effects — the loader calls this explicitly after
     resolving a plugin's `PLUGIN` attribute.
-
-    ``builtin`` records whether this manifest is a GENUINE builtin (verified by
-    ``is_builtin_provenance`` at the load path) — it is threaded to
-    ``register_spawn_hook`` so the spawn seam's trampoline can grant in-process
-    trust by hook-object identity rather than by the collidable manifest name.
-    Defaults to False (fail-closed): any manifest registered outside the
-    verified load path — a direct ``register_manifest`` call, a test — is
-    treated as third-party and sandboxed.
-
-    ``module_path``/``attr_path`` are the DISCOVERED entry point's resolvable
-    location (``module:attr``); the loader threads them here so the trampoline
-    re-imports a third-party spawn hook from that exact path, never from the
-    collidable ``manifest.name`` — an entry-point name != the manifest name
-    (legal for third-party plugins) then still resolves.
 
     Raises ``ValueError`` up front if ``manifest.name`` collides with an
     already-registered manifest's ``.name`` — this is checked HERE, not by
@@ -121,10 +100,6 @@ def register_manifest(
 
     for h in manifest.post_round_hooks:
         hooks.register_post_round_hook(h)
-    for s in manifest.spawn_hooks:
-        hooks.register_spawn_hook(
-            s, owner=manifest.name, builtin=builtin, module_path=module_path, attr_path=attr_path
-        )
     _LOADED_MANIFESTS.append(manifest)
 
 
@@ -144,9 +119,4 @@ def unregister_by_name(names: set[str]) -> set[str]:
             continue
         found.add(manifest.name)
         _remove_by_identity(hooks._POST_ROUND_HOOKS, manifest.post_round_hooks)
-        _remove_by_identity(hooks._SPAWN_HOOKS, manifest.spawn_hooks)
-        for h in manifest.spawn_hooks:
-            hooks._SPAWN_HOOK_OWNER.pop(id(h), None)
-            hooks._SPAWN_HOOK_BUILTIN.pop(id(h), None)
-            hooks._SPAWN_HOOK_MODULE.pop(id(h), None)
     return found

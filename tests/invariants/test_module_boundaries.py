@@ -59,7 +59,6 @@ def test_subprocess_imports_should_be_limited_to_sanctioned_modules() -> None:
     sanctioned = {
         "_install.py",
         "_lifecycle.py",
-        "_plugin_sandbox.py",
         "_procwait.py",
         "_substrate.py",
         "agent_runtime.py",

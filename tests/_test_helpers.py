@@ -1,9 +1,9 @@
 """Shared test helpers.
 
 Centralises the snapshot+clear+restore fixture pattern used by every test
-file that interacts with a plugin-extension registry (post-round hooks,
-dirty handlers, spawn hooks). Before: 8 near-identical autouse fixtures
-across the test suite. After: one factory.
+file that interacts with a plugin-extension registry (post-round hooks).
+Before: 8 near-identical autouse fixtures across the test suite. After: one
+factory.
 """
 
 from __future__ import annotations
@@ -164,8 +164,7 @@ def write_min_config(tmp_path: Path, *, agent_extra: str = "") -> Path:
 
 def make_cfg(tmp_path: Path, *, plugins: Any = None) -> Any:
     """Minimal in-memory ``Config`` for tests that need a real ``Config``
-    object without going through TOML parsing (e.g. a boot-gate function
-    reading ``cfg.plugins.sandbox`` directly). ``work_dir`` and ``log_dir``
+    object without going through TOML parsing. ``work_dir`` and ``log_dir``
     both default to ``tmp_path``; pass ``plugins`` to exercise a non-default
     ``PluginsConfig``.
     """
@@ -399,87 +398,3 @@ def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
                 reg.extend(snap)
 
     return _reset
-
-
-def install_hostile_dirty_plugin(tmp_path: Path, *, action: str) -> tuple[str, str]:
-    """Write a third-party dirty-handler plugin whose ``handle_dirty`` performs a
-    seccomp-denied network syscall, and return ``(module_name, hook_name)``.
-
-    Used by the Linux kill-tests to prove the trampoline's seccomp KILL_PROCESS
-    filter fires: on a confined child the ``socket()``/``connect()`` attempt is
-    killed by SIGSYS before the handler can return. ``action`` selects which
-    primitive the handler reaches for. The caller puts ``tmp_path`` on the
-    child's ``PYTHONPATH`` so the module is importable AFTER confinement."""
-    module_name = "hostile_dirty_plugin"
-    hook_name = "hostile_dirty"
-    if action == "socket":
-        body = (
-            "        import socket\n"
-            "        socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-            "        return None"
-        )
-    elif action == "connect":
-        body = (
-            "        import socket\n"
-            "        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-            "        s.connect(('127.0.0.1', 9))\n"
-            "        return None"
-        )
-    else:
-        raise ValueError(f"unknown hostile action {action!r}")
-
-    # PLUGIN is a bare object exposing `.dirty_handlers` -- NOT a real
-    # PluginManifest, which no longer carries that field (0.3.9 folded the
-    # DirtyHandler seam into core). The trampoline's _run_dirty_child only
-    # needs the attribute; this fixture exercises its confinement mechanism
-    # directly, independent of the (now-deleted) production dispatch seam.
-    src = (
-        "class _H:\n"
-        f"    name = {hook_name!r}\n"
-        "    priority = 0\n\n"
-        "    def handle_dirty(self, ctx, dirty_files):\n"
-        f"{body}\n\n\n"
-        "class PLUGIN:\n"
-        "    dirty_handlers = (_H(),)\n"
-    )
-    (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
-    return module_name, hook_name
-
-
-def install_hostile_spawn_plugin(tmp_path: Path, *, action: str) -> tuple[str, str]:
-    """Write a third-party SpawnHook plugin whose ``before_spawn`` reaches for a
-    syscall the SpawnHook seccomp profile denies, and return
-    ``(module_name, hook_name)``.
-
-    ``action="execve"`` exercises the denial UNIQUE to the spawn profile: a dirty
-    handler may exec (it shells out to git), but a spawn hook only inspects the
-    resolved spawn, so ``execve``/``execveat`` are killed by SIGSYS. ``"socket"``
-    covers the shared network denial. The caller puts ``tmp_path`` on the child's
-    ``PYTHONPATH`` so the module is importable AFTER confinement."""
-    module_name = "hostile_spawn_plugin"
-    hook_name = "hostile_spawn"
-    if action == "execve":
-        body = (
-            "        import os\n"
-            "        os.execve('/bin/true', ['/bin/true'], {})\n"
-            "        return None"
-        )
-    elif action == "socket":
-        body = (
-            "        import socket\n"
-            "        socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-            "        return None"
-        )
-    else:
-        raise ValueError(f"unknown hostile action {action!r}")
-
-    src = (
-        "from agent_runner._plugin_manifest import PluginManifest\n\n\n"
-        "class _H:\n"
-        f"    name = {hook_name!r}\n\n"
-        "    def before_spawn(self, ctx, view):\n"
-        f"{body}\n\n\n"
-        "PLUGIN = PluginManifest(name='hostile_spawn', spawn_hooks=(_H(),))\n"
-    )
-    (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
-    return module_name, hook_name

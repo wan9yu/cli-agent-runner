@@ -32,7 +32,6 @@ ALLOWED_SERVE_FROM = [
     (
         "agent_runner.cli._serve_round",
         {
-            "_maybe_defer_for_spawn_hooks",
             "_maybe_emit_recovered",
             "_maybe_pause_for_memory_pressure",
             "_pause_poll",
@@ -60,7 +59,6 @@ ALLOWED_SERVE_FROM = [
         },
     ),
     ("agent_runner._serve_policy", {"PERMANENT_CONFIG_EXIT"}),
-    ("agent_runner._sandbox_probe", {"gate_serve_boot"}),
     ("agent_runner.clock", {"SYSTEM_CLOCK", "Clock"}),
     ("agent_runner.cli.common", {"cfg_from_args_or_config_error"}),
     ("agent_runner.lifecycle", {"PIDFile"}),
@@ -99,12 +97,9 @@ ALLOWED_SERVE_ROUND_IMPORTS = {
     "pathlib",
 }
 ALLOWED_SERVE_ROUND_FROM = [
-    ("agent_runner", {"_resolve", "events", "host_health", "hooks", "metrics"}),
+    ("agent_runner", {"host_health", "metrics"}),
     ("agent_runner._notify", {"Listener", "NullListener", "NULL_LISTENER"}),
-    ("agent_runner._plugin_sandbox", {"SpawnHookInterrupted", "run_hook_sandboxed"}),
     ("agent_runner._procwait", {"wait_exit"}),
-    ("agent_runner._sandbox_probe", {"hook_route"}),
-    ("agent_runner.api_types", {"SpawnDecision"}),
     (
         "agent_runner.agent_runtime",
         {"_kill_stray_descendants", "_snapshot_stray_descendants", "children_rss_sum_bytes"},
@@ -146,8 +141,6 @@ ALLOWED_SERVE_ROUND_FROM = [
             "emit_mem_pressure_deferred_to_cgroup",
             "emit_memory_high_engaged",
             "emit_memory_high_write_failed",
-            "emit_plugin_spawn_decision",
-            "emit_plugin_spawn_override_ignored",
             "emit_round_deferred",
             "emit_round_mem_critical_sample",
             "emit_round_mem_terminated",
