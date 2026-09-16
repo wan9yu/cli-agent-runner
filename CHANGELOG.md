@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.8] - 2026-09-16
 
 ### Changed
 - `try_auto_commit` (`vcs.dirty_action = "auto_commit"`) now honors the plugin-owned-paths registry, matching `stash_orphan`: paths registered via `register_plugin_owned_paths` are excluded from the auto-commit, so a plugin's deliverables no longer land in the agent's git history.
