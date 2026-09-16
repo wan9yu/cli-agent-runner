@@ -52,21 +52,26 @@ _OLD_PLUGIN_DISABLE_NAMES = {
 _RENAMED_PLUGIN_DISABLE_NAMES = {"claude_rate_limit": "claude"}
 
 
+def _plugin_disable_renames(p: dict, mapping: dict[str, str]) -> dict[str, str]:
+    """Entries of `mapping` found in ``[plugins] disable``; empty when none
+    are present. Shared by `_old_plugin_disable_names`/`_renamed_plugin_disable_names`,
+    which differ only in which mapping they pass."""
+    disable = _table(p, "plugins").get("disable")
+    listed = disable if isinstance(disable, list) else []
+    return {k: v for k, v in mapping.items() if k in listed}
+
+
 def _old_plugin_disable_names(p: dict) -> dict[str, str]:
     """Old->new name mapping for any 0.2.x hook-level name found in
     ``[plugins] disable``; empty when none are present."""
-    disable = _table(p, "plugins").get("disable")
-    listed = disable if isinstance(disable, list) else []
-    return {k: v for k, v in _OLD_PLUGIN_DISABLE_NAMES.items() if k in listed}
+    return _plugin_disable_renames(p, _OLD_PLUGIN_DISABLE_NAMES)
 
 
 def _renamed_plugin_disable_names(p: dict) -> dict[str, str]:
     """Old->new mapping for any 0.3.x-renamed plugin name found in
     ``[plugins] disable`` (currently only claude_rate_limit -> claude); empty
     when none are present."""
-    disable = _table(p, "plugins").get("disable")
-    listed = disable if isinstance(disable, list) else []
-    return {k: v for k, v in _RENAMED_PLUGIN_DISABLE_NAMES.items() if k in listed}
+    return _plugin_disable_renames(p, _RENAMED_PLUGIN_DISABLE_NAMES)
 
 
 @dataclass(frozen=True)
@@ -185,6 +190,30 @@ def _phases_scalar_keys(p: dict) -> list[str]:
 _TABLE_HEADER = re.compile(r"^\s*\[(?P<name>[^\]]+)\]")
 
 
+def _find_table_hits(
+    assign: re.Pattern, table: str | re.Pattern, lines: list[str]
+) -> list[int] | None:
+    """Indices in `lines` where `assign` matches inside a `[table]` header
+    (Pattern = fullmatch; str = exact) -- None = refuse: no hits, or >1 hit
+    under a literal str `table`. Shared scan behind `_rename_key`/`_drop_key`."""
+    cur: str | None = None
+    hits: list[int] = []
+    for i, line in enumerate(lines):
+        h = _TABLE_HEADER.match(line)
+        if h:
+            cur = h.group("name").strip()
+            continue
+        if cur is None or not assign.match(line):
+            continue
+        if table.fullmatch(cur) if isinstance(table, re.Pattern) else cur == table:
+            hits.append(i)
+    if not hits:
+        return None
+    if not isinstance(table, re.Pattern) and len(hits) != 1:
+        return None
+    return hits
+
+
 def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], str]:
     """Rename `old = ...` to `new = ...` inside [table]. `table` may be a
     compiled pattern fullmatched against the current `[header]` name (e.g. a
@@ -192,25 +221,10 @@ def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], 
     str `table` keeps the original exactly-one-hit-or-refuse discipline."""
     assign = re.compile(rf"^(?P<indent>[ \t]*){re.escape(old)}(?P<sp>[ \t]*=)")
 
-    def _table_matches(name: str) -> bool:
-        if isinstance(table, re.Pattern):
-            return bool(table.fullmatch(name))
-        return name == table
-
     def _apply(text: str) -> str:
         lines = text.splitlines(keepends=True)
-        cur: str | None = None
-        hits: list[int] = []
-        for i, line in enumerate(lines):
-            h = _TABLE_HEADER.match(line)
-            if h:
-                cur = h.group("name").strip()
-                continue
-            if cur is not None and _table_matches(cur) and assign.match(line):
-                hits.append(i)
-        if not hits:
-            return text
-        if not isinstance(table, re.Pattern) and len(hits) != 1:
+        hits = _find_table_hits(assign, table, lines)
+        if hits is None:
             return text
         for i in hits:
             lines[i] = assign.sub(rf"\g<indent>{new}\g<sp>", lines[i], count=1)
@@ -227,25 +241,10 @@ def _drop_key(key: str, table: str | re.Pattern) -> Callable[[str], str]:
     `table` refuses (routing the caller to manual) unless there's one hit."""
     assign = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=")
 
-    def _table_matches(name: str) -> bool:
-        if isinstance(table, re.Pattern):
-            return bool(table.fullmatch(name))
-        return name == table
-
     def _apply(text: str) -> str:
         lines = text.splitlines(keepends=True)
-        cur: str | None = None
-        hits: list[int] = []
-        for i, line in enumerate(lines):
-            h = _TABLE_HEADER.match(line)
-            if h:
-                cur = h.group("name").strip()
-                continue
-            if cur is not None and _table_matches(cur) and assign.match(line):
-                hits.append(i)
-        if not hits:
-            return text
-        if not isinstance(table, re.Pattern) and len(hits) != 1:
+        hits = _find_table_hits(assign, table, lines)
+        if hits is None:
             return text
         for i in sorted(hits, reverse=True):
             del lines[i]

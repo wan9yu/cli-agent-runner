@@ -74,26 +74,21 @@ def _cooperative_stop_for_name(agent_binary: str | None) -> str | None:
     return None
 
 
-def cooperative_manifest_names() -> list[str]:
-    """Names of every currently-registered manifest declaring a cooperative_stop
-    (order-preserving). Mirrors loaded_manifest_names; used by peek + doctor to
-    answer "which presets are cooperative" without either caller reaching into
-    _LOADED_MANIFESTS."""
-    return [m.name for m in _LOADED_MANIFESTS if m.cooperative_stop is not None]
-
-
 def cooperative_stop_by_name() -> dict[str, str]:
     """`{manifest name: cooperative_stop signal name}` for every registered
-    manifest declaring a cooperative_stop (order-preserving). The richer form of
-    cooperative_manifest_names for peek/doctor -- an operator sees not just WHICH
-    presets cooperate but the SIGNAL each drains on."""
+    manifest declaring a cooperative_stop (order-preserving). Mirrors
+    loaded_manifest_names; used by peek/doctor -- an operator sees not just
+    WHICH presets cooperate but the SIGNAL each drains on."""
     return {m.name: m.cooperative_stop for m in _LOADED_MANIFESTS if m.cooperative_stop is not None}
 
 
 def is_cooperative_agent(agent_binary: str | None) -> bool:
-    """Whether the agent's preset declares a cooperative_stop.
-    `None in [...]` is safely False, so no None-guard is needed."""
-    return agent_binary in cooperative_manifest_names()
+    """Whether the agent's preset declares a cooperative_stop. Routes through
+    the same single-scan `resolve_cooperative_signal` uses: `cooperative_stop`
+    is always in {None, "SIGTERM", "SIGINT"} (`__post_init__`-guaranteed) and
+    `_COOPERATIVE_SIGNALS` keys are exactly {"SIGTERM", "SIGINT"}, so a
+    resolved signal exists iff the named manifest declares a cooperative_stop."""
+    return resolve_cooperative_signal(agent_binary) is not None
 
 
 def resolve_cooperative_signal(agent_binary: str | None) -> signal.Signals | None:

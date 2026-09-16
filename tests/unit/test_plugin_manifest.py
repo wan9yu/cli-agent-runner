@@ -110,19 +110,6 @@ def test_manifest_should_accept_the_two_cooperative_signals_and_none():
     assert PluginManifest(name="c", cooperative_stop=None).cooperative_stop is None
 
 
-def test_cooperative_manifest_names_should_list_only_manifests_declaring_a_signal():
-    from agent_runner._plugin_manifest import (
-        PluginManifest,
-        cooperative_manifest_names,
-        register_manifest,
-    )
-
-    register_manifest(PluginManifest(name="cooperative_one", cooperative_stop="SIGINT"))
-    register_manifest(PluginManifest(name="not_cooperative"))
-
-    assert cooperative_manifest_names() == ["cooperative_one"]
-
-
 def test_cooperative_stop_by_name_should_map_each_cooperative_preset_to_its_signal():
     from agent_runner._plugin_manifest import (
         PluginManifest,
