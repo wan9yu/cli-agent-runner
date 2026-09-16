@@ -27,8 +27,10 @@ from agent_runner.clock import SYSTEM_CLOCK
 
 # Plugin-owned paths registry — set via register_plugin_owned_paths().
 # Two consumers honor it: detect_dirty_files() filters its return (not flagged as
-# orphan WIP) and _owned_exclude_specs() feeds stash_orphan()'s pathspec (not swept
-# off disk by ``git stash push -u``). They scan differently -- see _owned_exclude_specs.
+# orphan WIP) and _owned_exclude_specs() feeds _combined_exclude_pathspec(), the
+# exclusion both stash_orphan() (``git stash push -u``) and try_auto_commit()
+# (``git add -A``) apply, so a plugin's deliverables are neither swept off disk nor
+# committed. They scan differently -- see _owned_exclude_specs.
 _PLUGIN_OWNED_PATHS: list[str] = []
 
 
@@ -381,11 +383,7 @@ def stash_orphan(
     ts = SYSTEM_CLOCK.now_utc().strftime("%Y-%m-%dT%H:%M:%S")
     phase_part = f" phase={phase}" if phase else ""
     msg = f"ORPHAN R{round_num}{phase_part} ts={ts}"
-    exclude = _log_dir_exclude_pathspec(repo, log_dir)
-    owned = _owned_exclude_specs(repo)
-    if owned:
-        # _log_dir_exclude_pathspec already opens the pathspec with "--" when non-empty.
-        exclude = [*exclude, *owned] if exclude else ["--", *owned]
+    exclude = _combined_exclude_pathspec(repo, log_dir)
     try:
         push = _git(repo, "stash", "push", "-u", "-m", msg, *exclude, timeout=30)
     except GitTimeout as e:
@@ -427,6 +425,26 @@ def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
     if _git(root, "check-ignore", "-q", "--", rel).returncode == 0:
         return []  # already gitignored → git skips it; pathspec would misfire
     return ["--", f":(exclude){rel}"]
+
+
+def _combined_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
+    """Git pathspec args excluding BOTH the runner's own ``log_dir`` and every
+    dirty plugin-owned path from an ``add``/``stash`` -- the one exclusion both
+    dirty-action branches (``stash_orphan``, ``try_auto_commit``) apply, so the
+    two stay symmetric and a future change to the combining rule lands in one
+    place.
+
+    ``_log_dir_exclude_pathspec`` opens its own list with ``--`` when non-empty;
+    ``_owned_exclude_specs`` returns bare ``:(exclude)`` specs. So when log_dir
+    contributes, the combined list already carries the ``--``; when it does not
+    but owned paths do, the owned-only list needs the ``--`` prepended (a
+    leading-dash path must read as a pathname, not a switch).
+    """
+    exclude = _log_dir_exclude_pathspec(root, log_dir)
+    owned = _owned_exclude_specs(root)
+    if owned:
+        exclude = [*exclude, *owned] if exclude else ["--", *owned]
+    return exclude
 
 
 def _clear_self_caused_index_lock(work_dir: Path, round_num: int, log_dir: Path | None) -> None:
@@ -474,11 +492,7 @@ def try_auto_commit(
     phase_part = f" {phase}" if phase else ""
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
-    exclude = _log_dir_exclude_pathspec(work_dir, log_dir)
-    owned = _owned_exclude_specs(work_dir)
-    if owned:
-        # _log_dir_exclude_pathspec already opens the pathspec with "--" when non-empty.
-        exclude = [*exclude, *owned] if exclude else ["--", *owned]
+    exclude = _combined_exclude_pathspec(work_dir, log_dir)
     try:
         add_result = _git(work_dir, "add", "-A", *exclude)
     except GitTimeout as e:
