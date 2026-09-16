@@ -291,4 +291,19 @@ def _classify(classification: str, raw: str) -> dict[str, Any]:
     }
 
 
-PLUGIN = PluginManifest(name="claude_rate_limit", post_round_hooks=(ClaudeErrorDetector(),))
+# name="claude": the manifest name MUST equal the agent binary basename
+# (Path(command[0]).name == "claude") so cooperative_stop + sigterm_grace_s join
+# onto the running agent -- same convention gemini/pi already follow. (The module
+# file stays claude_rate_limit.py; the plugin IS the whole claude parser now, not
+# just rate-limiting.)
+#
+# cooperative_stop="SIGINT": claude drains its turn on SIGINT (SIGTERM abandons
+# it -> 143). Declared statically; the runtime system/init.capabilities[]
+# interrupt feature-detection is a later refinement -- a build lacking
+# interrupt_receipt_v1 still terminates on SIGINT (default disposition) then
+# SIGKILL-backstops, so the static declaration is safe.
+PLUGIN = PluginManifest(
+    name="claude",
+    post_round_hooks=(ClaudeErrorDetector(),),
+    cooperative_stop="SIGINT",
+)

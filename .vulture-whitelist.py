@@ -16,7 +16,7 @@ buffer
 # agent_runner._plugin_manifest.PluginManifest
 name
 post_round_hooks
-sigterm_cooperative
+cooperative_stop
 
 # agent_runner._round_outcome.RoundOutcome
 mem_terminated

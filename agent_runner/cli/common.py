@@ -96,14 +96,18 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
         if isinstance(value, ProjectState):
             from agent_runner import disabled_plugin_names
             from agent_runner._plugin_manifest import (
-                cooperative_manifest_names,
+                cooperative_stop_by_name,
                 resolve_sigterm_grace_s,
             )
 
             plugins_block = {
                 "post_round_hooks": [h.name for h in post_round_hooks()],
                 "disabled": disabled_plugin_names(),
-                "sigterm_cooperative": cooperative_manifest_names(),
+                # {preset: cooperative-stop signal} -- the typed replacement for
+                # the old cooperative-names list. Value change under the SAME key
+                # (renaming the key would force a peek schema bump; the key is
+                # kept stable at 2.6, so consumers key on the same path).
+                "sigterm_cooperative": cooperative_stop_by_name(),
             }
             if cfg is not None:
                 plugins_block["resolved_sigterm_grace_s"] = resolve_sigterm_grace_s(

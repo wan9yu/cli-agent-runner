@@ -644,7 +644,7 @@ my-research/
 
 Use `agent-runner init --preset claude` to scaffold a current preset
 (includes `--dangerously-skip-permissions`, `--verbose`, `--output-format
-stream-json` — the latter required for `claude_rate_limit` to parse
+stream-json` — the latter required for `claude` to parse
 JSONL and emit `agent_usage_recorded` / `transient_error_detected`).
 
 ```toml
@@ -734,7 +734,7 @@ host-safety needs are already in-core. Detector rows require a running
 | A round dies to the kernel's own cgroup-OOM, not just a silent 137 | `round_oom_killed` event, folded from the same `round_cgroup_memory` scan | Emitted when `memory.events.oom_kill` rose over the round (the same delta `round_cgroup_memory` already computed — no second read). Pointer-only: `log_path`, `log_bytes`, and the oom-kill delta, never the round-log/transcript content itself. The delta rides under two field names with the identical value — `events_oom_kill_delta` is the canonical name (sibling-consistent with `round_cgroup_memory`'s `events_oom_kill_delta`) and `oom_kill_delta` is a retained legacy alias kept until a future breaking release drops it. `partial_log` reports whether the supervisor appended its own truncation trailer to the round log (a residue marker, not content) so a later reader can tell the tail is supervisor-added. The round still exits 137 and counts toward the crash streak exactly as today — this event only makes the kill legible, it never changes the give-up decision |
 | Disk filling up | `disk_warning` at ≥90%, `disk_critical` at ≥95% | Sampled on `log_dir`'s partition. `disk_critical` auto-stops the service by default; `disk_warning` only alerts. Thresholds under `[monitor.host_health.disk]` (`warning_pct`/`critical_pct`) <!-- authored: disk_critical ships in the default auto_stop_on set; SSOT agent_runner/config/models.py --> |
 | Auth burn (401 loop) | `oauth_fail` detector, auto-stops by default | Fires at ≥20% of a **fixed 10-event window** of `agent_exit` records. Under 10 exits it cannot fire at all, so a host that starts with bad credentials burns its first ~10 rounds before the stop lands. Two evidence paths: a round carrying `agent_auth_error_detected` (a plugin read the failure out of the CLI's own structured output — this is how pi's 401 becomes visible despite pi exiting 0), or the log-tail text heuristic, which still requires a **nonzero** agent exit as its false-positive shield |
-| Token / cost accounting | `agent_usage_recorded` events in `events-*.jsonl` | Raw per-round records; rollups and budget alerts are the consumer's job. Emitted by the `claude_rate_limit` / `gemini` / `codewhale` / `pi` plugins. kimi's plugin classifies transient errors but emits no usage, because the Kimi Code CLI exposes no token counters in its stream-json output, so kimi rounds produce no usage events |
+| Token / cost accounting | `agent_usage_recorded` events in `events-*.jsonl` | Raw per-round records; rollups and budget alerts are the consumer's job. Emitted by the `claude` / `gemini` / `codewhale` / `pi` plugins. kimi's plugin classifies transient errors but emits no usage, because the Kimi Code CLI exposes no token counters in its stream-json output, so kimi rounds produce no usage events |
 
 **Covered since 0.2.14, narrowed in 0.2.16: pre-round and mid-round memory
 gating.** Before starting a round, `serve` samples `host_health` and defers
@@ -1049,7 +1049,7 @@ agent-runner start
 `transient_error_detected` events appear in events.jsonl; supervisor
 pauses round dispatch.
 
-The built-in `claude_rate_limit` plugin classifies transient errors into
+The built-in `claude` plugin classifies transient errors into
 4 buckets:
 
 - `rate_limit_account` — claude.ai OAuth 5-hour quota exhausted

@@ -99,9 +99,9 @@ Its field set is stable across releases (additions only).
 {
   "schema_version": "2.6",
   "plugins": {
-    "post_round_hooks": ["claude_rate_limit"],
+    "post_round_hooks": ["claude_error_detector"],
     "disabled": [],
-    "sigterm_cooperative": ["gemini"]
+    "sigterm_cooperative": {"claude": "SIGINT", "gemini": "SIGTERM", "pi": "SIGTERM"}
   },
   ...
 }
@@ -155,23 +155,25 @@ on them.
 ## Built-in post_round_hooks
 
 agent-runner ships 5 built-in `post_round_hooks` plugins registered
-automatically via `agent_runner.plugins`: `claude_rate_limit` (below),
+automatically via `agent_runner.plugins`: `claude` (below),
 `gemini` (0.1.24+, parallel for gemini CLI), `codewhale` (0.1.41+, parallel
 for codewhale CLI), `kimi` (parallel for Kimi Code CLI), and `pi` (parallel
 for Pi Coding Agent).
 
-### `claude_rate_limit` (0.1.23+)
+### `claude` (0.1.23+)
 
-**Entry-point name:** `claude_rate_limit` (group `agent_runner.plugins`)
+**Entry-point name:** `claude` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.claude_rate_limit`
 
-The detector's identifier has moved twice as its scope grew: `claude_rate_limit_detector`
+The plugin's identifier has moved as its scope grew: `claude_rate_limit_detector`
 (single-purpose rate-limit detection) → `claude_error_detector` (0.1.23, generalized
-to multi-classification) → `claude_rate_limit` (the plugin's `PluginManifest.name`,
-matching the module it has always lived in). Operators still using
-`[plugins] disable = ["claude_error_detector"]` or the older
-`["claude_rate_limit_detector"]` must switch to `["claude_rate_limit"]`
-(`agent-runner migrate` flags this as a manual rename).
+to multi-classification) → `claude_rate_limit` (0.3.0 `PluginManifest.name`) →
+`claude` (0.3.9, renamed to match the agent binary basename so its
+`cooperative_stop`/`sigterm_grace_s` join onto the running agent — the module
+file stays `claude_rate_limit.py`). Operators still using
+`[plugins] disable = ["claude_rate_limit"]` (or the older
+`["claude_error_detector"]` / `["claude_rate_limit_detector"]`) must switch to
+`["claude"]` (`agent-runner migrate` flags this as a manual rename).
 
 After each round, scans the last 200 JSON lines of the round's log (non-JSON
 stderr chatter is filtered out before windowing) for transient errors and
@@ -226,7 +228,7 @@ and `codewhale` plugins are working references.
 **Entry-point name:** `codewhale` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.codewhale`
 
-Parallel to `claude_rate_limit` for the codewhale CLI. Returns early when
+Parallel to `claude` for the codewhale CLI. Returns early when
 `ctx.agent_binary != "codewhale"`, so it costs nothing on other projects.
 Scans the round's JSONL log tail for transient errors and emits
 `transient_error_detected` with the same 4-bucket `classification` contract.
@@ -238,7 +240,7 @@ Disable with `[plugins] disable = ["codewhale"]`.
 **Entry-point name:** `kimi` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.kimi`
 
-Parallel to `claude_rate_limit` for the Kimi Code CLI. Returns early when
+Parallel to `claude` for the Kimi Code CLI. Returns early when
 `ctx.agent_binary != "kimi"`, so it costs nothing on other projects. Requires
 the preset's `--output-format stream-json`.
 
@@ -265,7 +267,7 @@ Disable with `[plugins] disable = ["kimi"]`.
 **Entry-point name:** `pi` (group `agent_runner.plugins`)
 **Module:** `agent_runner.builtin_plugins.pi`
 
-Parallel to `claude_rate_limit` for the Pi Coding Agent. Returns early when
+Parallel to `claude` for the Pi Coding Agent. Returns early when
 `ctx.agent_binary != "pi"`, so it costs nothing on other projects. Requires the
 preset's `--mode json`.
 

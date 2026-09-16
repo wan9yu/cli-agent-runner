@@ -162,11 +162,23 @@ def _wait_exit_shielded(
 
 
 def _kill_pgroup(
-    proc: subprocess.Popen, clock: Clock = SYSTEM_CLOCK, reap_grace_s: int = REAP_GRACE_S
+    proc: subprocess.Popen,
+    clock: Clock = SYSTEM_CLOCK,
+    reap_grace_s: int = REAP_GRACE_S,
+    first_signal: signal.Signals = signal.SIGTERM,
 ) -> None:
-    """SIGTERM the pgroup, grace, then SIGKILL — the reap primitive shared by
-    the round-timeout path and ``run``'s BaseException handler (which fires on
+    """`first_signal` the pgroup, grace, then SIGKILL — the reap primitive shared
+    by the round-timeout path and ``run``'s BaseException handler (which fires on
     a SIGTERM landing while the round is unwinding from a first one).
+
+    `first_signal` is the FIRST signal sent to the agent pgroup and is the ONE
+    knob the cooperative-stop model turns: the R1128 hard wall and round-budget
+    grace-kill PIN it to ``signal.SIGTERM`` (the hard-wall behavior preserved
+    literally, not by luck), while ONLY the cooperative-stop reap passes the
+    manifest-resolved signal (``"SIGINT"`` for claude/codex). A ``None``
+    cooperative_stop is defined upstream as ``first_signal=SIGTERM`` -- never
+    "skip the first signal". The eventual SIGKILL escalation + stray-descendant
+    reap below are signal-INDEPENDENT.
     ``round_cmd``'s SIGTERM handler stays installed for the whole process life
     (it converts every SIGTERM into a fresh ``KeyboardInterrupt``, not just the
     first), so a re-entrant SIGTERM during the grace wait below raises HERE —
@@ -183,7 +195,7 @@ def _kill_pgroup(
     pgid = proc.pid
     stray = _snapshot_stray_descendants(proc)  # while the leader (subtree) is still alive
     try:
-        os.killpg(pgid, signal.SIGTERM)
+        os.killpg(pgid, first_signal)
     except OSError:
         pass
     deadline = (
@@ -583,14 +595,19 @@ def _terminate_agent(
     container_cidfile: Path | None,
     on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None,
     reap_grace_s: int = REAP_GRACE_S,
+    first_signal: signal.Signals = signal.SIGTERM,
 ) -> None:
     """Reap the agent pgroup (``_kill_pgroup``), then -- for a
     container-launching command only -- make a best-effort container `stop`
     and report the outcome via `on_container_orphan_risk`. The single
     hard-kill entry point ``run()`` uses for all three of its termination
     paths (R1128 wall-clock, grace-kill, and the BaseException reap), so the
-    container handling isn't duplicated three times."""
-    _kill_pgroup(proc, clock, reap_grace_s=reap_grace_s)
+    container handling isn't duplicated three times.
+
+    `first_signal` is forwarded verbatim to ``_kill_pgroup`` -- the R1128 and
+    grace-kill sites pin ``signal.SIGTERM``, the cooperative-stop reap passes the
+    resolved signal (see ``run``'s call sites)."""
+    _kill_pgroup(proc, clock, reap_grace_s=reap_grace_s, first_signal=first_signal)
     if container_runtime is not None:
         cid, stop_ok = _best_effort_container_stop(container_runtime, container_cidfile)
         if on_container_orphan_risk is not None:
@@ -616,6 +633,7 @@ def run(
     on_container_orphan_risk: Callable[[str, str | None, bool | None], None] | None = None,
     clock: Clock = SYSTEM_CLOCK,
     reap_grace_s: int = REAP_GRACE_S,
+    cooperative_first_signal: signal.Signals = signal.SIGTERM,
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
@@ -625,6 +643,15 @@ def run(
     ``_terminate_agent`` call site below (R1128 wall-clock, grace-kill, and
     the BaseException reap) -- one deadline value, threaded end to end.
     Defaults to REAP_GRACE_S so every existing caller is unchanged.
+
+    cooperative_first_signal: the FIRST signal sent to the agent pgroup on the
+    COOPERATIVE-STOP path ONLY -- the ``except BaseException`` reap, which fires
+    when serve stops the round (round_cmd converts serve's SIGTERM into the
+    KeyboardInterrupt that lands there). The R1128 wall-clock and grace-kill
+    paths PIN ``signal.SIGTERM`` literally regardless of this value -- the hard
+    wall stays SIGTERM-first, never by luck. Defaults to SIGTERM (``None``
+    cooperative_stop / standalone `agent-runner round`), so every existing caller
+    is unchanged.
 
     work_dir: the agent child's working directory; callers pass the
     already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
@@ -792,6 +819,7 @@ def run(
                     container_cidfile=container_cidfile,
                     on_container_orphan_risk=_report_orphan_once,
                     reap_grace_s=reap_grace_s,
+                    first_signal=signal.SIGTERM,  # R1128 hard wall: SIGTERM-first, literally
                 )
                 duration = clock.monotonic() - start
                 exit_code = proc.returncode if proc.returncode is not None else -1
@@ -837,6 +865,7 @@ def run(
                             container_cidfile=container_cidfile,
                             on_container_orphan_risk=_report_orphan_once,
                             reap_grace_s=reap_grace_s,
+                            first_signal=signal.SIGTERM,  # grace-kill hard path: SIGTERM-first
                         )
                         duration = clock.monotonic() - start
                         exit_code = proc.returncode if proc.returncode is not None else -1
@@ -869,7 +898,9 @@ def run(
     except BaseException:
         # Supervisor death (a heartbeat callback raising, or a signal injected into
         # the round CLI) must not leave the agent pgroup orphaned. Reap, then re-raise
-        # fail-loud — we never swallow the cause.
+        # fail-loud — we never swallow the cause. This is the COOPERATIVE-STOP path
+        # (serve's SIGTERM to the leader arrives here as a KeyboardInterrupt), so the
+        # agent gets its manifest-resolved first signal -- SIGTERM when None.
         if proc is not None:
             _terminate_agent(
                 proc,
@@ -878,6 +909,7 @@ def run(
                 container_cidfile=container_cidfile,
                 on_container_orphan_risk=_report_orphan_once,
                 reap_grace_s=reap_grace_s,
+                first_signal=cooperative_first_signal,
             )
         raise
     finally:

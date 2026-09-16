@@ -7,10 +7,22 @@ of relying on import-time register_*() side effects. One entry-point group,
 
 from __future__ import annotations
 
+import signal
 from dataclasses import dataclass
+from typing import Literal
 
 from agent_runner._registry import ensure_unique
 from agent_runner.hooks import PostRoundHook
+
+# THE single, pinned string->signal.Signals table for cooperative_stop. Nothing
+# else in the codebase may turn a cooperative-stop string into a signal (no
+# `getattr(signal, arbitrary_string)`, which could reach SIGKILL=zero-grace or
+# SIGSTOP=freeze). Keys ARE the full set of legal cooperative_stop values, so
+# __post_init__ validates against these same keys.
+_COOPERATIVE_SIGNALS: dict[str, signal.Signals] = {
+    "SIGTERM": signal.SIGTERM,
+    "SIGINT": signal.SIGINT,
+}
 
 
 @dataclass(frozen=True)
@@ -21,12 +33,25 @@ class PluginManifest:
 
     name: str
     post_round_hooks: tuple[PostRoundHook, ...] = ()
-    sigterm_cooperative: bool = False
-    """Declares that this preset's CLI cooperatively drains/cleans up on
-    SIGTERM -- source-verified per preset, NEVER assumed from a CLI's
-    general reputation. Observability-only: surfaced via
-    cooperative_manifest_names() to `peek --json` and `doctor`. Does not
-    itself change any termination behavior."""
+    cooperative_stop: Literal["SIGTERM", "SIGINT"] | None = None
+    """How this preset's CLI cooperatively drains/cleans up when the supervisor
+    stops the round: the signal it drains on (``"SIGTERM"`` = gemini/pi,
+    ``"SIGINT"`` = claude/codex), or ``None`` = no cooperative drain (the hard
+    path). Source-verified per preset, NEVER assumed from a CLI's general
+    reputation. Resolved to a ``signal.Signals`` ONLY by
+    ``resolve_cooperative_signal``; a ``None`` cooperative_stop maps to
+    SIGTERM-first at the reap site (today's behavior), never "skip the first
+    signal"."""
+
+    def __post_init__(self) -> None:
+        # Errors-unlikely-by-construction: an unknown signal name (or a
+        # freeze/zero-grace one like SIGSTOP/SIGKILL) is unrepresentable -- it
+        # raises at construction, not at kill time.
+        if self.cooperative_stop is not None and self.cooperative_stop not in _COOPERATIVE_SIGNALS:
+            raise ValueError(
+                "cooperative_stop must be one of {None, 'SIGTERM', 'SIGINT'}, "
+                f"got {self.cooperative_stop!r}"
+            )
 
 
 _LOADED_MANIFESTS: list[PluginManifest] = []
@@ -39,27 +64,66 @@ def loaded_manifest_names() -> list[str]:
     return [m.name for m in _LOADED_MANIFESTS]
 
 
+def _cooperative_stop_for_name(agent_binary: str | None) -> str | None:
+    """The ``cooperative_stop`` field of the registered manifest named
+    `agent_binary`, or None when no such manifest is registered (or it declares
+    no cooperative stop). The single registry lookup the resolvers below share."""
+    for m in _LOADED_MANIFESTS:
+        if m.name == agent_binary:
+            return m.cooperative_stop
+    return None
+
+
 def cooperative_manifest_names() -> list[str]:
-    """Names of every currently-registered manifest declaring
-    sigterm_cooperative=True (order-preserving). Mirrors
-    loaded_manifest_names; used by peek + doctor to answer "which presets
-    are cooperative" without either caller reaching into _LOADED_MANIFESTS."""
-    return [m.name for m in _LOADED_MANIFESTS if m.sigterm_cooperative]
+    """Names of every currently-registered manifest declaring a cooperative_stop
+    (order-preserving). Mirrors loaded_manifest_names; used by peek + doctor to
+    answer "which presets are cooperative" without either caller reaching into
+    _LOADED_MANIFESTS."""
+    return [m.name for m in _LOADED_MANIFESTS if m.cooperative_stop is not None]
+
+
+def cooperative_stop_by_name() -> dict[str, str]:
+    """`{manifest name: cooperative_stop signal name}` for every registered
+    manifest declaring a cooperative_stop (order-preserving). The richer form of
+    cooperative_manifest_names for peek/doctor -- an operator sees not just WHICH
+    presets cooperate but the SIGNAL each drains on."""
+    return {m.name: m.cooperative_stop for m in _LOADED_MANIFESTS if m.cooperative_stop is not None}
 
 
 def is_cooperative_agent(agent_binary: str | None) -> bool:
-    """Whether the agent's preset declares itself SIGTERM-cooperative.
+    """Whether the agent's preset declares a cooperative_stop.
     `None in [...]` is safely False, so no None-guard is needed."""
     return agent_binary in cooperative_manifest_names()
+
+
+def resolve_cooperative_signal(agent_binary: str | None) -> signal.Signals | None:
+    """The signal the agent named `agent_binary` cooperatively drains on, or
+    None when its preset declares no cooperative_stop. THE ONLY place a
+    cooperative_stop string becomes a ``signal.Signals`` (via the pinned
+    ``_COOPERATIVE_SIGNALS`` table) -- sibling to resolve_sigterm_grace_s, and
+    the SIGNAL half of the same anti-skew single-source: serve resolves it once
+    per phase from its own registry and publishes the result via env, so the
+    round child never re-derives (and skews) it."""
+    return _COOPERATIVE_SIGNALS.get(_cooperative_stop_for_name(agent_binary))
+
+
+def cooperative_signal_from_name(name: str | None) -> signal.Signals | None:
+    """Map a published cooperative-stop signal NAME (e.g. from
+    AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL) back to a ``signal.Signals`` through
+    the SAME pinned ``_COOPERATIVE_SIGNALS`` table. An unknown/absent name -> None
+    (the reap site then defaults to SIGTERM-first, today's behavior). Never
+    getattr(signal, ...): a leaked/hostile "SIGKILL"/"SIGSTOP" is simply not a
+    table key and falls back safely."""
+    return _COOPERATIVE_SIGNALS.get(name) if name is not None else None
 
 
 def resolve_sigterm_grace_s(agent_binary: str | None, sigterm_grace_s: int) -> int:
     """The SIGTERM->SIGKILL grace this round's agent actually gets:
     `sigterm_grace_s` (config's [agent] sigterm_grace_s, boot-capped at
-    _ROUND_TERM_GRACE_S) when `agent_binary` names a manifest declaring
-    sigterm_cooperative=True, else agent_runtime.REAP_GRACE_S (5s)
-    unchanged. One function, two callers: cli.serve_cmd._apply_reap_grace_env
-    (what the agent actually gets) and doctor/peek (what an operator sees)."""
+    _ROUND_TERM_GRACE_S) when `agent_binary` names a manifest declaring a
+    cooperative_stop, else agent_runtime.REAP_GRACE_S (5s) unchanged. One
+    function, two callers: cli.serve_cmd._apply_reap_grace_env (what the agent
+    actually gets) and doctor/peek (what an operator sees)."""
     from agent_runner.agent_runtime import REAP_GRACE_S
 
     if is_cooperative_agent(agent_binary):

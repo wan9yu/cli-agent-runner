@@ -20,7 +20,7 @@ def test_resolve_reap_grace_by_phase_should_resolve_each_phase_against_its_own_a
     """A phase override's own agent (cooperative or not) resolves
     independently of the base [agent] table and every other phase --
     the precomputed dict isn't just the base grace copied per key."""
-    register_manifest(PluginManifest(name="fake_coop", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="fake_coop", cooperative_stop="SIGTERM"))
     cfg = make_cfg(tmp_path)
     cfg = dataclasses.replace(
         cfg, agent=dataclasses.replace(cfg.agent, command=["claude"], sigterm_grace_s=9)
@@ -47,7 +47,7 @@ def test_resolve_reap_grace_by_phase_should_resolve_each_phase_against_its_own_a
 
 
 def test_apply_reap_grace_env_should_publish_configured_grace_when_agent_is_cooperative(tmp_path):
-    register_manifest(PluginManifest(name="fake_coop", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="fake_coop", cooperative_stop="SIGTERM"))
     cfg = make_cfg(tmp_path)
     cfg = dataclasses.replace(
         cfg, agent=dataclasses.replace(cfg.agent, command=["fake_coop"], sigterm_grace_s=9)
@@ -80,7 +80,7 @@ def test_apply_reap_grace_env_should_fall_back_to_live_resolution_when_phase_not
     never happen -- every phase_arg serve can select is one of
     _resolve_reap_grace_by_phase's keys) still resolves correctly instead of
     KeyError-crashing the round."""
-    register_manifest(PluginManifest(name="fake_coop", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="fake_coop", cooperative_stop="SIGTERM"))
     cfg = make_cfg(tmp_path)
     cfg = dataclasses.replace(
         cfg, agent=dataclasses.replace(cfg.agent, command=["fake_coop"], sigterm_grace_s=9)

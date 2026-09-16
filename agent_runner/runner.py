@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 import re
+import signal
 import sys
 import traceback as tb_mod
 from pathlib import Path
@@ -27,6 +28,7 @@ from agent_runner import (
     startup_check,
     vcs_state,
 )
+from agent_runner._plugin_manifest import cooperative_signal_from_name
 from agent_runner._serve_policy import EnvironmentalError
 from agent_runner.agent_runtime import signal_name
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
@@ -200,6 +202,22 @@ def _resolve_reap_grace_s() -> int:
         if parsed is not None and parsed > 0:
             return parsed
     return REAP_GRACE_S
+
+
+def _resolve_cooperative_signal() -> signal.Signals:
+    """The FIRST signal this round's agent gets on a cooperative stop, published
+    by serve via AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL (cli/serve_cmd.py's
+    _apply_cooperative_signal_env) so the child never re-derives (and skews)
+    serve's own cooperative-manifest resolution -- the SIGNAL half of the same
+    anti-skew single-source that AGENT_RUNNER_REAP_GRACE_S is the GRACE half of
+    (signal and grace must not disagree under `[plugins] disable`).
+
+    Falls back to signal.SIGTERM -- the `None`-cooperative_stop / hard-path
+    default -- when the env var is absent (standalone `agent-runner round`) or
+    carries an unrecognized name (never getattr(signal, ...): a leaked
+    "SIGKILL"/"SIGSTOP" is simply not a pinned table key)."""
+    resolved = cooperative_signal_from_name(os.environ.get("AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL"))
+    return resolved if resolved is not None else signal.SIGTERM
 
 
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
@@ -488,6 +506,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         grace_kill_ignore_patterns=grace_kill_ignore_patterns,
         on_container_orphan_risk=_container_orphan_risk_emit,
         reap_grace_s=_resolve_reap_grace_s(),
+        cooperative_first_signal=_resolve_cooperative_signal(),
     )
     events.emit(
         log_dir,

@@ -45,7 +45,7 @@ Changelog = "https://github.com/wan9yu/cli-agent-runner/blob/main/CHANGELOG.md"
 agent-runner = "agent_runner.cli:main"
 
 [project.entry-points."agent_runner.plugins"]
-claude_rate_limit = "agent_runner.builtin_plugins.claude_rate_limit:PLUGIN"
+claude = "agent_runner.builtin_plugins.claude_rate_limit:PLUGIN"
 gemini = "agent_runner.builtin_plugins.gemini:PLUGIN"
 codewhale = "agent_runner.builtin_plugins.codewhale:PLUGIN"
 kimi = "agent_runner.builtin_plugins.kimi:PLUGIN"

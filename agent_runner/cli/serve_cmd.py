@@ -621,6 +621,44 @@ def _apply_reap_grace_env(
     round_env["AGENT_RUNNER_REAP_GRACE_S"] = str(grace)
 
 
+def _cooperative_signal_name(cfg, phase_arg: str | None) -> str:
+    """This phase's agent's cooperative-stop FIRST signal NAME, resolved from
+    serve's own plugin registry. A phase whose agent declares no cooperative_stop
+    resolves to "SIGTERM" (the None default: SIGTERM-first, today's behavior), so
+    the published value is always a valid signal name."""
+    from agent_runner._plugin_manifest import resolve_cooperative_signal
+
+    resolved = resolve_cooperative_signal(cfg.profile_for(phase_arg).agent.binary)
+    return (resolved or signal.SIGTERM).name
+
+
+def _resolve_cooperative_signal_by_phase(cfg) -> dict[str | None, str]:
+    """Precompute this serve lifetime's per-phase cooperative-stop FIRST signal
+    NAME ONCE -- boot-invariant like _resolve_reap_grace_by_phase, and the SIGNAL
+    half of the SAME anti-skew single-source (resolved from serve's registry,
+    published via env, never re-derived by the child). Keyed by the finite known
+    phase_arg set: None (base) plus every configured [phases.<name>] override."""
+    phase_args: list[str | None] = [None, *cfg.phases.overrides.keys()]
+    return {phase_arg: _cooperative_signal_name(cfg, phase_arg) for phase_arg in phase_args}
+
+
+def _apply_cooperative_signal_env(
+    cfg, round_env: dict, phase_arg: str | None, signal_by_phase: dict[str | None, str]
+) -> None:
+    """Publish this round's agent's cooperative-stop FIRST signal via
+    AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL -- the SIGNAL sibling of
+    _apply_reap_grace_env, resolved from the SAME serve-side registry so signal
+    and grace can't skew (see _plugin_manifest.resolve_cooperative_signal).
+    Looked up in the precomputed `signal_by_phase`; the env write stays
+    UNCONDITIONAL every round so a phase transition overwrites the prior value."""
+    name = signal_by_phase.get(phase_arg)
+    if name is None:
+        # Defensive only -- every phase_arg serve can select is one of the keys
+        # _resolve_cooperative_signal_by_phase precomputed from this same cfg.
+        name = _cooperative_signal_name(cfg, phase_arg)
+    round_env["AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL"] = name
+
+
 def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
     """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
     git_head = compute_git_head(work_dir)
@@ -696,6 +734,9 @@ def cmd(args) -> int:
     # Boot-invariant per-phase SIGTERM grace -- resolved once here, looked up
     # (not re-resolved) every round by _apply_reap_grace_env below.
     grace_by_phase = _resolve_reap_grace_by_phase(cfg)
+    # The SIGNAL sibling of grace_by_phase: the per-phase cooperative-stop first
+    # signal, resolved once here from the same registry and published via env.
+    cooperative_signal_by_phase = _resolve_cooperative_signal_by_phase(cfg)
     if overlaps:
         detail = phase_select.describe_overlaps(overlaps)
         _release_serve_lock(serve_lock_fd)
@@ -763,6 +804,7 @@ def cmd(args) -> int:
             _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
             _apply_round_num_env(round_env, round_num)
             _apply_reap_grace_env(cfg, round_env, phase_arg, grace_by_phase)
+            _apply_cooperative_signal_env(cfg, round_env, phase_arg, cooperative_signal_by_phase)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [

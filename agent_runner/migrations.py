@@ -35,12 +35,21 @@ _VCS_LEGACY_FIELDS = frozenset({"orphan_action"})
 # reasoning that keeps unknown-key rejection manual elsewhere in this file --
 # so this is a MANUAL-only instruction (see the Migration below).
 _OLD_PLUGIN_DISABLE_NAMES = {
-    "claude_error_detector": "claude_rate_limit",
+    # Terminal names are the CURRENT plugin (manifest) names — claude's is
+    # "claude" as of the 0.3.9 rename (was "claude_rate_limit"), so the ancient
+    # hook-level name maps straight to the final name, not the intermediate one.
+    "claude_error_detector": "claude",
     "gemini_error_detector": "gemini",
     "codewhale_error_detector": "codewhale",
     "kimi_error_detector": "kimi",
     "pi_error_detector": "pi",
 }
+
+# 0.3.9: the claude builtin plugin's manifest+entry-point name went
+# claude_rate_limit -> claude (so its cooperative_stop="SIGINT" and
+# sigterm_grace_s join onto the "claude" agent binary). A config disabling the
+# old name in [plugins] disable would otherwise become silently ineffective.
+_RENAMED_PLUGIN_DISABLE_NAMES = {"claude_rate_limit": "claude"}
 
 
 def _old_plugin_disable_names(p: dict) -> dict[str, str]:
@@ -49,6 +58,15 @@ def _old_plugin_disable_names(p: dict) -> dict[str, str]:
     disable = _table(p, "plugins").get("disable")
     listed = disable if isinstance(disable, list) else []
     return {k: v for k, v in _OLD_PLUGIN_DISABLE_NAMES.items() if k in listed}
+
+
+def _renamed_plugin_disable_names(p: dict) -> dict[str, str]:
+    """Old->new mapping for any 0.3.x-renamed plugin name found in
+    ``[plugins] disable`` (currently only claude_rate_limit -> claude); empty
+    when none are present."""
+    disable = _table(p, "plugins").get("disable")
+    listed = disable if isinstance(disable, list) else []
+    return {k: v for k, v in _RENAMED_PLUGIN_DISABLE_NAMES.items() if k in listed}
 
 
 @dataclass(frozen=True)
@@ -608,6 +626,20 @@ MIGRATIONS: list[Migration] = [
             # full rename table, same fallback shape as _scalar_tables(p) or
             # '<table>' above -- never a dangling "{}".
             f"{_old_plugin_disable_names(p) or _OLD_PLUGIN_DISABLE_NAMES}"
+        ),
+    ),
+    # 0.3.9 claude plugin rename. MANUAL-only, matching the sibling above: a
+    # specific quoted element inside a list VALUE isn't something the
+    # key-anchored rewrite helpers here touch (auto-guessing intent from a
+    # list-value string is exactly what those helpers avoid). Reported by
+    # `migrate` and blocks `upgrade`, so `disable = ["claude_rate_limit"]` is
+    # never left silently ineffective after the rename.
+    Migration(
+        detect=lambda p: bool(_renamed_plugin_disable_names(p)),
+        apply=None,
+        describe=lambda p: (
+            "[plugins] disable names a plugin renamed in 0.3.9; rewrite manually: "
+            f"{_renamed_plugin_disable_names(p) or _RENAMED_PLUGIN_DISABLE_NAMES}"
         ),
     ),
     Migration(

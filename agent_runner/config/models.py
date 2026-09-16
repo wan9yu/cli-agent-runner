@@ -63,9 +63,9 @@ class AgentConfig:
     an empty string opts out of the marker scan entirely (wall-clock-ceiling-only)."""
     sigterm_grace_s: int = DEFAULT_SIGTERM_GRACE_S
     """The SIGTERM->SIGKILL grace this round's leader gives its agent, applied
-    only when the agent's preset declares itself cooperative (sigterm_cooperative
-    on its PluginManifest) -- a non-cooperative agent always gets the fixed
-    agent_runtime.REAP_GRACE_S instead. Capped at _MAX_SIGTERM_GRACE_S, which sits
+    only when the agent's preset declares itself cooperative (a non-None
+    cooperative_stop on its PluginManifest) -- a non-cooperative agent always
+    gets the fixed agent_runtime.REAP_GRACE_S instead. Capped at _MAX_SIGTERM_GRACE_S, which sits
     strictly inside (not equal to) _serve_policy._ROUND_TERM_GRACE_S, the
     supervisor's own wait for the round leader -- a value above the cap is
     rejected at boot, not clamped."""

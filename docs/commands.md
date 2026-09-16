@@ -293,7 +293,8 @@ The transforms `migrate` applies (generated from the registry):
 - prompt.files "x" → ["x"]
 - monitor.auto_stop_on "x" → ["x"]
 - plugins.disable "x" → ["x"]
-- [plugins] disable names a 0.2.x hook-level name; 0.3.0's PluginManifest ABI disables by plugin name instead — rewrite manually: {'claude_error_detector': 'claude_rate_limit', 'gemini_error_detector': 'gemini', 'codewhale_error_detector': 'codewhale', 'kimi_error_detector': 'kimi', 'pi_error_detector': 'pi'}
+- [plugins] disable names a 0.2.x hook-level name; 0.3.0's PluginManifest ABI disables by plugin name instead — rewrite manually: {'claude_error_detector': 'claude', 'gemini_error_detector': 'gemini', 'codewhale_error_detector': 'codewhale', 'kimi_error_detector': 'kimi', 'pi_error_detector': 'pi'}
+- [plugins] disable names a plugin renamed in 0.3.9; rewrite manually: {'claude_rate_limit': 'claude'}
 - [agent] command is empty; set a real argv list, e.g. command = ["claude"] (no auto-fix — a real value is needed)
 - empty top-level [prompt] files; give it real paths or remove the key (per-phase [phases.<name>.prompt] files = [] stays valid)
 - a [phases.<name>.agent] command is empty; set a real argv list (no auto-fix — a real value is needed)

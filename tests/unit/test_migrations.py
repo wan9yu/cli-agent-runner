@@ -553,7 +553,19 @@ def test_old_hook_level_disable_name_should_be_flagged_manual_when_migrated():
 
     r = migrations.run_migrations(text, tomllib.loads(text))
 
-    assert any("claude_rate_limit" in m for m in r.manual)
+    # The old hook name is flagged and the mapping points at the CURRENT plugin
+    # name (claude, not the intermediate claude_rate_limit).
+    assert any("claude_error_detector" in m and "'claude'" in m for m in r.manual)
+
+
+def test_renamed_claude_plugin_disable_name_should_be_flagged_manual_when_migrated():
+    """0.3.9 rename: `disable = ["claude_rate_limit"]` must be flagged (never left
+    silently ineffective) with the new `claude` name."""
+    text = '[plugins]\ndisable = ["claude_rate_limit"]\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert any("claude_rate_limit" in m and "'claude'" in m for m in r.manual)
 
 
 def test_migrate_should_stamp_schema_version_one_when_absent():

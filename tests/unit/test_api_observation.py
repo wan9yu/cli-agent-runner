@@ -636,5 +636,7 @@ def test_emit_should_include_sigterm_cooperative_plugins_block_when_json_mode(
     emit(state, json_mode=True)
 
     out = json.loads(capsys.readouterr().out)
+    # Typed cooperative_stop reporting: {preset: signal} under the kept-stable
+    # key (no peek schema bump for a value change under an existing key).
     assert "sigterm_cooperative" in out["plugins"]
-    assert isinstance(out["plugins"]["sigterm_cooperative"], list)
+    assert isinstance(out["plugins"]["sigterm_cooperative"], dict)

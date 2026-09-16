@@ -280,4 +280,6 @@ def _is_auth_error(text: str | None) -> bool:
     return bool(match) and match.group(1) == "401"
 
 
-PLUGIN = PluginManifest(name="pi", post_round_hooks=(PiErrorDetector(),))
+PLUGIN = PluginManifest(
+    name="pi", post_round_hooks=(PiErrorDetector(),), cooperative_stop="SIGTERM"
+)

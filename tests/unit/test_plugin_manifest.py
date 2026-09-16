@@ -84,28 +84,60 @@ def test_register_manifest_should_raise_when_manifest_name_already_registered():
     assert [m for m in _plugin_manifest._LOADED_MANIFESTS if m.name == "dup_plugin"] == [first]
 
 
-def test_plugin_manifest_should_default_sigterm_cooperative_to_false_when_omitted():
+def test_plugin_manifest_should_default_cooperative_stop_to_none_when_omitted():
     from agent_runner._plugin_manifest import PluginManifest
 
     manifest = PluginManifest(name="x")
 
-    assert manifest.sigterm_cooperative is False
+    assert manifest.cooperative_stop is None
 
 
-def test_cooperative_manifest_names_should_list_only_manifests_declaring_true():
+def test_manifest_should_reject_non_cooperative_signal():
+    """Errors-unlikely-by-construction: a SIGKILL (zero grace) or any name
+    outside {None, SIGTERM, SIGINT} is unrepresentable -- it raises at
+    construction, never reaching the kill path."""
+    from agent_runner._plugin_manifest import PluginManifest
+
+    with pytest.raises(ValueError, match="cooperative_stop"):
+        PluginManifest(name="x", cooperative_stop="SIGKILL")
+
+
+def test_manifest_should_accept_the_two_cooperative_signals_and_none():
+    from agent_runner._plugin_manifest import PluginManifest
+
+    assert PluginManifest(name="a", cooperative_stop="SIGTERM").cooperative_stop == "SIGTERM"
+    assert PluginManifest(name="b", cooperative_stop="SIGINT").cooperative_stop == "SIGINT"
+    assert PluginManifest(name="c", cooperative_stop=None).cooperative_stop is None
+
+
+def test_cooperative_manifest_names_should_list_only_manifests_declaring_a_signal():
     from agent_runner._plugin_manifest import (
         PluginManifest,
         cooperative_manifest_names,
         register_manifest,
     )
 
-    register_manifest(PluginManifest(name="cooperative_one", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="cooperative_one", cooperative_stop="SIGINT"))
     register_manifest(PluginManifest(name="not_cooperative"))
 
     assert cooperative_manifest_names() == ["cooperative_one"]
 
 
-def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
+def test_cooperative_stop_by_name_should_map_each_cooperative_preset_to_its_signal():
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        cooperative_stop_by_name,
+        register_manifest,
+    )
+
+    register_manifest(PluginManifest(name="term_one", cooperative_stop="SIGTERM"))
+    register_manifest(PluginManifest(name="int_one", cooperative_stop="SIGINT"))
+    register_manifest(PluginManifest(name="hard_one"))
+
+    assert cooperative_stop_by_name() == {"term_one": "SIGTERM", "int_one": "SIGINT"}
+
+
+def test_builtin_presets_should_declare_the_researched_cooperative_stop_signals():
     from agent_runner.builtin_plugins import (
         claude_rate_limit,
         codewhale,
@@ -114,11 +146,37 @@ def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
         pi,
     )
 
-    assert gemini.PLUGIN.sigterm_cooperative is True
-    assert claude_rate_limit.PLUGIN.sigterm_cooperative is False
-    assert kimi.PLUGIN.sigterm_cooperative is False
-    assert codewhale.PLUGIN.sigterm_cooperative is False
-    assert pi.PLUGIN.sigterm_cooperative is False
+    assert gemini.PLUGIN.cooperative_stop == "SIGTERM"
+    assert pi.PLUGIN.cooperative_stop == "SIGTERM"
+    assert claude_rate_limit.PLUGIN.cooperative_stop == "SIGINT"
+    assert kimi.PLUGIN.cooperative_stop is None
+    assert codewhale.PLUGIN.cooperative_stop is None
+
+
+def test_builtin_manifest_names_should_equal_their_agent_binary_so_the_signal_join_works():
+    """The join is manifest.name == agent binary basename. claude's plugin is
+    NAMED "claude" (not "claude_rate_limit") as of 0.3.9, so its declared SIGINT
+    is NON-inert: resolve_cooperative_signal("claude") actually returns SIGINT.
+    This is the mechanism->property closure of the v0.3.9 §B safety work."""
+    import signal
+
+    from agent_runner._plugin_manifest import (
+        cooperative_stop_by_name,
+        register_manifest,
+        resolve_cooperative_signal,
+    )
+    from agent_runner.builtin_plugins import claude_rate_limit, gemini, pi
+
+    for m in (gemini.PLUGIN, pi.PLUGIN, claude_rate_limit.PLUGIN):
+        register_manifest(m)
+
+    assert claude_rate_limit.PLUGIN.name == "claude"
+    # The join now delivers the declared signal to the real agent binaries:
+    assert resolve_cooperative_signal("claude") is signal.SIGINT
+    assert resolve_cooperative_signal("gemini") is signal.SIGTERM
+    assert resolve_cooperative_signal("pi") is signal.SIGTERM
+    # peek/doctor key on the plugin name, which now == the binary -> non-inert.
+    assert cooperative_stop_by_name()["claude"] == "SIGINT"
 
 
 def test_is_cooperative_agent_should_return_true_when_binary_names_a_cooperative_manifest():
@@ -128,7 +186,7 @@ def test_is_cooperative_agent_should_return_true_when_binary_names_a_cooperative
         register_manifest,
     )
 
-    register_manifest(PluginManifest(name="fake_coop_2", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="fake_coop_2", cooperative_stop="SIGTERM"))
 
     assert is_cooperative_agent("fake_coop_2") is True
 
@@ -139,6 +197,49 @@ def test_is_cooperative_agent_should_return_false_when_binary_is_none():
     assert is_cooperative_agent(None) is False
 
 
+def test_resolve_cooperative_signal_should_map_the_declared_name_to_a_signal():
+    import signal
+
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        register_manifest,
+        resolve_cooperative_signal,
+    )
+
+    register_manifest(PluginManifest(name="int_agent", cooperative_stop="SIGINT"))
+    register_manifest(PluginManifest(name="term_agent", cooperative_stop="SIGTERM"))
+
+    assert resolve_cooperative_signal("int_agent") is signal.SIGINT
+    assert resolve_cooperative_signal("term_agent") is signal.SIGTERM
+
+
+def test_resolve_cooperative_signal_should_return_none_for_a_non_cooperative_or_unknown_agent():
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        register_manifest,
+        resolve_cooperative_signal,
+    )
+
+    register_manifest(PluginManifest(name="hard_agent"))
+
+    assert resolve_cooperative_signal("hard_agent") is None
+    assert resolve_cooperative_signal("never_registered") is None
+    assert resolve_cooperative_signal(None) is None
+
+
+def test_cooperative_signal_from_name_should_map_only_the_two_pinned_names():
+    import signal
+
+    from agent_runner._plugin_manifest import cooperative_signal_from_name
+
+    assert cooperative_signal_from_name("SIGTERM") is signal.SIGTERM
+    assert cooperative_signal_from_name("SIGINT") is signal.SIGINT
+    # A leaked / hostile name is simply not a table key -- never getattr(signal).
+    assert cooperative_signal_from_name("SIGKILL") is None
+    assert cooperative_signal_from_name("SIGSTOP") is None
+    assert cooperative_signal_from_name(None) is None
+
+
 def test_resolve_sigterm_grace_s_should_return_configured_grace_when_agent_is_cooperative():
     from agent_runner._plugin_manifest import (
         PluginManifest,
@@ -146,16 +247,22 @@ def test_resolve_sigterm_grace_s_should_return_configured_grace_when_agent_is_co
         resolve_sigterm_grace_s,
     )
 
-    register_manifest(PluginManifest(name="fake_coop", sigterm_cooperative=True))
+    register_manifest(PluginManifest(name="fake_coop", cooperative_stop="SIGTERM"))
 
     assert resolve_sigterm_grace_s("fake_coop", 9) == 9
 
 
 def test_resolve_sigterm_grace_s_should_return_default_when_agent_is_not_cooperative():
-    from agent_runner._plugin_manifest import resolve_sigterm_grace_s
+    from agent_runner._plugin_manifest import (
+        PluginManifest,
+        register_manifest,
+        resolve_sigterm_grace_s,
+    )
     from agent_runner.agent_runtime import REAP_GRACE_S
 
-    assert resolve_sigterm_grace_s("claude", 9) == REAP_GRACE_S
+    register_manifest(PluginManifest(name="hard_agent"))
+
+    assert resolve_sigterm_grace_s("hard_agent", 9) == REAP_GRACE_S
 
 
 def test_resolve_sigterm_grace_s_should_return_default_when_agent_binary_is_none():

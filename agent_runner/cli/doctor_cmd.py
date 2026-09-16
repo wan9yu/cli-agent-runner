@@ -66,10 +66,11 @@ def _cgroup_report(cfg) -> dict:
 
 def cmd_doctor(args) -> int:
     cfg = cfg_from_args(args)
-    is_cooperative = _plugin_manifest.is_cooperative_agent(cfg.agent.binary)
+    cooperative_signal = _plugin_manifest.resolve_cooperative_signal(cfg.agent.binary)
     sigterm_grace = {
         "agent": cfg.agent.binary,
-        "cooperative": is_cooperative,
+        "cooperative": cooperative_signal is not None,
+        "signal": cooperative_signal.name if cooperative_signal is not None else None,
         "resolved_s": _plugin_manifest.resolve_sigterm_grace_s(
             cfg.agent.binary, cfg.agent.sigterm_grace_s
         ),
@@ -113,12 +114,15 @@ def _format(report: DoctorReport) -> str:
         else:
             where = step["phase"] or "base"
         lines.append(f"  round {step['round']}: {where}")
-    cooperative = _plugin_manifest.cooperative_manifest_names()
-    lines.append(f"cooperative presets: {', '.join(sorted(cooperative)) or '(none)'}")
+    cooperative = _plugin_manifest.cooperative_stop_by_name()
+    rendered = ", ".join(f"{name} ({sig})" for name, sig in sorted(cooperative.items()))
+    lines.append(f"cooperative presets: {rendered or '(none)'}")
     sg = report.sigterm_grace
+    signal_note = f", signal={sg['signal']}" if sg["signal"] is not None else ""
     lines.append(
         f"sigterm grace: {sg['resolved_s']}s "
-        f"({'cooperative' if sg['cooperative'] else 'non-cooperative'}, agent={sg['agent']})"
+        f"({'cooperative' if sg['cooperative'] else 'non-cooperative'}{signal_note}, "
+        f"agent={sg['agent']})"
     )
     cgroup = report.cgroup
     lines.append("cgroup:")
