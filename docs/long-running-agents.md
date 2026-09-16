@@ -193,5 +193,5 @@ For writing a `post_round_hook` that parses the round log, see
 
 ## Related primitives
 
-- `docs/runbook.md` § Rate limits — 5h OAuth account quota + transient error handling
+- `docs/runbook.md` § Transient errors (rate limits + 5xx + timeouts) — 5h OAuth account quota + transient error handling
 - `docs/runbook.md` § Bounded runs — max_rounds + stop_file workflow

@@ -52,7 +52,7 @@ Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 | `start` / `stop` / `kill` | `watch` — peek in a refresh loop |
 | `restart` / `status` | `monitor` — 13 detectors, alerts, auto-stop |
 | `round` / `serve` | `events` — query / stream events.jsonl |
-| `upgrade` / `migrate` | |
+| `upgrade` / `migrate` | `doctor` — read-only pre-flight |
 
 Verb reference: [`docs/commands.md`](docs/commands.md).
 
@@ -82,7 +82,9 @@ Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
 `network_fail`, `rate_limit_active`, `anomaly_repetitive_active`,
 `supervisor_stale`. `mem_pressure` also drives a separate serve-loop
 admission gate that defers or terminates rounds under real memory pressure —
-see `docs/architecture.md`.
+see `docs/architecture.md`. An opt-in soft-brake (`[monitor.host_health.brake]`,
+default off) can additionally cap the serve leaf's `memory.high` under sustained
+pressure on a delegated cgroup.
 
 **Auto-stop the service** (continuing is harmful):
 - `oauth_fail` — burning API quota on auth-rejected rounds

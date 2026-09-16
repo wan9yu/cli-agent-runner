@@ -75,10 +75,11 @@ into `docs/commands.md` from the registry) plus `CHANGELOG.md`. Between them
 they carry a config rewrite and per-version notes; a doc that only restates the
 changelog is upkeep with no reader.
 
-`docs/migrations/0.2.md` is the one surviving guide: it collects the few manual
-steps a config rewrite can't do (recovery procedures, a systemd regen, a mode
-switch). Keep the relevant CHANGELOG entries terse and link it
-(`See docs/migrations/0.2.md.`).
+`docs/migrations/0.2.md` and `docs/migrations/0.3.md` are the two surviving
+guides: they collect the few manual steps a config rewrite can't do (recovery
+procedures, a systemd regen, a mode switch, the 0.3.0 breaking-release port).
+Keep the relevant CHANGELOG entries terse and link the matching one
+(`See docs/migrations/0.3.md.`).
 
 Migration guides are **not** append-only. A per-version guide is pruned once its
 content becomes executable (`migrate`), generated (the transform list),

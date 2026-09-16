@@ -77,7 +77,7 @@ Deferred because closing it is a naming decision, not cleanup: no event kind
 carries the meaning "stashed but ref lost" (`orphan_stash_failed` would be wrong
 — the stash exists). Left as-is until that kind is designed.
 
-## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN, DEFERRED to 0.3
+## `oom_kill_delta` is named differently on its two events — NEEDS_DESIGN, still open (0.3 shipped without reconciling)
 
 The same cgroup `memory.events.oom_kill` delta is emitted under two
 different field names depending on which event carries it: `round_cgroup_memory`
@@ -91,8 +91,8 @@ names.
 Renaming either side is a change to a published event field name — part of
 the peek/event JSON contract — so which name becomes canonical (and whether
 it lands as a rename or an additive alias) needs a decision, not a silent
-swap. Tagged NEEDS_DESIGN. Deferred to 0.3's event-model canonicalization
-(see [[project-03-direction]]) rather than reconciled standalone in 0.2.19 —
-0.3 is already renaming/unifying event fields wholesale, and settling this
-name now risks a double-rename (once here, again when 0.3's canonical model
-lands). No field name changes in code until that decision is made.
+swap. Tagged NEEDS_DESIGN. The 0.2.19-era plan was to fold this into 0.3's
+anticipated event-model canonicalization (`docs/migrations/0.3.md`) rather than
+reconcile it standalone; 0.3 shipped as a config/plugin-ABI pivot without that
+wholesale field rename, so this stays open and unreconciled. No field name
+changes in code until that decision is made.

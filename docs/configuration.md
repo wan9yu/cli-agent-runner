@@ -121,6 +121,14 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `cgroup_growth_rate_warning_mb_per_min` | `float` | 512.0 |
 | `in_round_nudge` | `bool` | False |
 
+#### `[monitor.host_health.brake]`
+
+| Field | Type | Default |
+|---|---|---|
+| `memory_high` | `bool` | False |
+| `memory_high_step_pct` | `int` | 0 |
+| `warning_consecutive_samples` | `int` | 3 |
+
 ### `[phases]`
 
 | Field | Type | Default |
@@ -200,6 +208,35 @@ at 12 — 3 s inside the supervisor's own 15 s wait for the round
 (`_ROUND_TERM_GRACE_S`) — a config above that is rejected at boot, not
 silently clamped: a grace longer than the supervisor waits for the leader
 would let the supervisor SIGKILL the leader mid-wrap-up, defeating the point.
+
+### `[monitor.host_health.brake]` — memory.high soft-brake (0.3.7+)
+
+An opt-in cgroup v2 soft-brake (see the `[monitor.host_health.brake]` field
+table above for its fields). When enabled and the round is under sustained
+memory pressure (at the warning threshold or above) for
+`warning_consecutive_samples` ticks, the supervisor reversibly writes
+`memory.high` on **its own** cgroup leaf — never an ancestor — to throttle
+further growth, restoring the prior value on recovery or unconditionally at
+round end. The write is fail-open (a failed write disarms the brake and emits
+`memory_high_write_failed`; it never aborts the round) and monotone (it never
+raises an existing, tighter `memory.high`). Field defaults are in the
+`[monitor.host_health.brake]` schema table above.
+
+`memory_high_step_pct` shapes the written value:
+
+- **`0` (default) — cap-at-current.** Writes `memory.high` at the leaf's current
+  usage: throttle further growth with no synchronous reclaim burst. The
+  SD-latency-safe default.
+- **`>= 1` — aggressive reclaim.** Writes below current, dumping roughly that
+  percent of the leaf to swap the moment the brake engages — a burst that can
+  stall an SD-backed host's page-ins. Boot-capped at 50.
+
+The brake arms only when serve's own leaf is **delegated** to it — serve as a
+root system unit, or a user-mode unit (`systemctl --user` plus `loginctl
+enable-linger`). On any other host the write path cannot arm; the brake stays
+inert and is announced as such. `doctor` and `peek --json` report its state as
+`off`, `armed`, or `inert(<reason>)`; engaging and releasing emit
+`memory_high_engaged` / `memory_high_released`.
 
 ### `runtime.round_log_retention`
 
@@ -517,7 +554,21 @@ round_progress_interval_s = 0  # 0 = disabled; set >0 to emit round_progress hea
 # some_avg10_warning = 5.0
 # critical_consecutive_samples = 3
 # in_round_terminate = true
+# in_round_nudge = true             # SIGTERM at the first critical sample; needs in_round_terminate = true
+
+[monitor.host_health.brake]
+# Opt-in cgroup v2 memory.high soft-brake; arms only on a delegated leaf.
+# memory_high = true                # arm the soft-brake (default off)
+# memory_high_step_pct = 0          # 0 = cap-at-current; >=1 = aggressive reclaim (boot-cap 50)
+# warning_consecutive_samples = 3   # sustained-pressure ticks to engage / clear ticks to release
 ```
+
+`[monitor.host_health.pressure] in_round_nudge` (opt-in) fires that hard
+floor's SIGTERM at the **first** critical sample instead of at the sustained
+`critical_consecutive_samples` streak. It is gated: it acts only when
+`in_round_terminate` is also `true` and the round is not deferring to a bounded
+cgroup's own OOM handling. Enabling the nudge while `in_round_terminate = false`
+leaves it silently inert.
 
 Set `auto_stop_on = []` *uncommented* to disable all auto-stop behaviour and
 reduce monitor to alert-only; omitting the key entirely keeps the default

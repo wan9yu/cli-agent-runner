@@ -186,6 +186,9 @@ The round itself continues — a broken plugin must not crash the supervisor.
 
 `peek --json` reports currently-installed enricher names under `plugins.context_enrichers`:
 
+> The `schema_version` shown in the `peek --json` examples below is illustrative;
+> the authoritative value is `PEEK_SCHEMA_VERSION` in code.
+
 ```json
 {
   "schema_version": "2.5",

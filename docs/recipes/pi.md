@@ -57,6 +57,14 @@ Notes:
 - **`round_budget_s` is the only brake.** pi has no turn cap, runtime timeout,
   or token budget of its own — agent-runner's wall-clock `round_budget_s` is
   the sole thing that ends a runaway round.
+- **Constrained bare-metal host?** On a small always-on box, enable the opt-in
+  memory soft-brake (`[monitor.host_health.brake]` `memory_high = true`) to cap
+  the serve leaf's `memory.high` under sustained pressure. It needs a delegated
+  cgroup — run serve as a root system unit, or a user-mode unit (`systemctl
+  --user` + `loginctl enable-linger`) — and is inert otherwise. It defaults to
+  cap-at-current (`memory_high_step_pct = 0`: throttle growth with no reclaim
+  burst, the SD-safe default). Fields:
+  [`docs/configuration.md`](../configuration.md) `[monitor.host_health.brake]`.
 - **pi exits 0 on provider failure** (auth errors and exhausted retries alike;
   errors surface only as JSONL `errorMessage` on stdout). The `pi` detector
   plugin reads those records to drive rate-limit/5xx back-off, and reports a

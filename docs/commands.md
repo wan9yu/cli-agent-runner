@@ -152,7 +152,9 @@ postmortem trail): see `docs/runbook.md` § "Upgrading agent-runner".
 ### `agent-runner peek [flags]`
 
 Snapshot of project state. Without flags, prints a pretty summary; with
-`--json`, emits a structured ProjectState document.
+`--json`, emits a structured ProjectState document (schema 2.5) that adds a
+top-level `brake` state — `off | armed | inert(<reason>)` — for the
+`memory.high` soft-brake.
 
 ```bash
 agent-runner peek
@@ -322,12 +324,13 @@ The transforms `migrate` applies (generated from the registry):
 
 Read-only pre-flight: never launches the configured agent or mutates config
 (it validates the log dir is writable, creating it if missing — the same
-probe `serve` runs at boot). Prints (or `--json` emits) three sections: the
+probe `serve` runs at boot). Prints (or `--json` emits) several blocks: the
 startup-check battery — the same checks `serve` runs before its first round,
 including `phase_window_overlap` (a FAIL here means `serve` will refuse to
-boot) — any `[phases]` window overlaps, and an N-round preview of which
-phase each upcoming round would select. `--rounds` sets the preview depth
-(default 3).
+boot) — any `[phases]` window overlaps, an N-round preview of which phase
+each upcoming round would select, and a `cgroup` block whose `brake` line
+reports the `memory.high` soft-brake as `off | armed | inert(<reason>)`.
+`--rounds` sets the preview depth (default 3).
 
 ## 中文摘要
 

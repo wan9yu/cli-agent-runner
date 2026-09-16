@@ -95,7 +95,8 @@ API quota / writing to a near-full disk).
 `mem_pressure`'s own `auto_action` stays `"none"` — the graded, plugin-
 configurable admission lever through `on_alert` is 0.3. The actual
 coma-preventer is a separate, serve-local admission gate
-(`agent_runner/host_health.py` + `cli/_serve_round.py`), independent of the
+(`agent_runner/host_health.py`, `metrics.py`, `cli/_serve_round.py` +
+`cli/_serve_cgroup.py`), independent of the
 monitor's `auto_action`: before starting a round the loop samples
 `host_health` and **defers** while it reports `critical` pressure only
 (`round_deferred` / `round_resumed`, mirroring `schedule_paused`/`resumed`);
@@ -103,6 +104,31 @@ while a round is in flight it resamples every ~10s and, once pressure reads
 `critical` for several consecutive ticks in a row, **terminates** the round
 (`round_mem_terminated`) — unless a bounded cgroup lets it defer to the
 kernel's own OOM instead (`mem_pressure_deferred_to_cgroup`).
+
+Two further rungs are opt-in and default OFF (knobs + defaults in the
+`[monitor.host_health.brake]` and `[monitor.host_health.pressure]` field
+tables in `docs/configuration.md`):
+
+- **Soft-brake** (`brake.memory_high`): under *sustained* pressure — at the
+  warning threshold or above, for `warning_consecutive_samples` ticks — it
+  reversibly writes `memory.high` on serve's **own** cgroup leaf (never an
+  ancestor). The write is monotone (never raises an already-tighter limit) and
+  fail-open, and is restored on recovery or unconditionally at round-end
+  (`memory_high_engaged` / `memory_high_released` / `memory_high_write_failed`).
+  It arms **only** when that leaf is delegated (serve running as a root system
+  unit, or as a user-mode unit under `systemctl --user` + `loginctl
+  enable-linger`); otherwise it announces itself inert. `memory_high_step_pct`
+  defaults to `0` = cap-at-current: throttle further growth with no synchronous
+  reclaim burst (the SD-latency-safe default); `>= 1` opts into aggressive
+  reclaim. `doctor` and `peek --json` report the brake as
+  `off | armed | inert(<reason>)`.
+- **Nudge** (`pressure.in_round_nudge`): fires the hard floor's SIGTERM at the
+  **first** critical sample instead of the sustained
+  `critical_consecutive_samples` threshold. It is gated on
+  `in_round_terminate` and shares the defer-to-cgroup exemption, so with
+  `in_round_terminate=false` it is silently inert. Both the nudge and the
+  sustained terminate carry a `tier` field (`nudge` | `terminate`) on
+  `round_mem_terminated`.
 
 <!-- gen:detector-list -->
 <!-- source: agent_runner/_monitor_registry.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS -->
