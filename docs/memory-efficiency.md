@@ -618,17 +618,18 @@ exactly that file.
 | | v0.3.8 | 0.3.9 | Δ |
 |---|---|---|---|
 | `.py` files | 86 | 81 | **−5** |
-| total LOC | 22,257 | 20,225 | **−2,032 (−9%)** |
-| largest module | `cli/_serve_round.py`, 991 | `migrations.py`, 998 | n/a — different module |
+| total LOC | 22,257 | 20,195 | **−2,062 (−9%)** |
+| largest module | `cli/_serve_round.py`, 991 | `migrations.py`, 972 | n/a — different module |
 
 This is where the subtraction actually shows up. `_plugin_sandbox.py`,
 `_sandbox_probe.py`, `_plugin_checksum.py`, the `SpawnHook`/`DirtyHandler`
 seams, and the owned-paths registry are gone from `agent_runner/`, alongside
 ~700 LOC of their tests (not counted in this source-only table).
-`migrations.py` becomes the release's largest module at 998/1000 lines — the
-0.3.9 removal-migration entries pushed it close to the ceiling
-`tests/invariants/test_module_sizes.py` enforces; a split is a housekeeping
-item for whichever future release next grows it.
+`migrations.py` becomes the release's largest module at 972/1000 lines — the
+0.3.9 removal-migration entries grew it toward the ceiling
+`tests/invariants/test_module_sizes.py` enforces, then the close-out /simplify
+pass deduped its table-scan and disable-rename helpers to restore comfortable
+headroom.
 
 ### 3. Base dependencies
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.9] - 2026-09-17
 
 ### Changed
 - `PluginManifest` narrows to 3 fields (`name`, `post_round_hooks`, `cooperative_stop`) — dropped 6 zero-producer hook seams, the `DirtyHandler` seam (dirty-tree resolution is now plain core), the sandbox subsystem, and the owned-paths registry, all with zero real producers.
