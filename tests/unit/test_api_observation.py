@@ -216,11 +216,11 @@ def test_poll_once_should_return_disk_critical_alert_when_disk_critical_seeded(
     assert crit[0].auto_action == "stop_service"
 
 
-def test_emit_should_populate_plugin_hook_and_owned_path_keys_when_json_mode(
+def test_emit_should_populate_plugin_hook_keys_when_json_mode(
     tmp_git_repo: Path,
     capsys,
 ) -> None:
-    """0.1.8: plugins block in peek JSON includes pre/post hooks + owned_paths."""
+    """0.1.8: plugins block in peek JSON includes pre/post hooks."""
     from agent_runner.api_types import (
         ProjectState,
         ServiceMode,
@@ -246,10 +246,8 @@ def test_emit_should_populate_plugin_hook_and_owned_path_keys_when_json_mode(
     assert out["schema_version"] == PEEK_SCHEMA_VERSION
     assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
-    assert "owned_paths" in out["plugins"]
     assert isinstance(out["plugins"]["pre_round_hooks"], list)
     assert isinstance(out["plugins"]["post_round_hooks"], list)
-    assert isinstance(out["plugins"]["owned_paths"], list)
 
 
 def test_peek_should_populate_recent_hook_failures_when_events_contain_hook_failures(

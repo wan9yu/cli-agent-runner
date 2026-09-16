@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from agent_runner.vcs_state import (
-    _PLUGIN_OWNED_PATHS,
     AutoCommitError,
     StashRef,
     detect_dirty_files,
@@ -14,9 +13,6 @@ from agent_runner.vcs_state import (
     stash_orphan,
     try_auto_commit,
 )
-from tests._test_helpers import isolating
-
-_reset = isolating(_PLUGIN_OWNED_PATHS)
 
 
 def test_detect_dirty_files_should_return_empty_list_when_tree_clean(tmp_git_repo: Path) -> None:
@@ -101,84 +97,6 @@ def test_stash_orphan_should_include_phase_in_message_when_phase_given(
 
     assert ref is not None
     assert "phase=diverge" in ref.message
-
-
-def test_plugin_owned_paths_should_return_empty_list_when_no_registration() -> None:
-    from agent_runner.vcs_state import plugin_owned_paths
-
-    assert plugin_owned_paths() == []
-
-
-def test_plugin_owned_paths_should_return_snapshot_when_paths_registered() -> None:
-    from agent_runner.vcs_state import (
-        plugin_owned_paths,
-        register_plugin_owned_paths,
-    )
-
-    register_plugin_owned_paths(["proposals/", "reports/*.md"])
-
-    assert plugin_owned_paths() == ["proposals/", "reports/*.md"]
-
-
-def test_register_plugin_owned_paths_should_raise_value_error_when_entry_non_string() -> None:
-    from agent_runner.vcs_state import register_plugin_owned_paths
-
-    with pytest.raises(ValueError, match="non-string entry"):
-        register_plugin_owned_paths(["ok.md", 42])  # type: ignore[list-item]
-
-
-def test_matches_owned_path_should_match_as_prefix_when_pattern_has_trailing_slash() -> None:
-    from agent_runner.vcs_state import (
-        _matches_owned_path,
-        register_plugin_owned_paths,
-    )
-
-    register_plugin_owned_paths(["proposals/"])
-
-    assert _matches_owned_path("proposals/foo.md")
-    assert _matches_owned_path("proposals/sub/bar.md")
-    assert _matches_owned_path("proposals")
-    assert not _matches_owned_path("proposalsX/foo.md")
-    assert not _matches_owned_path("other/foo.md")
-
-
-def test_matches_owned_path_should_not_cross_slash_when_glob_pattern_has_no_slash() -> None:
-    from agent_runner.vcs_state import (
-        _matches_owned_path,
-        register_plugin_owned_paths,
-    )
-
-    register_plugin_owned_paths(["reports/*.md"])
-
-    assert _matches_owned_path("reports/dev.md")
-    # PurePath.match: single * does NOT cross slashes
-    assert not _matches_owned_path("reports/sub/qa.md")
-
-
-def test_matches_owned_path_should_match_recursively_when_pattern_has_double_star() -> None:
-    from agent_runner.vcs_state import (
-        _matches_owned_path,
-        register_plugin_owned_paths,
-    )
-
-    register_plugin_owned_paths(["logs/plugins/**/*"])
-
-    assert _matches_owned_path("logs/plugins/acme/state.json")
-    assert _matches_owned_path("logs/plugins/acme/deep/very/deep.txt")
-    assert not _matches_owned_path("logs/other/state.json")
-
-
-def test_matches_owned_path_should_match_when_any_pattern_matches() -> None:
-    from agent_runner.vcs_state import (
-        _matches_owned_path,
-        register_plugin_owned_paths,
-    )
-
-    register_plugin_owned_paths(["proposals/", "reports/*.md"])
-
-    assert _matches_owned_path("proposals/x.md")
-    assert _matches_owned_path("reports/y.md")
-    assert not _matches_owned_path("other/z.md")
 
 
 def _head(repo: Path) -> str:

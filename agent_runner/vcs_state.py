@@ -7,120 +7,19 @@ Stash safety rules (R820 + §9 IMMUTABLE):
   emits cosmetic +/- markers on moved sections, so a +/-scan misclassifies both
   ways. Any auto-tool-vs-human classification must compare line sets vs HEAD.
   Enforced by tests/invariants/test_set_diff_for_auto_tool_classification.py.
-- Also hosts the plugin-owned-paths registry, honored by ``detect_dirty_files()``
-  (not reported as orphan WIP) and by ``stash_orphan()`` (excluded from the
-  stash pathspec) so plugins can opt files/dirs out of the orphan-stash defense.
 """
 
 from __future__ import annotations
 
 import os
-import re
 import signal
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 from dataclasses import dataclass, replace
-from pathlib import Path, PurePath
+from pathlib import Path
 
 from agent_runner._emit import emit_stale_index_lock_cleared
 from agent_runner._serve_policy import EnvironmentalError
 from agent_runner.clock import SYSTEM_CLOCK
-
-# Plugin-owned paths registry — set via register_plugin_owned_paths().
-# Two consumers honor it: detect_dirty_files() filters its return (not flagged as
-# orphan WIP) and _owned_exclude_specs() feeds _combined_exclude_pathspec(), the
-# exclusion both stash_orphan() (``git stash push -u``) and try_auto_commit()
-# (``git add -A``) apply, so a plugin's deliverables are neither swept off disk nor
-# committed. They scan differently -- see _owned_exclude_specs.
-_PLUGIN_OWNED_PATHS: list[str] = []
-
-
-def register_plugin_owned_paths(paths: list[str]) -> None:
-    """Register paths the plugin considers its own deliverables.
-
-    Paths are relative to the work_dir. Matching:
-
-      - Trailing ``/`` → prefix match (e.g. ``"proposals/"`` matches
-        ``"proposals/dev-round1.md"`` and the bare directory name).
-      - Anything else without ``**`` → ``pathlib.PurePath.match`` glob
-        (e.g. ``"reports/*.md"``). Single ``*`` does not cross slashes.
-      - Patterns containing ``**`` → globstar match (e.g.
-        ``"logs/plugins/**/*"``). ``**/`` matches **zero or more** directory
-        segments, so ``"logs/plugins/**/*"`` matches a file directly in
-        ``logs/plugins`` as well as one nested below it, and
-        ``"reports/**/*.md"`` matches both ``reports/dev.md`` and
-        ``reports/sub/qa.md``. (``PurePath.full_match`` would handle this
-        natively but requires Python 3.13+; this project's minimum is 3.11.)
-
-    Plugins call this at module import time (entry_point side-effect) so the
-    paths are known before the first round runs.
-
-    Raises ValueError on non-string entries.
-    """
-    for p in paths:
-        if not isinstance(p, str):
-            raise ValueError(f"register_plugin_owned_paths: non-string entry {p!r}")
-    _PLUGIN_OWNED_PATHS.extend(paths)
-
-
-def plugin_owned_paths() -> list[str]:
-    """Snapshot of registered plugin-owned paths (for peek visibility)."""
-    return list(_PLUGIN_OWNED_PATHS)
-
-
-def _globstar_to_regex(pattern: str) -> str:
-    """Translate a glob containing ``**`` into an anchored regex.
-
-    Globstar semantics (matching git / bash ``globstar``): ``**/`` matches zero
-    or more directory segments, a single ``*`` matches within one segment, and
-    ``?`` matches one non-slash character. Because ``**/`` collapses to nothing,
-    ``"<dir>/**/*"`` matches a file sitting directly in ``<dir>`` as well as one
-    nested below it -- which ``fnmatch`` did not (``**/`` compiled to a regex
-    demanding an intervening ``/``, so a direct child never matched). Character
-    classes are not supported in ``**`` patterns.
-    """
-    out: list[str] = []
-    i, n = 0, len(pattern)
-    while i < n:
-        c = pattern[i]
-        if c == "*":
-            j = i
-            while j < n and pattern[j] == "*":
-                j += 1
-            if j - i >= 2:  # ``**`` (or more)
-                if j < n and pattern[j] == "/":
-                    out.append("(?:[^/]+/)*")  # zero or more directory segments
-                    i = j + 1
-                else:
-                    out.append(".*")
-                    i = j
-            else:  # single ``*`` -- does not cross a slash
-                out.append("[^/]*")
-                i = j
-        elif c == "?":
-            out.append("[^/]")
-            i += 1
-        else:
-            out.append(re.escape(c))
-            i += 1
-    return "".join(out)
-
-
-def _matches_owned_path(path: str) -> bool:
-    """True if `path` matches any registered plugin-owned pattern."""
-    for pattern in _PLUGIN_OWNED_PATHS:
-        if pattern.endswith("/"):
-            stripped = pattern.rstrip("/")
-            if path == stripped or path.startswith(pattern):
-                return True
-        elif "**" in pattern:
-            # Globstar, not fnmatch: ``**/`` matches zero+ segments (PurePath.match
-            # can't cross slashes on 3.11; fnmatch's ``**/`` demanded an intervening one).
-            if re.fullmatch(_globstar_to_regex(pattern), path):
-                return True
-        elif PurePath(path).match(pattern):
-            return True
-    return False
-
 
 # Fixed git-commit ceiling (plugin-first: no new config knob). Feeds the outer
 # round ceiling (api.outer_round_ceiling_s) and is enforced on the commit itself.
@@ -208,22 +107,13 @@ def is_git_repo(path: Path) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
-def _porcelain_paths(repo: Path, *, untracked_all: bool = False) -> list[str]:
-    """Every path with an uncommitted change, before owned-path filtering.
+def _porcelain_paths(repo: Path) -> list[str]:
+    """Every path with an uncommitted change.
 
     Uses ``git status --porcelain -z`` (NUL-separated, rename pairs split into
     two records). Returns the new-path side of any rename; old paths are skipped.
-
-    ``untracked_all`` adds ``-uall`` so a wholly-untracked directory is listed as
-    its individual files rather than collapsed to a single ``dir/`` entry. Only
-    ``_owned_exclude_specs`` needs that; ``detect_dirty_files`` keeps the default
-    ``-unormal`` because its output is user-visible (the ``orphan_stashed`` event
-    and ``orphan-state.json``) and must not change shape for existing users.
     """
-    args = ["status", "--porcelain", "-z"]
-    if untracked_all:
-        args.append("-uall")
-    r = _git(repo, *args)
+    r = _git(repo, "status", "--porcelain", "-z")
     if r.returncode != 0:
         return []
     out: list[str] = []
@@ -250,53 +140,8 @@ def _porcelain_paths(repo: Path, *, untracked_all: bool = False) -> list[str]:
 
 
 def detect_dirty_files(repo: Path) -> list[str]:
-    """Files with any uncommitted change, minus paths claimed by the owned-paths registry."""
-    out = _porcelain_paths(repo)
-    # Early-out preserves zero behavior change when no plugin has registered.
-    if _PLUGIN_OWNED_PATHS:
-        out = [p for p in out if not _matches_owned_path(p)]
-    return out
-
-
-def _owned_exclude_specs(repo: Path) -> list[str]:
-    """``:(exclude)`` pathspecs for every dirty path the owned-paths registry claims.
-
-    Built from concrete dirty paths run through ``_matches_owned_path`` rather than by
-    translating registered patterns into pathspec syntax: bare-glob patterns match via
-    ``PurePath.match``, which is right-anchored (``"reports/*.md"`` also matches
-    ``sub/reports/dev.md``) while git pathspecs anchor at the repo root, so no faithful
-    translation exists. Reusing the matcher is what keeps the git boundary honoring the
-    same claims as the report boundary -- the invariant whose absence caused the sweep.
-
-    Scans with ``-uall``: ``-unormal`` collapses a wholly-untracked directory to a
-    single ``reports/`` entry, which the glob and ``**`` forms do not match, so a
-    first-round deliverable would be swept despite being registered. Only the prefix
-    form (``"proposals/"``) survives a collapsed entry.
-
-    Consequence, accepted: the two boundaries no longer emit identical path *lists* --
-    a report may name ``reports/`` where the excludes name ``reports/dev.md``. They
-    agree on what actually reaches the stash, which is the guarantee that matters. The
-    residue is that ``orphan_stashed`` can still name a collapsed dir whose owned
-    contents were not in fact stashed; that is the pre-existing reporting imprecision
-    of collapsed entries, not something this scan introduced.
-
-    Ignore-matched paths are skipped: naming one in a stash pathspec makes
-    ``git stash push -u`` return rc=1 (a hard-learned lesson). ``--no-index`` so a
-    tracked file under an ignored directory is caught too -- plain ``check-ignore``
-    reports rc=1 (not ignored) for that shape yet the push still trips. ``--`` so a
-    leading-dash path (``-out/memo.md``) is read as a pathname, not a switch: git
-    would exit 129, which reads as "not ignored" and lands the path in the pathspec.
-    """
-    if not _PLUGIN_OWNED_PATHS:
-        return []
-    out: list[str] = []
-    for p in _porcelain_paths(repo, untracked_all=True):
-        if not _matches_owned_path(p):
-            continue
-        if _git(repo, "check-ignore", "-q", "--no-index", "--", p).returncode == 0:
-            continue
-        out.append(f":(exclude){p}")
-    return out
+    """Files with any uncommitted change."""
+    return _porcelain_paths(repo)
 
 
 def _parse_stash_line(line: str) -> tuple[str, int, str] | None:
@@ -353,8 +198,8 @@ def stash_orphan(
 
     - the tree holds no supervisor-owned dirty file;
     - the push stashed nothing because the pathspec excluded everything dirty (a
-      round that churned only ``log_dir`` / plugin-owned paths) — whether the stash
-      stack is empty or an older unrelated stash sits on top;
+      round that churned only ``log_dir``) — whether the stash stack is empty or
+      an older unrelated stash sits on top;
     - KNOWN GAP: the push succeeded but the follow-up ``git stash list`` failed, so
       the WIP *is* stashed and only its ref was lost — callers still read "nothing
       stashed" and report the tree as ignored. No event kind carries that meaning
@@ -371,9 +216,9 @@ def stash_orphan(
     that) path clears it, mirroring ``try_auto_commit``'s
     ``_clear_self_caused_index_lock`` use.
 
-    ``log_dir`` (when under ``repo``) and every dirty plugin-owned path are
-    excluded so ``git stash push -u`` sweeps neither the runner's own bookkeeping
-    (lock / pid / event logs) nor the plugin's deliverables out of the work tree.
+    ``log_dir`` (when under ``repo``) is excluded so ``git stash push -u``
+    sweeps neither the runner's own bookkeeping (lock / pid / event logs) out
+    of the work tree.
     """
     if not detect_dirty_files(repo):
         return None
@@ -428,23 +273,12 @@ def _log_dir_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
 
 
 def _combined_exclude_pathspec(root: Path, log_dir: Path | None) -> list[str]:
-    """Git pathspec args excluding BOTH the runner's own ``log_dir`` and every
-    dirty plugin-owned path from an ``add``/``stash`` -- the one exclusion both
-    dirty-action branches (``stash_orphan``, ``try_auto_commit``) apply, so the
-    two stay symmetric and a future change to the combining rule lands in one
-    place.
-
-    ``_log_dir_exclude_pathspec`` opens its own list with ``--`` when non-empty;
-    ``_owned_exclude_specs`` returns bare ``:(exclude)`` specs. So when log_dir
-    contributes, the combined list already carries the ``--``; when it does not
-    but owned paths do, the owned-only list needs the ``--`` prepended (a
-    leading-dash path must read as a pathname, not a switch).
+    """Git pathspec args excluding the runner's own ``log_dir`` from an
+    ``add``/``stash`` -- the one exclusion both dirty-action branches
+    (``stash_orphan``, ``try_auto_commit``) apply, so the two stay symmetric
+    and a future change to the exclusion rule lands in one place.
     """
-    exclude = _log_dir_exclude_pathspec(root, log_dir)
-    owned = _owned_exclude_specs(root)
-    if owned:
-        exclude = [*exclude, *owned] if exclude else ["--", *owned]
-    return exclude
+    return _log_dir_exclude_pathspec(root, log_dir)
 
 
 def _clear_self_caused_index_lock(work_dir: Path, round_num: int, log_dir: Path | None) -> None:
@@ -473,16 +307,14 @@ def try_auto_commit(
 ) -> str:
     """Auto-commit the dirty tree with a hardcoded subject; return the commit SHA.
 
-    Returns "" when nothing remained staged after excluding log_dir and every
-    registered plugin-owned path (no-op; HEAD untouched). Raises AutoCommitError
-    on git failure. DOES NOT push. Subject: ``agent-runner auto-commit: R<N>
-    <phase>``. Uses ``git -c commit.gpgsign=false``; honors pre-commit hooks (no
-    --no-verify).
+    Returns "" when nothing remained staged after excluding log_dir (no-op;
+    HEAD untouched). Raises AutoCommitError on git failure. DOES NOT push.
+    Subject: ``agent-runner auto-commit: R<N> <phase>``. Uses ``git -c
+    commit.gpgsign=false``; honors pre-commit hooks (no --no-verify).
 
-    ``log_dir`` (when under ``work_dir``) and every dirty plugin-owned path
-    registered via ``register_plugin_owned_paths`` are excluded from the add, so
-    neither the runner's own bookkeeping nor the plugin's deliverables are
-    staged into the agent's auto-commit -- mirroring ``stash_orphan``.
+    ``log_dir`` (when under ``work_dir``) is excluded from the add, so the
+    runner's own bookkeeping is not staged into the agent's auto-commit --
+    mirroring ``stash_orphan``.
 
     The commit call uses GIT_COMMIT_TIMEOUT_S (120s, not the 10s default) since
     real pre-commit hooks routinely exceed 10s. Either the add or the commit
@@ -502,9 +334,8 @@ def try_auto_commit(
         raise AutoCommitError((add_result.stderr or "git add failed")[:200])
 
     # Only the exclusion can leave nothing staged (a zero-work round that churned
-    # only log_dir or plugin-owned paths); without it the tree was dirty so there
-    # is always something to commit. Skip the extra git call on the common
-    # (no-exclusion) path.
+    # only log_dir); without it the tree was dirty so there is always something
+    # to commit. Skip the extra git call on the common (no-exclusion) path.
     if exclude and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
         return ""
 

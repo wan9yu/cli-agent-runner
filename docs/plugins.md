@@ -60,9 +60,6 @@ empty:
 A plugin that provides more than one capability just fills in more than one
 field on the same manifest — there is nothing to register per-capability.
 
-Plugin-owned VCS paths (the `register_plugin_owned_paths()` API added in
-0.1.8) are not a manifest field — see [Declaring plugin-owned paths](#declaring-plugin-owned-paths-018) below.
-
 ## Registering a custom event kind (§3.1)
 
 ```toml
@@ -198,7 +195,6 @@ The round itself continues — a broken plugin must not crash the supervisor.
     "pre_round_hooks": [...],
     "post_round_hooks": [...],
     "detectors": [...],
-    "owned_paths": [...],
     "sigterm_cooperative": ["gemini"]
   },
   ...
@@ -559,8 +555,7 @@ detector. Other plugin detectors and all builtins still run normally.
     "context_enrichers": [...],
     "pre_round_hooks": [...],
     "post_round_hooks": [...],
-    "detectors": ["my_detector"],
-    "owned_paths": [...]
+    "detectors": ["my_detector"]
   },
   ...
 }
@@ -670,53 +665,6 @@ def after_round(self, ctx, result):
         # A handler auto-committed. result.dirty_outcome.ref is the SHA.
         ...
 ```
-
-## Declaring plugin-owned paths (0.1.8+)
-
-If your plugin writes files inside the supervisor's `work_dir`
-(audit memos, generated reports, plugin-local state, etc.), declare them
-so the orphan-stash defense doesn't silently sweep them into a stash
-between rounds.
-
-```python
-# my_plugin/__init__.py
-from agent_runner.vcs_state import register_plugin_owned_paths
-
-# Must register before the first round runs.
-register_plugin_owned_paths(
-    [
-        "proposals/",  # trailing slash → prefix match
-        "logs/plugins/my_plugin/**/*",  # recursive glob (globstar)
-        "reports/*.md",  # single-segment glob (PurePath.match)
-    ]
-)
-```
-
-### Matching semantics
-
-| Pattern | Matches | Notes |
-|---|---|---|
-| `"proposals/"` | `proposals`, `proposals/foo.md`, `proposals/sub/bar.md` | Trailing `/` → prefix match. |
-| `"proposals"` (no slash) | `proposals` exactly | Single-segment literal. |
-| `"reports/*.md"` | `reports/dev.md` | `*` does not cross slashes. |
-| `"reports/**/*.md"` | `reports/dev.md`, `reports/sub/qa.md` | `**` matches across directory separators. |
-| `"logs/plugins/**/*"` | `logs/plugins/acme/state.json` | Same — `**` covers intermediate dirs. |
-
-### Caveat — this is NOT a "make work_dir messy" license
-
-Plugin-owned paths express *"these are the plugin's expected deliverable
-files; do not stash them"*. They are not permission to scatter scratch
-files. Operator owns cleanup of these paths.
-
-If your plugin writes ephemeral state that should be cleaned up between
-rounds, do the cleanup yourself in a `PostRoundHook` — don't rely on
-the orphan-stash defense to sweep it.
-
-### Visibility
-
-`agent-runner peek --json | jq .plugins.owned_paths` shows the currently
-registered list (peek schema v1.5+). The `plugins` namespace is part of the
-JSON surface only — it is not reachable via `--select`.
 
 ## Plugin tests + consumer pytest collision
 

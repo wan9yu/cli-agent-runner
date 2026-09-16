@@ -2,8 +2,8 @@
 
 Centralises the snapshot+clear+restore fixture pattern used by every test
 file that interacts with a plugin-extension registry (hooks, detectors,
-event kinds, owned paths). Before: 8 near-identical autouse fixtures across
-the test suite. After: one factory.
+event kinds). Before: 8 near-identical autouse fixtures across the test
+suite. After: one factory.
 """
 
 from __future__ import annotations

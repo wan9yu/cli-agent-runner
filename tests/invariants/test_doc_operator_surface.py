@@ -2,20 +2,14 @@
 
 Items 7/14/24/25/26 are prose corrections verified by execution at fix time and
 carry no natural guard — manufacturing one would be the ceremony this release is
-right-sizing. The three below are real properties with real SSOTs.
+right-sizing. The two below are real properties with real SSOTs.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from agent_runner.vcs_state import _PLUGIN_OWNED_PATHS
-from tests._test_helpers import isolating
-
 REPO = Path(__file__).resolve().parents[2]
-
-_reset = isolating(_PLUGIN_OWNED_PATHS)
 
 
 def test_configuration_doc_should_match_runner_phase_formula_when_read() -> None:
@@ -35,35 +29,6 @@ def test_configuration_doc_should_match_runner_phase_formula_when_read() -> None
         "configuration.md still states the 0-based formula; round_num is 1-based "
         "(runner.py:408), so rotation is phases[(round_num - 1) % len]"
     )
-
-
-def test_documented_owned_path_patterns_should_be_true_when_matched() -> None:
-    """Every row of docs/plugins.md's plugin-owned-paths matching table, read
-    FROM the doc and checked against the real matcher.
-
-    The `reports/**/*.md` row was the one row with no test, and it was false:
-    fnmatch's `**/` required at least one intervening directory segment. The
-    globstar matcher makes `**/` mean zero-or-more segments, honoring the row.
-    """
-    from agent_runner.vcs_state import _matches_owned_path, register_plugin_owned_paths
-
-    text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
-    section = text.split("### Matching semantics", 1)[-1].split("\n### ", 1)[0]
-    rows = [ln for ln in section.splitlines() if ln.startswith("| `")]
-    assert len(rows) == 5, f"table shape changed ({len(rows)} rows) — update this guard"
-
-    failures: list[str] = []
-    for row in rows:
-        cols = [c.strip() for c in row.strip().strip("|").split("|")]
-        pattern = re.search(r'`"([^"]+)"`', cols[0]).group(1)
-        documented_hits = re.findall(r"`([^`]+)`", cols[1])
-        _PLUGIN_OWNED_PATHS.clear()
-        register_plugin_owned_paths([pattern])
-        for hit in documented_hits:
-            if not _matches_owned_path(hit):
-                failures.append(f"docs claim {pattern!r} matches {hit!r}; it does not")
-
-    assert not failures, "plugin-owned-paths table drift:\n" + "\n".join(failures)
 
 
 def test_architecture_doc_should_not_claim_flag_symmetry_when_read() -> None:

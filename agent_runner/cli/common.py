@@ -17,7 +17,6 @@ from agent_runner.config import Config, ConfigError, load_config
 from agent_runner.events import plugin_event_kinds
 from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_round_hooks
 from agent_runner.monitor import plugin_detectors
-from agent_runner.vcs_state import plugin_owned_paths
 
 PEEK_SCHEMA_VERSION = "2.5"
 
@@ -109,7 +108,6 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
                 "pre_round_hooks": [h.name for h in pre_round_hooks()],
                 "post_round_hooks": [h.name for h in post_round_hooks()],
                 "detectors": plugin_detectors(),
-                "owned_paths": plugin_owned_paths(),
                 "disabled": disabled_plugin_names(),
                 "sigterm_cooperative": cooperative_manifest_names(),
             }

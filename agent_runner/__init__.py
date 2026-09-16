@@ -190,10 +190,6 @@ def apply_plugin_disable(names: list[str]) -> None:
     first place, so this is belt-and-suspenders cleanup for anything that
     reached the registries another way (e.g. a manifest registered directly
     via ``register_manifest``, not through entry-point discovery).
-
-    Known limitation: vcs_state._PLUGIN_OWNED_PATHS lacks per-plugin name
-    attribution today, so owned-paths are NOT filtered here. Disabled plugin's
-    paths remain registered (mostly inert).
     """
     import warnings
 

@@ -86,11 +86,6 @@ EXPECTED_MONITOR_API = {
     "plugin_detectors",
 }
 
-EXPECTED_VCS_STATE_API = {
-    "register_plugin_owned_paths",
-    "plugin_owned_paths",
-}
-
 # Doomed symbols (removed in 0.1.7) — verify ABSENCE so a future revert can't
 # silently restore them and re-couple core to Claude.
 FORBIDDEN_AGENT_RUNTIME = {
@@ -158,19 +153,6 @@ def test_cancel_removed_should_be_absent_when_public_surface_inspected() -> None
     assert "cancel" not in sub.choices
     assert "round.pid" not in src
     assert "SIGUSR1" not in src
-
-
-def test_vcs_state_module_should_expose_plugin_owned_paths_api_when_imported() -> None:
-    """0.1.8: register_plugin_owned_paths + plugin_owned_paths are the new
-    plugin-author public surface. Lock them in so a future refactor can't
-    silently rename or remove them."""
-    actual = _public_names("agent_runner.vcs_state")
-
-    missing = EXPECTED_VCS_STATE_API - actual
-    assert not missing, (
-        f"agent_runner.vcs_state: missing public names {missing}. "
-        f"Plugin authors registered against the 0.1.8 names — do not remove without major bump."
-    )
 
 
 # Baseline pin for the 0.2.12 Group G split (api.py -> _serve_policy et al.).
