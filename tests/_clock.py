@@ -13,7 +13,12 @@ from zoneinfo import ZoneInfo
 
 
 class FakeClock:
-    def __init__(self, epoch: float = 1_700_000_000.0):
+    def __init__(self, epoch: float = 1_700_000_000.0, *, start: str | None = None):
+        """``start``, when given, is an ISO-8601 UTC timestamp (e.g.
+        ``"2026-09-16T00:00:00Z"``) converted to ``epoch`` -- a more readable
+        alternative to a raw epoch float for tests that pin a calendar date."""
+        if start is not None:
+            epoch = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
         self._epoch = epoch
         self._mono = 0.0
         self.slept: list[float] = []

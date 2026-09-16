@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from agent_runner import event_log
 from agent_runner._notify import NULL_LISTENER, Listener, NullListener
 from agent_runner.api_types import TransientErrorState
 from agent_runner.clock import SYSTEM_CLOCK, Clock
@@ -152,9 +153,10 @@ def _tail_events(log_dir: Path) -> Iterator[dict[str, Any]]:
 
     Forward, OLD-then-NEW order matters (INVARIANT 2 for callers that merge a
     per-key "latest wins" map: iterating oldest file first means a later event
-    for the same key naturally overwrites an earlier one)."""
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-2:]:
-        yield from _iter_events(path)
+    for the same key naturally overwrites an earlier one). STATELESS full
+    re-scan by design (see :func:`event_log.scan`'s docstring) -- never the
+    offset-carrying ``follow``/``read_new`` path."""
+    yield from event_log.scan(log_dir, event_log.newest_scope(2))
 
 
 def _scan_events_for_transient(path: Path):
@@ -185,8 +187,7 @@ def _latest_unrecovered_detected(log_dir: Path) -> dict[str, Any] | None:
     Scans the newest monthly ``events-*.jsonl`` and, only if it holds no transient
     event yet, the previous month's — so a throttle that spans a month boundary
     (detected in the old file, cleared in the new) is not orphaned."""
-    candidates = sorted(log_dir.glob("events-*.jsonl"))
-    for path in reversed(candidates[-2:]):
+    for path in reversed(event_log.newest_month_files(log_dir, 2)):
         result = _scan_events_for_transient(path)
         if result is not _NO_TRANSIENT:
             return result  # a detected dict, or None (latest transient was recovered)

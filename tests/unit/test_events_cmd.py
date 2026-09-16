@@ -171,7 +171,8 @@ def test_events_since_should_skip_non_dict_json_lines(tmp_path, capsys):
 
 def test_events_since_should_skip_blank_lines(tmp_path, capsys):
     """Blank lines through the --since replay path are skipped identically to
-    the query path (0.2.14 Group 5: _replay_since shares events._iter_parsed_lines)."""
+    the query path (0.2.14 Group 5: event_log.replay_since shares
+    events._iter_parsed_lines)."""
     from agent_runner.cli import events_cmd
 
     path = tmp_path / f"events-{_current_month()}.jsonl"

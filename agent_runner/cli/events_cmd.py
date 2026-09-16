@@ -21,8 +21,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent_runner import _notify
-from agent_runner.clock import SYSTEM_CLOCK
+from agent_runner import _notify, event_log
 from agent_runner.events import _iter_parsed_lines, open_events_jsonl, parse_iso_ms
 
 # Sentinel for "user did not explicitly set --window" so we can detect
@@ -149,25 +148,11 @@ def cmd_events(args) -> int:
         return _tail_events(log_dir, kind_set, since=since)
 
     if since is not None:
-        try:
-            _replay_since(log_dir, kind_set, since)  # offset only matters to --tail
-        except OSError as e:
-            print(f"Error: events file unreadable: {e}", file=sys.stderr)
-            return 1
-        return 0
+        rc = _replay_and_print(log_dir, kind_set, since, {})
+        return rc if rc is not None else 0
 
     window = args.window if args.window != _WINDOW_DEFAULT_SENTINEL else 10
     return _query_events(log_dir, kind_set, window)
-
-
-def _current_month_events_file(log_dir: Path) -> Path:
-    month = SYSTEM_CLOCK.now_utc().strftime("%Y-%m")
-    return log_dir / f"events-{month}.jsonl"
-
-
-def _month_of(events_file: Path) -> str:
-    """The YYYY-MM embedded in an ``events-YYYY-MM.jsonl`` filename."""
-    return events_file.name[len("events-") : -len(".jsonl")]
 
 
 def _matches_since(line: str, kind_set: set[str], since: datetime) -> bool:
@@ -194,39 +179,28 @@ def _matches_since(line: str, kind_set: set[str], since: datetime) -> bool:
     return parsed >= since
 
 
-def _replay_since(log_dir: Path, kind_set: set[str], since: datetime) -> tuple[Path, int]:
-    """Emit every matching event with ``ts >= since``, oldest month file first.
-
-    Not windowed: replay is the resume path, so it emits the whole backlog.
-
-    Returns ``(current-month file, bytes consumed of it)``. That offset is the
-    handoff point for ``--tail``: it is the true end-of-read position, so a line
-    appended while the replay was running is picked up by the poll loop instead
-    of being skipped, and no line is emitted in both phases.
-    """
-    since_month = since.astimezone(UTC).strftime("%Y-%m")
-    current = _current_month_events_file(log_dir)
-    offset = 0
-    for path in sorted(log_dir.glob("events-*.jsonl")):
-        if _month_of(path) < since_month:
-            # Nothing to replay from a month that ended before `since`. The live
-            # file lands here only when `since` names a future month — seed the
-            # tail at its end rather than rewinding it to 0.
-            if path == current:
-                offset = path.stat().st_size
-            continue
-        with open_events_jsonl(path) as f:
-            for line, _ in _iter_parsed_lines(f):
-                if _matches_since(line, kind_set, since):
-                    print(line, flush=True)
-            if path == current:
-                offset = f.tell()
-    return current, offset
+def _replay_and_print(
+    log_dir: Path, kind_set: set[str], since: datetime, seed_out: dict[Path, int]
+) -> int | None:
+    """Replay the ``--since`` backlog (kind AND ts>=since filtered), seeding
+    ``seed_out`` with each in-since file's exact-byte handoff. Returns ``1`` on
+    an unreadable file (the caller exits), else ``None`` (the caller continues).
+    Shared by the one-shot query path and the tail's pre-follow phase."""
+    try:
+        for line, _obj in event_log.replay_since(
+            log_dir, event_log.month_of_datetime(since), seed_out=seed_out
+        ):
+            if _matches_since(line, kind_set, since):
+                print(line, flush=True)
+    except OSError as e:
+        print(f"Error: events file unreadable: {e}", file=sys.stderr)
+        return 1
+    return None
 
 
 def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
     """One-shot: read current-month events.jsonl, filter, print last N."""
-    events_file = _current_month_events_file(log_dir)
+    events_file = event_log.current_month_file(log_dir)
     if not events_file.exists():
         return 0
 
@@ -245,88 +219,43 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
     return 0
 
 
-def _read_new_lines(path: Path, start: int) -> tuple[list[tuple[str, dict]], int]:
-    """Single-path variant of :func:`agent_runner.events.read_new`: same
-    contract (a missing path or ``size <= start`` yields nothing; a size
-    smaller than ``start`` means truncated/replaced beneath us, reset to a
-    from-byte-0 read), but keeps the RAW line text ``read_new`` discards
-    alongside each parsed dict — so a caller wanting to print the original
-    bytes (matching ``_replay_since``/``_query_events`` below) doesn't have
-    to re-encode via ``json.dumps``."""
-    try:
-        size = path.stat().st_size
-    except FileNotFoundError:
-        return [], start
-    if size < start:
-        start = 0
-    if size == start:
-        return [], start
-    with open_events_jsonl(path) as f:
-        f.seek(start)
-        pairs = list(_iter_parsed_lines(f))
-        end = f.tell()
-    return pairs, end
-
-
-def _emit_new_lines(path: Path, start: int, kind_set: set[str]) -> int:
-    """Print matching lines of ``path`` from byte ``start`` to true EOF; return EOF."""
-    pairs, end = _read_new_lines(path, start)
-    for line, evt in pairs:
-        if evt.get("event") in kind_set:
-            print(line, flush=True)
-    return end
-
-
 def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = None) -> int:
-    """Streaming: re-scan current-month events.jsonl each time the FIFO
-    doorbell (``_notify``) wakes this process -- a ``ring()`` from
-    ``events.emit`` lands within milliseconds -- falling back to a 1s poll
-    tick when no doorbell fd is available; emit each new matching line as
-    it fires. Blocks until SIGINT (KeyboardInterrupt). Follows month
-    rollover via per-poll glob.
+    """Streaming: emit each new matching event as it fires, waking on the FIFO
+    doorbell (``_notify``) -- a ``ring()`` from ``events.emit`` lands within
+    milliseconds -- falling back to a 1s poll tick when no doorbell fd is
+    available. Blocks until SIGINT (KeyboardInterrupt). A filter/print wrapper
+    over the shared :func:`event_log.follow` loop (also used by the monitor
+    tailer), scoped to the newest two monthly files so rollover just falls out
+    of the scope re-globbing every iteration.
 
     With ``since``, the backlog (``ts >= since``, across month files) is replayed
-    first and the poll resumes at the exact byte the replay stopped on — no gap
-    and no duplicate across the handoff. At-least-once overall: the caller
-    resumes from the last ts it saw, so that one event may repeat.
+    first via :func:`event_log.replay_since` and the poll resumes at the exact
+    byte the replay stopped on — no gap and no duplicate across the handoff.
+    At-least-once overall: the caller resumes from the last ts it saw, so that
+    one event may repeat.
     """
-    last_size = 0
-    current_file: Path | None = None
 
     def _handle_sigint(_signum, _frame):
         raise KeyboardInterrupt()
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
-    if since is not None:
+    with _notify.open_listener(log_dir) as listener:
+        # Pre-seed ALL in-scope (newest-2) files at EOF, THEN let replay_since
+        # overwrite ONLY the in-since months with their exact-byte handoff --
+        # so the out-of-scope PRIOR month keeps its EOF seed and is never
+        # dumped as backlog (the critical fix over the old scalar rollover).
+        seed = event_log.seed_at_eof(event_log.newest_month_files(log_dir, 2))
         try:
-            current_file, last_size = _replay_since(log_dir, kind_set, since)
-        except OSError as e:
-            print(f"Error: events file unreadable: {e}", file=sys.stderr)
-            return 1
+            if since is not None:
+                rc = _replay_and_print(log_dir, kind_set, since, seed)
+                if rc is not None:
+                    return rc
 
-    try:
-        with _notify.open_listener(log_dir) as listener:
-            while True:
-                events_file = _current_month_events_file(log_dir)
-                if events_file != current_file:
-                    if current_file is not None and current_file.exists():
-                        # Rollover: flush the old file's remaining tail before switching,
-                        # then begin the new file at 0 (no line is lost across the boundary).
-                        _emit_new_lines(current_file, last_size, kind_set)
-                        last_size = 0
-                    elif current_file is None:
-                        # True first iteration (no --since): skip the pre-existing backlog.
-                        last_size = events_file.stat().st_size if events_file.exists() else 0
-                    current_file = events_file
-
-                if events_file.exists():
-                    size = events_file.stat().st_size
-                    if size > last_size:
-                        last_size = _emit_new_lines(events_file, last_size, kind_set)
-                    elif size < last_size:
-                        # File truncated / rotated underneath us; reset
-                        last_size = 0
-                listener.wait(1.0)
-    except KeyboardInterrupt:
-        return 0
+            for line, obj in event_log.follow(
+                log_dir, event_log.newest_scope(2), wake=listener, timeout_s=1.0, offsets=seed
+            ):
+                if obj.get("event") in kind_set:  # kind-only on the follow continuation
+                    print(line, flush=True)
+        except KeyboardInterrupt:
+            return 0

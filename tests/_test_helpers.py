@@ -242,7 +242,7 @@ def wait_for_event(
     ``poll_until``/``wait_for`` (a timeout fails LOUDLY: callers assert the
     return value, e.g. ``assert wait_for_event(log_dir, "round_start")``).
 
-    Backend: a ~20ms ``events.read_new`` poll -- an offset-carrying tailer,
+    Backend: a ~20ms ``event_log.read_new`` poll -- an offset-carrying tailer,
     so a burst of events between polls is never skipped or double-counted.
     This is the seam that later swaps to a ``_notify.Listener(log_dir)``
     doorbell (woken the instant a matching event is emitted, instead of
@@ -251,13 +251,13 @@ def wait_for_event(
     """
     import time as _time
 
-    from agent_runner import events as _events
+    from agent_runner import event_log
 
     offsets: dict[Path, int] = {}
     deadline = _time.monotonic() + timeout_s
     while True:
         paths = sorted(log_dir.glob("events-*.jsonl"))
-        new_events, offsets = _events.read_new(paths, offsets)
+        new_events, offsets = event_log.read_new(paths, offsets)
         for ev in new_events:
             if ev.get("event") == kind and (where is None or where(ev)):
                 return ev

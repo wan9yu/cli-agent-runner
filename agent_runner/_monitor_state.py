@@ -14,11 +14,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_runner import event_log
+from agent_runner._notify import NULL_LISTENER
 from agent_runner.api_types import ProjectState, ServiceMode, ServiceStatus, SystemMetrics
 from agent_runner.builtin_plugins._constants import _TAIL_LINES
-from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.context_store import read_json
-from agent_runner.events import iter_event_dicts, read_new
+from agent_runner.events import iter_event_dicts
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,7 @@ class LocalSource:
     log_dir: Path
 
     def events_files(self) -> list[Path]:
-        return sorted(self.log_dir.glob("events-*.jsonl"))
+        return event_log.all_month_files(self.log_dir)
 
     def metrics_files(self) -> list[Path]:
         return sorted(self.log_dir.glob("metrics-*.jsonl"))
@@ -75,7 +76,7 @@ class _EventTail:
     )
 
     def read(self, files: list[Path]) -> list[dict[str, Any]]:
-        new_events, self.offsets = read_new(files, self.offsets)
+        new_events, self.offsets = event_log.read_new(files, self.offsets)
         self.buffer.extend(new_events)
         return list(self.buffer)
 
@@ -93,23 +94,22 @@ def _tail_events_jsonl(
     byte 0 of every file present at start (human-narrate use case).
 
     Follows file rotation transparently — when a new events-YYYY-MM.jsonl
-    appears, it is picked up from byte 0.
+    appears, it is picked up from byte 0. A thin client over the shared
+    :func:`event_log.follow` loop (also used by ``events --tail``); polls
+    (``NULL_LISTENER`` -- no doorbell) rather than a live FIFO listener.
     """
-    offsets: dict[Path, int] = {}
+    seed: dict[Path, int] = {}
     if start_at_now:
-        for path in sorted(log_dir.glob("events-*.jsonl")):
-            try:
-                offsets[path] = path.stat().st_size
-            except FileNotFoundError:
-                continue
+        seed = event_log.seed_at_eof(event_log.all_month_files(log_dir))
 
-    while True:
-        files = sorted(log_dir.glob("events-*.jsonl"))
-        new_events, offsets = read_new(files, offsets)
-        if new_events:
-            yield from new_events
-        else:
-            SYSTEM_CLOCK.sleep(poll_interval_s)
+    for _line, obj in event_log.follow(
+        log_dir,
+        event_log.all_month_files,
+        wake=NULL_LISTENER,
+        timeout_s=poll_interval_s,
+        offsets=seed,
+    ):
+        yield obj
 
 
 _MAX_TAIL_FILES = 20

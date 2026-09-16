@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner import events
-from agent_runner.events import KNOWN_EVENT_KINDS, emit, read_new
+from agent_runner.events import KNOWN_EVENT_KINDS, emit
 from tests._test_helpers import isolating
 
 _reset = isolating(events._PLUGIN_KINDS)
@@ -302,59 +302,3 @@ def test_emit_transient_error_backoff_capped_should_omit_new_fields_with_old_sig
     # skip emitting None-valued kwargs).
     assert "original_reset_at_epoch" not in payload
     assert "consecutive_count" not in payload
-
-
-def test_read_new_should_return_all_rows_when_first_read(tmp_path: Path) -> None:
-    old = tmp_path / "events-2026-08.jsonl"
-    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
-
-    events_read, offsets = read_new([old], {})
-
-    assert [e["n"] for e in events_read] == [1]
-    assert offsets[old] == old.stat().st_size  # offset recorded at EOF
-
-
-def test_read_new_should_return_only_appended_rows_when_file_grows(tmp_path: Path) -> None:
-    old = tmp_path / "events-2026-08.jsonl"
-    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
-    _, offsets = read_new([old], {})
-
-    with old.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"event": "round_end", "n": 2}) + "\n")
-    appended_events, offsets = read_new([old], offsets)
-
-    assert [e["n"] for e in appended_events] == [2]
-    assert offsets[old] == old.stat().st_size
-
-
-def test_read_new_should_read_new_file_from_start_when_rotated_in(tmp_path: Path) -> None:
-    old = tmp_path / "events-2026-08.jsonl"
-    old.write_text(json.dumps({"event": "round_start", "n": 1}) + "\n")
-    _, offsets = read_new([old], {})
-
-    new = tmp_path / "events-2026-09.jsonl"
-    new.write_text(json.dumps({"event": "round_start", "n": 3}) + "\n")
-    rotated_events, offsets = read_new([old, new], offsets)
-
-    assert [e["n"] for e in rotated_events] == [3]  # new file read from byte 0
-    assert offsets[old] == old.stat().st_size  # old untouched: no new bytes
-
-
-def test_read_new_should_reread_from_start_when_truncated_below_offset(tmp_path: Path) -> None:
-    # A 2-line file read once records its offset at the larger size; the state
-    # dependency is load-bearing -- the truncation is only "below offset"
-    # because the recorded offset is for the taller file.
-    old = tmp_path / "events-2026-08.jsonl"
-    old.write_text(
-        json.dumps({"event": "round_start", "n": 1})
-        + "\n"
-        + json.dumps({"event": "round_end", "n": 2})
-        + "\n"
-    )
-    _, offsets = read_new([old], {})
-
-    old.write_text(json.dumps({"event": "round_start", "n": 4}) + "\n")
-    reset_events, offsets = read_new([old], offsets)
-
-    assert [e["n"] for e in reset_events] == [4]  # re-read from 0, not skipped
-    assert offsets[old] == old.stat().st_size

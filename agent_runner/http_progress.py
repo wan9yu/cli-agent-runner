@@ -128,16 +128,14 @@ def _read_tail(path: Path, *, max_lines: int) -> str:
 
 
 def _recent_events(log_dir: Path, *, max_count: int) -> list[dict[str, Any]]:
-    """Section 3: last ``max_count`` events from events-*.jsonl files."""
-    from agent_runner.events import iter_event_dicts
+    """Section 3: last ``max_count`` events from events-*.jsonl files.
 
-    events: list[dict[str, Any]] = []
-    for path in sorted(log_dir.glob("events-*.jsonl"))[-3:]:
-        try:
-            events.extend(iter_event_dicts(path))
-        except (FileNotFoundError, OSError):
-            continue
-    return events[-max_count:]
+    ``tolerant=True``: a file globbed then pruned mid-read must degrade this
+    page, not 500 it.
+    """
+    from agent_runner import event_log
+
+    return list(event_log.scan(log_dir, event_log.newest_scope(3), tolerant=True))[-max_count:]
 
 
 def _self_terminated_state(log_dir: Path) -> dict[str, Any]:

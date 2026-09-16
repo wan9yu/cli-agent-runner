@@ -105,7 +105,8 @@ def test_non_dict_json_line_appended_should_be_skipped_without_crashing_when_tai
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A valid-JSON but non-dict line (bare list) appended mid-poll must be
-    skipped by ``_emit_new_lines``, not crash the tail loop (0.2.13 Group D)."""
+    skipped by the tail loop (via ``event_log`` / ``_iter_parsed_lines``), not
+    crash it (0.2.13 Group D)."""
     events_file = _events_file(tmp_log_dir)
     _append(events_file, "seed", 0)
 
@@ -167,3 +168,82 @@ def test_since_should_replay_backlog_then_live_lines_each_once_when_tailing(
 
     emitted = [json.loads(line)["n"] for line in capsys.readouterr().out.splitlines() if line]
     assert emitted == [1, 3], f"expected replay then live, each once, got {emitted}"
+
+
+def test_tail_should_print_original_line_bytes_when_keys_unsorted_and_nonascii(
+    tmp_path, capsys, monkeypatch
+):
+    """The tail streamer must print the ORIGINAL line bytes (remote_relay pipes
+    its stdout) -- never a re-serialized dict, which would reorder keys and
+    re-encode non-ASCII."""
+    log_dir = tmp_path
+    events_file = log_dir / "events-2026-09.jsonl"
+    line = '{"event": "round_start", "z": 1, "a": "é 中"}'
+
+    calls = {"n": 0}
+
+    def fake_wait(_timeout_s: float) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            with events_file.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            return True
+        raise KeyboardInterrupt
+
+    _install_fake_listener(monkeypatch, fake_wait)
+    monkeypatch.setattr(
+        events_cmd,
+        "signal",
+        SimpleNamespace(SIGINT=signal.SIGINT, signal=lambda *_a: None),
+    )
+
+    rc = events_cmd._tail_events(log_dir, {"round_start"})
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert line in out.splitlines()
+
+
+def test_replay_since_should_seed_current_file_at_eof_when_since_names_a_future_month(tmp_path):
+    (tmp_path / "events-2026-09.jsonl").write_text(
+        '{"event": "old", "ts": "2026-09-01T00:00:00Z"}\n'
+    )
+    seed = {}
+    from agent_runner import event_log
+    from tests._clock import FakeClock
+
+    list(
+        event_log.replay_since(
+            tmp_path, "2026-12", seed_out=seed, clock=FakeClock(start="2026-09-16T00:00:00Z")
+        )
+    )
+
+    sep = tmp_path / "events-2026-09.jsonl"
+    assert seed[sep] == sep.stat().st_size
+
+
+def test_since_seed_should_leave_prior_month_at_eof_when_since_is_in_current_month(tmp_path):
+    """CRITICAL regression: --since in the current month must NOT dump the prior month."""
+    from agent_runner import event_log
+
+    aug = tmp_path / "events-2026-08.jsonl"
+    sep = tmp_path / "events-2026-09.jsonl"
+    aug.write_text('{"event": "round_start", "ts": "2026-08-01T00:00:00Z"}\n')
+    sep.write_text('{"event": "round_start", "ts": "2026-09-20T00:00:00Z"}\n')
+    seed = {p: p.stat().st_size for p in event_log.newest_month_files(tmp_path, 2)}
+
+    replayed = [line for line, _ in event_log.replay_since(tmp_path, "2026-09", seed_out=seed)]
+
+    assert all("2026-08" not in line for line in replayed)
+    assert seed[aug] == aug.stat().st_size
+
+
+def test_matches_since_should_exclude_same_month_events_before_the_since_timestamp():
+    from datetime import UTC, datetime
+
+    from agent_runner.cli.events_cmd import _matches_since
+
+    early = '{"event": "round_start", "ts": "2026-09-01T00:00:00Z"}'
+    since = datetime(2026, 9, 15, tzinfo=UTC)
+
+    assert _matches_since(early, {"round_start"}, since) is False

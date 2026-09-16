@@ -161,6 +161,12 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner.config.validators",
         "agent_runner.context_store",
         "agent_runner.defenses",
+        # event_log: owns the events-*.jsonl read layout (0.2.19+ consolidation).
+        # On the serve path via `_throttle`/`_monitor_state`/`cli.events_cmd`,
+        # all three already-eager; pulls only stdlib + already-loaded
+        # clock/events, so this adds the one leaf module, not a new
+        # transitive dependency.
+        "agent_runner.event_log",
         "agent_runner.events",
         "agent_runner.hooks",
         "agent_runner.host_health",
