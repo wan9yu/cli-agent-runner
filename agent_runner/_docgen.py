@@ -48,9 +48,8 @@ from agent_runner.monitor import AUTO_STOP_ALERTS, KNOWN_ALERT_KINDS
 # (toml_section_name, dataclass, nested_sub_sections). Nesting is an EXPLICIT
 # registry, not reflection, on two counts:
 #   - field name != TOML key: PhaseOverride.prompt_files is written as
-#     [phases.<name>.prompt] files=[...], and PluginsConfig.raw is a catch-all
-#     for unknown keys. Recursing generically would document TOML keys that do
-#     not exist.
+#     [phases.<name>.prompt] files=[...]. Recursing generically would document
+#     TOML keys that do not exist.
 #   - typing.get_type_hints() raises TypeError on PhasesConfig — its `list`
 #     field shadows the builtin, so `list[str] | None` resolves against
 #     None. Do not reach for it here.

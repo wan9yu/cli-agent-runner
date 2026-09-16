@@ -53,7 +53,6 @@ def test_parse_plugins_should_raise_when_spawn_override_allow_has_bool_element()
         _parse_plugins({"spawn_override_allow": [True]})
 
 
-def test_parse_plugins_should_leave_unknown_keys_in_raw_when_present():
-    cfg = _parse_plugins({"sandbox": "off", "acme_setting": 5})
-
-    assert cfg.raw == {"acme_setting": 5}
+def test_parse_plugins_should_raise_when_unknown_key_present():
+    with pytest.raises(ConfigError, match=r"unknown \[plugins\] field.*acme_setting"):
+        _parse_plugins({"sandbox": "off", "acme_setting": 5})

@@ -29,6 +29,7 @@ from agent_runner.config.models import (
     _PHASE_OVERRIDE_ALLOWED_FIELDS,
     _PHASE_PROMPT_ALLOWED_FIELDS,
     _PHASE_RUNTIME_ALLOWED_FIELDS,
+    _PLUGINS_ALLOWED_FIELDS,
     _PROMPT_ALLOWED_FIELDS,
     _RUNTIME_ALLOWED_FIELDS,
     _SCHEDULE_ALLOWED_FIELDS,
@@ -663,27 +664,30 @@ def _parse_plugins(plugins_d: dict) -> PluginsConfig:
     """Parse the ``[plugins]`` table into a ``PluginsConfig``.
 
     Known keys (``disable``, ``spawn_override_allow``, ``sandbox``, ``pin``)
-    are popped into first-class fields; whatever remains lands in ``.raw``
-    for plugin-author-defined sub-keys. ``spawn_override_allow`` and ``pin``
-    gate trust decisions (which hooks may skip a spawn, which third-party
-    plugins are checksum-pinned) so both fail closed on malformed input
-    instead of silently coercing it — see ``_require_strict_str_list`` above.
+    are popped into first-class fields. An unknown key is rejected outright --
+    the former ``.raw`` catch-all that used to absorb it silently is gone, so
+    ``[plugins]`` now follows the same unknown-key policy as every other
+    table. ``spawn_override_allow`` and ``pin`` gate trust decisions (which
+    hooks may skip a spawn, which third-party plugins are checksum-pinned) so
+    both fail closed on malformed input instead of silently coercing it --
+    see ``_require_strict_str_list`` above.
     """
-    plugins_raw = dict(plugins_d)  # copy so we can pop
+    _reject_unknown_fields(plugins_d, _PLUGINS_ALLOWED_FIELDS, "plugins")
+    remaining = dict(plugins_d)  # copy so we can pop
     disable = (
-        _require_str_list(plugins_raw.pop("disable"), field="plugins.disable")
-        if "disable" in plugins_raw
+        _require_str_list(remaining.pop("disable"), field="plugins.disable")
+        if "disable" in remaining
         else []
     )
     spawn_override_allow = _require_strict_str_list(
-        plugins_raw.pop("spawn_override_allow", []), field="plugins.spawn_override_allow"
+        remaining.pop("spawn_override_allow", []), field="plugins.spawn_override_allow"
     )
-    sandbox = str(plugins_raw.pop("sandbox", "prefer"))
+    sandbox = str(remaining.pop("sandbox", "prefer"))
     if sandbox not in _VALID_SANDBOX_MODES:
         raise ConfigError(
             f"plugins.sandbox: {sandbox!r} not in allowed values {sorted(_VALID_SANDBOX_MODES)}"
         )
-    pin_d = plugins_raw.pop("pin", {})
+    pin_d = remaining.pop("pin", {})
     if not isinstance(pin_d, dict):
         raise ConfigError('[plugins.pin] must be a table of "<plugin>" = "sha256:<hex>"')
     pin: dict[str, str] = {}
@@ -701,5 +705,4 @@ def _parse_plugins(plugins_d: dict) -> PluginsConfig:
         spawn_override_allow=spawn_override_allow,
         sandbox=sandbox,  # type: ignore[arg-type]
         pin=pin,
-        raw=plugins_raw,
     )

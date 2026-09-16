@@ -229,7 +229,6 @@ def test_render_config_schema_table_should_include_phases_and_plugins_sections()
     assert "### `[plugins]`" in md
     assert "| `overrides` | `dict[str, PhaseOverride]` | {} |" in md
     assert "| `disable` | `list[str]` | [] |" in md
-    assert "| `raw` | `dict[str, Any]` | {} |" in md
 
 
 def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line() -> None:

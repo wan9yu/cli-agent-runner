@@ -301,7 +301,7 @@ auth_fail_hint = "Custom hint for non-claude provider"
     assert cfg.monitor.auth_fail_hint == "Custom hint for non-claude provider"
 
 
-def test_no_plugins_block_should_default_disable_and_raw_to_empty_when_loaded(
+def test_no_plugins_block_should_default_disable_to_empty_when_loaded(
     tmp_path: Path,
 ) -> None:
     from agent_runner.config import PluginsConfig
@@ -323,12 +323,16 @@ file = "prompts/main.md"
     cfg = load_config(toml)
 
     assert isinstance(cfg.plugins, PluginsConfig)
-    assert cfg.plugins.disable == [] and cfg.plugins.raw == {}
+    assert cfg.plugins.disable == []
 
 
-def test_plugins_block_should_pass_through_when_present(
+def test_plugins_block_should_raise_when_key_misspelled(
     tmp_path: Path,
 ) -> None:
+    """A typo'd key (`disabled` for `disable`) used to vanish silently into
+    `.raw`; it must now be rejected the same as any other unknown field."""
+    from agent_runner.config import ConfigError
+
     toml = _write_toml(
         tmp_path,
         """
@@ -345,9 +349,8 @@ disabled = ["future_plugin_name"]
 """,
     )
 
-    cfg = load_config(toml)
-
-    assert cfg.plugins.raw == {"disabled": ["future_plugin_name"]}
+    with pytest.raises(ConfigError, match=r"unknown \[plugins\] field.*disabled"):
+        load_config(toml)
 
 
 def test_no_auto_stop_on_should_default_to_builtins_when_loaded(
@@ -755,7 +758,6 @@ def test_plugins_disable_list_should_be_parsed_when_loaded(
         cfg = load_config(cfg_path)
 
     assert cfg.plugins.disable == ["acme_prompt_assembly", "acme_chain_state"]
-    assert cfg.plugins.raw == {}
 
 
 def test_bare_string_plugins_disable_should_raise_config_error_when_loaded(
@@ -777,19 +779,19 @@ def test_bare_string_plugins_disable_should_raise_config_error_when_loaded(
         load_config(cfg_path)
 
 
-def test_plugins_unknown_keys_should_be_preserved_in_raw_when_loaded(
+def test_plugins_unknown_keys_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
+    from agent_runner.config import ConfigError
+
     (tmp_path / "prompt.md").write_text("p")
     cfg_path = _write_toml(
         tmp_path,
         _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path) + '\n[plugins]\nacme_foo = "bar"\n',
     )
 
-    cfg = load_config(cfg_path)
-
-    assert cfg.plugins.disable == []
-    assert cfg.plugins.raw == {"acme_foo": "bar"}
+    with pytest.raises(ConfigError, match=r"unknown \[plugins\] field.*acme_foo"):
+        load_config(cfg_path)
 
 
 def test_no_disable_hooks_should_default_to_false_when_loaded(

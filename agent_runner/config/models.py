@@ -187,20 +187,21 @@ class PluginsConfig:
     """Plugin-related TOML knobs.
 
     Migrating from an earlier free-form ``dict[str, Any] | None`` to a
-    typed dataclass. Known keys are first-class fields; unknown keys land in
-    ``.raw`` for forward-compatibility with plugin-author-defined `[plugins.*]`
-    sub-keys (e.g. plugin packages may read their own config from `cfg.plugins.raw`).
+    typed dataclass. All keys are first-class fields; an unknown ``[plugins]``
+    key is rejected at load time (see ``_PLUGINS_ALLOWED_FIELDS`` below). The
+    former ``.raw`` forward-compat catch-all was dropped as ecosystem-orphaned
+    (no plugin ever shipped a `[plugins.*]` sub-key to read from it).
 
-    Neither field is read by core, so both will read as dead to a reader grepping
-    for uses. They are published contracts and are deliberately
-    kept — guarded by tests/invariants/test_plugins_config_stable.py.
+    ``disable`` is read by core through a local variable in ``load_config``,
+    not via this attribute, so it will read as dead to a reader grepping for
+    uses. It is a published contract and is deliberately kept -- guarded by
+    tests/invariants/test_plugins_config_stable.py.
     """
 
     disable: list[str] = field(default_factory=list)
     spawn_override_allow: list[str] = field(default_factory=list)
     sandbox: Literal["require", "prefer", "off"] = "prefer"
     pin: dict[str, str] = field(default_factory=dict)
-    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -385,6 +386,11 @@ _AGENT_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(AgentConfig
 _RUNTIME_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(RuntimeConfig))
 _VCS_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(VcsConfig))
 _MONITOR_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(MonitorConfig))
+
+# Field names of PluginsConfig -- the keys the [plugins] table accepts. The
+# former `.raw` catch-all used to absorb anything else silently; [plugins]
+# now rejects unknown keys the same as every other top-level table.
+_PLUGINS_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(PluginsConfig))
 
 # Keys allowed under [monitor.host_health]'s three sub-tables — the strictness
 # completion (the exact footgun class an operator's typo'd threshold silently

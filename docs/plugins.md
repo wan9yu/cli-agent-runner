@@ -281,28 +281,6 @@ echo "done: round complete" > "$AGENT_RUNNER_LOG_DIR/.agent-done"
 These contracts are stable; agents in any language / framework can rely
 on them.
 
-### `[plugins]` config passthrough — `cfg.plugins.raw`
-
-`load_config` copies every key under `[plugins]` that agent-runner does not
-itself consume into `cfg.plugins.raw`, a plain `dict`. This is the forward-compat
-surface for plugin-specific configuration: agent-runner never validates or
-interprets these keys, so a plugin can ship new config without a core release.
-
-```toml
-[plugins]
-disable = ["gemini"]   # consumed by agent-runner — names a PLUGIN, not a hook
-
-[plugins.myproject]                   # passed through untouched
-threshold = 3
-report_dir = "proposals/"
-```
-
-`cfg.plugins.raw` lives on the full `Config`, so read it from a hook that
-receives `cfg` — a serve-startup hook (`__call__(self, cfg)`, above). Per-round
-hooks receive the narrower `HookContext`, which does not expose `cfg`; read your
-config once in a serve-startup hook and seed what per-round hooks need into
-plugin state.
-
 ### `[plugins]` additional first-class knobs
 
 ```toml
@@ -314,19 +292,6 @@ sandbox = "prefer"                    # NEW — require | prefer | off
 [plugins.pin]                         # NEW — third-party checksum pins
 "<third_party_plugin_name>" = "sha256:<hex>"
 ```
-
-```python
-class MyPluginConfigHook:
-    name = "myproject_config"
-
-    def __call__(self, cfg) -> None:
-        opts = cfg.plugins.raw.get("myproject", {})
-        threshold = opts.get("threshold", 5)
-        ...  # seed state, validate, etc.
-```
-
-Read your slice with `cfg.plugins.raw.get("<your-plugin-name>")` and namespace it
-under your plugin's name — the dict is shared across every installed plugin.
 
 ## Built-in post_round_hooks
 

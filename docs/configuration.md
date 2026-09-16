@@ -145,7 +145,6 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `spawn_override_allow` | `list[str]` | [] |
 | `sandbox` | `Literal['require', 'prefer', 'off']` | 'prefer' |
 | `pin` | `dict[str, str]` | {} |
-| `raw` | `dict[str, Any]` | {} |
 
 ### `[schedule]`
 

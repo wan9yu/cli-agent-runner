@@ -1,26 +1,25 @@
 """Invariant: PluginsConfig fields published to plugin authors must not regress.
 
-Neither field is read by core: `disable` is consumed through a local variable in
-`load_config`, `raw` is never read at all. Both are published contracts:
+`disable` is not read by core: it is consumed through a local variable in
+`load_config`, never as a stored attribute. It is a published contract —
+CHANGELOG.md 0.1.12 publishes `cfg.plugins.disable: list[str]` as first-class.
+Deleting it breaks the exact code the project told external authors to write.
 
-* `raw`     — CHANGELOG.md 0.1.12 migration note directs plugin authors to read
-              their own `[plugins.*]` sub-keys from `cfg.plugins.raw.get(...)`.
-* `disable` — CHANGELOG.md 0.1.12 publishes `cfg.plugins.disable: list[str]` as
-              first-class.
-
-Deleting either breaks the exact code the project told external authors to
-write. Core never reading `raw` is the correct shape for a forward-compat
-catch-all, not evidence that it is dead.
+`.raw` (the forward-compat catch-all for unknown `[plugins.*]` sub-keys) was
+dropped in 0.3.9 as ecosystem-orphaned — zero plugins ever shipped a
+`[plugins.*]` sub-key to read from it, so there was no published contract left
+to protect. An unknown `[plugins]` key is now rejected at load time instead
+(see `agent_runner.config._PLUGINS_ALLOWED_FIELDS`).
 """
 
 from __future__ import annotations
 
 from dataclasses import fields
-from typing import Any, get_type_hints
+from typing import get_type_hints
 
 from agent_runner.config import PluginsConfig
 
-REQUIRED_FIELDS: set[str] = {"disable", "raw"}
+REQUIRED_FIELDS: set[str] = {"disable"}
 
 
 def test_plugins_config_should_have_published_fields_present_when_inspected() -> None:
@@ -37,4 +36,3 @@ def test_plugins_config_published_types_should_match_when_inspected() -> None:
     hints = get_type_hints(PluginsConfig)
 
     assert hints["disable"] == list[str]
-    assert hints["raw"] == dict[str, Any]

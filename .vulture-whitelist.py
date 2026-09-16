@@ -214,7 +214,6 @@ disable
 spawn_override_allow
 sandbox
 pin
-raw
 
 # agent_runner.config.models.Profile
 agent
