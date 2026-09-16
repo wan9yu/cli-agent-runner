@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,34 @@ def test_migrated_config_should_load_with_renamed_keys(tmp_path):
     assert loaded.vcs.dirty_action == "ignore"
 
 
+def test_disable_pre_round_hooks_should_be_dropped_and_load_clean_when_migrated(tmp_path):
+    """0.3.9: [runtime] disable_pre_round_hooks's only consumer (the
+    PreRoundHook plugin seam) was removed -- unlike the renamed keys above,
+    `migrate` drops it entirely rather than rewriting it to a new name (see
+    tests/unit/test_config.py for the pre-migrate rejection this fixes)."""
+    cfg = _write(
+        tmp_path,
+        (
+            '[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
+            "[runtime]\n"
+            f'work_dir = "{tmp_path}"\n'
+            f'log_dir = "{tmp_path / "logs"}"\n'
+            "disable_pre_round_hooks = true\n"
+            '[prompt]\nfile = "p.md"\n'
+        ),
+    )
+    (tmp_path / "p.md").write_text("hi")
+    rc = migrate_cmd.cmd(_args(cfg))
+    assert rc == 0
+    # Substring-only check would false-positive: tmp_path itself embeds this
+    # TEST's own name (pytest's tmp_path naming), which contains the very
+    # substring "disable_pre_round_hooks" as part of work_dir/log_dir paths.
+    # Assert the actual TOML key assignment is gone, not just any substring.
+    assert not re.search(r"^\s*disable_pre_round_hooks\s*=", cfg.read_text(), re.MULTILINE)
+
+    load_config(cfg)  # loads clean post-migrate
+
+
 def test_bare_command_config_should_load_when_migrated(tmp_path):
     body = (
         '[agent]\ncommand = "true"\nprompt_arg_template = ["-p", "{prompt}"]\n'
@@ -150,9 +179,9 @@ def test_bare_command_config_should_load_when_migrated(tmp_path):
 
 
 def test_flat_phase_alias_should_exit_0_with_guidance_when_present(tmp_path, capsys):
-    # The flat [phases.<name>] round_budget_s/disable_pre_round_hooks alias is
-    # a PERMANENT, still-valid form — reporting it as `manual` (exit 1 forever)
-    # was the bug: `migrate` must surface it as guidance without blocking.
+    # The flat [phases.<name>] round_budget_s alias is a PERMANENT, still-valid
+    # form — reporting it as `manual` (exit 1 forever) was the bug: `migrate`
+    # must surface it as guidance without blocking.
     cfg = _write(tmp_path, 'phases.list = ["a"]\n[phases.a]\nround_budget_s = 900\n')
 
     rc = migrate_cmd.cmd(_args(cfg))

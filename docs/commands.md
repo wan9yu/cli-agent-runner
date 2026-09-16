@@ -212,7 +212,7 @@ Flags:
 <!-- source: agent_runner/cli monitor argparse flags -->
 - `--host SSH-ALIAS` — Remote ssh alias — supported with --mode events only: agent-runner manages the ssh, resumes with --since after a drop, and kills the ssh process group on exit. Detection modes run on the host itself.
 - `--interval SECONDS` — Poll interval (default 30s)
-- `--kind K[,K2,...]` — Event kinds to relay (--host --mode events only). Default: every kind this client knows — built-ins plus locally installed plugin kinds. A kind that exists only on the remote must be named here.
+- `--kind K[,K2,...]` — Event kinds to relay (--host --mode events only). Default: every kind this client knows (built-ins). A kind that exists only on the remote must be named here.
 - `--mode {anomaly,narrate,events,http}` — anomaly (default): alert-only; narrate: human-readable event stream; events: JSONL event stream; http: browser progress page
 - `--port PORT` — HTTP port for --mode http (default 8765, local-only)
 - `--remote-config PATH` — Config path ON THE REMOTE HOST for the relayed events command (--host --mode events only). Default: omit --config entirely, so the remote resolves ./agent-runner.toml in the ssh landing directory.
@@ -278,7 +278,10 @@ The transforms `migrate` applies (generated from the registry):
 - runtime.round_timeout_s → runtime.round_budget_s
 - phases.<name>.round_timeout_s → phases.<name>.round_budget_s
 - phases.<name>.runtime.round_timeout_s → phases.<name>.runtime.round_budget_s
-- flat round_budget_s/disable_pre_round_hooks under [phases.<name>] should move under a nested [phases.<name>.runtime] sub-table (the flat form still works as an alias)
+- runtime.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)
+- phases.<name>.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)
+- phases.<name>.runtime.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)
+- flat round_budget_s under [phases.<name>] should move under a nested [phases.<name>.runtime] sub-table (the flat form still works as an alias)
 - agent.command "x" → ["x"]
 - [agent] command is a quoted string with spaces; rewrite it as an argv list, e.g. command = ["claude", "-p"] (auto-split is unsafe — shell quoting rules differ)
 - agent.prompt_arg_template "x" → ["x"]
@@ -301,7 +304,7 @@ The transforms `migrate` applies (generated from the registry):
 - monitor.anomaly_repetitive_threshold > anomaly_repetitive_window: lower the threshold or raise the window so the detector can fire
 - [<table>] given as a scalar, not a table; give it real [table] content (no auto-fix possible)
 - unknown [agent] key(s) rejected in 0.2.13; delete them (allowed: ['command', 'env', 'exec_prefix', 'name', 'prompt_arg_template', 'prompt_delivery', 'sigterm_grace_s', 'terminal_marker'])
-- unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['disable_pre_round_hooks', 'dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_budget_s', 'round_log_retention', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
+- unknown [runtime] key(s) rejected in 0.2.13; delete them (allowed: ['dry_run', 'fresh_eyes_every_n', 'grace_kill_ignore_patterns', 'log_dir', 'max_grace_after_result_s', 'max_rounds', 'narrative_file', 'restart_delay_s', 'round_budget_s', 'round_log_retention', 'stop_file', 'substrate_fingerprint_paths', 'transient_error_action', 'work_dir'])
 - unknown [vcs] key(s) rejected in 0.2.13; delete them (allowed: ['dirty_action', 'stash_idempotency_s'])
 - unknown [monitor] key(s) rejected in 0.2.13; delete them (allowed: ['anomaly_repetitive_threshold', 'anomaly_repetitive_window', 'auth_fail_hint', 'auth_fail_patterns', 'auto_stop_on', 'host_health', 'remote_failure_tolerance_s', 'round_progress_interval_s', 'supervisor_stale_threshold_s'])
 - [phases] key(s) ['<name>'] must be phase sub-tables ([phases.<name>]); only 'list'/'phase_policy' are scalar [phases] fields

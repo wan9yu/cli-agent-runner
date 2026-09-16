@@ -155,7 +155,7 @@ def _poll_once(
         events = monitor.parse_events_from_jsonl_files(src.events_files())
     metrics = monitor.parse_events_from_jsonl_files(src.metrics_files())
     log_tails = monitor.load_round_log_tails(src.rounds_dir())
-    builtin = monitor.run_all_detectors(
+    return monitor.run_all_detectors(
         events=events,
         metrics=metrics,
         log_tails=log_tails,
@@ -167,11 +167,6 @@ def _poll_once(
         host_health_cfg=cfg.monitor.host_health,
         log_dir=cfg.runtime.log_dir,
     )
-    if not monitor._PLUGIN_DETECTORS:
-        return builtin  # skip ProjectState assembly when no plugins to feed
-    state = monitor.assemble_project_state(src, project=_project_name(work_dir))
-    plugin = monitor.run_plugin_detectors(state)
-    return builtin + plugin
 
 
 def monitor_loop(

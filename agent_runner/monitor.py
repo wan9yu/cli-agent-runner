@@ -6,13 +6,12 @@
     short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
 
-The detector logic, the plugin registry, and state assembly are pure and live
-in ``_monitor_detectors``/``_monitor_registry``/``_monitor_state`` — split out
+The detector logic and state assembly are pure and live in
+``_monitor_detectors``/``_monitor_registry``/``_monitor_state`` — split out
 for module-size hygiene. This module keeps only the cycle edge: running every
-detector in isolation (``run_all_detectors``), running plugin detectors
-(``run_plugin_detectors``), and auto-stop dispatch (``on_alert``). Every name
-those three pure modules define is re-exported below so ``agent_runner.monitor``
-stays the one import surface for callers and plugin authors.
+detector in isolation (``run_all_detectors``) and auto-stop dispatch
+(``on_alert``). Every name those three pure modules define is re-exported
+below so ``agent_runner.monitor`` stays the one import surface for callers.
 
 Detection is always on-host: every source reads the local filesystem and
 auto-stop stops the local service. Remote observation is a separate concern —
@@ -48,8 +47,8 @@ from agent_runner._monitor_detectors import (
     detect_supervisor_stale,
     detect_timeout_rate,
 )
-from agent_runner._monitor_registry import _PLUGIN_DETECTORS, AUTO_STOP_ALERTS
-from agent_runner.api_types import Alert, ProjectState, ServiceMode, ServiceStatus
+from agent_runner._monitor_registry import AUTO_STOP_ALERTS
+from agent_runner.api_types import Alert, ServiceMode, ServiceStatus
 from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.config import MonitorHostHealthConfig, PhaseOverride
 from agent_runner.events import (
@@ -78,9 +77,9 @@ _DEFAULT_HOST_HEALTH_CFG = MonitorHostHealthConfig()
 def _run_detector(
     name: str, fn: Callable[[], Alert | None], *, log_dir: Path | None
 ) -> Alert | None:
-    """Run one builtin detector, isolating a crash the way run_plugin_detectors
-    isolates plugins: emit ``detector_error`` (when a log_dir is available) and
-    return None so the remaining detectors still run."""
+    """Run one builtin detector, isolating a crash: emit ``detector_error``
+    (when a log_dir is available) and return None so the remaining detectors
+    still run."""
     try:
         return fn()
     except Exception as e:  # noqa: BLE001 — one bad detector must not blind the rest
@@ -163,33 +162,6 @@ def run_all_detectors(
     ]
     candidates = [_run_detector(name, fn, log_dir=log_dir) for name, fn in detectors]
     return [a for a in candidates if a is not None]
-
-
-def run_plugin_detectors(state: ProjectState) -> list[Alert]:
-    """Invoke every registered plugin detector with the current ProjectState.
-
-    Plugin failures are isolated: an exception inside one detector is logged
-    via ``UserWarning`` and the remaining detectors continue. No alert is
-    emitted on plugin crash — only the warning surfaces.
-
-    Builtin detectors run separately via ``run_all_detectors``; the two lists
-    of alerts are typically concatenated by the caller (``api._poll_once``).
-    """
-    import warnings
-
-    out: list[Alert] = []
-    for detector in _PLUGIN_DETECTORS:
-        try:
-            alert = detector.detect(state)
-        except Exception as e:
-            warnings.warn(
-                f"plugin detector {detector.name!r} raised during detect(): {e}",
-                stacklevel=2,
-            )
-            continue
-        if alert is not None:
-            out.append(alert)
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -351,9 +323,7 @@ def _stop_then_record(
 # ---------------------------------------------------------------------------
 # Facade — re-export the pure layers so `agent_runner.monitor` stays the one
 # import surface (attribute access AND `from agent_runner.monitor import X`)
-# for runner.py (NETWORK_PATTERNS), _docgen.py (KNOWN_ALERT_KINDS), cli.common
-# (plugin_detectors), __init__.py (_PLUGIN_DETECTORS — same list object, so
-# in-place mutation through either name stays visible to both), api.py
+# for runner.py (NETWORK_PATTERNS), _docgen.py (KNOWN_ALERT_KINDS), api.py
 # (LocalSource/assemble_project_state/load_round_log_tails/
 # alert_identity/_EventTail/_tail_events_jsonl), and every existing test patch
 # target.
@@ -373,8 +343,6 @@ from agent_runner._monitor_registry import (  # noqa: E402,F401 — intentional 
     _MONITOR_SELF_KINDS,
     KNOWN_ALERT_KINDS,
     alert_identity,
-    plugin_detectors,
-    register_detector,
 )
 from agent_runner._monitor_state import (  # noqa: E402,F401 — intentional bottom re-export
     LocalSource,

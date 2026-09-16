@@ -7,7 +7,7 @@ against further unchecked growth.
 
 If you're tempted to "just add X to the supervisor loop", extract X into:
 - a defense (events.py + monitor.py)
-- a hook (PreRoundHook / PostRoundHook plugin)
+- a hook (PostRoundHook plugin)
 - a helper (separate function or module)
 
 Bump ``SERVE_LOOP_BUDGET`` only if a design decision warrants it (and

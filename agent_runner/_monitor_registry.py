@@ -1,4 +1,4 @@
-"""Alert-kind catalog + the plugin detector registry.
+"""Alert-kind catalog.
 
 Pure bookkeeping: no filesystem I/O, no clock reads. Detector *logic* lives in
 ``_monitor_detectors``; state assembly in ``_monitor_state``; the cycle-edge
@@ -7,8 +7,7 @@ wiring (``run_all_detectors``/``on_alert``) in ``monitor.py``.
 
 from __future__ import annotations
 
-from agent_runner._registry import ensure_unique
-from agent_runner.api_types import Alert, Detector
+from agent_runner.api_types import Alert
 from agent_runner.config import _DEFAULT_AUTO_STOP_ON
 from agent_runner.events import (
     DETECTOR_ERROR,
@@ -82,17 +81,3 @@ def alert_identity(alert: Alert) -> str:
         return alert.detector
     parts = "|".join(f"{k}={alert.context.get(k)!r}" for k in fields)
     return f"{alert.detector}:{parts}"
-
-
-_PLUGIN_DETECTORS: list[Detector] = []
-
-
-def register_detector(detector: Detector) -> None:
-    """Register a plugin detector. Rejects duplicate names."""
-    ensure_unique(detector.name, _PLUGIN_DETECTORS, "detector")
-    _PLUGIN_DETECTORS.append(detector)
-
-
-def plugin_detectors() -> list[str]:
-    """Sorted list of registered plugin detector names (for peek --json)."""
-    return sorted(d.name for d in _PLUGIN_DETECTORS)

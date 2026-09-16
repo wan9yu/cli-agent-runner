@@ -1,7 +1,8 @@
 """Dataclasses for the Python API state tree.
 
 These are the public types that ``agent_runner.api`` returns and that
-``cli/`` formats. Plugins (hooks, context enrichers, detectors) consume them.
+``cli/`` formats. Plugins (post-round hooks, dirty handlers, spawn hooks)
+consume them.
 
 All frozen — state is immutable, no in-place mutation.
 """
@@ -11,10 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal
 
 Severity = Literal["info", "warning", "critical"]
-"""Alert / Detector severity level. ``critical`` is the only level that may
+"""Alert severity level. ``critical`` is the only level that may
 trigger ``auto_action="stop_service"``."""
 
 AutoAction = Literal["none", "stop_service"]
@@ -137,28 +138,6 @@ class Alert:
     context: dict[str, Any]
     ts: str
     auto_action: AutoAction = "none"
-
-
-@runtime_checkable
-class Detector(Protocol):
-    """Public plugin contract for monitor detectors.
-
-    Plugins implementing this Protocol can be registered via
-    ``monitor.register_detector`` (or declared on a ``PluginManifest``'s
-    ``detectors`` field and auto-loaded via the ``agent_runner.plugins``
-    entry_points group) and will be invoked alongside built-in detectors
-    during each monitor poll.
-
-    ``auto_action="stop_service"`` is honored only if the plugin's ``name``
-    appears in ``cfg.monitor.auto_stop_on`` — operators must explicitly
-    opt plugins into the auto-stop policy.
-    """
-
-    name: str
-    severity: Severity
-    auto_action: AutoAction
-
-    def detect(self, state: ProjectState) -> Alert | None: ...
 
 
 @dataclass(frozen=True)

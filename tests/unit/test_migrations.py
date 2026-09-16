@@ -91,18 +91,15 @@ def test_up_to_date_config_should_be_a_noop():
     assert r.applied == [_STAMP_APPLIED] and r.manual == [] and r.new_text == _stamped(text)
 
 
-@pytest.mark.parametrize(
-    "override_line",
-    ["round_budget_s = 900", "disable_pre_round_hooks = true"],
-    ids=["round_budget_s", "disable_pre_round_hooks"],
-)
-def test_flat_phase_override_should_be_advisory_when_set_directly(override_line: str):
+def test_flat_phase_override_should_be_advisory_when_set_directly():
     # A flat override directly under [phases.a] is guidance, not a rejection
     # — the flat form is a PERMANENT alias (config.py still loads it).
     # Routing it through `manual` used to make `upgrade` refuse to cross the
     # version boundary forever over a config that was never broken; it must
     # report as advisory and never block applied/manual-gated callers.
-    text = f'phases.list = ["a"]\n[phases.a]\n{override_line}\n'
+    # (disable_pre_round_hooks used to be a second parametrized case here —
+    # it's no longer a valid alias at all, see the drop-migration tests below.)
+    text = 'phases.list = ["a"]\n[phases.a]\nround_budget_s = 900\n'
 
     r = _run(text)
 
@@ -511,6 +508,44 @@ def test_round_timeout_s_should_rename_in_nested_phase_runtime_table_when_migrat
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert tomllib.loads(r.new_text)["phases"]["a"]["runtime"]["round_budget_s"] == 300
+
+
+def test_disable_pre_round_hooks_should_be_dropped_from_runtime_table_when_migrated():
+    # 0.3.9: disable_pre_round_hooks's only consumer (the PreRoundHook plugin
+    # seam) was removed — the key has no replacement, so migrate DROPS it
+    # (contrast the round_timeout_s renames above, which keep the value).
+    text = "[runtime]\nround_budget_s = 900\ndisable_pre_round_hooks = true\n"
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    assert "disable_pre_round_hooks" not in r.new_text
+    assert "round_budget_s = 900" in r.new_text  # sibling key untouched
+    assert any("runtime.disable_pre_round_hooks" in a for a in r.applied)
+    tomllib.loads(r.new_text)  # still valid TOML
+
+
+def test_disable_pre_round_hooks_should_be_dropped_from_every_phase_flat_override_when_migrated():
+    text = (
+        '[phases]\nlist = ["a", "b"]\n'
+        "[phases.a]\ndisable_pre_round_hooks = true\n"
+        "[phases.b]\ndisable_pre_round_hooks = false\nround_budget_s = 200\n"
+    )
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    parsed = tomllib.loads(r.new_text)
+    assert "disable_pre_round_hooks" not in parsed["phases"]["a"]
+    assert "disable_pre_round_hooks" not in parsed["phases"]["b"]
+    assert parsed["phases"]["b"]["round_budget_s"] == 200  # sibling key untouched
+
+
+def test_disable_pre_round_hooks_should_be_dropped_from_nested_phase_runtime_table_when_migrated():
+    text = '[phases]\nlist = ["a"]\n[phases.a.runtime]\ndisable_pre_round_hooks = true\n'
+
+    r = migrations.run_migrations(text, tomllib.loads(text))
+
+    parsed = tomllib.loads(r.new_text)
+    assert "disable_pre_round_hooks" not in parsed["phases"]["a"].get("runtime", {})
 
 
 def test_old_hook_level_disable_name_should_be_flagged_manual_when_migrated():

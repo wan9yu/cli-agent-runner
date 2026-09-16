@@ -14,9 +14,7 @@ from typing import Any
 from agent_runner import _resolve
 from agent_runner.api_types import ProjectState
 from agent_runner.config import Config, ConfigError, load_config
-from agent_runner.events import plugin_event_kinds
-from agent_runner.hooks import plugin_context_enrichers, post_round_hooks, pre_round_hooks
-from agent_runner.monitor import plugin_detectors
+from agent_runner.hooks import post_round_hooks
 
 PEEK_SCHEMA_VERSION = "2.5"
 
@@ -103,11 +101,7 @@ def emit(value: Any, *, json_mode: bool, cfg: Config | None = None) -> None:
             )
 
             plugins_block = {
-                "event_kinds": plugin_event_kinds(),
-                "context_enrichers": plugin_context_enrichers(),
-                "pre_round_hooks": [h.name for h in pre_round_hooks()],
                 "post_round_hooks": [h.name for h in post_round_hooks()],
-                "detectors": plugin_detectors(),
                 "disabled": disabled_plugin_names(),
                 "sigterm_cooperative": cooperative_manifest_names(),
             }

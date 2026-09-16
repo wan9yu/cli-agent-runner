@@ -27,7 +27,7 @@ def test_select_path_should_raise_key_error_when_selecting_removed_events_kind()
     from agent_runner.api_types import select_path
 
     # Minimal tree mirroring ProjectState shape; no 'events' attribute.
-    tree = {"system": {"disk_used_pct": 50.0}, "plugins": {"event_kinds": []}}
+    tree = {"system": {"disk_used_pct": 50.0}, "plugins": {"post_round_hooks": []}}
 
     with pytest.raises(KeyError, match="events"):
         select_path(tree, "events.agent_usage_recorded")

@@ -220,7 +220,7 @@ def test_emit_should_populate_plugin_hook_keys_when_json_mode(
     tmp_git_repo: Path,
     capsys,
 ) -> None:
-    """0.1.8: plugins block in peek JSON includes pre/post hooks."""
+    """0.1.8: plugins block in peek JSON includes post_round hooks."""
     from agent_runner.api_types import (
         ProjectState,
         ServiceMode,
@@ -244,9 +244,7 @@ def test_emit_should_populate_plugin_hook_keys_when_json_mode(
 
     out = json.loads(capsys.readouterr().out)
     assert out["schema_version"] == PEEK_SCHEMA_VERSION
-    assert "pre_round_hooks" in out["plugins"]
     assert "post_round_hooks" in out["plugins"]
-    assert isinstance(out["plugins"]["pre_round_hooks"], list)
     assert isinstance(out["plugins"]["post_round_hooks"], list)
 
 

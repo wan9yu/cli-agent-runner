@@ -58,7 +58,6 @@ from agent_runner.cli._serve_round import (
 from agent_runner.cli.common import cfg_from_args_or_config_error
 from agent_runner.clock import SYSTEM_CLOCK, Clock
 from agent_runner.config import ConfigError
-from agent_runner.hooks import run_serve_startup_hooks
 from agent_runner.lifecycle import PIDFile
 from agent_runner.round_log import (
     ROUND_CURRENT_LINK,
@@ -702,14 +701,6 @@ def cmd(args) -> int:
         print(f"agent-runner serve already running for {cfg.runtime.work_dir}", file=sys.stderr)
         return 1
 
-    if not run_serve_startup_hooks(cfg, log_dir):
-        # A hook is a plugin contract; its failure is deterministic (same hook,
-        # same failure, every restart) — give up loudly (78) rather than burn
-        # through StartLimitBurst restarts before systemd's own StartLimit
-        # window catches it.
-        _release_serve_lock(serve_lock_fd)
-        return PERMANENT_CONFIG_EXIT
-
     from agent_runner._sandbox_probe import gate_serve_boot
 
     # gate_serve_boot probes ONCE here; sandbox_engaged is threaded to the
@@ -717,8 +708,7 @@ def cmd(args) -> int:
     proceed, sandbox_engaged = gate_serve_boot(cfg, log_dir)
     if not proceed:
         # sandbox = "require" and the Tier-B trampoline can't fully confine --
-        # same fail-closed shape as the startup-hook refusal above: loud,
-        # deterministic, no restart-loop.
+        # loud, deterministic, no restart-loop.
         _release_serve_lock(serve_lock_fd)
         return PERMANENT_CONFIG_EXIT
 

@@ -96,7 +96,6 @@ class RuntimeConfig:
     log_dir: Path
     round_budget_s: int = 1800
     restart_delay_s: int = 3
-    disable_pre_round_hooks: bool = False
     round_log_retention: int = 0  # 0 = never prune (pruning is opt-in)
     narrative_file: Path | None = None
     transient_error_action: Literal["back_off", "skip", "stop"] = "back_off"
@@ -124,7 +123,6 @@ class PhaseOverride:
     """
 
     round_budget_s: int | None = None
-    disable_pre_round_hooks: bool | None = None
     prompt_files: list[Path] | None = None
     agent: AgentConfig | None = None
     schedule: ScheduleConfig | None = None
@@ -347,8 +345,6 @@ class Config:
         rt_updates: dict[str, Any] = {}
         if ov.round_budget_s is not None:
             rt_updates["round_budget_s"] = ov.round_budget_s
-        if ov.disable_pre_round_hooks is not None:
-            rt_updates["disable_pre_round_hooks"] = ov.disable_pre_round_hooks
         if rt_updates:
             runtime = dataclasses.replace(runtime, **rt_updates)
         sched = self.schedule
@@ -362,7 +358,6 @@ class Config:
 _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
     {
         "round_budget_s",
-        "disable_pre_round_hooks",
         "prompt",
         "agent",
         "runtime",
@@ -370,8 +365,8 @@ _PHASE_OVERRIDE_ALLOWED_FIELDS = frozenset(
     }
 )
 
-# Keys allowed under [phases.<name>.runtime] — the flat-alias twins.
-_PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_budget_s", "disable_pre_round_hooks"})
+# Keys allowed under [phases.<name>.runtime] — the flat-alias twin.
+_PHASE_RUNTIME_ALLOWED_FIELDS = frozenset({"round_budget_s"})
 
 # Field names of AgentConfig — the keys a [phases.<name>.agent] sub-table may
 # set (merged onto the base [agent] table before validation), and also the

@@ -77,14 +77,8 @@ def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) ->
     assert payload["brake"] in ("off", "armed", "inert(undelegated)", "inert(no cgroup v2)")
     assert "plugins" in payload
     assert isinstance(payload["plugins"], dict)
-    assert "event_kinds" in payload["plugins"]
-    assert isinstance(payload["plugins"]["event_kinds"], list)
-    assert "context_enrichers" in payload["plugins"]
-    assert isinstance(payload["plugins"]["context_enrichers"], list)
-    assert "detectors" in payload["plugins"], (
-        f"plugins namespace missing detectors key: {payload['plugins']}"
-    )
-    assert isinstance(payload["plugins"]["detectors"], list)
+    assert "post_round_hooks" in payload["plugins"]
+    assert isinstance(payload["plugins"]["post_round_hooks"], list)
     assert "sandbox" in payload["plugins"], (
         f"plugins namespace missing sandbox key: {payload['plugins']}"
     )

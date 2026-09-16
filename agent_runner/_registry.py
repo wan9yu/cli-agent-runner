@@ -1,12 +1,9 @@
 """Shared registry helpers for plugin-extension surfaces.
 
-The `name`-keyed unique-registration check is identical across hooks
-(:mod:`agent_runner.hooks`) and detectors (:mod:`agent_runner.monitor`).
-This module is its single source of truth.
-
-Event-kind registration in :mod:`agent_runner.events` has DIFFERENT
-semantics (idempotent for same-source re-registration, conflict on
-different-source) and stays in that module.
+The `name`-keyed unique-registration check (:func:`ensure_unique`) is shared
+across every hook family in :mod:`agent_runner.hooks` (post_round_hooks,
+dirty_handlers, spawn_hooks) and by :mod:`agent_runner._plugin_manifest`'s
+own manifest-name check. This module is its single source of truth.
 """
 
 from __future__ import annotations
@@ -61,8 +58,8 @@ def resolve_entry_target(module_path: str, attr_path: str) -> Any:
 def ensure_unique(name: str, existing: list, kind: str) -> None:
     """Raise ValueError if any item in ``existing`` already has ``.name == name``.
 
-    ``kind`` is a short label embedded in the error message (e.g. ``"detector"``,
-    ``"context_enricher"``).
+    ``kind`` is a short label embedded in the error message (e.g. ``"dirty_handler"``,
+    ``"post_round_hook"``).
     """
     for item in existing:
         if getattr(item, "name", None) == name:

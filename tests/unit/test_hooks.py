@@ -4,16 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agent_runner import hooks
 from tests._test_helpers import isolating
 
-_reset = isolating(
-    hooks._PRE_ROUND_HOOKS,
-    hooks._CONTEXT_ENRICHERS,
-    hooks._POST_ROUND_HOOKS,
-)
+_reset = isolating(hooks._POST_ROUND_HOOKS)
 
 
 def test_hook_context_should_carry_round_fields_when_constructed() -> None:
@@ -32,38 +26,7 @@ def test_hook_context_should_carry_round_fields_when_constructed() -> None:
 
 
 def test_hook_listings_should_be_empty_when_no_plugins_registered() -> None:
-    assert hooks.pre_round_hooks() == []
-    assert hooks.context_enrichers() == []
     assert hooks.post_round_hooks() == []
-    assert hooks.plugin_context_enrichers() == []
-
-
-def test_pre_round_hook_should_be_visible_in_listing_when_registered() -> None:
-    class MyPreRound:
-        name = "mine"
-
-        def before_round(self, ctx: hooks.HookContext) -> None:
-            return None
-
-    hooks.register_pre_round_hook(MyPreRound())
-
-    listing = hooks.pre_round_hooks()
-
-    assert len(listing) == 1
-    assert listing[0].name == "mine"
-
-
-def test_context_enricher_should_be_visible_in_listing_when_registered() -> None:
-    class MyEnricher:
-        name = "branch_info"
-
-        def enrich(self, ctx: hooks.HookContext) -> dict:
-            return {"branch": "main"}
-
-    hooks.register_context_enricher(MyEnricher())
-
-    assert [e.name for e in hooks.context_enrichers()] == ["branch_info"]
-    assert hooks.plugin_context_enrichers() == ["branch_info"]
 
 
 def test_post_round_hook_should_be_visible_in_listing_when_registered() -> None:
@@ -78,44 +41,6 @@ def test_post_round_hook_should_be_visible_in_listing_when_registered() -> None:
     listing = hooks.post_round_hooks()
 
     assert len(listing) == 1
-
-
-def test_context_enricher_registration_should_raise_when_name_is_duplicate() -> None:
-    class A:
-        name = "dup"
-
-        def enrich(self, ctx):
-            return {}
-
-    class B:
-        name = "dup"
-
-        def enrich(self, ctx):
-            return {}
-
-    hooks.register_context_enricher(A())
-
-    with pytest.raises(ValueError, match="already registered"):
-        hooks.register_context_enricher(B())
-
-
-def test_pre_round_hook_registration_should_raise_when_name_is_duplicate() -> None:
-    class A:
-        name = "dup_pre"
-
-        def before_round(self, ctx):
-            return None
-
-    class B:
-        name = "dup_pre"
-
-        def before_round(self, ctx):
-            return None
-
-    hooks.register_pre_round_hook(A())
-
-    with pytest.raises(ValueError, match="already registered"):
-        hooks.register_pre_round_hook(B())
 
 
 def test_summarize_error_should_truncate_long_traceback() -> None:

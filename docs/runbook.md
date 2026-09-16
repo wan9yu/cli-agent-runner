@@ -378,29 +378,6 @@ Event kinds:
 - `service_upgrade_rollback_failed` — critical: needs manual intervention
 - `upgrade_start_failed` — new code installed and smoke-passed, but the service did not start; run the `remedy` command in the payload
 
-## Plugin cold-start (serve-startup hooks)
-
-Plugins may register `ServeStartupHook` callbacks that fire once per
-`agent-runner serve` invocation. The hook receives the loaded `Config` and
-returns nothing.
-
-Typical use case: seed a file or external state that subsequent rounds depend
-on. Example: a plugin's `PreRoundHook` overwrites `/tmp/my-prompt.md` per
-round, but the first round needs the file to already exist. A serve-startup
-hook seeds it before any round runs.
-
-### Failure behavior
-
-If a serve-startup hook raises, `agent-runner serve` aborts with exit code 78
-(deterministic — stays stopped, no restart) before entering the round loop. A
-`serve_startup_hook_failed` event is emitted best-effort with payload
-`{hook, exc_type, exc_msg}`.
-
-To inspect failures: `grep serve_startup_hook_failed {log_dir}/events-*.jsonl`.
-
-Operators can disable a misbehaving hook via `[plugins] disable = ["hook_name"]`
-just like any other plugin component.
-
 ## Remote event relay & SSH trust
 
 Remote support is an **event relay**, not remote detection:
@@ -767,10 +744,8 @@ only. While a round is in flight, `serve` resamples every ~10s and
 terminates the round once pressure reads `critical` for several consecutive
 ticks in a row (not a single sample — see the "Host memory pressure" row
 above), unless a bounded cgroup lets it defer to the kernel's own OOM
-instead. See the "Host memory pressure" row above. A `PreRoundHook`'s return
-value is still ignored by contract (it cannot itself veto a round — raising
-from one only emits `hook_failed` and the round proceeds anyway); the memory
-gate above is serve's own admission check, not a hook.
+instead. See the "Host memory pressure" row above; the memory gate is
+serve's own admission check, not a plugin hook — no hook can veto a round.
 
 **Still not covered: per-round peak RSS.** agent-runner records RSS nowhere;
 `metrics-*.jsonl` samples WHOLE-HOST memory at round start/end, and the
@@ -988,19 +963,6 @@ events are written to the *client's* log dir (the machine running
 | `agent_network_blip` | An agent round's log matched a network pattern | `{log_dir}/rounds/R{round_num}-*.log` for the full agent output |
 
 The events file is the index. The round log file is the body.
-
-### Plugin-mutation postmortem trail
-
-When a PreRoundHook mutates the agent's prompt, the audit trail is:
-
-| Event | What it tells you | Where to look next |
-|---|---|---|
-| `prompt_overwritten` | A registered PreRoundHook changed the prompt file | `hook` field names the culprit; full prompt content is at `cfg.prompt.file` (re-read after the round to see what shipped to the agent) |
-
-To pause this layer entirely (audit / debug): set `[runtime] disable_pre_round_hooks = true`.
-To disable a specific plugin by name: `[plugins] disable = ["plugin_name"]` (the
-plugin's own `PluginManifest.name`, not an individual hook's `.name`).
-See `docs/architecture.md` § "Plugin injection: two paths" for the full mental model.
 
 ### Orphan stash recovery
 

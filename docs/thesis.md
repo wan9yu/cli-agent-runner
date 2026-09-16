@@ -20,8 +20,8 @@ gemini, or any command-line tool). It:
    loops, surfaced via the opt-in `monitor`) the operator can promote to
    auto-stop. Each defense codifies a specific observed failure mode with a
    concrete trigger signature.
-4. Exposes **plugin hooks** (`PreRoundHook`, `PostRoundHook`, `ContextEnricher`,
-   `ServeStartupHook`, `DirtyHandler`, `SpawnHook`) for extension without modifying core.
+4. Exposes **plugin hooks** (`PostRoundHook`, `DirtyHandler`, `SpawnHook`) for
+   extension without modifying core.
 
 That's the complete scope. The layers are thin by design.
 
@@ -133,15 +133,15 @@ scheduler, a platform). agent-runner is a single-project primitive.
 No prompt template assembly DSL, no config-driven multi-part composition, no
 role-rotation patterns enforced by core.
 
-`PreRoundHook` already handles arbitrary prompt assembly. A plugin can read
-any files, call any API, and write the final prompt to disk before the agent
-starts. Adding a `[prompt.assembly]` config schema saves consumers ~30 LOC at
-the cost of permanent TOML surface area — a bad trade.
+`[prompt] files = [...]` (0.1.16+) already handles multi-file concatenation
+natively — see `docs/configuration.md` § "`[prompt]` multi-file concat".
+Adding a richer `[prompt.assembly]` config schema saves consumers a few more
+LOC at the cost of permanent TOML surface area — a bad trade.
 
 > **Example**: A 2026-05-18 proposal requested `[prompt] parts = ["system.md",
-> "context.md"]` to compose multi-file prompts natively. Rejected. A
-> 20-line PreRoundHook concatenates them. Core TOML surface is permanent;
-> plugin surface is not.
+> "context.md"]` to compose multi-file prompts natively. Rejected in favor of
+> the simpler, already-shipped `prompt.files` list. Core TOML surface is
+> permanent; scope creep on top of it is not.
 
 ### Not a remediation framework
 

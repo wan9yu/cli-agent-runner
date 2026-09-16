@@ -9,9 +9,6 @@ import pytest
 
 from agent_runner import events
 from agent_runner.events import KNOWN_EVENT_KINDS, emit
-from tests._test_helpers import isolating
-
-_reset = isolating(events._PLUGIN_KINDS)
 
 
 def _read_jsonl(p: Path) -> list[dict]:
@@ -81,64 +78,14 @@ def test_known_event_kinds_should_contain_all_lifecycle_events() -> None:
     assert expected.issubset(KNOWN_EVENT_KINDS)
 
 
-def test_registered_plugin_kind_should_appear_in_known_kinds() -> None:
-    events.register_event_kind("custom_test_kind", source="test-plugin")
-
-    assert "custom_test_kind" in events.KNOWN_EVENT_KINDS
-
-
-def test_register_event_kind_should_raise_when_re_registering_a_builtin() -> None:
-    with pytest.raises(ValueError, match="built-in"):
-        events.register_event_kind("round_start", source="some-plugin")
-
-
-def test_register_event_kind_should_be_idempotent_when_same_kind_same_source() -> None:
-    events.register_event_kind("dup_kind", source="plug-a")
-    events.register_event_kind("dup_kind", source="plug-a")  # no raise
-
-    assert "dup_kind" in events.KNOWN_EVENT_KINDS
-
-
-def test_register_event_kind_should_raise_when_same_kind_different_source() -> None:
-    events.register_event_kind("conflict_kind", source="plug-a")
-
-    with pytest.raises(ValueError, match="already registered"):
-        events.register_event_kind("conflict_kind", source="plug-b")
-
-
-def test_emit_should_not_raise_when_kind_is_plugin_registered(tmp_path) -> None:
-    events.register_event_kind("plugin_emit_test", source="test")
-
-    events.emit(tmp_path, "plugin_emit_test", note="hello")
-
-    assert any(tmp_path.glob("events-*.jsonl"))
-
-
-def test_plugin_event_kinds_should_return_a_sorted_list() -> None:
-    events.register_event_kind("z_late_kind", source="t")
-    events.register_event_kind("a_early_kind", source="t")
-
-    assert events.plugin_event_kinds() == ["a_early_kind", "z_late_kind"]
-
-
-def test_plugin_event_kinds_should_return_empty_list_when_none_registered() -> None:
-    assert events.plugin_event_kinds() == []
-
-
-def test_known_event_kinds_should_yield_builtins_and_plugins_when_iterated() -> None:
-    events.register_event_kind("plug_x", source="t")
-
+def test_known_event_kinds_should_yield_builtins_when_iterated() -> None:
     out = set(events.KNOWN_EVENT_KINDS)
 
-    assert "round_start" in out  # built-in
-    assert "plug_x" in out  # plugin
+    assert "round_start" in out
 
 
-def test_known_event_kinds_should_support_contains_for_builtins_and_plugins() -> None:
-    events.register_event_kind("plug_y", source="t")
-
+def test_known_event_kinds_should_support_contains_for_builtins() -> None:
     assert "round_start" in events.KNOWN_EVENT_KINDS
-    assert "plug_y" in events.KNOWN_EVENT_KINDS
     assert "nonexistent" not in events.KNOWN_EVENT_KINDS
 
 

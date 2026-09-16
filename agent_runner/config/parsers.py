@@ -211,12 +211,11 @@ def _parse_phase_overrides(
         if unknown:
             raise ConfigError(
                 f"unknown per-phase field(s) under [phases.{phase_name}]: {sorted(unknown)}; "
-                f"allowed: round_budget_s, disable_pre_round_hooks, prompt.files, "
-                f"agent, runtime, schedule"
+                f"allowed: round_budget_s, prompt.files, agent, runtime, schedule"
             )
 
-        # runtime: flat aliases (round_budget_s/disable_pre_round_hooks) and/or
-        # a nested [phases.<name>.runtime] sub-table. Setting both twins raises.
+        # runtime: flat alias (round_budget_s) and/or a nested
+        # [phases.<name>.runtime] sub-table. Setting both twins raises.
         runtime_sub = value.get("runtime")
         if runtime_sub is not None and not isinstance(runtime_sub, dict):
             raise ConfigError(f"[phases.{phase_name}.runtime] must be a table")
@@ -225,7 +224,7 @@ def _parse_phase_overrides(
         if unknown_rt:
             raise ConfigError(
                 f"unknown field(s) under [phases.{phase_name}.runtime]: {sorted(unknown_rt)}; "
-                f"allowed: round_budget_s, disable_pre_round_hooks"
+                f"allowed: round_budget_s"
             )
         for fld in _PHASE_RUNTIME_ALLOWED_FIELDS:
             if fld in value and fld in runtime_sub:
@@ -244,17 +243,6 @@ def _parse_phase_overrides(
         elif "round_budget_s" in value:
             round_budget_s = _require_positive_int(
                 value["round_budget_s"], field=f"phases.{phase_name}.round_budget_s"
-            )
-        disable_hooks = None
-        if "disable_pre_round_hooks" in runtime_sub:
-            disable_hooks = _require_bool(
-                runtime_sub["disable_pre_round_hooks"],
-                field=f"phases.{phase_name}.runtime.disable_pre_round_hooks",
-            )
-        elif "disable_pre_round_hooks" in value:
-            disable_hooks = _require_bool(
-                value["disable_pre_round_hooks"],
-                field=f"phases.{phase_name}.disable_pre_round_hooks",
             )
 
         prompt_files = None
@@ -296,7 +284,6 @@ def _parse_phase_overrides(
 
         overrides[phase_name] = PhaseOverride(
             round_budget_s=round_budget_s,
-            disable_pre_round_hooks=disable_hooks,
             prompt_files=prompt_files,
             agent=phase_agent,
             schedule=phase_schedule,
@@ -402,10 +389,6 @@ def _parse_runtime(runtime_d: dict, *, project_name: str, work_dir: Path) -> Run
         ),
         restart_delay_s=_require_positive_int(
             runtime_d.get("restart_delay_s", 3), field="runtime.restart_delay_s"
-        ),
-        disable_pre_round_hooks=_require_bool(
-            runtime_d.get("disable_pre_round_hooks", False),
-            field="runtime.disable_pre_round_hooks",
         ),
         round_log_retention=_require_non_negative_int(
             runtime_d.get("round_log_retention", 0), field="runtime.round_log_retention"

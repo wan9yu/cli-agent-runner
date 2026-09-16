@@ -42,7 +42,6 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `log_dir` | `Path` | — |
 | `round_budget_s` | `int` | 1800 |
 | `restart_delay_s` | `int` | 3 |
-| `disable_pre_round_hooks` | `bool` | False |
 | `round_log_retention` | `int` | 0 |
 | `narrative_file` | `Path \| None` | None |
 | `transient_error_action` | `Literal['back_off', 'skip', 'stop']` | 'back_off' |
@@ -404,7 +403,7 @@ sub-tables reject unknown keys: `agent` and `runtime` as noted below, and
 | Sub-table | Overrides | Fields accepted |
 |---|---|---|
 | `[phases.<name>.agent]` | `[agent]` | any `[agent]` field except `exec_prefix` (base-only, see below); field-merged onto the base `[agent]`, then validated (so the `stdin` + `{prompt}` cross-check runs on the merged result) |
-| `[phases.<name>.runtime]` | `[runtime]` | `round_budget_s`, `disable_pre_round_hooks` only |
+| `[phases.<name>.runtime]` | `[runtime]` | `round_budget_s` only |
 | `[phases.<name>.schedule]` | `[schedule]` | any `[schedule]` field; **replaces** the global windows wholesale |
 | `[phases.<name>.prompt]` | `[prompt]` | `files` only |
 
@@ -415,11 +414,10 @@ key onto the base `[agent]` — unset fields inherit — so a phase can swap onl
 make one phase run around the clock even while the global schedule pauses. A
 per-phase schedule that omits `timezone` inherits the global one.
 
-**Flat aliases.** `round_budget_s`, `disable_pre_round_hooks`, and
-`prompt.files` may also be written directly under `[phases.<name>]` (the
-pre-0.2.9 form). They are permanent aliases for the matching `runtime` / `prompt`
-sub-table fields. Setting both a flat field and its `[phases.<name>.runtime]`
-twin is a config error — use one.
+**Flat aliases.** `round_budget_s` and `prompt.files` may also be written
+directly under `[phases.<name>]` (the pre-0.2.9 form). They are permanent
+aliases for the matching `runtime` / `prompt` sub-table fields. Setting both a
+flat field and its `[phases.<name>.runtime]` twin is a config error — use one.
 
 ### Never overridable per phase
 
@@ -428,8 +426,7 @@ the base config regardless of phase:
 
 - **`runtime.work_dir` / `runtime.log_dir`** — one working tree and one log
   directory per deployment; a phase cannot relocate them. `[phases.<name>.runtime]`
-  accepts only `round_budget_s` and `disable_pre_round_hooks`; any other runtime
-  key there is rejected at load.
+  accepts only `round_budget_s`; any other runtime key there is rejected at load.
 - the rest of `[runtime]` (`restart_delay_s`, `round_log_retention`,
   `transient_error_action`, `max_rounds`, `stop_file`, …), and all of `[vcs]`,
   `[monitor]`, and `[plugins]` — global only.
@@ -512,10 +509,10 @@ provider keeps running. serve idle-pauses (waking at the earliest reset) only wh
 idle-sleeps until DeepSeek's window reopens rather than advancing. A
 `docs/runbook.md` ("Mixed-model rotation") recipe walks the operational side.
 
-> **Migration from the pre-0.2.9 flat form**: flat `round_budget_s` /
-> `disable_pre_round_hooks` under `[phases.<name>]` still work as aliases;
-> `agent-runner migrate` reports (it does not rewrite) the option to nest them
-> under `[phases.<name>.runtime]`. See `docs/migrations/0.2.md`.
+> **Migration from the pre-0.2.9 flat form**: flat `round_budget_s` under
+> `[phases.<name>]` still works as an alias; `agent-runner migrate` reports
+> (it does not rewrite) the option to nest it under `[phases.<name>.runtime]`.
+> See `docs/migrations/0.2.md`.
 
 > **Migration from 0.1.15**: `runtime.round_timeout_per_phase` dict syntax is
 > removed.

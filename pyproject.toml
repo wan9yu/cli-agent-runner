@@ -151,6 +151,13 @@ ignore_names = [
     # helper survives only for external callers + its own tests, so vulture sees
     # no in-package caller. Keep it — dropping it would break the public API.
     "resolve_runtime_for_phase",
+    # SSOT: the context-manager protocol's __exit__(self, exc_type, exc, tb)
+    # signature (Listener/NullListener in _notify.py, _FailOpenGuard in
+    # _observe.py) -- exc_type is part of the mandatory dunder shape even
+    # where the body never reads it. 0.3.9 unmasked this: it was previously
+    # (coincidentally, not by design) hidden by an unrelated local `exc_type`
+    # read inside hooks.run_serve_startup_hooks, removed in the same release.
+    "exc_type",
 ]
 
 [tool.coverage.run]

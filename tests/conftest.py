@@ -27,16 +27,12 @@ def _isolate_plugin_registries():
     module dicts are keyed on ``id(handler)``, so cloning the handler objects
     would change their identities and break the keying.
     """
-    from agent_runner import _plugin_manifest, events, hooks, monitor
+    from agent_runner import _plugin_manifest, hooks
 
     registries: list = [
         hooks._DIRTY_HANDLERS,
         hooks._SPAWN_HOOKS,
-        hooks._PRE_ROUND_HOOKS,
-        hooks._CONTEXT_ENRICHERS,
         hooks._POST_ROUND_HOOKS,
-        hooks._SERVE_STARTUP_HOOKS,
-        monitor._PLUGIN_DETECTORS,
         hooks._DIRTY_HANDLER_OWNER,
         hooks._SPAWN_HOOK_OWNER,
         hooks._DIRTY_HANDLER_BUILTIN,
@@ -44,7 +40,6 @@ def _isolate_plugin_registries():
         hooks._DIRTY_HANDLER_MODULE,
         hooks._SPAWN_HOOK_MODULE,
         _plugin_manifest._LOADED_MANIFESTS,
-        events._PLUGIN_KINDS,
     ]
     saved = [reg.copy() if isinstance(reg, dict) else list(reg) for reg in registries]
     for reg in registries:

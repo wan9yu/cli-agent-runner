@@ -794,43 +794,23 @@ def test_plugins_unknown_keys_should_raise_config_error_when_loaded(
         load_config(cfg_path)
 
 
-def test_no_disable_hooks_should_default_to_false_when_loaded(
+def test_disable_pre_round_hooks_should_be_rejected_as_unknown_key_when_loaded(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "prompt.md").write_text("p")
-    cfg_path = _write_toml(tmp_path, _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path))
-
-    cfg = load_config(cfg_path)
-
-    assert cfg.runtime.disable_pre_round_hooks is False
-
-
-def test_disable_hooks_true_should_be_honored_when_loaded(
-    tmp_path: Path,
-) -> None:
+    """0.3.9: disable_pre_round_hooks's only consumer (the PreRoundHook plugin
+    seam) was removed. The field is gone from RuntimeConfig, so an old config
+    still carrying it now trips the generic unknown-[runtime]-key rejection —
+    not silently ignored, not still honored. `agent-runner migrate` drops it
+    (see tests/unit/test_migrations.py)."""
     (tmp_path / "prompt.md").write_text("p")
     body = _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path).replace(
         "[runtime]",
         "[runtime]\ndisable_pre_round_hooks = true",
     )
     cfg_path = _write_toml(tmp_path, body)
+    from agent_runner.config import ConfigError
 
-    cfg = load_config(cfg_path)
-
-    assert cfg.runtime.disable_pre_round_hooks is True
-
-
-def test_disable_hooks_non_bool_should_raise_when_loaded(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "prompt.md").write_text("p")
-    body = _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path).replace(
-        "[runtime]",
-        "[runtime]\ndisable_pre_round_hooks = 'yes'",
-    )
-    cfg_path = _write_toml(tmp_path, body)
-
-    with pytest.raises(ValueError, match="must be a bool"):
+    with pytest.raises(ConfigError, match=r"unknown \[runtime\] field.*disable_pre_round_hooks"):
         load_config(cfg_path)
 
 
@@ -996,11 +976,10 @@ def test_phase_sub_table_round_budget_should_be_recorded_as_override_when_loaded
     cfg = load_config(tmp_path / "agent-runner.toml")
 
     assert cfg.phases.overrides["dev"].round_budget_s == 3600
-    assert cfg.phases.overrides["dev"].disable_pre_round_hooks is None
     assert cfg.phases.overrides["dev"].prompt_files is None
 
 
-def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
+def test_phase_sub_table_both_fields_should_be_parsed_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
@@ -1020,7 +999,6 @@ def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
         'list = ["dev"]\n'
         "[phases.dev]\n"
         "round_budget_s = 3600\n"
-        "disable_pre_round_hooks = true\n"
         'prompt.files = ["a.md", "b.md"]\n'
     )
 
@@ -1028,7 +1006,6 @@ def test_phase_sub_table_all_three_fields_should_all_be_parsed_when_loaded(
 
     o = cfg.phases.overrides["dev"]
     assert o.round_budget_s == 3600
-    assert o.disable_pre_round_hooks is True
     assert o.prompt_files == [tmp_path / "a.md", tmp_path / "b.md"]
 
 

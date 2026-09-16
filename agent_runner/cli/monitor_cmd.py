@@ -51,8 +51,8 @@ def add_parser(sub, parent) -> None:
         metavar="K[,K2,...]",
         help=(
             "Event kinds to relay (--host --mode events only). Default: every "
-            "kind this client knows — built-ins plus locally installed plugin "
-            "kinds. A kind that exists only on the remote must be named here."
+            "kind this client knows (built-ins). A kind that exists only on "
+            "the remote must be named here."
         ),
     )
     p.add_argument(

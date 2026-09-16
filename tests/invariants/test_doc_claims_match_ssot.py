@@ -68,7 +68,6 @@ def test_doc_counts_should_match_ssot(tmp_path) -> None:
         ("docs/commands.md", r"(\d+) 个动词", verbs),
         ("docs/commands.md", r"at a default (\d+)s interval", monitor_interval),
         ("docs/commands.md", r"remote_failure_tolerance_s` \(default (\d+)s\)", remote_tol),
-        ("docs/plugins.md", r"alongside the (\d+) builtins", detectors),
         ("docs/plugins.md", r"last (\d+) JSON lines", _TAIL_LINES),
         (
             "docs/migrations/0.2.md",
@@ -99,16 +98,16 @@ def test_doc_counts_should_match_ssot(tmp_path) -> None:
 
 
 def test_plugins_md_schema_version_should_match_ssot() -> None:
-    """`docs/plugins.md` hand-copies the `peek --json` `schema_version` field into two
-    illustrative JSON snippets (too abbreviated — they use `...` placeholders — to host
-    a gen-block). Pin both copies to the real constant so a version bump doesn't leave a
+    """`docs/plugins.md` hand-copies the `peek --json` `schema_version` field into an
+    illustrative JSON snippet (too abbreviated — it uses `...` placeholders — to host
+    a gen-block). Pin it to the real constant so a version bump doesn't leave a
     stale doc example, per CONTRIBUTING.md's "never hand-copy the value" rule."""
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
 
     found = re.findall(r'"schema_version":\s*"([\d.]+)"', text)
 
-    assert len(found) >= 2, (
-        f"docs/plugins.md: expected >= 2 schema_version examples, found {len(found)} "
+    assert len(found) >= 1, (
+        f"docs/plugins.md: expected >= 1 schema_version example, found {len(found)} "
         "(reworded? update this test)"
     )
     mismatches = {v for v in found if v != PEEK_SCHEMA_VERSION}

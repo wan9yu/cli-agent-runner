@@ -1,31 +1,14 @@
-"""Invariants for the event-kind registry.
-
-Two guarantees:
-1. Every ``events.emit(...)`` call in core uses a kind that's in ``_BUILTIN_KINDS``
-   (core never emits plugin kinds; plugins emit their own kinds from their own code).
-2. ``register_event_kind`` enforces the documented conflict rules: rejects collision
-   with built-ins, rejects re-registration from a different source, idempotent for
-   same source.
+"""Invariant: every ``events.emit(...)`` call in core uses a kind that's in
+``_BUILTIN_KINDS`` (core has no other kind to emit — plugin-declared event
+kinds were removed in 0.3.9).
 """
 
 from __future__ import annotations
 
 import ast
 
-import pytest
-
 from agent_runner import events
 from tests.invariants._event_scan import PKG, emit_kind_args, kind_literals, package_modules
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_kinds():
-    """Snapshot + restore the plugin registry around each test."""
-    saved = events._PLUGIN_KINDS.copy()
-    events._PLUGIN_KINDS.clear()
-    yield
-    events._PLUGIN_KINDS.clear()
-    events._PLUGIN_KINDS.update(saved)
 
 
 def test_emit_calls_in_core_should_use_builtin_kinds_when_scanned() -> None:
@@ -48,23 +31,3 @@ def test_emit_calls_in_core_should_use_builtin_kinds_when_scanned() -> None:
 
     assert scanned > 0, "no agent_runner modules scanned"  # vacuity-guard
     assert bad_calls == [], f"events.emit() with non-builtin kinds: {bad_calls}"
-
-
-def test_register_should_raise_when_colliding_with_builtin() -> None:
-    with pytest.raises(ValueError, match="built-in"):
-        events.register_event_kind("round_start", source="x")
-
-
-def test_register_should_raise_when_conflicting_with_different_source() -> None:
-    events.register_event_kind("conflict_name", source="src-a")
-
-    with pytest.raises(ValueError, match="already registered"):
-        events.register_event_kind("conflict_name", source="src-b")
-
-
-def test_register_should_be_idempotent_when_called_twice_with_same_source() -> None:
-    events.register_event_kind("idem_name", source="src-x")
-
-    events.register_event_kind("idem_name", source="src-x")
-
-    assert "idem_name" in events.KNOWN_EVENT_KINDS

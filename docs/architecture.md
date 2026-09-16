@@ -166,41 +166,13 @@ through unmodified. It is a transport, and carries no detector logic — the
 reconnect, give-up and process-group mechanics live in
 `docs/runbook.md` § "Remote event relay & SSH trust".
 
-## Plugin injection: two paths
-
-agent-runner has TWO independent mechanisms for plugins to influence the agent's prompt.
-Operators sometimes conflate them. The flags are independent.
-
-### Path 1: round-context.json prepend (controlled by `[prompt] inject_context`)
+## Prompt injection: round-context.json prepend
 
 Before each round, the supervisor writes `round-context.json` to `{log_dir}/round-context.json`
-with phase, round_num, plugin-provided context fields (from ContextEnricher), and
-recent_events tail. If `[prompt] inject_context = true` (default), this JSON is prepended <!-- authored: documents the shipped inject_context default; SSOT agent_runner/config/models.py -->
-to the agent's prompt file.
+with phase, round_num, and recent_events tail. If `[prompt] inject_context = true` (default), <!-- authored: documents the shipped inject_context default; SSOT agent_runner/config/models.py -->
+this JSON is prepended to the agent's prompt file.
 
-To disable this path: `[prompt] inject_context = false`.
-
-### Path 2: PreRoundHook mutation (controlled by `[runtime] disable_pre_round_hooks`)
-
-Before each round, the supervisor invokes every registered PreRoundHook (declared on a
-plugin's `PluginManifest.pre_round_hooks`, loaded via the `agent_runner.plugins`
-entry-point group). These hooks receive a HookContext and can read OR mutate
-`cfg.prompt.file` (or its contents directly).
-
-To disable this path: `[runtime] disable_pre_round_hooks = true`.
-
-When a PreRoundHook mutates the prompt content (sha256 changes), a `prompt_overwritten`
-event is emitted with `hook=<name>`, `old_hash`, `new_hash` — operator can grep this to
-audit plugin behavior.
-
-### The two flags are independent
-
-Setting `inject_context = false` does NOT disable PreRoundHooks. Setting
-`disable_pre_round_hooks = true` does NOT disable the round-context.json prepend.
-
-If you want neither injection: set both. If you want to disable a specific plugin
-(vs ALL pre-round hooks), use `[plugins] disable = ["that_plugin_name"]` — the
-name is the plugin's own `PluginManifest.name`, not an individual hook's `.name`.
+To disable: `[prompt] inject_context = false`.
 
 ## Dirty-handler seam (0.2.0+)
 
@@ -213,13 +185,10 @@ This makes dirty-tree policy fully pluggable. The `default_dirty_handler` plugin
 `auto_commit` policy from `[vcs] dirty_action` — so the external behavior is
 identical to pre-0.2.0 unless a consumer plugin intervenes first.
 
-**Lifecycle-hook family** (5 groups, run in this order per round):
+**Lifecycle-hook family** (2 groups, run in this order per round):
 
-1. `serve_startup_hooks` — once at `agent-runner serve` boot, before the loop
-2. `pre_round_hooks` — after lock acquire, before context is written
-3. `context_enrichers` — pre-round, their slices merged into round-context.json
-4. `dirty_handler_hooks` — after the agent exits, if the tree is dirty on a clean exit
-5. `post_round_hooks` — last, after the `round_end` event is emitted
+1. `dirty_handler_hooks` — after the agent exits, if the tree is dirty on a clean exit
+2. `post_round_hooks` — last, after the `round_end` event is emitted
 
 The stash *mechanism* (SHA lock, idempotency guard, `stash_orphan` /
 `try_auto_commit` primitives) stays in core. The stash *policy* is plugin-provided.
@@ -272,7 +241,6 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `plugin_sandbox_kill`
 - `plugin_spawn_decision`
 - `plugin_spawn_override_ignored`
-- `prompt_overwritten`
 - `round_cgroup_memory`
 - `round_container_orphan_risk`
 - `round_deferred`
@@ -293,7 +261,6 @@ See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
 - `schedule_paused`
 - `schedule_phase_skipped`
 - `schedule_resumed`
-- `serve_startup_hook_failed`
 - `service_upgrade_rollback_failed`
 - `service_upgrade_rolled_back`
 - `service_upgraded`

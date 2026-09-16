@@ -1,9 +1,9 @@
 """Shared test helpers.
 
 Centralises the snapshot+clear+restore fixture pattern used by every test
-file that interacts with a plugin-extension registry (hooks, detectors,
-event kinds). Before: 8 near-identical autouse fixtures across the test
-suite. After: one factory.
+file that interacts with a plugin-extension registry (post-round hooks,
+dirty handlers, spawn hooks). Before: 8 near-identical autouse fixtures
+across the test suite. After: one factory.
 """
 
 from __future__ import annotations
@@ -376,9 +376,9 @@ def isolating(*registries: list[Any] | dict[Any, Any]) -> Any:
     Usage in a test module:
 
         from tests._test_helpers import isolating
-        from agent_runner import monitor
+        from agent_runner import hooks
 
-        _reset = isolating(monitor._PLUGIN_DETECTORS)
+        _reset = isolating(hooks._POST_ROUND_HOOKS)
 
     Multiple registries can be passed; all are isolated around each test.
     Supports list and dict registries.

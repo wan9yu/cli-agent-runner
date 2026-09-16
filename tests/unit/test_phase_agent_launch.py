@@ -58,19 +58,19 @@ def _capture_run(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 def _capture_hook_binary(monkeypatch: pytest.MonkeyPatch) -> list[str | None]:
-    """Register a pre-round hook that records the HookContext's agent_binary —
+    """Register a post-round hook that records the HookContext's agent_binary —
     the observable the runner derives from the phase's own agent command."""
     seen: list[str | None] = []
 
     class _CaptureHook:
         name = "capture_agent_binary"
 
-        def before_round(self, ctx):  # type: ignore[no-untyped-def]
+        def after_round(self, ctx, result):  # type: ignore[no-untyped-def]
             seen.append(ctx.agent_binary)
 
     # Isolate the registry so the capture hook is auto-removed on teardown.
-    monkeypatch.setattr(hooks, "_PRE_ROUND_HOOKS", [], raising=False)
-    hooks.register_pre_round_hook(_CaptureHook())
+    monkeypatch.setattr(hooks, "_POST_ROUND_HOOKS", [], raising=False)
+    hooks.register_post_round_hook(_CaptureHook())
     return seen
 
 

@@ -42,17 +42,6 @@ from agent_runner.monitor import NETWORK_PATTERNS
 from agent_runner.round_log import next_round_num, open_round_log, prune_rounds_dir
 
 
-def _primary_prompt_file(cfg: Config) -> Path | None:
-    """Primary prompt file: first of cfg.prompt.files, else cfg.prompt.file.
-
-    Runner-only helper (feeds HookContext a single Path to inspect). Lives
-    beside its sole caller so api.py stays a facade, not a runner utility bag.
-    """
-    if cfg.prompt.files:
-        return cfg.prompt.files[0]
-    return cfg.prompt.file
-
-
 class LockHeldError(RuntimeError, EnvironmentalError):
     """Another agent-runner already holds the round lock. Self-heals once that
     holder finishes or dies (classify_round_exit maps this to ENV_BATTERY_EXIT,
@@ -294,96 +283,6 @@ def _scan_round_log_for_network_blip(
     )
 
 
-def _stitch_enricher_slices(
-    base: dict[str, Any],
-    enrichers: list,
-    hook_ctx: hooks.HookContext,
-    log_dir: Path,
-) -> dict[str, Any]:
-    """Merge each enricher's slice under ``base[enricher.name]``.
-
-    Any exception is caught and emitted as a ``hook_failed`` event; the
-    round continues with whatever slices succeeded.
-    """
-    out = dict(base)
-    for enricher in enrichers:
-        try:
-            out[enricher.name] = enricher.enrich(hook_ctx)
-        except Exception as exc:
-            payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
-            events.emit(
-                log_dir,
-                events.HOOK_FAILED,
-                hook_name=enricher.name,
-                hook_kind="context_enricher",
-                **payload,
-            )
-    return out
-
-
-def _run_pre_round_hooks(
-    hook_ctx: hooks.HookContext,
-    log_dir: Path,
-    *,
-    disabled: bool = False,
-    prompt_file: Path | None = None,
-) -> None:
-    """Invoke registered PreRoundHook plugins. Failures are isolated.
-
-    When ``disabled=True`` (from ``cfg.runtime.disable_pre_round_hooks``),
-    skip all hooks. PostRoundHooks are unaffected.
-
-    When ``prompt_file`` is provided, the content is hashed before and after
-    EACH hook; mutations emit ``prompt_overwritten`` events with hook attribution.
-    Multiple mutating hooks per round → multiple events (audit trail).
-    """
-    if disabled:
-        return
-
-    round_hooks = hooks.pre_round_hooks()
-    if not round_hooks:
-        return  # nothing to run — skip the prompt hash entirely (lazy hashlib)
-
-    def _file_sha256(p: Path) -> str:
-        import hashlib
-
-        try:
-            return hashlib.sha256(p.read_bytes()).hexdigest()
-        except FileNotFoundError:
-            return ""
-
-    prev_hash = _file_sha256(prompt_file) if prompt_file is not None else ""
-
-    for hook in round_hooks:
-        try:
-            hook.before_round(hook_ctx)
-        except Exception as exc:
-            payload = hooks._summarize_error(exc, tb=tb_mod.format_exc())
-            events.emit(
-                log_dir,
-                events.HOOK_FAILED,
-                hook_name=hook.name,
-                hook_kind="pre_round",
-                **payload,
-            )
-            continue  # don't compare prompt hash for crashed hooks
-
-        if prompt_file is not None:
-            new_hash = _file_sha256(prompt_file)
-            if new_hash != prev_hash:
-                events.emit(
-                    log_dir,
-                    events.PROMPT_OVERWRITTEN,
-                    round_num=hook_ctx.round_num,
-                    phase=hook_ctx.phase,
-                    hook=hook.name,
-                    prompt_path=str(prompt_file),
-                    old_hash=f"sha256:{prev_hash}",
-                    new_hash=f"sha256:{new_hash}",
-                )
-                prev_hash = new_hash
-
-
 def _run_post_round_hooks(
     hook_ctx: hooks.HookContext,
     result: RoundResult,
@@ -499,22 +398,14 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             stash_idempotency_s=cfg.vcs.stash_idempotency_s,
         ),
     )
-    _run_pre_round_hooks(
-        hook_ctx,
-        log_dir,
-        disabled=resolved_rt.disable_pre_round_hooks,
-        prompt_file=_primary_prompt_file(cfg),
-    )
-    enriched_ctx = _stitch_enricher_slices(base_ctx, hooks.context_enrichers(), hook_ctx, log_dir)
-
     # Merge the previous/orphan blocks BEFORE writing (preserving prior behavior)
     if previous_block is not None:
-        enriched_ctx["previous"] = previous_block
+        base_ctx["previous"] = previous_block
     if orphan_block is not None:
-        enriched_ctx["orphan_stash"] = orphan_block
+        base_ctx["orphan_stash"] = orphan_block
 
-    # Write the FULL enriched context to round-context.json
-    context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, enriched_ctx)
+    # Write the context to round-context.json
+    context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, base_ctx)
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
     _agent_binary = profile.agent.binary
@@ -528,7 +419,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         agent_binary=_agent_binary,
     )
 
-    prompt = _api_assemble_prompt(cfg, phase=phase, context=enriched_ctx)
+    prompt = _api_assemble_prompt(cfg, phase=phase, context=base_ctx)
 
     events.emit(log_dir, events.AGENT_SPAWN, round_num=round_num, timeout_s=timeout_s)
     framework_env = {

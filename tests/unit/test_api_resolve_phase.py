@@ -13,13 +13,7 @@ def _cfg_with_overrides(tmp_path: Path) -> Path:
     return make_toml_with_sections(
         tmp_path,
         runtime_extra="round_budget_s = 1800\n",
-        phases_block=(
-            "[phases]\n"
-            'list = ["dev", "qa"]\n'
-            "[phases.dev]\n"
-            "round_budget_s = 3600\n"
-            "disable_pre_round_hooks = true\n"
-        ),
+        phases_block=('[phases]\nlist = ["dev", "qa"]\n[phases.dev]\nround_budget_s = 3600\n'),
     )
 
 
@@ -31,7 +25,6 @@ def test_resolve_runtime_for_phase_should_return_base_runtime_when_phase_is_none
     resolved = resolve_runtime_for_phase(cfg, None)
 
     assert resolved.round_budget_s == 1800
-    assert resolved.disable_pre_round_hooks is False
 
 
 def test_resolve_runtime_for_phase_should_apply_override_when_phase_has_override(
@@ -42,7 +35,6 @@ def test_resolve_runtime_for_phase_should_apply_override_when_phase_has_override
     resolved = resolve_runtime_for_phase(cfg, "dev")
 
     assert resolved.round_budget_s == 3600
-    assert resolved.disable_pre_round_hooks is True
 
 
 def test_resolve_runtime_for_phase_should_return_base_when_phase_has_no_override(
@@ -53,7 +45,6 @@ def test_resolve_runtime_for_phase_should_return_base_when_phase_has_no_override
     resolved = resolve_runtime_for_phase(cfg, "qa")
 
     assert resolved.round_budget_s == 1800
-    assert resolved.disable_pre_round_hooks is False
 
 
 def test_resolve_runtime_for_phase_should_return_base_when_phase_is_unknown(

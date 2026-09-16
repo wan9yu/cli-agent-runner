@@ -31,7 +31,6 @@ def _public_names(module_path: str) -> set[str]:
 EXPECTED_API_TYPES = {
     "Alert",
     "AutoAction",
-    "Detector",
     "DirtyOutcome",
     "InitResult",
     "InstallResult",
@@ -50,40 +49,26 @@ EXPECTED_EVENTS_API = {
     "emit",
     "now_iso_ms",
     "parse_iso_ms",
-    "register_event_kind",
-    "plugin_event_kinds",
     "KNOWN_EVENT_KINDS",
 }
 
 EXPECTED_HOOKS_API = {
     "HookContext",
-    "ContextEnricher",
     "DirtyHandler",
-    "PreRoundHook",
     "PostRoundHook",
-    "ServeStartupHook",
     "SpawnHook",
     "SpawnView",
-    "register_context_enricher",
     "register_dirty_handler",
     "register_post_round_hook",
-    "register_pre_round_hook",
-    "register_serve_startup_hook",
     "register_spawn_hook",
-    "context_enrichers",
     "post_round_hooks",
-    "pre_round_hooks",
-    "serve_startup_hooks",
     "spawn_hooks",
-    "plugin_context_enrichers",
     "collapse_spawn_decisions",
 }
 
 EXPECTED_MONITOR_API = {
     "AUTO_STOP_ALERTS",
     "KNOWN_ALERT_KINDS",
-    "register_detector",
-    "plugin_detectors",
 }
 
 # Doomed symbols (removed in 0.1.7) — verify ABSENCE so a future revert can't

@@ -1,17 +1,11 @@
 """Structured event emitter — JSON Lines, monthly UTC naming.
 
-Event kinds live in a two-tier registry:
-- ``_BUILTIN_KINDS`` — frozen set of names emitted by core supervisor code.
-- ``_PLUGIN_KINDS`` — mutable dict (name -> source label) populated by plugins
-  via ``register_event_kind``, called for each name in a loaded
-  ``PluginManifest.event_kinds`` (source = the manifest's own name). Loaded
-  once at package import via the ``agent_runner.plugins`` entry_points group.
+``_BUILTIN_KINDS`` is a frozen set of every event kind emitted by core
+supervisor code, collected by reflection (see ``_collect_builtin_kinds``).
 
 Public API:
-- ``KNOWN_EVENT_KINDS`` — read-only union view; supports ``in`` and iteration.
+- ``KNOWN_EVENT_KINDS`` — the set of known kinds; supports ``in`` and iteration.
   Preserved so ``from agent_runner.events import KNOWN_EVENT_KINDS`` still works.
-- ``register_event_kind(name, *, source)`` — plugin entry point.
-- ``plugin_event_kinds()`` — sorted list of currently-registered plugin names.
 - ``emit(log_dir, kind, /, **fields)`` — append a structured event line.
   ``log_dir`` and ``kind`` are positional-only so callers can pass
   ``log_dir=...`` as a payload field name without parameter shadowing.
@@ -72,7 +66,6 @@ PLUGIN_SANDBOX_DEGRADED = "plugin_sandbox_degraded"
 PLUGIN_SANDBOX_KILL = "plugin_sandbox_kill"
 PLUGIN_SPAWN_DECISION = "plugin_spawn_decision"
 PLUGIN_SPAWN_OVERRIDE_IGNORED = "plugin_spawn_override_ignored"
-PROMPT_OVERWRITTEN = "prompt_overwritten"
 ROUND_CGROUP_MEMORY = "round_cgroup_memory"
 ROUND_CONTAINER_ORPHAN_RISK = "round_container_orphan_risk"
 ROUND_DEFERRED = "round_deferred"
@@ -94,7 +87,6 @@ SCHEDULE_PAUSED = "schedule_paused"
 SCHEDULE_PHASE_SKIPPED = "schedule_phase_skipped"
 SCHEDULE_RESUMED = "schedule_resumed"
 SELF_TERMINATED = "agent_self_terminated"
-SERVE_STARTUP_HOOK_FAILED = "serve_startup_hook_failed"
 SERVICE_UPGRADE_ROLLBACK_FAILED = "service_upgrade_rollback_failed"
 SERVICE_UPGRADE_ROLLED_BACK = "service_upgrade_rolled_back"
 SERVICE_UPGRADED = "service_upgraded"
@@ -130,38 +122,13 @@ def _collect_builtin_kinds() -> frozenset[str]:
 
 _BUILTIN_KINDS: frozenset[str] = _collect_builtin_kinds()
 
-_PLUGIN_KINDS: dict[str, str] = {}
-
-
-def register_event_kind(name: str, *, source: str) -> None:
-    """Register a plugin-supplied event kind.
-
-    Raises ``ValueError`` if ``name`` collides with a built-in or with a
-    different plugin source. Idempotent when the same source re-registers
-    the same name (safe under repeated entry_points loading).
-    """
-    if name in _BUILTIN_KINDS:
-        raise ValueError(f"event kind {name!r} is built-in; cannot re-register")
-    existing = _PLUGIN_KINDS.get(name)
-    if existing is not None and existing != source:
-        raise ValueError(
-            f"event kind {name!r} already registered by {existing!r}; "
-            f"cannot re-register from {source!r}"
-        )
-    _PLUGIN_KINDS[name] = source
-
 
 def _is_known(name: str) -> bool:
-    return name in _BUILTIN_KINDS or name in _PLUGIN_KINDS
-
-
-def plugin_event_kinds() -> list[str]:
-    """Sorted list of currently-registered plugin event kind names."""
-    return sorted(_PLUGIN_KINDS)
+    return name in _BUILTIN_KINDS
 
 
 class _KnownEventKindsView:
-    """Read-only union view of built-in + plugin event kinds.
+    """Read-only view of built-in event kinds.
 
     Backward compat for ``from agent_runner.events import KNOWN_EVENT_KINDS``.
     Supports ``in`` and ``iter``; intentionally does NOT support mutation.
@@ -172,13 +139,12 @@ class _KnownEventKindsView:
 
     def __iter__(self) -> Iterator[str]:
         yield from sorted(_BUILTIN_KINDS)
-        yield from _PLUGIN_KINDS
 
     def __len__(self) -> int:
-        return len(_BUILTIN_KINDS) + len(_PLUGIN_KINDS)
+        return len(_BUILTIN_KINDS)
 
     def __repr__(self) -> str:
-        return f"<KNOWN_EVENT_KINDS: {len(_BUILTIN_KINDS)} built-in + {len(_PLUGIN_KINDS)} plugin>"
+        return f"<KNOWN_EVENT_KINDS: {len(_BUILTIN_KINDS)} built-in>"
 
 
 KNOWN_EVENT_KINDS = _KnownEventKindsView()

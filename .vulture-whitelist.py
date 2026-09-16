@@ -15,14 +15,9 @@ buffer
 
 # agent_runner._plugin_manifest.PluginManifest
 name
-pre_round_hooks
-context_enrichers
 post_round_hooks
-serve_startup_hooks
 dirty_handlers
 spawn_hooks
-detectors
-event_kinds
 sigterm_cooperative
 
 # agent_runner._round_outcome.RoundOutcome
@@ -199,7 +194,6 @@ brake
 
 # agent_runner.config.models.PhaseOverride
 round_budget_s
-disable_pre_round_hooks
 prompt_files
 agent
 schedule
@@ -234,7 +228,6 @@ work_dir
 log_dir
 round_budget_s
 restart_delay_s
-disable_pre_round_hooks
 round_log_retention
 narrative_file
 transient_error_action

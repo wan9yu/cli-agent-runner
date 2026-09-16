@@ -17,10 +17,6 @@ environment, filesystem, and network. There is no sandbox. Treat
 `pip install <agent-runner-plugin>` with the same trust you give any pip
 install — a malicious plugin can do anything the supervisor user can do.
 
-`auto_action="stop_service"` from plugin detectors is gated separately via
-`cfg.monitor.auto_stop_on` (allow-list); plugins cannot self-elevate to
-auto-stop.
-
 ## The `agent_runner.plugins` entry-point group
 
 > **Entry-point semantics:** agent-runner imports the target module and reads
@@ -49,47 +45,11 @@ empty:
 | Field | Type | Registers as |
 |---|---|---|
 | `name` | `str` | The plugin's own identity — `[plugins] disable` keys on this, not on any individual hook's own `.name`. |
-| `pre_round_hooks` | `tuple[PreRoundHook, ...]` | Runs before each agent round. |
-| `context_enrichers` | `tuple[ContextEnricher, ...]` | Injects a namespaced slice into round-context. |
 | `post_round_hooks` | `tuple[PostRoundHook, ...]` | Runs after each agent round. |
-| `serve_startup_hooks` | `tuple[ServeStartupHook, ...]` | Runs once per serve boot, before the round loop. |
 | `dirty_handlers` | `tuple[DirtyHandler, ...]` | Owns the dirty-tree policy after a clean-exit round. |
-| `detectors` | `tuple[Detector, ...]` | Ships a custom monitor detector. |
-| `event_kinds` | `tuple[str, ...]` | Registers custom event kind names (source = the manifest's own `name`). |
 
 A plugin that provides more than one capability just fills in more than one
 field on the same manifest — there is nothing to register per-capability.
-
-## Registering a custom event kind (§3.1)
-
-```toml
-# my_plugin/pyproject.toml
-[project.entry-points."agent_runner.plugins"]
-my_plugin = "my_plugin:PLUGIN"
-```
-
-```python
-# my_plugin/__init__.py
-from agent_runner._plugin_manifest import PluginManifest
-
-STAGE_ADVANCED = "my_workflow_stage_advanced"
-
-PLUGIN = PluginManifest(name="my_plugin", event_kinds=(STAGE_ADVANCED,))
-```
-
-The manifest's own `name` becomes the kind's `source` label automatically —
-no separate `register_event_kind()` call needed. After installation, the
-registered kind:
-
-- Passes `events.emit()` validation in plugin code
-- Surfaces in `agent-runner peek --json` under `plugins.event_kinds`
-- Round-trips through the JSONL event log just like a built-in kind
-
-## Conflict handling
-
-- A name that collides with a built-in event kind raises `ValueError` when the manifest registers
-- Two plugins (two different manifest names) registering the same event kind name raises `ValueError`
-- The same plugin re-registering its own name is idempotent (no-op) — safe under repeated package imports
 
 ## Failure isolation
 
@@ -97,17 +57,13 @@ If a plugin's entry point fails to import, or its `PLUGIN` attribute is missing 
 malformed, the supervisor logs a `UserWarning` and continues loading the rest.
 A broken plugin must never crash core.
 
-## Pre/Post round hooks + context enrichers (§3.2)
-
-Three Protocol-typed extension points, declared as `PluginManifest` fields:
+## Post-round hooks (§3.2)
 
 | Field | Protocol | Called |
 |---|---|---|
-| `pre_round_hooks` | `PreRoundHook` | after lock acquired, before round-context written |
-| `context_enrichers` | `ContextEnricher` | between base context assembly and prompt write |
 | `post_round_hooks` | `PostRoundHook` | after agent exits, after `round_end` event |
 
-All three receive a `HookContext`:
+It receives a `HookContext`:
 
 ```python
 @dataclass(frozen=True)
@@ -132,32 +88,25 @@ operators set custom names).
 `PostRoundHook` additionally receives a `RoundResult` (`from agent_runner.api_types import RoundResult`).
 Its field set is stable across releases (additions only).
 
-### ContextEnricher
+### `peek --json` surface
 
-A ContextEnricher returns this plugin's slice of round context. The runner merges
-each return value into the round's context dict under the enricher's own `name`,
-so two enrichers can never collide:
+`peek --json` reports currently-registered post_round_hook names under
+`plugins.post_round_hooks`:
 
-```python
-from agent_runner._plugin_manifest import PluginManifest
-from agent_runner.hooks import HookContext
+> The `schema_version` shown in the `peek --json` example below is illustrative;
+> the authoritative value is `PEEK_SCHEMA_VERSION` in code.
 
-
-class CurrentBranchEnricher:
-    name = "current_branch"
-
-    def enrich(self, ctx: HookContext) -> dict:
-        return {"branch": _current_branch(ctx.work_dir)}
-
-
-PLUGIN = PluginManifest(name="my_plugin", context_enrichers=(CurrentBranchEnricher(),))
+```json
+{
+  "schema_version": "2.5",
+  "plugins": {
+    "post_round_hooks": ["claude_rate_limit"],
+    "disabled": [],
+    "sigterm_cooperative": ["gemini"]
+  },
+  ...
+}
 ```
-
-The merged context then carries a `current_branch` key whose value is
-`{"branch": "main"}`, alongside every other enricher's namespaced slice.
-
-Runnable reference: `tests/integration/test_context_enricher_namespacing.py::test_two_enrichers_should_both_be_namespaced_when_stitched`
-registers two enrichers and asserts the exact namespaced shape of the merged dict.
 
 ### Failure isolation
 
@@ -168,7 +117,7 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 {
   "event": "hook_failed",
   "hook_name": "<plugin's name attribute>",
-  "hook_kind": "pre_round | context_enricher | post_round | dirty_handler | spawn_hook",
+  "hook_kind": "post_round | dirty_handler | spawn_hook",
   "error_type": "<exception class>",
   "error_message": "<str(exc)>",
   "traceback": "<head 1KB + ... [truncated] ... + tail 1KB>"
@@ -178,83 +127,6 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 (Fields emitted by the `HOOK_FAILED` path in `runner.py` + `_summarize_error` in `hooks.py`.)
 
 The round itself continues — a broken plugin must not crash the supervisor.
-
-### What `plugin_context_enrichers()` surfaces
-
-`peek --json` reports currently-installed enricher names under `plugins.context_enrichers`:
-
-> The `schema_version` shown in the `peek --json` examples below is illustrative;
-> the authoritative value is `PEEK_SCHEMA_VERSION` in code.
-
-```json
-{
-  "schema_version": "2.5",
-  "plugins": {
-    "event_kinds": [...],
-    "context_enrichers": ["current_branch"],
-    "pre_round_hooks": [...],
-    "post_round_hooks": [...],
-    "detectors": [...],
-    "sigterm_cooperative": ["gemini"]
-  },
-  ...
-}
-```
-
-### Serve-startup hooks
-
-Fires once per `agent-runner serve` invocation, after config load, before the
-supervisor loop. Use for seeding state that subsequent rounds depend on.
-
-Protocol:
-
-```python
-from typing import Protocol, runtime_checkable
-
-
-@runtime_checkable
-class ServeStartupHook(Protocol):
-    name: str
-
-    def __call__(self, cfg: Config) -> None: ...
-```
-
-Registration (in your plugin package's `__init__.py`):
-
-```python
-from agent_runner._plugin_manifest import PluginManifest
-
-
-class MySeederHook:
-    name = "my_seeder"
-
-    def __call__(self, cfg):
-        seed_path = cfg.runtime.work_dir / ".my-plugin-state"
-        if not seed_path.exists():
-            seed_path.write_text(_default_state())
-
-
-PLUGIN = PluginManifest(name="my_plugin", serve_startup_hooks=(MySeederHook(),))
-```
-
-Entry point declaration (in your plugin's `pyproject.toml`):
-
-```toml
-[project.entry-points."agent_runner.plugins"]
-my_plugin = "my_plugin:PLUGIN"
-```
-
-### Failure semantics
-
-If your hook raises, `agent-runner serve` aborts with exit code 78 (deterministic
-— stays stopped, no restart) and emits a `serve_startup_hook_failed` event
-(best-effort). This is by design: hooks are plugin contracts, and a hook
-failure is the same every restart — failing fast and loudly beats burning
-through restart attempts before subsequent rounds fail in hard-to-diagnose
-ways.
-
-Make hooks idempotent — they may fire multiple times during a serve restart
-cycle. Check for existing state before seeding.
 
 ### Round subprocess env contract
 
@@ -444,89 +316,7 @@ on the same reasoning but has not been observed from pi, so it is not parsed.
 
 Disable with `[plugins] disable = ["pi"]`.
 
-## Custom monitor detectors (§3.3)
-
-0.1.5 adds a fourth extension point — plugin authors can ship custom monitor
-detectors that run alongside the 13 builtins on every monitor poll.
-
-### Manifest field + Protocol
-
-```toml
-[project.entry-points."agent_runner.plugins"]
-my_plugin = "my_plugin:PLUGIN"
-```
-
-```python
-# my_plugin/__init__.py
-from agent_runner._plugin_manifest import PluginManifest
-from agent_runner.api_types import Alert, ProjectState
-
-
-class MyDetector:
-    name = "my_detector"
-    severity = "warning"  # "info" | "warning" | "critical"
-    auto_action = "none"  # "none" | "stop_service"
-
-    def detect(self, state: ProjectState) -> Alert | None:
-        if not _should_fire(state):
-            return None
-        return Alert(
-            severity=self.severity,
-            detector=self.name,
-            message="something is off",
-            context={"hint": "look here"},
-            ts="...",  # use events.now_iso_ms()
-            auto_action=self.auto_action,
-        )
-
-
-PLUGIN = PluginManifest(name="my_plugin", detectors=(MyDetector(),))
-```
-
-`Detector` is a `@runtime_checkable` Protocol — `isinstance(obj, Detector)` returns
-True for any class with the four required attributes (`name`, `severity`,
-`auto_action`, `detect`).
-
-### Auto-stop opt-in
-
-A plugin detector that returns alerts with `auto_action="stop_service"` will
-NOT actually stop the supervisor unless its `name` appears in
-`cfg.monitor.auto_stop_on`. Operators must opt plugin detectors in explicitly:
-
-```toml
-# agent-runner.toml
-[monitor]
-auto_stop_on = ["oauth_fail", "disk_critical", "my_detector"]
-```
-
-<!-- authored: default auto_stop_on membership; SSOT agent_runner/config/models.py -->
-The default `auto_stop_on` includes only the two built-in critical detectors
-(`oauth_fail`, `disk_critical`). This prevents a buggy or aggressive plugin
-detector from stopping production services without explicit operator consent.
-
-### Failure isolation
-
-If `detect(state)` raises an exception, the runner logs a `UserWarning` and
-the remaining detectors continue. No alert is emitted for the crashing
-detector. Other plugin detectors and all builtins still run normally.
-
-### `peek --json` surface
-
-```json
-{
-  "schema_version": "2.5",
-  "plugins": {
-    "event_kinds": [...],
-    "context_enrichers": [...],
-    "pre_round_hooks": [...],
-    "post_round_hooks": [...],
-    "detectors": ["my_detector"]
-  },
-  ...
-}
-```
-
-### Worked example: a post_round_hook that parses the round log
+## Worked example: a post_round_hook that parses the round log
 
 The common project-specific pattern is a `PostRoundHook` that reads the merged
 round log after each round and records or emits something. The whole contract
@@ -552,10 +342,11 @@ lines. Guard for `None` (unset on manually-constructed `HookContext` in tests),
 and do not recompute the path from `ctx.log_dir` + round number — the naming
 convention under that directory is not a stable contract.
 
-The same `name` + `after_round` shape covers other signals: emit a custom
-event for exempt rounds (register the kind first), count git commits per round,
-or compare recent vs older round duration. Project-specific semantics live in
-the plugin — agent-runner core stays agent-agnostic.
+The same `name` + `after_round` shape covers other signals: count git commits
+per round, compare recent vs older round duration, or write to your own log —
+`events.emit()` only accepts built-in kinds, so a plugin's own telemetry goes
+through its own logging, not the supervisor's event stream. Project-specific
+semantics live in the plugin — agent-runner core stays agent-agnostic.
 
 ## DirtyHandler — custom dirty-tree policy (0.2.0+)
 

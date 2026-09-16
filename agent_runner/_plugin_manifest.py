@@ -10,32 +10,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent_runner._registry import ensure_unique
-from agent_runner.api_types import Detector
-from agent_runner.hooks import (
-    ContextEnricher,
-    DirtyHandler,
-    PostRoundHook,
-    PreRoundHook,
-    ServeStartupHook,
-    SpawnHook,
-)
+from agent_runner.hooks import DirtyHandler, PostRoundHook, SpawnHook
 
 
 @dataclass(frozen=True)
 class PluginManifest:
     """A plugin's complete, declared capability set. `name` is the plugin's
     own identity — `[plugins] disable` keys on THIS, not on any individual
-    hook/detector's own `.name`."""
+    hook's own `.name`."""
 
     name: str
-    pre_round_hooks: tuple[PreRoundHook, ...] = ()
-    context_enrichers: tuple[ContextEnricher, ...] = ()
     post_round_hooks: tuple[PostRoundHook, ...] = ()
-    serve_startup_hooks: tuple[ServeStartupHook, ...] = ()
     dirty_handlers: tuple[DirtyHandler, ...] = ()
     spawn_hooks: tuple[SpawnHook, ...] = ()
-    detectors: tuple[Detector, ...] = ()
-    event_kinds: tuple[str, ...] = ()
     sigterm_cooperative: bool = False
     """Declares that this preset's CLI cooperatively drains/cleans up on
     SIGTERM -- source-verified per preset, NEVER assumed from a CLI's
@@ -111,8 +98,8 @@ def register_manifest(
     already-registered manifest's ``.name`` — this is checked HERE, not by
     the underlying registries' own ``ensure_unique`` calls below, which only
     catch two manifests sharing one of THEIR sub-capabilities' ``.name``
-    (e.g. two different plugins each declaring a detector named ``"foo"``);
-    they have no visibility into the manifest's own top-level name, so two
+    (e.g. two different plugins each declaring a post_round_hook named
+    ``"foo"``); they have no visibility into the manifest's own top-level name, so two
     manifests named e.g. ``"codewhale"`` with disjoint capability names would
     otherwise both register, and ``unregister_by_name``/``[plugins] disable``
     would then strip both when the operator meant to disable one.
@@ -131,16 +118,10 @@ def register_manifest(
     """
     ensure_unique(manifest.name, _LOADED_MANIFESTS, "plugin manifest")
 
-    from agent_runner import events, hooks, monitor
+    from agent_runner import hooks
 
-    for h in manifest.pre_round_hooks:
-        hooks.register_pre_round_hook(h)
-    for e in manifest.context_enrichers:
-        hooks.register_context_enricher(e)
     for h in manifest.post_round_hooks:
         hooks.register_post_round_hook(h)
-    for h in manifest.serve_startup_hooks:
-        hooks.register_serve_startup_hook(h)
     for d in manifest.dirty_handlers:
         hooks.register_dirty_handler(
             d, owner=manifest.name, builtin=builtin, module_path=module_path, attr_path=attr_path
@@ -149,10 +130,6 @@ def register_manifest(
         hooks.register_spawn_hook(
             s, owner=manifest.name, builtin=builtin, module_path=module_path, attr_path=attr_path
         )
-    for det in manifest.detectors:
-        monitor.register_detector(det)
-    for kind in manifest.event_kinds:
-        events.register_event_kind(kind, source=manifest.name)
     _LOADED_MANIFESTS.append(manifest)
 
 
@@ -164,17 +141,14 @@ def unregister_by_name(names: set[str]) -> set[str]:
     """Remove every capability declared by manifests whose `.name` is in
     `names`. Returns the subset of `names` actually matched (for the
     caller's unknown-name warning)."""
-    from agent_runner import events, hooks, monitor
+    from agent_runner import hooks
 
     found: set[str] = set()
     for manifest in list(_LOADED_MANIFESTS):
         if manifest.name not in names:
             continue
         found.add(manifest.name)
-        _remove_by_identity(hooks._PRE_ROUND_HOOKS, manifest.pre_round_hooks)
-        _remove_by_identity(hooks._CONTEXT_ENRICHERS, manifest.context_enrichers)
         _remove_by_identity(hooks._POST_ROUND_HOOKS, manifest.post_round_hooks)
-        _remove_by_identity(hooks._SERVE_STARTUP_HOOKS, manifest.serve_startup_hooks)
         _remove_by_identity(hooks._DIRTY_HANDLERS, manifest.dirty_handlers)
         for h in manifest.dirty_handlers:
             hooks._DIRTY_HANDLER_OWNER.pop(id(h), None)
@@ -185,7 +159,4 @@ def unregister_by_name(names: set[str]) -> set[str]:
             hooks._SPAWN_HOOK_OWNER.pop(id(h), None)
             hooks._SPAWN_HOOK_BUILTIN.pop(id(h), None)
             hooks._SPAWN_HOOK_MODULE.pop(id(h), None)
-        _remove_by_identity(monitor._PLUGIN_DETECTORS, manifest.detectors)
-        for kind in manifest.event_kinds:
-            events._PLUGIN_KINDS.pop(kind, None)
     return found

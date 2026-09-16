@@ -111,7 +111,7 @@ def _scalar_tables(p: dict) -> list[str]:
 
 # Flat override fields that also live under a nested [phases.<name>.runtime]
 # sub-table. The flat form is a permanent alias, so this is guidance only.
-_PHASE_RUNTIME_FLAT_FIELDS = ("round_budget_s", "disable_pre_round_hooks")
+_PHASE_RUNTIME_FLAT_FIELDS = ("round_budget_s",)
 
 
 def _has_flat_phase_override(parsed: dict) -> bool:
@@ -197,6 +197,42 @@ def _rename_key(old: str, new: str, table: str | re.Pattern) -> Callable[[str], 
             return text
         for i in hits:
             lines[i] = assign.sub(rf"\g<indent>{new}\g<sp>", lines[i], count=1)
+        return "".join(lines)
+
+    return _apply
+
+
+def _drop_key(key: str, table: str | re.Pattern) -> Callable[[str], str]:
+    """Delete `key = ...` (the whole line) from [table] -- for a key that was
+    removed with no replacement (contrast `_rename_key`, which keeps the
+    value under a new name). Same table-matching + single-hit-or-refuse
+    discipline as `_rename_key`: a Pattern `table` drops every matching
+    table's hit, a literal str `table` refuses (leaves the line in place,
+    routing the caller to a manual report) unless there is exactly one hit."""
+    assign = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=")
+
+    def _table_matches(name: str) -> bool:
+        if isinstance(table, re.Pattern):
+            return bool(table.fullmatch(name))
+        return name == table
+
+    def _apply(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        cur: str | None = None
+        hits: list[int] = []
+        for i, line in enumerate(lines):
+            h = _TABLE_HEADER.match(line)
+            if h:
+                cur = h.group("name").strip()
+                continue
+            if cur is not None and _table_matches(cur) and assign.match(line):
+                hits.append(i)
+        if not hits:
+            return text
+        if not isinstance(table, re.Pattern) and len(hits) != 1:
+            return text
+        for i in sorted(hits, reverse=True):
+            del lines[i]
         return "".join(lines)
 
     return _apply
@@ -443,13 +479,39 @@ MIGRATIONS: list[Migration] = [
         ),
         describe=("phases.<name>.runtime.round_timeout_s → phases.<name>.runtime.round_budget_s"),
     ),
+    # --- 0.3.9: runtime.disable_pre_round_hooks dropped (its only consumer,
+    # the PreRoundHook plugin seam, was removed — the flag had become a no-op
+    # config knob). Auto-dropped in all three shapes it could appear in. ---
+    Migration(
+        detect=lambda p: "disable_pre_round_hooks" in _table(p, "runtime"),
+        apply=_drop_key("disable_pre_round_hooks", "runtime"),
+        describe="runtime.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)",
+    ),
+    Migration(
+        detect=lambda p: any("disable_pre_round_hooks" in sub for sub in _phase_subtables(p)),
+        apply=_drop_key("disable_pre_round_hooks", re.compile(r"phases\.[^.\]]+")),
+        describe=(
+            "phases.<name>.disable_pre_round_hooks (removed 0.3.9 — PreRoundHook seam dropped)"
+        ),
+    ),
+    Migration(
+        detect=lambda p: any(
+            isinstance(sub.get("runtime"), dict) and "disable_pre_round_hooks" in sub["runtime"]
+            for sub in _phase_subtables(p)
+        ),
+        apply=_drop_key("disable_pre_round_hooks", re.compile(r"phases\.[^.\]]+\.runtime")),
+        describe=(
+            "phases.<name>.runtime.disable_pre_round_hooks "
+            "(removed 0.3.9 — PreRoundHook seam dropped)"
+        ),
+    ),
     Migration(
         detect=_has_flat_phase_override,
         apply=None,
         describe=(
-            "flat round_budget_s/disable_pre_round_hooks under [phases.<name>] "
-            "should move under a nested [phases.<name>.runtime] sub-table "
-            "(the flat form still works as an alias)"
+            "flat round_budget_s under [phases.<name>] should move under a "
+            "nested [phases.<name>.runtime] sub-table (the flat form still "
+            "works as an alias)"
         ),
         advisory=True,  # a valid, permanent alias — never blocks `upgrade`
     ),
