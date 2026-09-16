@@ -66,6 +66,27 @@ def test_round_oom_killed_should_emit_pointer_only_event_when_oom_kill_rises(tmp
     assert "[agent-runner] round log truncated: cgroup OOM-kill" in log.read_text()
 
 
+def test_round_oom_killed_should_carry_both_delta_field_names_when_oom_kill_rises(
+    tmp_path, monkeypatch
+):
+    """events_oom_kill_delta is the canonical (sibling-consistent with
+    round_cgroup_memory) name; oom_kill_delta is the retained legacy alias --
+    both appear with the identical value until a future breaking release drops
+    the bare alias."""
+    log = tmp_path / "round-2.log"
+    log.write_text("transcript bytes")
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[tmp_path] = _cgroup_state(oom_kill=5)
+    monkeypatch.setattr(_serve_cgroup.metrics, "cgroup_memory_usage", lambda **k: _usage(7))
+
+    cur, baseline = _serve_cgroup._emit_round_cgroup_memory(tmp_path, log, 2)
+    _serve_cgroup._maybe_emit_oom_killed(tmp_path, log, 2, cur, 137, baseline)
+
+    oom = [e for e in _events(tmp_path) if e["event"] == "round_oom_killed"][0]
+    assert oom["events_oom_kill_delta"] == 2  # 7 - 5
+    assert oom["oom_kill_delta"] == 2
+    assert oom["events_oom_kill_delta"] == oom["oom_kill_delta"]
+
+
 def test_round_oom_killed_should_not_emit_when_sibling_oom_kill_but_clean_exit(
     tmp_path, monkeypatch
 ):

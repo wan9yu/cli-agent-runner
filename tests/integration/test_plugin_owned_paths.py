@@ -197,6 +197,42 @@ def test_owned_and_non_owned_dirty_files_should_have_owned_file_survive_when_sta
     assert "src.py" in _stash_contents(tmp_git_repo)
 
 
+def _commit_contents(repo: Path, ref: str = "HEAD") -> list[str]:
+    """Paths introduced by the commit at ``ref``."""
+    r = subprocess.run(
+        ["git", "show", "--name-only", "--format=", ref],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return r.stdout.split()
+
+
+def test_owned_and_non_owned_dirty_files_should_have_owned_file_excluded_when_auto_commit_runs(
+    tmp_git_repo: Path,
+) -> None:
+    """try_auto_commit must honor the plugin-owned-paths registry the way stash_orphan does.
+
+    Without the registry threaded into the add exclude, a registered deliverable is
+    staged and committed alongside the agent's own change.
+    """
+    from agent_runner.vcs_state import register_plugin_owned_paths, try_auto_commit
+
+    register_plugin_owned_paths(["proposals/"])
+    (tmp_git_repo / "proposals").mkdir()
+    (tmp_git_repo / "proposals" / "memo.md").write_text("deliverable\n")
+    (tmp_git_repo / "src.py").write_text("agent work\n")
+
+    sha = try_auto_commit(tmp_git_repo, 1, None)
+
+    assert sha
+    committed = _commit_contents(tmp_git_repo)
+    assert "src.py" in committed
+    assert "proposals/memo.md" not in committed
+    assert (tmp_git_repo / "proposals" / "memo.md").read_text() == "deliverable\n"
+
+
 def test_gitignored_owned_path_should_not_refuse_push_when_stash_orphan_runs(
     tmp_git_repo: Path,
 ) -> None:

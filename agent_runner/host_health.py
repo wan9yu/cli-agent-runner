@@ -189,9 +189,12 @@ def cgroup_growth_rate_pressure(rate_mb_per_min: float | None, cfg: Any) -> Pres
     """WARNING when the round's memory-growth rate (MB/min) meets/exceeds the
     configured warning floor. Independent of the memory_pressure ladder above
     (NOT a 5th fall-through tier -- PSI's early return there would mask an
-    otherwise-live growth-rate signal). Observability only -- never returns
-    "critical" in this release; a growth-driven termination path needs
-    calibration on a constrained host before it can safely exist.
+    otherwise-live growth-rate signal). Observability only BY DESIGN -- never
+    returns "critical", never drives the memory.high brake or a terminate: the
+    growth-rate signal is a warning an operator or a plugin acts on (a
+    growth-driven action tier was considered and deliberately NOT pursued, since
+    it is a different signal from host-wide PSI stall and would need
+    constrained-host calibration to avoid false-positive throttling).
     ``rate_mb_per_min`` is None when no prior-tick sample pair is available
     yet (the first tick of a round) -- returns None (no signal), not warning."""
     if rate_mb_per_min is None:

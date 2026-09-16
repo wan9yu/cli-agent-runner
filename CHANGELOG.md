@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `try_auto_commit` (`vcs.dirty_action = "auto_commit"`) now honors the plugin-owned-paths registry, matching `stash_orphan`: paths registered via `register_plugin_owned_paths` are excluded from the auto-commit, so a plugin's deliverables no longer land in the agent's git history.
+- `round_oom_killed` now also carries `events_oom_kill_delta` — the canonical name, sibling-consistent with `round_cgroup_memory`'s counters; the original bare `oom_kill_delta` is retained as an alias (a future breaking release drops it).
+
+### Added
+- The `claude` preset arms the repetitive-tool-call anomaly detector (`[monitor] anomaly_repetitive_window = 30`, `anomaly_repetitive_threshold = 15`) — trips only on an egregious stuck loop (the same tool+target ≥15× within 30 calls). The global default stays opt-in (disabled).
+
 ## [0.3.7] - 2026-09-15
 
 ### Added
