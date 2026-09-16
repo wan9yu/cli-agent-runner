@@ -232,9 +232,9 @@ class _HostHealthPressureConfig:
     critical_consecutive_samples: int = 3
     # Off switch for the mid-round hard floor's termination action only.
     in_round_terminate: bool = True
-    # Mid-round growth-RATE floor (MB/min) -- observability only in this
-    # release: no critical/terminate action exists for it yet, see
-    # host_health.cgroup_growth_rate_pressure.
+    # Mid-round growth-RATE floor (MB/min) -- observability only BY DESIGN: it
+    # emits a warning an operator/plugin acts on, and deliberately drives no
+    # brake/terminate (see host_health.cgroup_growth_rate_pressure).
     cgroup_growth_rate_warning_mb_per_min: float = 512.0
     # Early cooperative SIGTERM at critical streak 1 (the hard floor's SIGTERM,
     # two samples earlier) — default OFF; own switch, distinct from the hard

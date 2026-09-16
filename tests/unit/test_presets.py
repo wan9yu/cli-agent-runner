@@ -93,6 +93,21 @@ def test_claude_preset_should_set_required_env_vars_when_parsed() -> None:
     assert env.get("CLAUDE_CODE_EFFORT_LEVEL") == "xhigh"
 
 
+def test_claude_preset_should_arm_repetitive_anomaly_detector_when_parsed() -> None:
+    """The claude preset opts in to repetitive-tool loop detection with conservative
+    values; the global default stays 0/0 (disabled). Pin the armed numbers so a
+    drift silently loosens (false positives) or disables (window/threshold to 0) it.
+    Constraint: threshold <= window, else parsers.py rejects it as never-firing."""
+    text = _preset_text("claude").replace("{project}", "test-project")
+
+    parsed = tomllib.loads(text)
+    monitor = parsed["monitor"]
+
+    assert monitor["anomaly_repetitive_window"] == 30
+    assert monitor["anomaly_repetitive_threshold"] == 15
+    assert monitor["anomaly_repetitive_threshold"] <= monitor["anomaly_repetitive_window"]
+
+
 def test_aider_preset_should_omit_agent_env_block_when_parsed() -> None:
     """Aider requires no env injection — preset omits [agent.env] entirely."""
     text = _preset_text("aider").replace("{project}", "test-project")

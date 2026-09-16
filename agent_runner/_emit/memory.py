@@ -217,12 +217,19 @@ def emit_round_oom_killed(
     took, no second sysfs read). Symmetric with ``round_mem_terminated``
     (supervisor-killed) -- this is the kernel-killed sibling.
 
-    POINTER-ONLY: ``log_path`` + ``log_bytes`` + ``oom_kill_delta`` -- NEVER the
+    POINTER-ONLY: ``log_path`` + ``log_bytes`` + the oom-kill delta -- NEVER the
     round-log/transcript content itself (durability, secret-redaction, size all
     argue against embedding it in events.jsonl). ``partial_log`` reports whether
     the supervisor's own truncation trailer (see ``_mark_partial_log``) was
     written onto the round log, so a later reader can tell the log's tail is
     supervisor residue, not the agent's own output.
+
+    The oom-kill delta rides under TWO field names with the identical value:
+    ``events_oom_kill_delta`` is the canonical name (sibling-consistent with
+    ``round_cgroup_memory``'s ``events_oom_kill_delta``); ``oom_kill_delta`` is
+    the retained legacy alias. The append-only event contract keeps both until a
+    future breaking release drops the bare alias -- so a single ``oom_kill_delta``
+    argument single-sources both fields, which can never diverge.
 
     Classification is UNCHANGED by this event: the round still exits 137 and
     counts toward the crash streak exactly as before -- this is pure
@@ -236,6 +243,7 @@ def emit_round_oom_killed(
         round_num=round_num,
         log_path=str(log_path),
         log_bytes=log_bytes,
+        events_oom_kill_delta=oom_kill_delta,
         oom_kill_delta=oom_kill_delta,
         partial_log=partial_log,
     )

@@ -30,3 +30,6 @@ stash_idempotency_s = 5
 
 [monitor]
 auth_fail_hint = "Run `claude /login` on the supervisor host or refresh ANTHROPIC_API_KEY."
+# Arm repetitive-tool loop detection conservatively: trip only when the same (tool, target) call repeats 15+ times within the last 30 tool calls — an egregious stuck loop, not the incidental re-reads of normal work (high threshold favors few false positives).
+anomaly_repetitive_window = 30
+anomaly_repetitive_threshold = 15

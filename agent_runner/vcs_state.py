@@ -455,10 +455,16 @@ def try_auto_commit(
 ) -> str:
     """Auto-commit the dirty tree with a hardcoded subject; return the commit SHA.
 
-    Returns "" when nothing remained staged after excluding log_dir (no-op;
-    HEAD untouched). Raises AutoCommitError on git failure. DOES NOT push.
-    Subject: ``agent-runner auto-commit: R<N> <phase>``. Uses
-    ``git -c commit.gpgsign=false``; honors pre-commit hooks (no --no-verify).
+    Returns "" when nothing remained staged after excluding log_dir and every
+    registered plugin-owned path (no-op; HEAD untouched). Raises AutoCommitError
+    on git failure. DOES NOT push. Subject: ``agent-runner auto-commit: R<N>
+    <phase>``. Uses ``git -c commit.gpgsign=false``; honors pre-commit hooks (no
+    --no-verify).
+
+    ``log_dir`` (when under ``work_dir``) and every dirty plugin-owned path
+    registered via ``register_plugin_owned_paths`` are excluded from the add, so
+    neither the runner's own bookkeeping nor the plugin's deliverables are
+    staged into the agent's auto-commit -- mirroring ``stash_orphan``.
 
     The commit call uses GIT_COMMIT_TIMEOUT_S (120s, not the 10s default) since
     real pre-commit hooks routinely exceed 10s. Either the add or the commit
@@ -469,6 +475,10 @@ def try_auto_commit(
     subject = f"agent-runner auto-commit: R{round_num}{phase_part}"
 
     exclude = _log_dir_exclude_pathspec(work_dir, log_dir)
+    owned = _owned_exclude_specs(work_dir)
+    if owned:
+        # _log_dir_exclude_pathspec already opens the pathspec with "--" when non-empty.
+        exclude = [*exclude, *owned] if exclude else ["--", *owned]
     try:
         add_result = _git(work_dir, "add", "-A", *exclude)
     except GitTimeout as e:
@@ -478,8 +488,9 @@ def try_auto_commit(
         raise AutoCommitError((add_result.stderr or "git add failed")[:200])
 
     # Only the exclusion can leave nothing staged (a zero-work round that churned
-    # only log_dir); without it the tree was dirty so there is always something to
-    # commit. Skip the extra git call on the common (no-exclusion) path.
+    # only log_dir or plugin-owned paths); without it the tree was dirty so there
+    # is always something to commit. Skip the extra git call on the common
+    # (no-exclusion) path.
     if exclude and _git(work_dir, "diff", "--cached", "--quiet").returncode == 0:
         return ""
 
