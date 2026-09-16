@@ -1,4 +1,9 @@
-"""Tests for DefaultDirtyHandler — bundled default dirty-tree handler."""
+"""Tests for vcs_state.resolve_dirty_tree -- dirty-tree policy after a
+clean-exit round, keyed on [vcs] dirty_action.
+
+Folded from the former DefaultDirtyHandler plugin (0.3.9 subtraction):
+dirty-tree resolution dispatches purely on the typed dirty_action config
+value, so it moved into plain core -- same behavior, new home."""
 
 from __future__ import annotations
 
@@ -7,76 +12,67 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.builtin_plugins.default_dirty_handler import DefaultDirtyHandler
-from agent_runner.hooks import VcsHookView
-from agent_runner.vcs_state import StashError, stash_orphan
-from tests._test_helpers import make_hook_context, read_events_for_current_month
+import agent_runner.vcs_state as vcs_state
+from agent_runner.vcs_state import AutoCommitError, StashError, resolve_dirty_tree, stash_orphan
+from tests._test_helpers import read_events_for_current_month
 
 
-def _ctx(tmp_git_repo, action):
-    return make_hook_context(
-        work_dir=tmp_git_repo,
-        log_dir=tmp_git_repo / "logs",
-        vcs=VcsHookView(dirty_action=action, stash_idempotency_s=5),
-    )
+def _resolve(tmp_git_repo: Path, action: str, dirty_files: list[str]):
+    return resolve_dirty_tree(tmp_git_repo, action, 1, None, tmp_git_repo / "logs", dirty_files)
 
 
-def test_handle_dirty_should_return_stashed_when_action_is_stash(tmp_git_repo):
+def test_resolve_dirty_tree_should_return_stashed_when_action_is_stash(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+    out = _resolve(tmp_git_repo, "stash", ["w.py"])
 
     assert out.kind == "stashed" and out.ref
 
 
-def test_handle_dirty_should_return_ignored_when_action_is_ignore(tmp_git_repo):
+def test_resolve_dirty_tree_should_return_ignored_when_action_is_ignore(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "ignore"), ["w.py"])
+    out = _resolve(tmp_git_repo, "ignore", ["w.py"])
 
     assert out.kind == "ignored"
 
 
-def test_handle_dirty_should_return_committed_when_action_is_auto_commit(tmp_git_repo):
+def test_resolve_dirty_tree_should_return_committed_when_action_is_auto_commit(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), ["w.py"])
+    out = _resolve(tmp_git_repo, "auto_commit", ["w.py"])
 
     assert out.kind == "committed" and out.ref
 
 
-def test_handle_dirty_should_return_ignored_when_auto_commit_stages_nothing(
+def test_resolve_dirty_tree_should_return_ignored_when_auto_commit_stages_nothing(
     tmp_git_repo, monkeypatch
 ):
     (tmp_git_repo / "logs").mkdir()
-    import agent_runner.api as _api
+    monkeypatch.setattr(vcs_state, "try_auto_commit", lambda *a, **kw: "")
 
-    monkeypatch.setattr(_api, "try_auto_commit", lambda *a, **kw: "")
-
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), [])
+    out = _resolve(tmp_git_repo, "auto_commit", [])
 
     assert out.kind == "ignored"
 
 
-def test_handle_dirty_should_emit_failure_and_leave_tree_dirty_when_auto_commit_raises(
+def test_resolve_dirty_tree_should_emit_failure_and_leave_tree_dirty_when_auto_commit_raises(
     tmp_git_repo, monkeypatch
 ):
     """Parity with runner.py: AutoCommitError emits DIRTY_COMMIT_FAILED and
     leaves the tree dirty (no stash, no orphan_stashed)."""
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
-    import agent_runner.api as _api
-    from agent_runner.vcs_state import AutoCommitError
 
     def _raise(*a, **kw):
         raise AutoCommitError("git fail")
 
-    monkeypatch.setattr(_api, "try_auto_commit", _raise)
+    monkeypatch.setattr(vcs_state, "try_auto_commit", _raise)
 
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "auto_commit"), ["w.py"])
+    out = _resolve(tmp_git_repo, "auto_commit", ["w.py"])
 
     assert out.kind == "ignored"
     kinds = [e.get("event") for e in read_events_for_current_month(tmp_git_repo / "logs")]
@@ -86,11 +82,11 @@ def test_handle_dirty_should_emit_failure_and_leave_tree_dirty_when_auto_commit_
     assert (tmp_git_repo / "w.py").read_text() == "x=1\n"
 
 
-def test_handle_dirty_should_write_orphan_state_file_when_action_is_stash(tmp_git_repo):
+def test_resolve_dirty_tree_should_write_orphan_state_file_when_action_is_stash(tmp_git_repo):
     (tmp_git_repo / "logs").mkdir()
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
-    DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+    _resolve(tmp_git_repo, "stash", ["w.py"])
 
     orphan_files = list((tmp_git_repo / "logs").glob("orphan*.json"))
     assert orphan_files, "orphan state file should be written to log_dir"
@@ -117,14 +113,14 @@ def test_stash_orphan_should_raise_stash_error_when_intent_to_add_dirties_tree(
     assert "not uptodate" in str(exc.value)
 
 
-def test_handle_dirty_should_emit_orphan_stash_failed_when_stash_push_fails(
+def test_resolve_dirty_tree_should_emit_orphan_stash_failed_when_stash_push_fails(
     tmp_git_repo: Path,
 ) -> None:
     """The flagship defense failing silently is what made this kind dead."""
     (tmp_git_repo / "logs").mkdir()
     _intent_to_add_dirty(tmp_git_repo)
 
-    out = DefaultDirtyHandler().handle_dirty(_ctx(tmp_git_repo, "stash"), ["base.txt"])
+    out = _resolve(tmp_git_repo, "stash", ["base.txt"])
 
     assert out.kind == "ignored"
     failed = [
@@ -136,17 +132,16 @@ def test_handle_dirty_should_emit_orphan_stash_failed_when_stash_push_fails(
     assert "not uptodate" in failed[0]["reason"]
 
 
-def test_handle_dirty_should_emit_idempotent_skip_when_stashed_twice_in_same_round(
+def test_resolve_dirty_tree_should_emit_idempotent_skip_when_stashed_twice_in_same_round(
     tmp_git_repo: Path,
 ) -> None:
     """Reuse inside the idempotency window must not re-emit orphan_stashed."""
     (tmp_git_repo / "logs").mkdir()
-    handler = DefaultDirtyHandler()
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
-    first = handler.handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+    first = _resolve(tmp_git_repo, "stash", ["w.py"])
     (tmp_git_repo / "w.py").write_text("x=2\n")
-    second = handler.handle_dirty(_ctx(tmp_git_repo, "stash"), ["w.py"])
+    second = _resolve(tmp_git_repo, "stash", ["w.py"])
 
     assert first.ref == second.ref
     kinds = [e["event"] for e in read_events_for_current_month(tmp_git_repo / "logs")]

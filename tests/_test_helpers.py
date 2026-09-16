@@ -428,14 +428,19 @@ def install_hostile_dirty_plugin(tmp_path: Path, *, action: str) -> tuple[str, s
     else:
         raise ValueError(f"unknown hostile action {action!r}")
 
+    # PLUGIN is a bare object exposing `.dirty_handlers` -- NOT a real
+    # PluginManifest, which no longer carries that field (0.3.9 folded the
+    # DirtyHandler seam into core). The trampoline's _run_dirty_child only
+    # needs the attribute; this fixture exercises its confinement mechanism
+    # directly, independent of the (now-deleted) production dispatch seam.
     src = (
-        "from agent_runner._plugin_manifest import PluginManifest\n\n\n"
         "class _H:\n"
         f"    name = {hook_name!r}\n"
         "    priority = 0\n\n"
         "    def handle_dirty(self, ctx, dirty_files):\n"
         f"{body}\n\n\n"
-        "PLUGIN = PluginManifest(name='hostile', dirty_handlers=(_H(),))\n"
+        "class PLUGIN:\n"
+        "    dirty_handlers = (_H(),)\n"
     )
     (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
     return module_name, hook_name

@@ -2,8 +2,8 @@
 
 The `name`-keyed unique-registration check (:func:`ensure_unique`) is shared
 across every hook family in :mod:`agent_runner.hooks` (post_round_hooks,
-dirty_handlers, spawn_hooks) and by :mod:`agent_runner._plugin_manifest`'s
-own manifest-name check. This module is its single source of truth.
+spawn_hooks) and by :mod:`agent_runner._plugin_manifest`'s own manifest-name
+check. This module is its single source of truth.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ BUILTIN_PLUGIN_NAMES: frozenset[str] = frozenset(
         "codewhale",
         "kimi",
         "pi",
-        "default_dirty_handler",
     }
 )
 """Mirrors pyproject.toml's [project.entry-points."agent_runner.plugins"] table

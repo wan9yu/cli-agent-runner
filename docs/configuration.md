@@ -297,17 +297,14 @@ than a backlog awaiting a decision.
 Type: string, one of `"stash"`, `"ignore"`, `"auto_commit"`
 
 Controls supervisor behavior when round subprocess exits with a dirty
-working tree. This config is read by the bundled `default_dirty_handler` plugin
-(0.2.0+, default-on). Existing behavior and TOML are unchanged.
+working tree. Read directly by core (`agent_runner.vcs_state.resolve_dirty_tree`) —
+not a plugin extension point.
 
 | Value | Behavior |
 |---|---|
 | `"stash"` | Auto-stash dirty tree with ORPHAN-prefix message. `dirty_detected` + `orphan_stashed` events emitted. |
 | `"ignore"` | Emit `dirty_detected` event only. Working tree left dirty for next round. |
 | `"auto_commit"` | Supervisor commits with subject `agent-runner auto-commit: R<N> <phase>`. No push. On success, emits `dirty_auto_committed`. On failure, emits `dirty_commit_failed`, leaves tree dirty. |
-
-To replace this policy entirely, disable the bundled plugin and register your own
-`DirtyHandler` — see `docs/plugins.md`.
 
 ## `[agent.env]` (optional)
 

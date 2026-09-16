@@ -30,7 +30,7 @@ def test_doctor_snapshot_should_omit_builtins_from_hashes(tmp_path: Path) -> Non
 
     snap = doctor_snapshot(cfg)
 
-    assert "default_dirty_handler" not in snap["third_party_plugin_hashes"]
+    assert "pi" not in snap["third_party_plugin_hashes"]
 
 
 def test_doctor_snapshot_should_surface_a_name_squatter_in_hashes(

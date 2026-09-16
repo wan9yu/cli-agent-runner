@@ -69,7 +69,7 @@ def test_package_modules_should_reach_subpackages_when_listed() -> None:
     # just that it's non-empty) — every other test in this file and in
     # test_event_kind_registry.py shares this same corpus source.
     assert "cli/serve_cmd.py" in names
-    assert "builtin_plugins/default_dirty_handler.py" in names
+    assert "builtin_plugins/gemini.py" in names
     assert "events.py" not in names  # events.py defines the kinds; it is the source
 
 

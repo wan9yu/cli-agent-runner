@@ -30,14 +30,10 @@ def _isolate_plugin_registries():
     from agent_runner import _plugin_manifest, hooks
 
     registries: list = [
-        hooks._DIRTY_HANDLERS,
         hooks._SPAWN_HOOKS,
         hooks._POST_ROUND_HOOKS,
-        hooks._DIRTY_HANDLER_OWNER,
         hooks._SPAWN_HOOK_OWNER,
-        hooks._DIRTY_HANDLER_BUILTIN,
         hooks._SPAWN_HOOK_BUILTIN,
-        hooks._DIRTY_HANDLER_MODULE,
         hooks._SPAWN_HOOK_MODULE,
         _plugin_manifest._LOADED_MANIFESTS,
     ]

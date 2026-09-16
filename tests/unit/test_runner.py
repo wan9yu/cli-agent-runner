@@ -436,21 +436,10 @@ def _make_mock_runtime(fake_run):  # type: ignore[no-untyped-def]
     return type("M", (), {"run": staticmethod(fake_run), "RunResult": _ar.RunResult})()
 
 
-def _register_default_dirty_handler() -> None:
-    """Register the genuine-builtin default dirty handler for a test that calls
-    ``runner._run_one_round_inner`` directly -- bypassing ``load_config``, which
-    is where the supervisor registers it. ``builtin=True`` grants the in-process
-    dispatch trust a genuine builtin gets."""
-    from agent_runner._plugin_manifest import register_manifest
-    from agent_runner.builtin_plugins.default_dirty_handler import PLUGIN
-
-    register_manifest(PLUGIN, builtin=True)
-
-
 def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from agent_runner import api, runner, vcs_state
+    from agent_runner import runner, vcs_state
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -471,7 +460,9 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
 
         return StashRef(sha="fake_sha", message="ORPHAN R1")
 
-    monkeypatch.setattr(api, "stash_orphan", fake_stash)
+    # resolve_dirty_tree calls stash_orphan as a same-module name, so the patch
+    # target is vcs_state (where it resolves), not the api re-export facade.
+    monkeypatch.setattr(vcs_state, "stash_orphan", fake_stash)
     monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
 
     cfg = Config(
@@ -481,7 +472,6 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
         vcs=VcsConfig(dirty_action="stash"),
         phases=PhasesConfig(),
     )
-    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 
@@ -491,7 +481,7 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
 def test_run_one_round_inner_should_skip_stash_when_dirty_action_is_ignore(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from agent_runner import api, runner, vcs_state
+    from agent_runner import runner, vcs_state
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -505,7 +495,7 @@ def test_run_one_round_inner_should_skip_stash_when_dirty_action_is_ignore(
     monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
 
     stash_calls = []
-    monkeypatch.setattr(api, "stash_orphan", lambda *a, **k: stash_calls.append(k))
+    monkeypatch.setattr(vcs_state, "stash_orphan", lambda *a, **k: stash_calls.append(k))
     monkeypatch.setattr(vcs_state, "detect_dirty_files", lambda _w: ["scratch.md"])
 
     cfg = Config(
@@ -559,7 +549,6 @@ def test_run_one_round_inner_should_create_git_commit_when_dirty_action_is_auto_
         vcs=VcsConfig(dirty_action="auto_commit"),
         phases=PhasesConfig(),
     )
-    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 
@@ -599,7 +588,6 @@ def test_run_one_round_inner_should_emit_dirty_commit_failed_when_git_identity_u
         vcs=VcsConfig(dirty_action="auto_commit"),
         phases=PhasesConfig(),
     )
-    _register_default_dirty_handler()
 
     runner._run_one_round_inner(cfg)
 

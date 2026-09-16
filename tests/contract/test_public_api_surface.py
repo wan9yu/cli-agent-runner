@@ -54,11 +54,9 @@ EXPECTED_EVENTS_API = {
 
 EXPECTED_HOOKS_API = {
     "HookContext",
-    "DirtyHandler",
     "PostRoundHook",
     "SpawnHook",
     "SpawnView",
-    "register_dirty_handler",
     "register_post_round_hook",
     "register_spawn_hook",
     "post_round_hooks",

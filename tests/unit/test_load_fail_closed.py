@@ -11,9 +11,6 @@ from tests._test_helpers import read_events_for_current_month as read_events
 
 _reset = isolating(
     hooks._POST_ROUND_HOOKS,
-    hooks._DIRTY_HANDLERS,
-    hooks._DIRTY_HANDLER_OWNER,
-    hooks._DIRTY_HANDLER_BUILTIN,
     _plugin_manifest._LOADED_MANIFESTS,
 )
 
@@ -118,22 +115,6 @@ def test_load_should_refuse_and_signal_when_third_party_squats_a_builtin_name(
     squat = [e for e in read_events(tmp_path) if e["event"] == events.PLUGIN_BUILTIN_NAME_SQUAT]
     assert "fc_thirdparty" not in loaded_manifest_names()
     assert squat and squat[-1]["name"] == "pi"
-
-
-def test_load_should_grant_in_process_trust_only_to_genuine_builtin_dirty_handler(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setattr(
-        agent_runner,
-        "_DISCOVERED_PLUGIN_ENTRIES",
-        [("default_dirty_handler", "agent_runner.builtin_plugins.default_dirty_handler:PLUGIN")],
-    )
-
-    agent_runner.load_and_register_plugins(PluginsConfig(sandbox="require"), log_dir=tmp_path)
-
-    handlers = [h for h in hooks._DIRTY_HANDLERS if h.name == "default_dirty_handler"]
-    assert "default_dirty_handler" in loaded_manifest_names()
-    assert handlers and hooks._DIRTY_HANDLER_BUILTIN[id(handlers[0])] is True
 
 
 def test_load_should_emit_checksum_mismatch_event_with_the_computed_actual(monkeypatch, tmp_path):

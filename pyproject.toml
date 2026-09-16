@@ -50,7 +50,6 @@ gemini = "agent_runner.builtin_plugins.gemini:PLUGIN"
 codewhale = "agent_runner.builtin_plugins.codewhale:PLUGIN"
 kimi = "agent_runner.builtin_plugins.kimi:PLUGIN"
 pi = "agent_runner.builtin_plugins.pi:PLUGIN"
-default_dirty_handler = "agent_runner.builtin_plugins.default_dirty_handler:PLUGIN"
 
 [project.optional-dependencies]
 dev = [

@@ -174,26 +174,16 @@ this JSON is prepended to the agent's prompt file.
 
 To disable: `[prompt] inject_context = false`.
 
-## Dirty-handler seam (0.2.0+)
+## Dirty-tree resolution
 
-After a round exits cleanly with a dirty working tree, the runner dispatches a
-priority-ordered chain of registered `DirtyHandler` plugins. The first to return
-a non-`None` `DirtyOutcome` wins; remaining handlers are skipped.
+After a round exits cleanly with a dirty working tree, `vcs_state.resolve_dirty_tree`
+resolves it per `[vcs] dirty_action` (`stash` / `ignore` / `auto_commit`) — plain
+core, not a plugin extension point (0.3.9 folded the former `DirtyHandler` plugin
+seam back into core; no CLI ever needed a custom override). Runs after the agent
+exits, before the `round_end` event; `post_round_hooks` run last, after `round_end`.
 
-This makes dirty-tree policy fully pluggable. The `default_dirty_handler` plugin
-(bundled, default-on, priority 1000) implements the `stash` / `ignore` /
-`auto_commit` policy from `[vcs] dirty_action` — so the external behavior is
-identical to pre-0.2.0 unless a consumer plugin intervenes first.
-
-**Lifecycle-hook family** (2 groups, run in this order per round):
-
-1. `dirty_handler_hooks` — after the agent exits, if the tree is dirty on a clean exit
-2. `post_round_hooks` — last, after the `round_end` event is emitted
-
-The stash *mechanism* (SHA lock, idempotency guard, `stash_orphan` /
-`try_auto_commit` primitives) stays in core. The stash *policy* is plugin-provided.
-
-See `docs/plugins.md` for the `DirtyHandler` protocol and override recipe.
+The result is recorded as `RoundResult.dirty_outcome: DirtyOutcome | None`, which
+`post_round_hooks` can read. See `docs/plugins.md`.
 
 ## Known event kinds
 

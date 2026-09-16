@@ -91,13 +91,6 @@ def test_round_should_orphan_stash_dirty_tree_when_fake_agent_leaves_it_dirty(
     monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
     monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
     cfg = _cfg(tmp_git_repo, fake_agent_script)
-    # run_one_round dispatches the dirty tree through hooks.dispatch_dirty; the
-    # genuine-builtin default handler is registered by load_config in production,
-    # which this direct call bypasses -- so register it here.
-    from agent_runner._plugin_manifest import register_manifest
-    from agent_runner.builtin_plugins.default_dirty_handler import PLUGIN as _DIRTY_PLUGIN
-
-    register_manifest(_DIRTY_PLUGIN, builtin=True)
 
     result = run_one_round(cfg)
 
@@ -109,6 +102,33 @@ def test_round_should_orphan_stash_dirty_tree_when_fake_agent_leaves_it_dirty(
     ctx = json.loads((cfg.runtime.log_dir / "round-context.json").read_text())
     assert "orphan_stash" in ctx
     assert ctx["orphan_stash"]["ref"].startswith("")  # SHA, not stash@{N}
+
+
+def test_round_should_auto_commit_dirty_tree_and_emit_event_when_dirty_action_is_auto_commit(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch,
+) -> None:
+    import dataclasses
+
+    monkeypatch.setenv("FAKE_AGENT_BEHAVIOR", "dirty")
+    monkeypatch.setenv("WORK_DIR", str(tmp_git_repo))
+    cfg = dataclasses.replace(
+        _cfg(tmp_git_repo, fake_agent_script), vcs=VcsConfig(dirty_action="auto_commit")
+    )
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0
+    assert result.dirty_outcome is not None
+    assert result.dirty_outcome.kind == "committed"
+
+    all_events = [
+        json.loads(line)
+        for f in sorted(cfg.runtime.log_dir.glob("events-*.jsonl"))
+        for line in f.read_text().splitlines()
+    ]
+    assert any(e.get("event") == "dirty_auto_committed" for e in all_events)
 
 
 def test_round_should_be_killed_within_grace_when_fake_agent_hangs_past_timeout(

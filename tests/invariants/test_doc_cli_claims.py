@@ -9,7 +9,6 @@ rather than pattern-matching prose.
 from __future__ import annotations
 
 import importlib
-import inspect
 import re
 from pathlib import Path
 
@@ -121,19 +120,4 @@ def test_doc_entry_point_groups_should_be_loaded_by_loader_when_scanned() -> Non
     assert not unknown, (
         f"docs/plugins.md documents entry-point groups the loader never scans: "
         f"{sorted(unknown)}; real groups: {sorted(real)}"
-    )
-
-
-def test_documented_handle_dirty_should_match_real_signature_when_compared() -> None:
-    from agent_runner.hooks import DirtyHandler
-
-    real = [p for p in inspect.signature(DirtyHandler.handle_dirty).parameters if p != "self"]
-    text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
-    block = re.search(r"def handle_dirty\(\s*(.*?)\s*\) ->", text, re.DOTALL)
-    assert block, "docs/plugins.md no longer shows a handle_dirty signature"
-    documented = [m for m in re.findall(r"^\s*(\w+)", block.group(1), re.MULTILINE) if m != "self"]
-
-    assert documented == real, (
-        f"docs/plugins.md documents handle_dirty{tuple(documented)}; "
-        f"hooks.DirtyHandler declares {tuple(real)}"
     )

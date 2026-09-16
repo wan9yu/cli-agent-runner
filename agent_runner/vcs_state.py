@@ -16,9 +16,12 @@ import signal
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
+from agent_runner import context_store, events
 from agent_runner._emit import emit_stale_index_lock_cleared
 from agent_runner._serve_policy import EnvironmentalError
+from agent_runner.api_types import DirtyOutcome
 from agent_runner.clock import SYSTEM_CLOCK
 
 # Fixed git-commit ceiling (plugin-first: no new config knob). Feeds the outer
@@ -356,3 +359,108 @@ def try_auto_commit(
 
     head = _git(work_dir, "rev-parse", "HEAD")
     return head.stdout.strip()
+
+
+def resolve_dirty_tree(
+    work_dir: Path,
+    dirty_action: Literal["stash", "ignore", "auto_commit"],
+    round_num: int,
+    phase: str | None,
+    log_dir: Path,
+    dirty_files: list[str],
+    *,
+    stash_idempotency_s: int = 5,
+) -> DirtyOutcome:
+    """Resolve a clean-exit round's dirty working tree per ``[vcs] dirty_action``.
+
+    Folded from the former ``default_dirty_handler`` plugin — dirty-tree policy
+    dispatches purely on this one typed config value, so it is plain core, not
+    a plugin extension point. Behavior is unchanged: ``"ignore"`` leaves the
+    tree dirty; ``"auto_commit"`` commits via :func:`try_auto_commit`, falling
+    back to "ignored" (tree left dirty, ``dirty_commit_failed`` emitted) on
+    :class:`AutoCommitError` or a no-op commit; anything else (including the
+    default ``"stash"``) stashes via :func:`stash_orphan`.
+    """
+    if dirty_action == "ignore":
+        return DirtyOutcome(kind="ignored")
+    if dirty_action == "auto_commit":
+        try:
+            sha = try_auto_commit(work_dir, round_num, phase, log_dir=log_dir)
+        except AutoCommitError as exc:
+            # Parity with the pre-fold behavior: emit failure event, leave tree
+            # dirty (no stash fallback). Dirty tree carries into the next round.
+            events.emit(
+                log_dir,
+                events.DIRTY_COMMIT_FAILED,
+                round_num=round_num,
+                phase=phase,
+                reason=str(exc),
+            )
+            return DirtyOutcome(kind="ignored")
+        if not sha:
+            return DirtyOutcome(kind="ignored")
+        events.emit(
+            log_dir,
+            events.DIRTY_AUTO_COMMITTED,
+            round_num=round_num,
+            files=dirty_files[:20],
+            ref=sha,
+        )
+        return DirtyOutcome(kind="committed", ref=sha)
+    return _resolve_stash(
+        work_dir,
+        round_num,
+        phase,
+        log_dir,
+        dirty_files,
+        stash_idempotency_s=stash_idempotency_s,
+    )
+
+
+def _resolve_stash(
+    work_dir: Path,
+    round_num: int,
+    phase: str | None,
+    log_dir: Path,
+    dirty_files: list[str],
+    *,
+    stash_idempotency_s: int,
+) -> DirtyOutcome:
+    try:
+        ref = stash_orphan(
+            work_dir,
+            round_num=round_num,
+            phase=phase,
+            idempotency_s=stash_idempotency_s,
+            log_dir=log_dir,
+        )
+    except StashError as exc:
+        events.emit(
+            log_dir,
+            events.ORPHAN_STASH_FAILED,
+            round_num=round_num,
+            phase=phase,
+            reason=str(exc),
+        )
+        return DirtyOutcome(kind="ignored")
+    if ref is None:
+        return DirtyOutcome(kind="ignored")
+    context_store.write_orphan_state(
+        log_dir,
+        context_store.OrphanState(
+            round_num=round_num,
+            files=dirty_files,
+            stashed_ref=ref.sha,
+            stash_message=ref.message,
+            timestamp=events.now_iso_ms(),
+            phase=phase,
+        ),
+    )
+    events.emit(
+        log_dir,
+        events.ORPHAN_IDEMPOTENT_SKIP if ref.reused else events.ORPHAN_STASHED,
+        round_num=round_num,
+        ref=ref.sha,
+        reason="clean_exit_with_dirty_tree",
+    )
+    return DirtyOutcome(kind="stashed", ref=ref.sha)

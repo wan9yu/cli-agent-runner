@@ -21,8 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def _builtin_post_round_hook_plugin_names() -> set[str]:
     """Names of the manifests in agent_runner.plugins that declare at least
-    one post_round_hook (e.g. default_dirty_handler ships a dirty_handler,
-    not a post_round_hook, so it is correctly excluded from this set)."""
+    one post_round_hook."""
     data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     entries = data["project"]["entry-points"]["agent_runner.plugins"]
 

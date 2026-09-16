@@ -10,7 +10,6 @@ from tests._test_helpers import isolating
 
 _reset = isolating(
     hooks._POST_ROUND_HOOKS,
-    hooks._DIRTY_HANDLERS,
     _plugin_manifest._LOADED_MANIFESTS,
 )
 
@@ -110,7 +109,6 @@ def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
     from agent_runner.builtin_plugins import (
         claude_rate_limit,
         codewhale,
-        default_dirty_handler,
         gemini,
         kimi,
         pi,
@@ -121,7 +119,6 @@ def test_builtin_presets_should_declare_sigterm_cooperative_only_for_gemini():
     assert kimi.PLUGIN.sigterm_cooperative is False
     assert codewhale.PLUGIN.sigterm_cooperative is False
     assert pi.PLUGIN.sigterm_cooperative is False
-    assert default_dirty_handler.PLUGIN.sigterm_cooperative is False
 
 
 def test_is_cooperative_agent_should_return_true_when_binary_names_a_cooperative_manifest():

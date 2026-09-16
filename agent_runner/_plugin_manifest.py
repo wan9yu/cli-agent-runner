@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent_runner._registry import ensure_unique
-from agent_runner.hooks import DirtyHandler, PostRoundHook, SpawnHook
+from agent_runner.hooks import PostRoundHook, SpawnHook
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,6 @@ class PluginManifest:
 
     name: str
     post_round_hooks: tuple[PostRoundHook, ...] = ()
-    dirty_handlers: tuple[DirtyHandler, ...] = ()
     spawn_hooks: tuple[SpawnHook, ...] = ()
     sigterm_cooperative: bool = False
     """Declares that this preset's CLI cooperatively drains/cleans up on
@@ -82,17 +81,17 @@ def register_manifest(
 
     ``builtin`` records whether this manifest is a GENUINE builtin (verified by
     ``is_builtin_provenance`` at the load path) — it is threaded to
-    ``register_dirty_handler`` so ``dispatch_dirty`` can grant in-process trust
-    by handler-object identity rather than by the collidable manifest name.
+    ``register_spawn_hook`` so the spawn seam's trampoline can grant in-process
+    trust by hook-object identity rather than by the collidable manifest name.
     Defaults to False (fail-closed): any manifest registered outside the
     verified load path — a direct ``register_manifest`` call, a test — is
     treated as third-party and sandboxed.
 
     ``module_path``/``attr_path`` are the DISCOVERED entry point's resolvable
     location (``module:attr``); the loader threads them here so the trampoline
-    re-imports a third-party dirty handler / spawn hook from that exact path,
-    never from the collidable ``manifest.name`` — an entry-point name != the
-    manifest name (legal for third-party plugins) then still resolves.
+    re-imports a third-party spawn hook from that exact path, never from the
+    collidable ``manifest.name`` — an entry-point name != the manifest name
+    (legal for third-party plugins) then still resolves.
 
     Raises ``ValueError`` up front if ``manifest.name`` collides with an
     already-registered manifest's ``.name`` — this is checked HERE, not by
@@ -122,10 +121,6 @@ def register_manifest(
 
     for h in manifest.post_round_hooks:
         hooks.register_post_round_hook(h)
-    for d in manifest.dirty_handlers:
-        hooks.register_dirty_handler(
-            d, owner=manifest.name, builtin=builtin, module_path=module_path, attr_path=attr_path
-        )
     for s in manifest.spawn_hooks:
         hooks.register_spawn_hook(
             s, owner=manifest.name, builtin=builtin, module_path=module_path, attr_path=attr_path
@@ -149,11 +144,6 @@ def unregister_by_name(names: set[str]) -> set[str]:
             continue
         found.add(manifest.name)
         _remove_by_identity(hooks._POST_ROUND_HOOKS, manifest.post_round_hooks)
-        _remove_by_identity(hooks._DIRTY_HANDLERS, manifest.dirty_handlers)
-        for h in manifest.dirty_handlers:
-            hooks._DIRTY_HANDLER_OWNER.pop(id(h), None)
-            hooks._DIRTY_HANDLER_BUILTIN.pop(id(h), None)
-            hooks._DIRTY_HANDLER_MODULE.pop(id(h), None)
         _remove_by_identity(hooks._SPAWN_HOOKS, manifest.spawn_hooks)
         for h in manifest.spawn_hooks:
             hooks._SPAWN_HOOK_OWNER.pop(id(h), None)

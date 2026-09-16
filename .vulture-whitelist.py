@@ -16,7 +16,6 @@ buffer
 # agent_runner._plugin_manifest.PluginManifest
 name
 post_round_hooks
-dirty_handlers
 spawn_hooks
 sigterm_cooperative
 

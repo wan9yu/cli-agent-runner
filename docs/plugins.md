@@ -46,7 +46,6 @@ empty:
 |---|---|---|
 | `name` | `str` | The plugin's own identity — `[plugins] disable` keys on this, not on any individual hook's own `.name`. |
 | `post_round_hooks` | `tuple[PostRoundHook, ...]` | Runs after each agent round. |
-| `dirty_handlers` | `tuple[DirtyHandler, ...]` | Owns the dirty-tree policy after a clean-exit round. |
 
 A plugin that provides more than one capability just fills in more than one
 field on the same manifest — there is nothing to register per-capability.
@@ -117,7 +116,7 @@ Any exception raised by a hook is caught by the runner and emitted as a built-in
 {
   "event": "hook_failed",
   "hook_name": "<plugin's name attribute>",
-  "hook_kind": "post_round | dirty_handler | spawn_hook",
+  "hook_kind": "post_round | spawn_hook",
   "error_type": "<exception class>",
   "error_message": "<str(exc)>",
   "traceback": "<head 1KB + ... [truncated] ... + tail 1KB>"
@@ -348,79 +347,28 @@ per round, compare recent vs older round duration, or write to your own log —
 through its own logging, not the supervisor's event stream. Project-specific
 semantics live in the plugin — agent-runner core stays agent-agnostic.
 
-## DirtyHandler — custom dirty-tree policy (0.2.0+)
+## Dirty-tree resolution (core, not a plugin extension point)
 
-0.2.0 adds a fourth lifecycle-hook extension point: `DirtyHandler`. Plugins
-that declare `dirty_handlers` on their manifest take over what happens when a
-round exits cleanly but leaves the working tree dirty.
-
-The bundled `default_dirty_handler` plugin ships enabled (priority 1000) and
-implements the existing `stash` / `ignore` / `auto_commit` behavior driven by
-`[vcs] dirty_action`. Operators who want a different policy disable it
-and register their own handler.
-
-### Protocol
-
-```python
-from typing import Protocol, runtime_checkable
-
-
-@runtime_checkable
-class DirtyHandler(Protocol):
-    name: str
-    priority: int  # ascending; lower runs first; bundled default = 1000
-
-    def handle_dirty(
-        self,
-        ctx: HookContext,
-        dirty_files: list[str],
-    ) -> "DirtyOutcome | None": ...
-```
-
-Handlers are invoked in ascending `priority` order (ties: registration order).
-The first to return a non-`None` `DirtyOutcome` wins; dispatch stops. A handler
-that raises is isolated via `hook_failed` (`hook_kind="dirty_handler"`) and
-treated as `None` (pass to the next handler).
-
-### `DirtyOutcome`
+After a clean-exit round leaves the working tree dirty, core resolves it per
+`[vcs] dirty_action` (`stash` / `ignore` / `auto_commit` — see
+`docs/configuration.md`) and records the result as
+`RoundResult.dirty_outcome: DirtyOutcome | None`. `PostRoundHook` authors can
+read it:
 
 ```python
 from agent_runner.api_types import DirtyOutcome
 
-DirtyOutcome(kind="ignored")  # left dirty intentionally
-DirtyOutcome(kind="stashed", ref="<stash-sha>")
-DirtyOutcome(kind="committed", ref="<commit-sha>")
-```
 
-### Override recipe
-
-Disable the bundled default, then declare your own handler's
-`PluginManifest(name="my_plugin", dirty_handlers=(...))`:
-
-```toml
-# agent-runner.toml
-[plugins]
-disable = ["default_dirty_handler"]
-```
-
-Runnable, tested reference: `tests/unit/test_example_dirty_handler.py` — a custom
-handler whose `DirtyOutcome` wins over the bundled default's stash (lower
-`priority` runs first and stops dispatch). Handlers may call the public `api`
-primitives (`api.stash_orphan`, `api.try_auto_commit`) to do the actual VCS work;
-`ctx.vcs` exposes `dirty_action` and `stash_idempotency_s` from `[vcs]` config
-(populated by the runner when dispatching dirty handlers; `None` in other contexts).
-
-### `DirtyOutcome` on `RoundResult`
-
-`RoundResult.dirty_outcome: DirtyOutcome | None` (0.2.0+) carries whatever the
-winning handler returned. `PostRoundHook` authors can read it:
-
-```python
 def after_round(self, ctx, result):
     if result.dirty_outcome and result.dirty_outcome.kind == "committed":
-        # A handler auto-committed. result.dirty_outcome.ref is the SHA.
+        # Core auto-committed the round's dirty tree. result.dirty_outcome.ref is the SHA.
         ...
 ```
+
+`DirtyOutcome.kind` is `"ignored"`, `"stashed"`, or `"committed"`; `ref` is the
+stash/commit SHA (`None` for `"ignored"`). There is no override hook — dirty-tree
+policy dispatches purely on `dirty_action`, so a project that wants different
+behavior changes that config value rather than shipping a plugin.
 
 ## Plugin tests + consumer pytest collision
 

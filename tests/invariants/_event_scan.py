@@ -123,7 +123,7 @@ def kind_literals(arg: ast.expr) -> list[ast.Constant]:
 def kind_constant_names(arg: ast.expr) -> set[str]:
     """Constant names that a kind argument can EVALUATE TO.
 
-    default_dirty_handler picks its kind with a ternary
+    vcs_state.resolve_dirty_tree picks its kind with a ternary
     (``events.ORPHAN_IDEMPOTENT_SKIP if ref.reused else events.ORPHAN_STASHED``),
     so this descends into value positions — the branches of an ``if``/``or`` — and
     returns each branch's constant name. It must NOT descend into a condition

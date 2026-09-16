@@ -119,16 +119,21 @@ def test_ctx_wire_roundtrip_should_preserve_fields_when_serialized(tmp_path) -> 
 
 
 def _write_fake_plugin(tmp_path, *, name: str, hook_name: str, body: str) -> str:
+    """PLUGIN is a bare object exposing `.dirty_handlers` -- NOT a real
+    PluginManifest, which no longer carries that field (0.3.9 folded the
+    DirtyHandler seam into core). This exercises the trampoline's confinement
+    mechanism directly, independent of the (now-deleted) production dispatch
+    seam -- _run_dirty_child only needs the attribute."""
     module_name = f"fake_plugin_{name}"
     src = (
-        "from agent_runner._plugin_manifest import PluginManifest\n"
         "from agent_runner.api_types import DirtyOutcome\n\n\n"
         "class _H:\n"
         f"    name = {hook_name!r}\n"
         "    priority = 0\n\n"
         "    def handle_dirty(self, ctx, dirty_files):\n"
         f"{body}\n\n\n"
-        f"PLUGIN = PluginManifest(name={name!r}, dirty_handlers=(_H(),))\n"
+        "class PLUGIN:\n"
+        "    dirty_handlers = (_H(),)\n"
     )
     (tmp_path / f"{module_name}.py").write_text(src, encoding="utf-8")
     return module_name

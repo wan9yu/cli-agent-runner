@@ -20,8 +20,8 @@ gemini, or any command-line tool). It:
    loops, surfaced via the opt-in `monitor`) the operator can promote to
    auto-stop. Each defense codifies a specific observed failure mode with a
    concrete trigger signature.
-4. Exposes **plugin hooks** (`PostRoundHook`, `DirtyHandler`, `SpawnHook`) for
-   extension without modifying core.
+4. Exposes **plugin hooks** (`PostRoundHook`, `SpawnHook`) for extension
+   without modifying core.
 
 That's the complete scope. The layers are thin by design.
 

@@ -121,8 +121,8 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         # builtin_plugins package + _constants: imported EAGERLY (top-level) by
         # _monitor_state.py for shared tuning constants (_throttle.py also uses
         # them, but only via function-scoped imports, so it adds no eager pull).
-        # The concrete plugin modules (kimi/pi/codewhale/gemini/claude_rate_limit/
-        # default_dirty_handler) are NOT here -- the loader split (discover
+        # The concrete plugin modules (kimi/pi/codewhale/gemini/claude_rate_limit)
+        # are NOT here -- the loader split (discover
         # scans entry_points.txt only; load_and_register_plugins imports each
         # module) defers their import to config-load time, so a bare
         # `import agent_runner.cli` no longer pulls them in.
