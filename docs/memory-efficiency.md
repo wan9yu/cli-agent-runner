@@ -791,6 +791,79 @@ always-on small-host calibration tests-of-record plus the
 `AGENT_RUNNER_E2E_PI`-gated real-cgroup property test, not by this page's
 RSS axis.
 
+## 0.3.11 → 0.3.12
+
+The `[goal]` steering loop: two new modules, `agent_runner.goal` (the
+goal-check executor + the advisory-only treadmill assessor) and
+`agent_runner._bounded` (a sanctioned timeout-bounded subprocess primitive),
+plus their config plumbing (`GoalConfig`/`_GoalCheckConfig`, a boot guard, a
+round-timeout-budget fold-in) and a config-level firewall keeping
+`goal`-prefixed event kinds out of `[monitor] auto_stop_on`. Same macOS
+harness (§ methodology above), comparing **v0.3.11** = `dfef642` (measured in
+a throwaway worktree) against **0.3.12**, the tip of this branch.
+
+### 1. Import/startup RSS
+
+| | v0.3.11 | 0.3.12 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.44 MB | 23.41 MB | −0.03 MB (flat, within noise) |
+| RSS range | 23.38–23.58 MB | 23.27–23.50 MB | |
+| `sys.modules` count | 211 | 211 | +0 |
+
+Flat, structurally, not just numerically: both new modules are kept off the
+cold-startup import graph on purpose. `agent_runner.goal` is added to
+`tests/invariants/test_import_footprint.py`'s `FORBIDDEN_AT_STARTUP`
+allowlist this release, and `agent_runner._bounded` is a `goal.py`-only
+dependency, so it never loads either unless `goal.py` does; both of
+`runner.py`'s call sites (`run_goal_checks`, `assess_treadmill` /
+`write_ledger_advisory`) import `agent_runner.goal` function-scope, guarded
+by `cfg.goal is not None` — a config with no `[goal]` table never pulls
+either module in. `EXPECTED_STARTUP_PKG_MODULES` is unchanged this release
+(no new eager `agent_runner.*` import). A direct `sys.modules` set diff of
+the `agent_runner.*` modules `import agent_runner.cli` loads confirms
+byte-for-byte identical, 70 modules, before and after.
+
+### 2. Base dependencies
+
+Unchanged: `psutil>=5.9` is still the only runtime dependency
+(`pyproject.toml` `dependencies` identical on both sides). `agent_runner._bounded`
+runs check commands via stdlib `subprocess`; no new dependency and no new
+extra.
+
+### 3. Module count, source LOC, largest module
+
+Tracked source only (`git ls-tree`, same convention as the rows above).
+
+| | v0.3.11 | 0.3.12 | Δ |
+|---|---|---|---|
+| `.py` files | 81 | 83 | +2 |
+| total LOC | 20,512 | 21,165 | +653 |
+| largest module | `migrations.py`, 972 | `migrations.py`, 972 | +0 |
+
+The two new files are `agent_runner/goal.py` and `agent_runner/_bounded.py`;
+`migrations.py` stays the largest module, unchanged in size.
+
+### 4. Per-round allocation growth
+
+`tests/invariants/test_round_alloc_growth.py` green, unmodified harness — its
+covered readers (`round_outcome`, `_active_throttles`, `post_round_decision`)
+are unchanged in shape this release. That harness does not exercise the
+`[goal]`-active path itself (opt-in, off by default). On a config that DOES
+set `[goal]`, the treadmill assessor's own per-round read is bounded, not
+unbounded: `assess_treadmill` reads only the newest two monthly
+`events-*.jsonl` files (`event_log.newest_scope(2)`, the same tail window
+every other events-derived detector in this codebase already reads), once
+per round — a fixed-size read, not a full-history scan that grows with round
+count.
+
+### Constrained-host (honesty)
+
+Dev-host-relative (macOS) numbers only, same methodology as every release
+since 0.2.17. `[goal]` is opt-in and off by default, so this release makes no
+constrained-host claim beyond the flat cold-startup number above; the
+goal-active path's bounded-events-tail read is a structural property noted
+here, not yet independently measured on a constrained host.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:

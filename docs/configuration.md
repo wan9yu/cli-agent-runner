@@ -443,7 +443,7 @@ the base config regardless of phase:
   accepts only `round_budget_s`; any other runtime key there is rejected at load.
 - the rest of `[runtime]` (`restart_delay_s`, `round_log_retention`,
   `transient_error_action`, `max_rounds`, `stop_file`, …), and all of `[vcs]`,
-  `[monitor]`, and `[plugins]` — global only.
+  `[monitor]`, `[plugins]`, and `[goal]` — global only.
 - `[prompt]` fields other than `files` (`context_injection_mode`,
   `inject_context`, `concat_separator`, …).
 - **`agent.exec_prefix`** — set once on the base `[agent]` table; it applies to
@@ -696,6 +696,79 @@ pause during the provider's Mon–Fri peak hours and run at all other times,
 including the full weekend. See `docs/runbook.md` ("Off-peak scheduling") for
 the operational recipe, the `schedule_paused` / `schedule_resumed` events,
 `serve --ignore-schedule`, and how `peek` surfaces the pause state.
+
+## `[goal]` objective goal-checks + treadmill advisory (0.3.12+)
+
+> Authoritative field-level types/defaults are in the generated schema table
+> above (`[goal]` and `[goal.checks]` sections).
+
+`[goal]` is opt-in and global-only (see "Never overridable per phase" above);
+`Config.goal` stays `None` when the table is absent. **v0.3.11 silently
+ignores an unrecognized `[goal]` table** — there is no config migration for
+adopting it.
+
+```toml
+[goal]
+ledger = "GOAL_LEDGER.md"
+
+[[goal.checks]]
+name = "tests"
+cmd = ["pytest", "-q"]
+
+[[goal.checks]]
+name = "lint"
+cmd = ["ruff", "check", "."]
+cwd = "subdir"          # optional; resolved against runtime.work_dir
+
+[prompt]
+files = ["prompt.md", "GOAL_LEDGER.md"]
+```
+
+### Fields
+
+| Field | Meaning |
+|---|---|
+| `ledger` | Path to a markdown lessons file the treadmill assessor writes advisories to. It doesn't exist at cold start (the supervisor creates it on first write), so it must also be listed in `[prompt] files` at index >= 1 — index 0 is a fatal-on-missing read, and the single `prompt.file` form can never carry a second entry. Config load rejects a `[goal]` table whose ledger isn't listed that way. |
+| `[[goal.checks]]` | An array of objective, scriptable checks — the operator's ground truth, trusted over the agent's own self-report of progress. |
+| `checks.name` | Label for the check, carried on its `goal_check` event and referenced in advisories. |
+| `checks.cmd` | Argv run in its own process group under a wall-clock timeout; escalates TERM then SIGKILL on breach so a hung check leaves no descendants. |
+| `checks.cwd` | Optional working directory for the check, resolved against `runtime.work_dir`. Omit to run in `work_dir` itself. |
+| `checks.timeout_s` | Per-check wall-clock ceiling; rejected at config load above a small fixed cap. Every check's ceiling is summed into the round's own timeout budget, so a slow or hung check narrows the agent's own round time rather than running alongside it unbounded. |
+
+### The goal-check executor
+
+After each round's agent process exits, the round child runs every
+`[[goal.checks]]` entry (CLI-agnostic — this has nothing to do with which
+agent CLI is configured) and emits one `goal_check` event per check
+(`satisfied`, and `value` parsed from the last whitespace-separated float
+token in the check's stdout, when present). A check that fails to start
+(missing binary, bad `cwd`, …) is reported unsatisfied rather than crashing
+the round.
+
+### The treadmill assessor (advisory-only)
+
+At the start of each round, `serve` looks back across the last three
+*completed* rounds. If every one of them showed activity (a dirty working
+tree, an auto-commit, or the round's own git HEAD moving — CLI-agnostic, not
+tied to any agent-specific usage event) **and** at least one `goal_check` was
+unsatisfied with a signature (`satisfied`, `value`) that never changed across
+that window, it writes **one** advisory — an observation plus a question,
+never a directive — to the ledger and emits a `goal_assessment` event. It
+does not fire when every check in the window is already satisfied (that's
+"done", not "stuck"), and it does not fire again for the same stuck episode
+until the pattern breaks (a check moves, or the activity streak lapses) —
+edge-triggered, not a repeat nag every round. Because the ledger is listed in
+`[prompt] files`, the advisory is folded into the very next round's prompt
+without any other wiring.
+
+### The advisory/kill firewall
+
+The assessor's output type has no kill/severity/action field — it is
+structurally incapable of ending a round. The mechanical kill/give-up path
+reads events by kind and is blind to `goal_check`/`goal_assessment`; `[monitor]
+auto_stop_on` also rejects any `goal`-prefixed kind at config load. The goal
+loop can only observe and gently steer through the ledger — it can never
+substitute for, or override, the supervisor's own kill decision.
 
 ## 中文摘要
 

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.12] - UNRELEASED
+
+### Added
+- `[goal]` config table: a markdown lessons `ledger` (must also be listed in `[prompt] files`) plus `[[goal.checks]]` (`name`, `cmd` argv, optional `timeout_s`) — objective, CLI-agnostic checks the round child runs after each round's agent exits, each emitting a `goal_check` event (`satisfied` bool, optional `value`); check timeouts fold into the existing round budget.
+- Treadmill assessor (advisory-only, a core serve step): across the last 3 completed rounds, if every round showed activity but at least one goal check stayed unsatisfied with an unchanged signature, serve writes one edge-triggered advisory to the ledger and emits a `goal_assessment` event; it never fires on convergence or once every check is satisfied. The ledger's `[prompt] files` membership carries the advisory into the next round's prompt — observability plus a gentle steer, never a kill.
+- Advisory/kill firewall: the kill/give-up path reads events by kind and stays blind to `goal_check`/`goal_assessment` — the advisory can observe and steer but can never alter the mechanical kill verdict.
+
+No config migration required (v0.3.11 silently ignores an unrecognized `[goal]` table). `peek --json` schema stays `2.6` (`[goal]` is not peek-surfaced this release).
+
 ## [0.3.11] - 2026-09-17
 
 ### Added
