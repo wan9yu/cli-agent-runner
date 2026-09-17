@@ -7,6 +7,7 @@ Thin glue by design — every table's own validation lives in ``parsers.py``.
 from __future__ import annotations
 
 import tomllib
+import warnings
 from pathlib import Path
 
 from agent_runner.config.errors import ConfigError
@@ -84,6 +85,66 @@ def _reject_goal_ledger_not_listed(cfg: Config) -> None:
                 f"and index 0 doesn't exist at cold start); list {ledger!r} in "
                 "[prompt] files at index >= 1"
             )
+
+
+def _reject_goal_ledger_in_stash_swept_tree(cfg: Config) -> None:
+    """The ``[goal].ledger`` is supervisor-written and must PERSIST across
+    rounds, but the round's own vcs step sweeps the work tree: under the
+    DEFAULT ``[vcs] dirty_action="stash"`` a ``git stash push -u`` stashes
+    every dirty path EXCEPT ``log_dir`` (see ``vcs_state``'s exclude pathspec).
+    A ledger resolved INSIDE ``work_dir`` but OUTSIDE ``log_dir`` would be
+    stashed away as orphan work right after the round it fired for -- the steer
+    would silently last one round.
+
+    Pure path arithmetic (no git): require the resolved ledger to sit OUTSIDE
+    ``work_dir``, OR UNDER ``log_dir`` (the one work-tree path the stash
+    pathspec excludes). Composes with -- and runs after --
+    ``_reject_goal_ledger_not_listed``."""
+    if cfg.goal is None:
+        return
+    ledger = Path(cfg.goal.ledger)
+    work_dir = cfg.runtime.work_dir
+    log_dir = cfg.runtime.log_dir
+    if ledger.is_relative_to(work_dir) and not ledger.is_relative_to(log_dir):
+        raise ConfigError(
+            f"[goal] ledger {cfg.goal.ledger!r} resolves inside runtime.work_dir "
+            f"({work_dir}) but outside runtime.log_dir ({log_dir}): the default "
+            '[vcs] dirty_action="stash" would stash it away as orphan work after '
+            "the round it fired for, so the steer would last only one round. Put "
+            'the ledger under log_dir (e.g. ledger = "logs/lessons.md") or at an '
+            "absolute path outside work_dir."
+        )
+
+
+def _warn_goal_checks_budget_disarms_fast_spin(cfg: Config) -> None:
+    """A goal check's wall time counts inside ``round_duration_s``, the
+    discriminator for serve's fast-spin give-up breakers (``crash_loop`` counts
+    a crash only under ``CRASH_LOOP_SHORT_EXIT_S``, ``stalled_no_progress`` only
+    under ``_NO_PROGRESS_SHORT_S``). A goal-check budget at or above that short
+    window can push an otherwise fast-crashing round past the threshold and
+    DISARM the breaker. The goal loop still never CAUSES a give-up -- the
+    firewall keeps the kill/give-up path blind to ``goal_*`` events -- so this
+    is the one place a long check can only DELAY (never trigger) one. A
+    legitimate ``pytest`` goal-check may well exceed the window, so this WARNS
+    (via the same load-time ``warnings`` channel plugin-load failures use)
+    rather than rejecting."""
+    if cfg.goal is None:
+        return
+    # Function-scope import: config/ must not import _serve_policy at module
+    # scope (_serve_policy imports agent_runner.config for ConfigError -- a
+    # cycle). By load_config-call time the module is importable.
+    from agent_runner._serve_policy import _NO_PROGRESS_SHORT_S
+
+    allowance = cfg.goal.checks_allowance_s
+    if allowance >= _NO_PROGRESS_SHORT_S:
+        warnings.warn(
+            f"[goal] total goal-check budget is {allowance}s, at or above the "
+            f"{_NO_PROGRESS_SHORT_S}s fast-spin give-up window: a goal check's wall "
+            "time counts toward the round's own duration, so a long check can delay "
+            "(never trigger) the stalled_no_progress/crash_loop breakers. Keep total "
+            "check time under that window if you rely on them.",
+            stacklevel=2,
+        )
 
 
 def _check_schema_version(raw: dict) -> None:
@@ -195,5 +256,7 @@ def load_config(toml_path: Path) -> Config:
 
     _reject_static_resume_flag(cfg)
     _reject_goal_ledger_not_listed(cfg)
+    _reject_goal_ledger_in_stash_swept_tree(cfg)
+    _warn_goal_checks_budget_disarms_fast_spin(cfg)
 
     return cfg

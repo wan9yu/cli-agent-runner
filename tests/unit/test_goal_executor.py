@@ -1,6 +1,6 @@
-"""D2/B2: run_goal_checks runs each [[goal.checks]] entry via run_bounded and
-emits one goal_check event per check -- reap-safe, timeout-bounded, and a
-dry_run that never spawns a subprocess."""
+"""run_goal_checks runs each [[goal.checks]] entry via run_bounded and emits
+one goal_check event per check -- reap-safe, timeout-bounded, and a dry_run
+that never spawns a subprocess."""
 
 from __future__ import annotations
 
@@ -174,3 +174,41 @@ def test_run_goal_checks_should_treat_non_finite_value_as_unparsed(
 
     [ev] = _events(tmp_log_dir)
     assert ev["value"] is None
+
+
+def test_run_goal_checks_should_not_crash_when_check_emits_non_utf8_output(
+    tmp_log_dir: Path, tmp_path: Path
+) -> None:
+    """Fail-open on non-UTF-8 output: a check emitting a non-UTF-8 byte must not
+    raise a UnicodeDecodeError (a non-OSError) past run_goal_checks' guard and
+    read as a round crash. Mutation check: dropping errors="replace" from
+    _bounded's Popen makes run_bounded raise UnicodeDecodeError here and this
+    test errors out."""
+    goal = GoalConfig(
+        checks=(_check("latin1", ["sh", "-c", "printf '\\377'; exit 1"]),), ledger="ledger.md"
+    )
+
+    run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)  # must not raise
+
+    [ev] = _events(tmp_log_dir)
+    assert ev["event"] == "goal_check"
+    assert ev["satisfied"] is False
+    assert ev["timed_out"] is False
+
+
+def test_run_goal_checks_should_report_unsatisfied_when_cmd_contains_a_nul_byte(
+    tmp_log_dir: Path, tmp_path: Path
+) -> None:
+    """A NUL byte in a check's argv makes subprocess.Popen raise
+    ``ValueError: embedded null byte`` -- a non-OSError -- BEFORE any timeout
+    machinery. The executor guard catches it and reports the check unsatisfied
+    rather than crashing the round. Mutation check: narrowing the guard back to
+    ``except OSError`` lets the ValueError escape and this test errors out."""
+    goal = GoalConfig(checks=(_check("nul", ["echo", "a\x00b"]),), ledger="ledger.md")
+
+    run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)  # must not raise
+
+    [ev] = _events(tmp_log_dir)
+    assert ev["event"] == "goal_check"
+    assert ev["satisfied"] is False
+    assert "error" in ev

@@ -1,7 +1,7 @@
-"""Task 8 (v0.3.12): P2 firewall BEHAVIORAL differential -- the events-derived
-complement to Task 6's AST firewall.
+"""P2 firewall BEHAVIORAL differential -- the events-derived complement to the
+AST firewall.
 
-Task 6 proved, statically, that no kill-path module even references a
+The AST firewall proves, statically, that no kill-path module even references a
 ``goal_*`` kind string. This file proves the runtime PROPERTY that static
 check exists to guarantee: :func:`agent_runner._round_outcome.round_outcome`
 -- the events-tail fold every kill/give-up verdict

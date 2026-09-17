@@ -67,8 +67,8 @@ def test_outer_round_ceiling_s_should_read_round_budget_s_when_no_phase_override
 def test_outer_round_ceiling_should_widen_by_the_goal_checks_allowance_when_goal_configured(
     tmp_path,
 ):
-    """B4: a dropped ``goal_checks_allowance_s=`` kwarg at this call site
-    would leave the ceiling at the no-goal value -- every OTHER test in this
+    """A dropped ``goal_checks_allowance_s=`` kwarg at this call site would
+    leave the ceiling at the no-goal value -- every OTHER test in this
     file runs with ``cfg.goal is None``, so only a goal-present case can
     catch that regression."""
     from agent_runner.config import (

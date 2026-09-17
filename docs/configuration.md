@@ -157,10 +157,10 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `checks` | `tuple[_GoalCheckConfig, ...]` | — |
 | `ledger` | `str` | — |
+| `checks` | `tuple[_GoalCheckConfig, ...]` | () |
 
-#### `[goal.checks]`
+#### `[[goal.checks]]`
 
 | Field | Type | Default |
 |---|---|---|
@@ -708,8 +708,11 @@ ignores an unrecognized `[goal]` table** — there is no config migration for
 adopting it.
 
 ```toml
+[runtime]
+log_dir = "logs"        # no default; the ledger must live under it (see below)
+
 [goal]
-ledger = "GOAL_LEDGER.md"
+ledger = "logs/lessons.md"
 
 [[goal.checks]]
 name = "tests"
@@ -721,19 +724,19 @@ cmd = ["ruff", "check", "."]
 cwd = "subdir"          # optional; resolved against runtime.work_dir
 
 [prompt]
-files = ["prompt.md", "GOAL_LEDGER.md"]
+files = ["prompt.md", "logs/lessons.md"]
 ```
 
 ### Fields
 
 | Field | Meaning |
 |---|---|
-| `ledger` | Path to a markdown lessons file the treadmill assessor writes advisories to. It doesn't exist at cold start (the supervisor creates it on first write), so it must also be listed in `[prompt] files` at index >= 1 — index 0 is a fatal-on-missing read, and the single `prompt.file` form can never carry a second entry. Config load rejects a `[goal]` table whose ledger isn't listed that way. |
+| `ledger` | Path to a markdown lessons file the treadmill assessor writes advisories to. It doesn't exist at cold start (the supervisor creates it on first write), so it must also be listed in `[prompt] files` at index >= 1 — index 0 is a fatal-on-missing read, and the single `prompt.file` form can never carry a second entry. It must ALSO resolve **under `log_dir`, or outside `work_dir`** — under the default `[vcs] dirty_action = "stash"` a round's `git stash push -u` sweeps the whole work tree except `log_dir`, so a ledger inside `work_dir` but outside `log_dir` would be stashed away as orphan work right after the round it fired for (the steer would last one round). Config load rejects a `[goal]` table whose ledger violates either rule. <!-- authored: names the default dirty_action=stash behavior the ledger-placement rule guards; SSOT agent_runner/config/models.py --> |
 | `[[goal.checks]]` | An array of objective, scriptable checks — the operator's ground truth, trusted over the agent's own self-report of progress. |
 | `checks.name` | Label for the check, carried on its `goal_check` event and referenced in advisories. |
-| `checks.cmd` | Argv run in its own process group under a wall-clock timeout; escalates TERM then SIGKILL on breach so a hung check leaves no descendants. |
+| `checks.cmd` | Argv run in its OWN process group under a wall-clock timeout; escalates TERM then killpg(SIGKILL) on breach so a hung check leaves no reachable descendants. Caveat: a check that `setsid`-detaches a grandchild into its own session escapes that process group — killpg cannot reach it, and it may LEAK (the executor still returns within its bound: it closes the pipe and stops waiting rather than blocking on the escaped grandchild). Keep a check's work in one process group. |
 | `checks.cwd` | Optional working directory for the check, resolved against `runtime.work_dir`. Omit to run in `work_dir` itself. |
-| `checks.timeout_s` | Per-check wall-clock ceiling; rejected at config load above a small fixed cap. Every check's ceiling is summed into the round's own timeout budget, so a slow or hung check narrows the agent's own round time rather than running alongside it unbounded. |
+| `checks.timeout_s` | Per-check wall-clock ceiling; rejected at config load above a small fixed cap. Every check's ceiling (plus its own kill grace) is summed into the round's own timeout budget, so a slow or hung check narrows the agent's own round time rather than running alongside it unbounded. If the summed budget reaches the fast-spin give-up window (see the firewall note below), config load emits a warning. |
 
 ### The goal-check executor
 
@@ -761,14 +764,32 @@ edge-triggered, not a repeat nag every round. Because the ledger is listed in
 `[prompt] files`, the advisory is folded into the very next round's prompt
 without any other wiring.
 
+The "activity" gate reads the round's own dirty-tree / auto-commit / git-HEAD
+signal. <!-- authored: describes the default dirty_action=stash mode's effect on the activity gate; SSOT agent_runner/config/models.py -->
+Under the default `dirty_action = "stash"` (or `"auto_commit"`) each
+round's churn is stashed/committed away, so that signal is a genuine per-round
+CHANGE. Under `dirty_action = "ignore"` the churn is left in the tree, so a
+persistently dirty tree reads as "activity" every round — a STATE signal, not
+proof the agent did something new this round. Prefer stash/auto_commit if you
+want the activity gate to mean per-round change.
+
 ### The advisory/kill firewall
 
-The assessor's output type has no kill/severity/action field — it is
-structurally incapable of ending a round. The mechanical kill/give-up path
-reads events by kind and is blind to `goal_check`/`goal_assessment`; `[monitor]
-auto_stop_on` also rejects any `goal`-prefixed kind at config load. The goal
-loop can only observe and gently steer through the ledger — it can never
-substitute for, or override, the supervisor's own kill decision.
+The goal loop **never CAUSES a kill or give-up.** The assessor's output type has
+no kill/severity/action field — it is structurally incapable of ending a round;
+the mechanical kill/give-up path reads events by kind and is blind to
+`goal_check`/`goal_assessment`; and `[monitor] auto_stop_on` rejects any
+`goal`-prefixed kind at config load.
+
+One honest caveat, in the DELAY direction only: a goal check's wall time counts
+toward the round's own `round_duration_s`, which is the discriminator for the
+fast-spin give-up breakers (`crash_loop` counts a crash only under a short-exit
+window; `stalled_no_progress` only under a shorter one). So a long check
+(`pytest`, `ruff`) can push a fast-crashing round past that window and **delay
+(never trigger)** one of those breakers. Keep the total check budget under the
+fast-spin window if you rely on them — config load warns when it doesn't. This
+touches only the give-up-convenience breakers; the host-health / pre-OOM
+termination path is unaffected.
 
 ## 中文摘要
 

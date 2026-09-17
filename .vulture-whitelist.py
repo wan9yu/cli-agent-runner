@@ -170,8 +170,8 @@ schedule
 goal
 
 # agent_runner.config.models.GoalConfig
-checks
 ledger
+checks
 
 # agent_runner.config.models.MonitorConfig
 auth_fail_patterns

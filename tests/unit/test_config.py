@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_runner.config import load_config
+from agent_runner.config import ConfigError, load_config
 
 
 def _write_toml(tmp_path: Path, body: str) -> Path:
@@ -2577,9 +2577,9 @@ def test_goal_checks_should_parse_when_loaded(tmp_path: Path) -> None:
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
-        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
         + "[goal]\n"
-        'ledger = "ledger.md"\n'
+        'ledger = "logs/ledger.md"\n'
         "[[goal.checks]]\n"
         'name = "tests"\n'
         'cmd = ["pytest", "-q"]\n'
@@ -2593,7 +2593,7 @@ def test_goal_checks_should_parse_when_loaded(tmp_path: Path) -> None:
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    assert cfg.goal.ledger == str(tmp_path / "ledger.md")
+    assert cfg.goal.ledger == str(tmp_path / "logs" / "ledger.md")
     assert len(cfg.goal.checks) == 2
     first, second = cfg.goal.checks
     assert first.name == "tests"
@@ -2613,9 +2613,9 @@ def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_per_c
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
-        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
         + "[goal]\n"
-        'ledger = "ledger.md"\n'
+        'ledger = "logs/ledger.md"\n'
         "[[goal.checks]]\n"
         'name = "tests"\n'
         'cmd = ["pytest", "-q"]\n'
@@ -2628,10 +2628,11 @@ def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_per_c
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    # timeout_s: 20 (explicit) + 10 (default) = 30, plus one kill grace PER
-    # check (checks run sequentially, no short-circuit -- each breach costs
-    # its own TERM->grace->killpg): 2 checks * _bounded._KILL_GRACE_S(3) = 6.
-    assert cfg.goal.checks_allowance_s == 36
+    # timeout_s: 20 (explicit) + 10 (default) = 30, plus TWO kill graces PER
+    # check (checks run sequentially, no short-circuit -- each breach costs a
+    # TERM->killpg grace AND a bounded post-kill drain grace): 2 checks * 2 *
+    # _bounded._KILL_GRACE_S(3) = 12.
+    assert cfg.goal.checks_allowance_s == 42
 
 
 def test_goal_checks_allowance_s_should_be_zero_when_no_checks(
@@ -2641,8 +2642,8 @@ def test_goal_checks_allowance_s_should_be_zero_when_no_checks(
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
-        + '[prompt]\nfiles = ["a.md", "ledger.md"]\n'
-        + '[goal]\nledger = "ledger.md"\n',
+        + '[prompt]\nfiles = ["a.md", "logs/ledger.md"]\n'
+        + '[goal]\nledger = "logs/ledger.md"\n',
     )
 
     cfg = load_config(toml)
@@ -2700,7 +2701,147 @@ def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
         load_config(toml)
 
 
-def test_goal_scalar_ledger_should_be_rejected_when_not_string(tmp_path: Path) -> None:
+def test_goal_check_timeout_at_cap_should_load_successfully(tmp_path: Path) -> None:
+    """Cap boundary: timeout_s == _MAX_GOAL_CHECK_TIMEOUT_S (30) is accepted."""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
+        + '[goal]\nledger = "logs/ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest"]\n'
+        "timeout_s = 30\n",
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.checks[0].timeout_s == 30
+
+
+def test_goal_check_timeout_one_over_cap_should_raise_config_error(tmp_path: Path) -> None:
+    """Cap boundary: timeout_s == 31 is rejected -- and with ConfigError, the
+    config-load error type, not a bare ValueError."""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "logs/ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest"]\n'
+        "timeout_s = 31\n",
+    )
+
+    with pytest.raises(ConfigError, match=r"goal\.checks\.0\.timeout_s.*<= 30"):
+        load_config(toml)
+
+
+def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected(tmp_path: Path) -> None:
+    """Stash-swept-ledger boot guard: a ledger resolved inside work_dir but
+    outside log_dir is
+    swept by the default dirty_action="stash" `git stash push -u`, so the steer
+    would last one round. Reject it at load with a message that names the fix.
+    (Mutation check: dropping the guard makes this load succeed and the test
+    fail.)"""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        # ledger.md sits at work_dir root -- inside work_dir, outside logs/.
+        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    with pytest.raises(ConfigError, match=r"inside runtime\.work_dir.*outside runtime\.log_dir"):
+        load_config(toml)
+
+
+def test_goal_ledger_at_absolute_path_outside_work_dir_should_load_successfully(
+    tmp_path: Path,
+) -> None:
+    """The stash-swept-ledger boot guard must NOT false-reject a legitimate
+    ledger at an absolute
+    path outside work_dir (it is never in the git tree, so the stash can't sweep
+    it)."""
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "prompt.md").write_text("p")
+    outside_ledger = tmp_path / "state" / "lessons.md"
+    body = (
+        "[agent]\n"
+        'command = ["true"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{work}"\n'
+        f'log_dir = "{work}/logs"\n'
+        "[prompt]\n"
+        f'files = ["prompt.md", "{outside_ledger}"]\n'
+        "[goal]\n"
+        f'ledger = "{outside_ledger}"\n'
+    )
+    toml = _write_toml(tmp_path, body)
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.ledger == str(outside_ledger)
+
+
+def test_goal_checks_budget_at_or_above_fast_spin_window_should_warn(tmp_path: Path) -> None:
+    """A goal-check budget >= the fast-spin give-up window emits a load-time
+    WARNING (not a hard reject -- a legitimate pytest check may exceed it). One
+    check at the 30s cap -> allowance 30 + 2*3 = 36 >= 30. (Mutation check:
+    dropping the warn makes this raise for no-warning-emitted and the test
+    fails.)"""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
+        + '[goal]\nledger = "logs/ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "slow"\n'
+        'cmd = ["pytest"]\n'
+        "timeout_s = 30\n",
+    )
+
+    with pytest.warns(UserWarning, match=r"fast-spin give-up window"):
+        cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.checks_allowance_s == 36
+
+
+def test_goal_checks_budget_below_fast_spin_window_should_not_warn(
+    tmp_path: Path, recwarn: pytest.WarningsRecorder
+) -> None:
+    """A modest goal-check budget below the fast-spin window emits no such
+    warning -- the disarm-risk warning is edge-only, not noise on every goal
+    config."""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
+        + '[goal]\nledger = "logs/ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "fast"\n'
+        'cmd = ["true"]\n'
+        "timeout_s = 10\n",  # allowance 10 + 2*3 = 16 < 30
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.checks_allowance_s == 16
+    assert not [w for w in recwarn.list if "fast-spin give-up window" in str(w.message)]
+
+
+def test_goal_scalar_checks_should_be_rejected_when_not_a_list(tmp_path: Path) -> None:
     """goal.checks must be a list of tables, not a scalar -- the bare-scalar
     footgun _require_str_list guards elsewhere."""
     (tmp_path / "prompt.md").write_text("p")
@@ -2765,14 +2906,14 @@ def test_goal_ledger_at_index_one_should_load_successfully(tmp_path: Path) -> No
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
-        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
-        + '[goal]\nledger = "ledger.md"\n',
+        + '[prompt]\nfiles = ["prompt.md", "logs/ledger.md"]\n'
+        + '[goal]\nledger = "logs/ledger.md"\n',
     )
 
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    assert cfg.goal.ledger == str(tmp_path / "ledger.md")
+    assert cfg.goal.ledger == str(tmp_path / "logs" / "ledger.md")
 
 
 def test_goal_with_phase_empty_prompt_files_should_raise_config_error_when_loaded(
@@ -2800,13 +2941,16 @@ def test_goal_with_phase_override_ledger_at_index_one_should_load_successfully(
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
-        + '[prompt]\nfiles = ["a.md", "ledger.md"]\n'
+        + '[prompt]\nfiles = ["a.md", "logs/ledger.md"]\n'
         + '[phases]\nlist = ["dev"]\n'
         "[phases.dev.prompt]\n"
-        'files = ["a.md", "ledger.md"]\n' + '[goal]\nledger = "ledger.md"\n',
+        'files = ["a.md", "logs/ledger.md"]\n' + '[goal]\nledger = "logs/ledger.md"\n',
     )
 
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    assert cfg.phases.overrides["dev"].prompt_files == [tmp_path / "a.md", tmp_path / "ledger.md"]
+    assert cfg.phases.overrides["dev"].prompt_files == [
+        tmp_path / "a.md",
+        tmp_path / "logs" / "ledger.md",
+    ]

@@ -67,7 +67,7 @@ def _goal_firewall_offenders(base: Path) -> list[str]:
         if _is_permitted(rel):
             continue
         scanned += 1
-        tree = ast.parse(f.read_text(), filename=str(f))
+        tree = ast.parse(f.read_text(encoding="utf-8"), filename=str(f))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if _GOAL_CHECK_RE.search(node.value):

@@ -54,26 +54,29 @@ _CONVERGING_SCRIPT = (
     '[ "$AGENT_RUNNER_ROUND_NUM" -ge 3 ] && touch done; exit 0'
 )
 
-# Task 8 (P2 armed-breaker): exits 1 immediately, well under
+# The armed-breaker differential's agent: exits 1 immediately, well under
 # _serve_policy.CRASH_LOOP_SHORT_EXIT_S (60s) -- an "unknown short crash" on
 # every round, so post_round_decision's crash-loop breaker arms and trips at
 # exactly CRASH_LOOP_THRESHOLD consecutive rounds.
 _CRASH_SCRIPT = "exit 1"
 
 
-def _init_git(work_dir: Path) -> None:
+def _init_git(work_dir: Path, *, gitignore_toml: bool = False) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work_dir, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=work_dir, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=work_dir, check=True)
     subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=work_dir, check=True)
-    # logs/ gitignored so event-log churn never contributes to the round-to-
-    # round "dirty" signal. The agent's own per-round marker file (tick-N)
-    # provides genuine per-round activity in both variants; the untracked
-    # agent-runner.toml (written below, never committed) is ALSO dirty every
-    # round, so it isn't load-bearing for gate 1 here -- but the marker file
-    # alone is sufficient, which is what keeps gate 1 robust even if the toml
-    # were later gitignored too.
-    (work_dir / ".gitignore").write_text("logs/\n")
+    # logs/ gitignored so event-log churn (and the ledger, which now lives under
+    # log_dir) never contributes to the round-to-round "dirty" signal. The
+    # agent's own per-round marker file (tick-N) provides genuine per-round
+    # activity in every variant.
+    #
+    # gitignore_toml (the stash variant): under dirty_action="stash" the
+    # untracked agent-runner.toml would itself be swept into the orphan stash
+    # every round -- removing serve's own config from the tree -- so the stash
+    # variant gitignores it, leaving tick-N as the sole per-round dirty path.
+    ignore = "logs/\nagent-runner.toml\n" if gitignore_toml else "logs/\n"
+    (work_dir / ".gitignore").write_text(ignore)
     (work_dir / "prompt.md").write_text(_VALID_PROMPT)
     subprocess.run(["git", "add", ".gitignore", "prompt.md"], cwd=work_dir, check=True)
     subprocess.run(
@@ -83,29 +86,37 @@ def _init_git(work_dir: Path) -> None:
     )
 
 
-def _write_config(tmp_path: Path, *, agent_script: str, with_goal: bool = True) -> Path:
+def _write_config(
+    tmp_path: Path, *, agent_script: str, with_goal: bool = True, dirty_action: str = "ignore"
+) -> Path:
     """A real agent-runner.toml wiring [goal] + a synthetic sh agent.
 
     ``[prompt] files`` lists the lessons ledger at index 1 (the boot guard
-    requires index >= 1 -- the ledger doesn't exist at cold start). ``[vcs]
-    dirty_action = "ignore"`` leaves the round's marker file in the tree so
-    ``dirty_detected`` fires every round without git noise from stashing or
-    auto-committing.
+    requires index >= 1 -- the ledger doesn't exist at cold start). The ledger
+    lives UNDER ``log_dir`` (``logs/ledger.md``): the boot guard rejects a
+    ledger inside work_dir but outside log_dir, and a ledger under log_dir is
+    the one work-tree path the ``dirty_action="stash"`` pathspec excludes, so
+    the steer survives a stash.
 
-    ``with_goal`` (Task 8, default True -- Task 7's two tests above are
-    unchanged): False omits the entire ``[goal]`` table AND drops
-    ``ledger.md`` from ``[prompt] files`` (leaving just ``["prompt.md"]``),
-    producing a config that never mentions goal machinery at all -- the P2
-    armed-breaker differential's "without" arm and P5's default-path arm.
+    ``dirty_action`` (default ``"ignore"``) selects the [vcs] mode. Under
+    ``"ignore"`` the round's marker file is left in the tree, so a persistently
+    dirty tree reads as activity every round (a STATE signal). Under ``"stash"``
+    each round's marker is stashed away, so ``dirty_detected`` is a genuine
+    per-round CHANGE signal.
+
+    ``with_goal`` (default True): False omits the entire ``[goal]`` table AND
+    drops the ledger from ``[prompt] files`` (leaving just ``["prompt.md"]``),
+    producing a config that never mentions goal machinery at all -- the
+    armed-breaker differential's "without" arm and the default-path arm.
     """
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
     command = json.dumps(["sh", "-c", agent_script, "sh"])
-    prompt_files = '["prompt.md", "ledger.md"]' if with_goal else '["prompt.md"]'
+    prompt_files = '["prompt.md", "logs/ledger.md"]' if with_goal else '["prompt.md"]'
     goal_block = (
         (
             "[goal]\n"
-            'ledger = "ledger.md"\n'
+            'ledger = "logs/ledger.md"\n'
             "[[goal.checks]]\n"
             'name = "done_check"\n'
             'cmd = ["test", "-f", "done"]\n'
@@ -126,7 +137,7 @@ def _write_config(tmp_path: Path, *, agent_script: str, with_goal: bool = True) 
         "[prompt]\n"
         f"files = {prompt_files}\n"
         "[vcs]\n"
-        'dirty_action = "ignore"\n'
+        f'dirty_action = "{dirty_action}"\n'
         f"{goal_block}"
     )
     return toml
@@ -172,7 +183,7 @@ def test_goal_steering_should_fold_one_advisory_into_the_fresh_round_when_treadm
     assessments = [e for e in events if e.get("event") == "goal_assessment"]
     assert len(assessments) == 1, f"expected exactly one goal_assessment event, got {assessments}"
 
-    ledger_path = tmp_path / "ledger.md"
+    ledger_path = tmp_path / "logs" / "ledger.md"
     assert ledger_path.exists(), "the advisory fired but the ledger was never written"
     ledger_content = ledger_path.read_text(encoding="utf-8")
     assert ledger_content.count("### Goal assessment --") == 1, (
@@ -226,22 +237,78 @@ def test_goal_steering_should_never_advise_when_the_goal_converges(tmp_path: Pat
     assessments = [e for e in events if e.get("event") == "goal_assessment"]
     assert assessments == [], f"a converging goal must never be advised, got {assessments}"
 
-    ledger_path = tmp_path / "ledger.md"
+    ledger_path = tmp_path / "logs" / "ledger.md"
     assert not ledger_path.exists(), (
         f"no advisory should ever be written to the ledger, found: "
         f"{ledger_path.read_text(encoding='utf-8')!r}"
     )
 
 
-# --- Task 8: P2 firewall differential + P5 default-path -----------------------
+@pytest.mark.timeout(160)
+def test_goal_steering_ledger_should_survive_the_default_stash_and_persist(tmp_path: Path) -> None:
+    """Ledger-survives-the-stash regression: under the DEFAULT [vcs]
+    dirty_action="stash", the
+    supervisor-owned ledger must PERSIST across rounds, not be swept into the
+    round's orphan stash after the round it fired for.
+
+    With the ledger under log_dir (excluded from the stash pathspec) the
+    advisory written before round 4 must still ride in round 4's prompt AND in
+    rounds 5 and 6 -- i.e. past K+1, all the way to K+2 and beyond -- and the
+    ledger file must still exist on disk at the end. Mutation check: putting the
+    ledger back at work_dir root (the pre-fix layout) lets `git stash push -u`
+    sweep it after round 4, so rounds 5/6 carry no advisory and the ledger is
+    absent at the end -- both assertions below then fail.
+
+    The stash mode also makes each round's `dirty_detected` a genuine per-round
+    CHANGE signal (the marker is stashed away every round), not the persistently
+    dirty STATE signal the dirty_action="ignore" variant relies on.
+    """
+    _init_git(tmp_path, gitignore_toml=True)
+    cfg_path = _write_config(tmp_path, agent_script=_TREADMILL_SCRIPT, dirty_action="stash")
+    log_dir = tmp_path / "logs"
+
+    proc = _run_serve(cfg_path, max_rounds=6, timeout_s=140)
+
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    events = read_events_for_current_month(log_dir)
+
+    # Non-vacuity: the stash mode was genuinely active (the round's dirty marker
+    # was stashed as orphan work), not silently downgraded to ignore.
+    orphan_stashed = [e for e in events if e.get("event") == "orphan_stashed"]
+    assert orphan_stashed, "expected stash mode to stash the per-round marker as orphan work"
+
+    assessments = [e for e in events if e.get("event") == "goal_assessment"]
+    assert len(assessments) == 1, f"expected exactly one goal_assessment event, got {assessments}"
+
+    ledger_path = tmp_path / "logs" / "ledger.md"
+    assert ledger_path.exists(), (
+        "the ledger was swept by the default stash -- it must survive under log_dir"
+    )
+    ledger_content = ledger_path.read_text(encoding="utf-8")
+    assert ledger_content.count("### Goal assessment --") == 1, ledger_content
+
+    # The load-bearing assertion: the advisory bytes reach not just round 4
+    # (K+1) but rounds 5 and 6 -- proving the ledger was NOT stashed away after
+    # the round it fired for.
+    for n in (4, 5, 6):
+        round_logs = sorted((log_dir / "rounds").glob(f"R{n}-*.log"))
+        assert len(round_logs) == 1, f"expected exactly one R{n} round log, found {round_logs}"
+        content = round_logs[0].read_text(encoding="utf-8")
+        assert ledger_content in content, (
+            f"round {n}'s prompt did not carry the persisted ledger advisory -- "
+            f"the stash swept it.\nledger:\n{ledger_content!r}\n\nR{n} log:\n{content!r}"
+        )
+
+
+# --- P2 firewall differential + P5 default-path -----------------------
 
 
 @pytest.mark.timeout(260)
 def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) -> None:
-    """P2 (I6) armed-breaker differential -- the BEHAVIORAL complement to Task
-    6's AST firewall (no kill-path module even references a goal_* kind
-    string) and tests/unit/test_goal_firewall_behavioral.py's events-derived
-    P2 unit golden (round_outcome is blind to goal_* kinds). This proves the
+    """P2 armed-breaker differential -- the BEHAVIORAL complement to the AST
+    firewall (no kill-path module even references a goal_* kind string) and
+    tests/unit/test_goal_firewall_behavioral.py's events-derived P2 unit golden
+    (round_outcome is blind to goal_* kinds). This proves the
     INTEGRATION: an agent that exits 1 FAST every round trips
     post_round_decision's crash-loop breaker at EXACTLY CRASH_LOOP_THRESHOLD
     consecutive rounds -- IDENTICALLY whether or not [goal] is configured. A
@@ -328,7 +395,7 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
 def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_absent(
     tmp_path: Path,
 ) -> None:
-    """P5 (I13) default-path zero-footprint property.
+    """P5 default-path zero-footprint property.
 
     Two DISTINCT checks, not one:
 
@@ -340,7 +407,7 @@ def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_
        cannot catch a leak that lands in BOTH arms (e.g. an unconditional
        addition to ``assemble_prompt``, or one keyed on ``cfg.goal is None``)
        -- an earlier version of this test did exactly that differential-only
-       comparison and a fable mutation (appending an unconditional literal to
+       comparison and a mutation test (appending an unconditional literal to
        ``_round_support.assemble_prompt``) proved it STILL PASSED. The exact-
        bytes anchor below closes that gap: any extra byte anywhere fails it,
        regardless of which arm(s) it lands in.

@@ -331,10 +331,15 @@ class _GoalCheckConfig:
 class GoalConfig:
     """The ``[goal]`` table: objective goal-checks plus the lessons-ledger
     path threaded into the prompt across rounds. ``Config.goal`` stays
-    ``None`` when ``[goal]`` is absent -- the steering loop is opt-in."""
+    ``None`` when ``[goal]`` is absent -- the steering loop is opt-in.
 
-    checks: tuple[_GoalCheckConfig, ...]
+    ``ledger`` is required; ``checks`` defaults to an empty tuple (a ledger-only
+    ``[goal]`` runs the treadmill assessor with nothing objective to converge
+    on -- valid, if degenerate), so it is declared last with a default to match
+    the parser's ``goal.checks`` default."""
+
     ledger: str
+    checks: tuple[_GoalCheckConfig, ...] = ()
 
     @property
     def checks_allowance_s(self) -> int:
@@ -344,11 +349,12 @@ class GoalConfig:
         must never trip ``round_supervisor_wedged`` itself.
 
         The executor runs every check SEQUENTIALLY with no short-circuit on
-        failure/timeout, and each breach costs its own
-        TERM -> grace -> killpg (``run_bounded`` spends up to
-        ``timeout_s + _KILL_GRACE_S`` per check on breach) -- so the all-hang
-        worst case is every check's own timeout PLUS one kill grace EACH, not
-        one grace total.
+        failure/timeout, and each breach costs TWO ``_KILL_GRACE_S`` windows,
+        not one: ``run_bounded`` spends up to ``timeout_s + 2*_KILL_GRACE_S``
+        on a breach (one grace for TERM->killpg, one for the bounded post-kill
+        drain that never blocks on a session-detached pipe holder). So the
+        all-hang worst case is every check's own timeout PLUS two kill graces
+        EACH.
 
         Local import: this module sits on the frozen startup graph
         (``test_import_footprint.py``), and ``_bounded`` does not -- a
@@ -356,7 +362,7 @@ class GoalConfig:
         """
         from agent_runner._bounded import _KILL_GRACE_S
 
-        return sum(c.timeout_s for c in self.checks) + len(self.checks) * _KILL_GRACE_S
+        return sum(c.timeout_s for c in self.checks) + len(self.checks) * 2 * _KILL_GRACE_S
 
 
 @dataclass(frozen=True)

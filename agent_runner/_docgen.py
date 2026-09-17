@@ -105,13 +105,23 @@ def _field_table(dc: type) -> list[str]:
     return rows
 
 
+# Nested sub-sections that are TOML arrays-of-tables (`[[name]]`), not single
+# sub-tables (`[name]`): the parent field is a list/tuple of the sub-dataclass,
+# so the header must double-bracket or a copy-pasted single `[goal.checks]` is
+# rejected by the parser (_parse_goal expects a list).
+_ARRAY_OF_TABLES_SECTIONS = frozenset({"goal.checks"})
+
+
 def render_config_schema_table() -> str:
     """Markdown sub-sections per Config dataclass with field/type/default."""
     parts: list[str] = []
     for name, dc, nested in _SECTIONS:
         parts += [f"### `[{name}]`", "", *_field_table(dc), ""]
         for sub_name, sub_dc in nested:
-            parts += [f"#### `[{sub_name}]`", "", *_field_table(sub_dc), ""]
+            brackets = (
+                f"[[{sub_name}]]" if sub_name in _ARRAY_OF_TABLES_SECTIONS else f"[{sub_name}]"
+            )
+            parts += [f"#### `{brackets}`", "", *_field_table(sub_dc), ""]
     return "\n".join(parts).rstrip()
 
 

@@ -38,6 +38,25 @@ def test_write_ledger_advisory_should_create_ledger_when_absent(
     assert "marker-1" in ledger_path.read_text(encoding="utf-8")
 
 
+def test_write_ledger_advisory_should_fail_open_when_existing_ledger_has_non_utf8_byte(
+    tmp_path: Path, tmp_log_dir: Path
+) -> None:
+    """The ledger is agent-writable free text. A stray non-UTF-8 byte in it
+    must degrade a character on the read-back, never raise a UnicodeDecodeError
+    (a non-OSError) past runner.py's OSError-only fail-open guard and read as a
+    round crash. Mutation check: dropping errors="replace" from the ledger
+    read_text makes this raise UnicodeDecodeError and the test errors out."""
+    ledger_path = tmp_path / "ledger.md"
+    ledger_path.write_bytes(b"### Goal assessment -- prior\n- Observation: \xff bad byte")
+
+    write_ledger_advisory(ledger_path, _advisory(1), log_dir=tmp_log_dir)  # must not raise
+
+    # The new block landed and the file is now valid UTF-8 (the bad byte became
+    # the replacement character on read-back, then was re-encoded cleanly).
+    text = ledger_path.read_text(encoding="utf-8")
+    assert "marker-1" in text
+
+
 def test_write_ledger_advisory_should_prepend_newest_advisory_when_ledger_exists(
     tmp_path: Path, tmp_log_dir: Path
 ) -> None:

@@ -8,11 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.12] - UNRELEASED
 
 ### Added
-- `[goal]` config table: a markdown lessons `ledger` (must also be listed in `[prompt] files`) plus `[[goal.checks]]` (`name`, `cmd` argv, optional `timeout_s`) — objective, CLI-agnostic checks the round child runs after each round's agent exits, each emitting a `goal_check` event (`satisfied` bool, optional `value`); check timeouts fold into the existing round budget.
-- Treadmill assessor (advisory-only, a core serve step): across the last 3 completed rounds, if every round showed activity but at least one goal check stayed unsatisfied with an unchanged signature, serve writes one edge-triggered advisory to the ledger and emits a `goal_assessment` event; it never fires on convergence or once every check is satisfied. The ledger's `[prompt] files` membership carries the advisory into the next round's prompt — observability plus a gentle steer, never a kill.
-- Advisory/kill firewall: the kill/give-up path reads events by kind and stays blind to `goal_check`/`goal_assessment` — the advisory can observe and steer but can never alter the mechanical kill verdict.
+- `[goal]` config table: a markdown lessons `ledger` (listed in `[prompt] files` at index >= 1, and — since it must survive the round's own `git stash` — required to sit under `log_dir` or outside `work_dir`) plus `[[goal.checks]]` (`name`, `cmd` argv, optional `timeout_s`) — objective, CLI-agnostic checks the round child runs after each round's agent exits, each emitting a `goal_check` event (`satisfied` bool, optional `value`).
+- Treadmill assessor (advisory-only): across the last 3 completed rounds, if every round showed activity but at least one goal check stayed unsatisfied with an unchanged signature, serve writes one edge-triggered advisory to the ledger and emits a `goal_assessment` event (never on convergence). The ledger's `[prompt] files` membership carries it into the next round's prompt.
+- Advisory/kill firewall: the goal loop never CAUSES a kill or give-up — the kill/give-up path reads events by kind and stays blind to `goal_check`/`goal_assessment`. A goal check's own wall time does count toward the round's duration, so a long check can DELAY (never trigger) the fast-spin `stalled_no_progress`/`crash_loop` breakers; config load warns if the total check budget reaches that window.
 
-No config migration required (v0.3.11 silently ignores an unrecognized `[goal]` table). `peek --json` schema stays `2.6` (`[goal]` is not peek-surfaced this release).
+Check timeouts fold into the round's own timeout budget. No config migration required (v0.3.11 silently ignores an unrecognized `[goal]` table). `peek --json` schema stays `2.6`.
 
 ## [0.3.11] - 2026-09-17
 

@@ -59,11 +59,10 @@ FORBIDDEN_AT_STARTUP = frozenset(
         "agent_runner._docgen",
         "agent_runner.prompt_loader",
         "agent_runner.presets",
-        # v0.3.12 Task 8 (P5): the [goal] steering loop's own module. Both of
-        # its importers (runner.py's assess_treadmill/write_ledger_advisory
-        # and run_goal_checks calls) are function-scoped behind
-        # `cfg.goal is not None` -- a config with no [goal] table must never
-        # pull this module in at cold startup.
+        # The [goal] steering loop's own module. Both of its importers
+        # (runner.py's assess_treadmill/write_ledger_advisory and run_goal_checks
+        # calls) are function-scoped behind `cfg.goal is not None` -- a config
+        # with no [goal] table must never pull this module in at cold startup.
         "agent_runner.goal",
     }
 )

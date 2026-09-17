@@ -957,7 +957,7 @@ def test_run_one_round_should_not_crash_when_the_advisory_fold_hits_an_os_error(
     fake_agent_script: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail-open (IMPORTANT 3 fable fix): the advisory fold is
+    """Fail-open: the advisory fold is
     observability-only, never a control-flow gate -- an OSError while writing
     the lessons ledger (here: a DIRECTORY sitting at the configured ledger
     path) must not propagate out of _run_one_round_inner and read as a round

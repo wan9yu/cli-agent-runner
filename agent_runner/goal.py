@@ -82,8 +82,10 @@ def run_goal_checks(
     misconfigured check (missing binary, missing cwd, ...) must not crash the
     round child -- ``run_bounded``'s own ``subprocess.Popen`` call can raise
     OSError (FileNotFoundError/PermissionError/NotADirectoryError) BEFORE its
-    own timeout machinery ever engages, so that's caught here and reported as
-    an unsatisfied check (advisory-only, never a crash-loop)."""
+    own timeout machinery ever engages, and a NUL byte in a check's argv makes
+    Popen raise ``ValueError: embedded null byte`` (a non-OSError) the same
+    way, so both are caught here and reported as an unsatisfied check
+    (advisory-only, never a crash-loop)."""
     for check in cfg_goal.checks:
         if dry_run:
             emit(log_dir, events.GOAL_CHECK, name=check.name, skipped=True)
@@ -91,7 +93,7 @@ def run_goal_checks(
         cwd = _resolve_check_cwd(check.cwd, work_dir)
         try:
             result = run_bounded(check.cmd, cwd=cwd, timeout_s=check.timeout_s)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             emit(
                 log_dir,
                 events.GOAL_CHECK,
@@ -180,7 +182,11 @@ def write_ledger_advisory(ledger_path: Path, advisory: Advisory, *, log_dir: Pat
     )
 
     try:
-        existing = ledger_path.read_text(encoding="utf-8")
+        # errors="replace": the ledger is agent-writable free text, so a stray
+        # non-UTF-8 byte must degrade a character, never raise a
+        # UnicodeDecodeError past runner.py's OSError-only fail-open guard and
+        # read as a round crash -- same bit-rot policy as open_events_jsonl.
+        existing = ledger_path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         existing = ""
     prior_blocks = [b for b in existing.split(_LEDGER_BLOCK_SEP) if b.strip()]
@@ -341,14 +347,15 @@ def assess_treadmill(
     tail = list(event_log.scan(log_dir, event_log.newest_scope(2)))
     tagged = _tag_rounds(tail)
 
-    round_nums = sorted({rn for rn, _ in tagged if rn is not None and rn < current_round})
+    completed_rounds = {rn for rn, _ in tagged if rn is not None and rn < current_round}
+    round_nums = sorted(completed_rounds)
     if len(round_nums) < k:
         return None
     window = round_nums[-k:]
 
     buckets: dict[int, list[dict]] = {}
     for rn, ev in tagged:
-        if rn in round_nums:
+        if rn in completed_rounds:  # set membership: O(events), not O(events x rounds)
             buckets.setdefault(rn, []).append(ev)
 
     # Gate 1: activity in EVERY round of the window.
