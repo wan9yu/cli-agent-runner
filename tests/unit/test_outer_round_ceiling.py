@@ -62,3 +62,40 @@ def test_outer_round_ceiling_s_should_read_round_budget_s_when_no_phase_override
     ceiling = outer_round_ceiling_s(cfg, None)
 
     assert ceiling > 42  # ceiling adds reap/git/hook margin on top of the budget
+
+
+def test_outer_round_ceiling_should_widen_by_the_goal_checks_allowance_when_goal_configured(
+    tmp_path,
+):
+    """B4: a dropped ``goal_checks_allowance_s=`` kwarg at this call site
+    would leave the ceiling at the no-goal value -- every OTHER test in this
+    file runs with ``cfg.goal is None``, so only a goal-present case can
+    catch that regression."""
+    from agent_runner.config import (
+        AgentConfig,
+        Config,
+        GoalConfig,
+        PhasesConfig,
+        PromptConfig,
+        RuntimeConfig,
+        _GoalCheckConfig,
+    )
+
+    goal = GoalConfig(
+        checks=(_GoalCheckConfig(name="tests", cmd=["pytest"], timeout_s=20),),
+        ledger="ledger.md",
+    )
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path, round_budget_s=100),
+        prompt=PromptConfig(),
+        phases=PhasesConfig(),
+        goal=goal,
+    )
+    assert goal.checks_allowance_s > 0  # sanity: the allowance is non-zero
+
+    _, expected_ceiling = _serve_policy.timeout_budget(
+        100, goal_checks_allowance_s=goal.checks_allowance_s
+    )
+
+    assert api.outer_round_ceiling_s(cfg, None) == expected_ceiling

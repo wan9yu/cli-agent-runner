@@ -2577,7 +2577,7 @@ def test_goal_checks_should_parse_when_loaded(tmp_path: Path) -> None:
     assert second.timeout_s == 10  # default
 
 
-def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_when_loaded(
+def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_per_check_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
@@ -2599,12 +2599,13 @@ def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_when_
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    # timeout_s: 20 (explicit) + 10 (default) = 30, plus the bounded-subprocess
-    # kill grace (_bounded._KILL_GRACE_S == 3).
-    assert cfg.goal.checks_allowance_s == 33
+    # timeout_s: 20 (explicit) + 10 (default) = 30, plus one kill grace PER
+    # check (checks run sequentially, no short-circuit -- each breach costs
+    # its own TERM->grace->killpg): 2 checks * _bounded._KILL_GRACE_S(3) = 6.
+    assert cfg.goal.checks_allowance_s == 36
 
 
-def test_goal_checks_allowance_s_should_equal_kill_grace_when_no_checks(
+def test_goal_checks_allowance_s_should_be_zero_when_no_checks(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "a.md").write_text("a")
@@ -2618,7 +2619,7 @@ def test_goal_checks_allowance_s_should_equal_kill_grace_when_no_checks(
     cfg = load_config(toml)
 
     assert cfg.goal is not None
-    assert cfg.goal.checks_allowance_s == 3
+    assert cfg.goal.checks_allowance_s == 0
 
 
 def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:

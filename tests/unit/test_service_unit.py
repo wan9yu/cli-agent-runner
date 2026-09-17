@@ -7,11 +7,13 @@ import pytest
 from agent_runner.config import (
     AgentConfig,
     Config,
+    GoalConfig,
     PhaseOverride,
     PhasesConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
+    _GoalCheckConfig,
 )
 from agent_runner.service_unit import (
     monitor_unit_filename,
@@ -224,6 +226,39 @@ def test_render_serve_unit_should_use_max_round_timeout_across_phases_when_phase
 
     # max(1800, 3600) + 210 = 3810
     assert "TimeoutStopSec=3820" in unit
+
+
+def test_render_serve_unit_should_widen_timeout_stop_sec_by_goal_allowance_when_configured(
+    tmp_path: Path,
+) -> None:
+    """The SIGKILL-a-draining-round hazard side of the B4 fold: a [goal] with
+    checks must widen TimeoutStopSec by the SAME allowance
+    outer_round_ceiling_s gets -- a dropped ``goal_checks_allowance_s=``
+    kwarg at this call site would leave TimeoutStopSec unchanged and this
+    test would fail."""
+    goal = GoalConfig(
+        checks=(_GoalCheckConfig(name="tests", cmd=["pytest"], timeout_s=20),),
+        ledger="ledger.md",
+    )
+    cfg = Config(
+        agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
+        runtime=RuntimeConfig(
+            work_dir=tmp_path,
+            log_dir=tmp_path / "logs",
+            round_budget_s=600,
+        ),
+        prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
+        vcs=VcsConfig(),
+        goal=goal,
+    )
+    assert goal.checks_allowance_s > 0  # sanity: the allowance is non-zero
+
+    body = render_serve_unit(cfg, script_path=tmp_path / "ar", config_path=_toml(tmp_path))
+
+    from agent_runner._serve_policy import timeout_budget
+
+    expected_timeout, _ = timeout_budget(600, goal_checks_allowance_s=goal.checks_allowance_s)
+    assert f"TimeoutStopSec={expected_timeout}" in body
 
 
 def test_render_serve_unit_should_include_user_directive_when_user_arg_given(

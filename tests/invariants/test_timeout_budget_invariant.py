@@ -67,11 +67,15 @@ def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance():
     """The goal-check executor's own time budget folds into the SAME single
     ceiling rather than a second one -- a slow check must never trip
     round_supervisor_wedged (the goal path causing a kill would be a firewall
-    breach by timing)."""
-    _, without = _serve_policy.timeout_budget(100)
-    _, with_allowance = _serve_policy.timeout_budget(100, goal_checks_allowance_s=33)
+    breach by timing). ``timeout_stop_sec`` must inherit the SAME growth
+    exactly once too -- a stray second ``+ allowance`` applied directly to
+    ``timeout_stop_sec`` (double-counting on top of the widened ceiling it's
+    already derived from) would make its delta 2N instead of N."""
+    stop_without, without = _serve_policy.timeout_budget(100)
+    stop_with, with_allowance = _serve_policy.timeout_budget(100, goal_checks_allowance_s=33)
 
     assert with_allowance - without == 33
+    assert stop_with - stop_without == 33
 
 
 def test_timeout_stop_sec_should_still_clear_outer_ceiling_with_a_nonzero_goal_allowance():

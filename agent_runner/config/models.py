@@ -339,10 +339,16 @@ class GoalConfig:
     @property
     def checks_allowance_s(self) -> int:
         """Worst-case wall-clock the goal-check executor can consume in one
-        round: every check's own timeout plus the bounded-subprocess kill
-        grace, so the round-timeout budget (``_serve_policy.timeout_budget``)
-        can fold it into the single outer ceiling -- a slow check must never
-        trip ``round_supervisor_wedged`` itself.
+        round, so the round-timeout budget (``_serve_policy.timeout_budget``)
+        can fold it into the single outer ceiling -- a slow (or hung) check
+        must never trip ``round_supervisor_wedged`` itself.
+
+        The executor runs every check SEQUENTIALLY with no short-circuit on
+        failure/timeout, and each breach costs its own
+        TERM -> grace -> killpg (``run_bounded`` spends up to
+        ``timeout_s + _KILL_GRACE_S`` per check on breach) -- so the all-hang
+        worst case is every check's own timeout PLUS one kill grace EACH, not
+        one grace total.
 
         Local import: this module sits on the frozen startup graph
         (``test_import_footprint.py``), and ``_bounded`` does not -- a
@@ -350,7 +356,7 @@ class GoalConfig:
         """
         from agent_runner._bounded import _KILL_GRACE_S
 
-        return sum(c.timeout_s for c in self.checks) + _KILL_GRACE_S
+        return sum(c.timeout_s for c in self.checks) + len(self.checks) * _KILL_GRACE_S
 
 
 @dataclass(frozen=True)
