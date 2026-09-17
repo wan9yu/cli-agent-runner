@@ -9,6 +9,7 @@ from agent_runner.config import PhaseOverride
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
     detect_disk_critical,
+    detect_disk_growth,
     detect_disk_warning,
     detect_hung,
     detect_mem_pressure,
@@ -24,13 +25,14 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_known_alert_kinds_should_contain_all_thirteen() -> None:
+def test_known_alert_kinds_should_contain_all_fourteen() -> None:
     expected = {
         "timeout_rate",
         "hung",
         "orphan_chain",
         "disk_warning",
         "disk_critical",
+        "disk_growth",
         "mem_pressure",
         "mem_signal_unavailable",
         "mem_pressure_gate_inert",
@@ -150,6 +152,64 @@ def test_disk_detectors_should_return_warning_only_when_used_pct_between_warning
 
     assert w is not None and w.severity == "warning" and w.auto_action == "none"
     assert detect_disk_critical(metrics, threshold_pct=95.0) is None
+
+
+def test_detect_disk_growth_should_return_warning_alert_when_rate_exceeds_threshold() -> None:
+    metrics = [
+        {"ts": "2026-05-12T10:00:00.000Z", "disk_used_pct": 50.0, "inode_used_pct": 10.0},
+        {"ts": "2026-05-12T10:30:00.000Z", "disk_used_pct": 53.0, "inode_used_pct": 13.0},
+    ]
+
+    a = detect_disk_growth(
+        metrics,
+        growth_window_s=1800,
+        disk_growth_pct_per_hr_warning=5.0,
+        inode_growth_pct_per_hr_warning=5.0,
+    )
+
+    assert a is not None
+    assert a.detector == "disk_growth"
+    assert a.severity == "warning"
+    assert a.auto_action == "none"
+    # both dims carried on the one alert, even though both happen to trip here
+    assert a.context["disk_pct_per_hr"] == pytest.approx(6.0)
+    assert a.context["inode_pct_per_hr"] == pytest.approx(6.0)
+
+
+def test_detect_disk_growth_should_return_none_when_rate_below_threshold() -> None:
+    metrics = [
+        {"ts": "2026-05-12T10:00:00.000Z", "disk_used_pct": 50.0, "inode_used_pct": 10.0},
+        {"ts": "2026-05-12T10:30:00.000Z", "disk_used_pct": 50.5, "inode_used_pct": 10.2},
+    ]
+
+    a = detect_disk_growth(
+        metrics,
+        growth_window_s=1800,
+        disk_growth_pct_per_hr_warning=5.0,
+        inode_growth_pct_per_hr_warning=5.0,
+    )
+
+    assert a is None
+
+
+def test_detect_disk_growth_should_return_none_when_no_baseline_sample_in_window() -> None:
+    metrics = [{"ts": "2026-05-12T10:00:00.000Z", "disk_used_pct": 50.0}]
+
+    assert detect_disk_growth(metrics) is None
+
+
+def test_detect_disk_growth_should_carry_null_inode_dim_when_inode_signal_absent() -> None:
+    # disk-only samples (no inode_used_pct key) -- the inode dim stays present
+    # but None, per the "carries BOTH dims" contract.
+    metrics = [
+        {"ts": "2026-05-12T10:00:00.000Z", "disk_used_pct": 50.0},
+        {"ts": "2026-05-12T10:30:00.000Z", "disk_used_pct": 53.0},
+    ]
+
+    a = detect_disk_growth(metrics, disk_growth_pct_per_hr_warning=5.0)
+
+    assert a is not None
+    assert a.context["inode_pct_per_hr"] is None
 
 
 def test_detect_mem_pressure_should_return_alert_when_available_and_free_are_both_low() -> None:

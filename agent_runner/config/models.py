@@ -204,6 +204,13 @@ class PluginsConfig:
 class _HostHealthDiskConfig:
     warning_pct: float = 90.0  # disk_warning fires when disk_used_pct >= this
     critical_pct: float = 95.0  # disk_critical fires when disk_used_pct >= this
+    # disk_growth: observability-only WARNING when disk_used_pct/inode_used_pct
+    # climbs faster than a %/hr floor, measured over the oldest metrics sample
+    # landing within this many seconds of the latest one -- never a kill (see
+    # detect_disk_growth).
+    growth_window_s: int = 1800
+    disk_growth_pct_per_hr_warning: float = 5.0
+    inode_growth_pct_per_hr_warning: float = 5.0
 
 
 @dataclass(frozen=True)

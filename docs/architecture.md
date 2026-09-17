@@ -78,14 +78,14 @@ surfacing everywhere.
 | `event_kind_registry` | Prevent events.emit() typos / unregistered kinds slipping past CI | `tests/invariants/test_event_kind_registry.py` |
 <!-- /gen:defenses-table -->
 
-## Monitor: 13 detectors
+## Monitor: 14 detectors
 
 Three categories by `auto_action`:
 
 **Notify only** (`auto_action="none"`; severity `warning`, except `mem_pressure`
 which can also report `critical`):
-`timeout_rate`, `hung`, `orphan_chain`, `disk_warning`, `mem_pressure`,
-`mem_pressure_gate_inert`, `mem_signal_unavailable`, `network_fail`,
+`timeout_rate`, `hung`, `orphan_chain`, `disk_warning`, `disk_growth`,
+`mem_pressure`, `mem_pressure_gate_inert`, `mem_signal_unavailable`, `network_fail`,
 `rate_limit_active`, `anomaly_repetitive_active`, `supervisor_stale`.
 
 **Auto-stop service** (severity `critical`, `auto_action="stop_service"`):
@@ -134,6 +134,7 @@ tables in `docs/configuration.md`):
 <!-- source: agent_runner/_monitor_registry.py KNOWN_ALERT_KINDS / AUTO_STOP_ALERTS -->
 - `anomaly_repetitive_active`
 - `disk_critical` — **auto-stop**
+- `disk_growth`
 - `disk_warning`
 - `hung`
 - `mem_pressure`

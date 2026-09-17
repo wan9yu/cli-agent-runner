@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from agent_runner import metrics as metrics_module
 from agent_runner.metrics import _read_psi, collect, log_metrics, sample
 
 
@@ -80,6 +82,36 @@ def test_collect_should_merge_sample_fields(tmp_path: Path) -> None:
     assert "swap_sout" in m
     assert "psi_some_avg10" in m
     assert "mem_free_mb" in m
+
+
+def test_collect_should_include_inode_used_pct_within_bounds(tmp_path: Path) -> None:
+    m = collect(tmp_path)
+
+    assert "inode_used_pct" in m
+    assert m["inode_used_pct"] is None or 0.0 <= m["inode_used_pct"] <= 100.0
+
+
+def test_collect_should_set_inode_used_pct_none_when_filesystem_has_no_inode_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Wraps the REAL statvfs result (delegating every other field via
+    # __getattr__) so psutil's own internal os.statvfs() call --
+    # disk_usage() reads f_blocks/f_frsize/f_bavail -- keeps working; only
+    # f_files/f_ffree are forced to simulate a filesystem with no inode count.
+    real_statvfs = os.statvfs(str(tmp_path))
+
+    class _NoInodeStatvfs:
+        f_files = 0
+        f_ffree = 0
+
+        def __getattr__(self, name: str):
+            return getattr(real_statvfs, name)
+
+    monkeypatch.setattr(metrics_module.os, "statvfs", lambda path: _NoInodeStatvfs())
+
+    m = collect(tmp_path)
+
+    assert m["inode_used_pct"] is None
 
 
 def test_log_metrics_should_append_jsonl_with_event_field(

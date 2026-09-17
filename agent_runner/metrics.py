@@ -80,6 +80,10 @@ def sample() -> dict[str, Any]:
 def collect(disk_path: Path, *, agent_binary: str | None = None) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     du = psutil.disk_usage(str(disk_path))
+    st = os.statvfs(str(disk_path))
+    # f_files==0 means the filesystem does not track inode counts at all (some
+    # network/overlay filesystems) -- None signals "no signal", not "0% used".
+    inode_used_pct = round(100 * (1 - st.f_ffree / st.f_files), 1) if st.f_files else None
     out: dict[str, Any] = {
         "mem_total_mb": vm.total // (1024 * 1024),
         "mem_used_pct": round(vm.percent, 1),
@@ -87,6 +91,7 @@ def collect(disk_path: Path, *, agent_binary: str | None = None) -> dict[str, An
         "disk_total_gb": round(du.total / (1024**3), 1),
         "disk_free_gb": round(du.free / (1024**3), 1),
         "disk_used_pct": round(du.percent, 1),
+        "inode_used_pct": inode_used_pct,
     }
     try:
         load = os.getloadavg()

@@ -1,6 +1,6 @@
 """Pure anomaly detectors over events + metrics + log tails.
 
-13 built-in detectors. Two trigger ``auto_action="stop_service"``:
+14 built-in detectors. Two trigger ``auto_action="stop_service"``:
   * oauth_fail  — agent-reported auth failures, or an auth pattern in
     short-exit logs (retrying burns API quota)
   * disk_critical — disk_used_pct > 95% (writing more risks corruption)
@@ -215,6 +215,91 @@ def detect_disk_critical(
         f"disk_used_pct {val} >= {threshold_pct} — auto-stopping service",
         {"value": val, "threshold": threshold_pct, "hint": "Stop and clean disk before resuming"},
         auto_action="stop_service",
+    )
+
+
+def detect_disk_growth(
+    metrics: list[dict[str, Any]],
+    *,
+    growth_window_s: int = 1800,
+    disk_growth_pct_per_hr_warning: float = 5.0,
+    inode_growth_pct_per_hr_warning: float = 5.0,
+) -> Alert | None:
+    """WARNING when disk_used_pct and/or inode_used_pct is climbing faster than
+    its configured %/hr floor -- a generalized host-disk/inode-pressure signal
+    (pi's cross-round resume amplifies session-log growth; not pi-specific).
+
+    Rate is Δpct over the OLDEST metrics sample landing within
+    ``growth_window_s`` of the LATEST sample's ``ts`` (``agent_runner``'s
+    ``parse_iso_ms``), divided by the elapsed hours between them -- real
+    metrics land at variable wall-clock gaps, so a fixed-interval
+    ``(cur - prev)`` delta would misjudge the rate whenever polls drift.
+    Fewer than two samples inside the window (a cold start, or every prior
+    sample already aged out) returns ``None`` -- no baseline, no rate.
+
+    Observability only BY DESIGN, mirroring
+    :func:`host_health.cgroup_growth_rate_pressure`: unlike
+    :func:`detect_disk_critical`, this NEVER sets ``auto_action`` -- a
+    growth-rate signal is for an operator/plugin to act on, not a kill
+    trigger. Carries BOTH the disk and inode rate dims on one alert (not two
+    separate alert kinds) even when only one crosses its floor, so a reader
+    always sees the other dimension's current rate for context.
+    """
+    latest_ts_raw = _latest(metrics, "ts")
+    latest_disk = _latest(metrics, "disk_used_pct")
+    if latest_ts_raw is None or latest_disk is None:
+        return None
+    latest_ts = parse_iso_ms(latest_ts_raw)
+    latest_inode = _latest(metrics, "inode_used_pct")
+
+    baseline: dict[str, Any] | None = None
+    baseline_ts: datetime | None = None
+    for m in metrics:
+        ts_raw = m.get("ts")
+        if ts_raw is None or "disk_used_pct" not in m:
+            continue
+        ts = parse_iso_ms(ts_raw)
+        age_s = (latest_ts - ts).total_seconds()
+        if age_s < 0 or age_s > growth_window_s:
+            continue  # future-dated, or aged out of the growth window
+        if baseline_ts is None or ts < baseline_ts:
+            baseline, baseline_ts = m, ts
+
+    if baseline is None or baseline_ts is None or baseline_ts >= latest_ts:
+        return None  # no earlier in-window sample to diff against
+    elapsed_hr = (latest_ts - baseline_ts).total_seconds() / 3600.0
+    if elapsed_hr <= 0:
+        return None
+
+    disk_rate = (latest_disk - baseline["disk_used_pct"]) / elapsed_hr
+    baseline_inode = baseline.get("inode_used_pct")
+    inode_rate = (
+        (latest_inode - baseline_inode) / elapsed_hr
+        if latest_inode is not None and baseline_inode is not None
+        else None
+    )
+
+    disk_trip = disk_rate >= disk_growth_pct_per_hr_warning
+    inode_trip = inode_rate is not None and inode_rate >= inode_growth_pct_per_hr_warning
+    if not disk_trip and not inode_trip:
+        return None
+
+    bits = []
+    if disk_trip:
+        bits.append(f"disk +{disk_rate:.1f}%/hr (>= {disk_growth_pct_per_hr_warning})")
+    if inode_trip:
+        bits.append(f"inode +{inode_rate:.1f}%/hr (>= {inode_growth_pct_per_hr_warning})")
+    return _alert(
+        "disk_growth",
+        "warning",
+        f"{' and '.join(bits)} over the last {growth_window_s}s",
+        {
+            "disk_pct_per_hr": round(disk_rate, 2),
+            "disk_threshold_pct_per_hr": disk_growth_pct_per_hr_warning,
+            "inode_pct_per_hr": round(inode_rate, 2) if inode_rate is not None else None,
+            "inode_threshold_pct_per_hr": inode_growth_pct_per_hr_warning,
+            "window_s": growth_window_s,
+        },
     )
 
 

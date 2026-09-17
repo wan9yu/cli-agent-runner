@@ -81,7 +81,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `remote_failure_tolerance_s` | `int` | 90 |
 | `anomaly_repetitive_window` | `int` | 0 |
 | `anomaly_repetitive_threshold` | `int` | 0 |
-| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(disk=_HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0), memory=_HostHealthMemoryConfig(avail_min_mb=200, free_low_mb=16, swap_out_noise_floor_mb=32), pressure=_HostHealthPressureConfig(full_avg10_critical=60.0, some_avg10_warning=5.0, critical_consecutive_samples=3, in_round_terminate=True, cgroup_growth_rate_warning_mb_per_min=512.0, in_round_nudge=False), brake=_HostHealthBrakeConfig(memory_high=False, memory_high_step_pct=0, warning_consecutive_samples=3)) |
+| `host_health` | `MonitorHostHealthConfig` | MonitorHostHealthConfig(disk=_HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0, growth_window_s=1800, disk_growth_pct_per_hr_warning=5.0, inode_growth_pct_per_hr_warning=5.0), memory=_HostHealthMemoryConfig(avail_min_mb=200, free_low_mb=16, swap_out_noise_floor_mb=32), pressure=_HostHealthPressureConfig(full_avg10_critical=60.0, some_avg10_warning=5.0, critical_consecutive_samples=3, in_round_terminate=True, cgroup_growth_rate_warning_mb_per_min=512.0, in_round_nudge=False), brake=_HostHealthBrakeConfig(memory_high=False, memory_high_step_pct=0, warning_consecutive_samples=3)) |
 | `round_progress_interval_s` | `int` | 0 |
 | `supervisor_stale_threshold_s` | `int \| None` | None |
 
@@ -89,7 +89,7 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 
 | Field | Type | Default |
 |---|---|---|
-| `disk` | `_HostHealthDiskConfig` | _HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0) |
+| `disk` | `_HostHealthDiskConfig` | _HostHealthDiskConfig(warning_pct=90.0, critical_pct=95.0, growth_window_s=1800, disk_growth_pct_per_hr_warning=5.0, inode_growth_pct_per_hr_warning=5.0) |
 | `memory` | `_HostHealthMemoryConfig` | _HostHealthMemoryConfig(avail_min_mb=200, free_low_mb=16, swap_out_noise_floor_mb=32) |
 | `pressure` | `_HostHealthPressureConfig` | _HostHealthPressureConfig(full_avg10_critical=60.0, some_avg10_warning=5.0, critical_consecutive_samples=3, in_round_terminate=True, cgroup_growth_rate_warning_mb_per_min=512.0, in_round_nudge=False) |
 | `brake` | `_HostHealthBrakeConfig` | _HostHealthBrakeConfig(memory_high=False, memory_high_step_pct=0, warning_consecutive_samples=3) |
@@ -100,6 +100,9 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 |---|---|---|
 | `warning_pct` | `float` | 90.0 |
 | `critical_pct` | `float` | 95.0 |
+| `growth_window_s` | `int` | 1800 |
+| `disk_growth_pct_per_hr_warning` | `float` | 5.0 |
+| `inode_growth_pct_per_hr_warning` | `float` | 5.0 |
 
 #### `[monitor.host_health.memory]`
 

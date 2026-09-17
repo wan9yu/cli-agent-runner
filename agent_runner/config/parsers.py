@@ -517,6 +517,18 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
             critical_pct=_require_pct(
                 disk_d.get("critical_pct", 95.0), field="monitor.host_health.disk.critical_pct"
             ),
+            growth_window_s=_require_positive_int(
+                disk_d.get("growth_window_s", 1800),
+                field="monitor.host_health.disk.growth_window_s",
+            ),
+            disk_growth_pct_per_hr_warning=_require_positive_float(
+                disk_d.get("disk_growth_pct_per_hr_warning", 5.0),
+                field="monitor.host_health.disk.disk_growth_pct_per_hr_warning",
+            ),
+            inode_growth_pct_per_hr_warning=_require_positive_float(
+                disk_d.get("inode_growth_pct_per_hr_warning", 5.0),
+                field="monitor.host_health.disk.inode_growth_pct_per_hr_warning",
+            ),
         ),
         memory=_HostHealthMemoryConfig(
             avail_min_mb=_require_non_negative_int(

@@ -240,6 +240,9 @@ warning_consecutive_samples
 # agent_runner.config.models._HostHealthDiskConfig
 warning_pct
 critical_pct
+growth_window_s
+disk_growth_pct_per_hr_warning
+inode_growth_pct_per_hr_warning
 
 # agent_runner.config.models._HostHealthMemoryConfig
 avail_min_mb

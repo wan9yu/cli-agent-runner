@@ -1,6 +1,6 @@
 """Monitor — the cycle-edge: running detectors and dispatching on their alerts.
 
-13 built-in detectors run every poll (see ``_monitor_detectors``); two trigger
+14 built-in detectors run every poll (see ``_monitor_detectors``); two trigger
 ``auto_action="stop_service"``:
   * oauth_fail  — agent-reported auth failures, or an auth pattern in
     short-exit logs (retrying burns API quota)
@@ -36,6 +36,7 @@ from typing import Any, Literal
 from agent_runner._monitor_detectors import (
     detect_anomaly_repetitive_active,
     detect_disk_critical,
+    detect_disk_growth,
     detect_disk_warning,
     detect_hung,
     detect_mem_pressure,
@@ -102,7 +103,7 @@ def run_all_detectors(
     host_health_cfg: MonitorHostHealthConfig = _DEFAULT_HOST_HEALTH_CFG,
     log_dir: Path | None = None,
 ) -> list[Alert]:
-    """Run all 13 detectors; returns alerts (empty = healthy).
+    """Run all 14 detectors; returns alerts (empty = healthy).
 
     Each detector is isolated via ``_run_detector``: a crash in one emits
     ``detector_error`` (when ``log_dir`` is given) and does not stop the rest.
@@ -137,6 +138,15 @@ def run_all_detectors(
         (
             "disk_critical",
             lambda: detect_disk_critical(metrics, threshold_pct=host_health_cfg.disk.critical_pct),
+        ),
+        (
+            "disk_growth",
+            lambda: detect_disk_growth(
+                metrics,
+                growth_window_s=host_health_cfg.disk.growth_window_s,
+                disk_growth_pct_per_hr_warning=host_health_cfg.disk.disk_growth_pct_per_hr_warning,
+                inode_growth_pct_per_hr_warning=host_health_cfg.disk.inode_growth_pct_per_hr_warning,
+            ),
         ),
         ("mem_pressure", lambda: detect_mem_pressure(metrics, cfg=host_health_cfg)),
         (

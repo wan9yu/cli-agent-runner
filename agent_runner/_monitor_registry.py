@@ -26,6 +26,7 @@ KNOWN_ALERT_KINDS: frozenset[str] = frozenset(
         "orphan_chain",
         "disk_warning",
         "disk_critical",
+        "disk_growth",
         "mem_pressure",
         "mem_signal_unavailable",
         "mem_pressure_gate_inert",

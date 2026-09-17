@@ -13,7 +13,7 @@ full disks, runaway memory.
 
 ```
 ┌──────────────────────────────────────────┐
-│ Layer 3: The Witness (monitor)           │  13 detectors + auto-stop
+│ Layer 3: The Witness (monitor)           │  14 detectors + auto-stop
 ├──────────────────────────────────────────┤
 │ Layer 2: The Loop (serve)                │  signal-trapping restart loop
 ├──────────────────────────────────────────┤
@@ -50,7 +50,7 @@ Full walkthrough: [`docs/quickstart.md`](docs/quickstart.md).
 |---|---|
 | `init` / `install` / `uninstall` | `peek` — state snapshot |
 | `start` / `stop` / `kill` | `watch` — peek in a refresh loop |
-| `restart` / `status` | `monitor` — 13 detectors, alerts, auto-stop |
+| `restart` / `status` | `monitor` — 14 detectors, alerts, auto-stop |
 | `round` / `serve` | `events` — query / stream events.jsonl |
 | `upgrade` / `migrate` | `doctor` — read-only pre-flight |
 
@@ -75,10 +75,10 @@ Optionally pause the loop during off-hours: `[schedule]` run/pause windows gate
 `serve` (override with `serve --ignore-schedule`) — see the `[schedule]` section
 of [`docs/configuration.md`](docs/configuration.md).
 
-## Monitor: 13 detectors
+## Monitor: 14 detectors
 
 Notify only: `timeout_rate`, `hung`, `orphan_chain`, `disk_warning`,
-`mem_pressure`, `mem_pressure_gate_inert`, `mem_signal_unavailable`,
+`disk_growth`, `mem_pressure`, `mem_pressure_gate_inert`, `mem_signal_unavailable`,
 `network_fail`, `rate_limit_active`, `anomaly_repetitive_active`,
 `supervisor_stale`. `mem_pressure` also drives a separate serve-loop
 admission gate that defers or terminates rounds under real memory pressure —
