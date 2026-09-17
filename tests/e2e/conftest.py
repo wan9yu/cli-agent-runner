@@ -256,7 +256,10 @@ def pi_pre_oom_config(pi_workdir: str, pi_growth_script: str, pi_venv_python: st
         "[prompt]\n"
         f'file = "{prompt_path}"\n'
     )
-    prompt_body = "Synthetic pre-OOM property e2e -- unused by growth_child.py.\n"
+    # >= 500 bytes: the round's prompt_smoke_passes startup check (min 500)
+    # rejects a shorter prompt and the round exits 78 before any agent runs.
+    # The growth child ignores the prompt; this only has to clear the floor.
+    prompt_body = "Synthetic pre-OOM property e2e prompt; the growth child ignores it. " * 10
     import base64
 
     cfg_b64 = base64.b64encode(body.encode()).decode()
@@ -316,6 +319,13 @@ def pi_pre_oom_unit(
         "[Service]\n"
         "Type=simple\n"
         "Environment=HOME=/root\n"
+        # MemoryHigh (below MemoryMax) makes the approach to the cap a graceful
+        # throttle, not a hard reclaim whose PSI-full spike could trip the
+        # mid-round floor as a cgroup-reclaim artifact rather than genuine host
+        # pressure -- serve's own boot advisory (_serve_cgroup own_scope hint)
+        # prescribes this for a memory.max + unbounded-swap + terminate-armed
+        # shape. Keeps the terminate honestly host-pressure-driven.
+        "MemoryHigh=120M\n"
         "MemoryMax=150M\n"
         "MemorySwapMax=infinity\n"
         "Delegate=yes\n"
