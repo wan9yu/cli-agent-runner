@@ -29,6 +29,10 @@ from pathlib import Path
 
 import pytest
 
+from agent_runner._serve_policy import CRASH_LOOP_EXIT, CRASH_LOOP_THRESHOLD
+from agent_runner.api import assemble_prompt
+from agent_runner.config import load_config
+from agent_runner.events import GOAL_ASSESSMENT, GOAL_CHECK, ROUND_SUPERVISOR_WEDGED
 from tests._test_helpers import read_events_for_current_month
 
 # Same size floor test_bounded_run.py's fixtures rely on: the startup battery's
@@ -49,6 +53,12 @@ _CONVERGING_SCRIPT = (
     "printf '%s' \"$1\"; touch tick-$AGENT_RUNNER_ROUND_NUM; "
     '[ "$AGENT_RUNNER_ROUND_NUM" -ge 3 ] && touch done; exit 0'
 )
+
+# Task 8 (P2 armed-breaker): exits 1 immediately, well under
+# _serve_policy.CRASH_LOOP_SHORT_EXIT_S (60s) -- an "unknown short crash" on
+# every round, so post_round_decision's crash-loop breaker arms and trips at
+# exactly CRASH_LOOP_THRESHOLD consecutive rounds.
+_CRASH_SCRIPT = "exit 1"
 
 
 def _init_git(work_dir: Path) -> None:
@@ -73,7 +83,7 @@ def _init_git(work_dir: Path) -> None:
     )
 
 
-def _write_config(tmp_path: Path, *, agent_script: str) -> Path:
+def _write_config(tmp_path: Path, *, agent_script: str, with_goal: bool = True) -> Path:
     """A real agent-runner.toml wiring [goal] + a synthetic sh agent.
 
     ``[prompt] files`` lists the lessons ledger at index 1 (the boot guard
@@ -81,10 +91,28 @@ def _write_config(tmp_path: Path, *, agent_script: str) -> Path:
     dirty_action = "ignore"`` leaves the round's marker file in the tree so
     ``dirty_detected`` fires every round without git noise from stashing or
     auto-committing.
+
+    ``with_goal`` (Task 8, default True -- Task 7's two tests above are
+    unchanged): False omits the entire ``[goal]`` table AND drops
+    ``ledger.md`` from ``[prompt] files`` (leaving just ``["prompt.md"]``),
+    producing a config that never mentions goal machinery at all -- the P2
+    armed-breaker differential's "without" arm and P5's default-path arm.
     """
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
     command = json.dumps(["sh", "-c", agent_script, "sh"])
+    prompt_files = '["prompt.md", "ledger.md"]' if with_goal else '["prompt.md"]'
+    goal_block = (
+        (
+            "[goal]\n"
+            'ledger = "ledger.md"\n'
+            "[[goal.checks]]\n"
+            'name = "done_check"\n'
+            'cmd = ["test", "-f", "done"]\n'
+        )
+        if with_goal
+        else ""
+    )
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
         "schema_version = 1\n"
@@ -96,14 +124,10 @@ def _write_config(tmp_path: Path, *, agent_script: str) -> Path:
         f'log_dir = "{log_dir}"\n'
         "restart_delay_s = 1\n"
         "[prompt]\n"
-        'files = ["prompt.md", "ledger.md"]\n'
+        f"files = {prompt_files}\n"
         "[vcs]\n"
         'dirty_action = "ignore"\n'
-        "[goal]\n"
-        'ledger = "ledger.md"\n'
-        "[[goal.checks]]\n"
-        'name = "done_check"\n'
-        'cmd = ["test", "-f", "done"]\n'
+        f"{goal_block}"
     )
     return toml
 
@@ -206,4 +230,139 @@ def test_goal_steering_should_never_advise_when_the_goal_converges(tmp_path: Pat
     assert not ledger_path.exists(), (
         f"no advisory should ever be written to the ledger, found: "
         f"{ledger_path.read_text(encoding='utf-8')!r}"
+    )
+
+
+# --- Task 8: P2 firewall differential + P5 default-path -----------------------
+
+
+@pytest.mark.timeout(260)
+def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) -> None:
+    """P2 (I6) armed-breaker differential -- the BEHAVIORAL complement to Task
+    6's AST firewall (no kill-path module even references a goal_* kind
+    string) and tests/unit/test_goal_firewall_behavioral.py's events-derived
+    P2 unit golden (round_outcome is blind to goal_* kinds). This proves the
+    INTEGRATION: an agent that exits 1 FAST every round trips
+    post_round_decision's crash-loop breaker at EXACTLY CRASH_LOOP_THRESHOLD
+    consecutive rounds -- IDENTICALLY whether or not [goal] is configured. A
+    real goal-check subprocess running after every crashed round must not
+    inflate round_duration_s past CRASH_LOOP_SHORT_EXIT_S (which would
+    silently DISARM the breaker) and must not itself wedge the round
+    supervisor (round_supervisor_wedged must never fire from a check).
+
+    max_rounds == CRASH_LOOP_THRESHOLD bounds worst-case runtime regardless of
+    pass/fail: if the breaker ever failed to fire, serve would cleanly hit
+    max_rounds_reached (exit 0) instead of escalating restart delays without
+    limit -- a fast, crisp failure instead of a timeout.
+    """
+    no_goal_dir = tmp_path / "no_goal"
+    no_goal_dir.mkdir()
+    _init_git(no_goal_dir)
+    no_goal_cfg = _write_config(no_goal_dir, agent_script=_CRASH_SCRIPT, with_goal=False)
+    no_goal_log_dir = no_goal_dir / "logs"
+    proc_no_goal = _run_serve(no_goal_cfg, max_rounds=CRASH_LOOP_THRESHOLD, timeout_s=90)
+
+    with_goal_dir = tmp_path / "with_goal"
+    with_goal_dir.mkdir()
+    _init_git(with_goal_dir)
+    with_goal_cfg = _write_config(with_goal_dir, agent_script=_CRASH_SCRIPT, with_goal=True)
+    with_goal_log_dir = with_goal_dir / "logs"
+    proc_with_goal = _run_serve(with_goal_cfg, max_rounds=CRASH_LOOP_THRESHOLD, timeout_s=90)
+
+    for label, proc, log_dir, expect_goal_events in (
+        ("without [goal]", proc_no_goal, no_goal_log_dir, False),
+        ("with [goal]", proc_with_goal, with_goal_log_dir, True),
+    ):
+        assert proc.returncode == CRASH_LOOP_EXIT, (
+            f"{label}: expected crash_loop exit {CRASH_LOOP_EXIT}, got "
+            f"{proc.returncode}; stdout={proc.stdout!r} stderr={proc.stderr!r}"
+        )
+        events = read_events_for_current_month(log_dir)
+        crash_loop_events = [e for e in events if e.get("event") == "crash_loop"]
+        assert len(crash_loop_events) == 1, f"{label}: {crash_loop_events}"
+        assert crash_loop_events[0]["consecutive"] == CRASH_LOOP_THRESHOLD, (
+            f"{label}: {crash_loop_events[0]}"
+        )
+        round_logs = sorted((log_dir / "rounds").glob("R*-*.log"))
+        assert len(round_logs) == CRASH_LOOP_THRESHOLD, (
+            f"{label}: expected exactly {CRASH_LOOP_THRESHOLD} round logs (the breaker "
+            f"must stop AT the threshold, not before or after), found {round_logs}"
+        )
+        wedged = [e for e in events if e.get("event") == ROUND_SUPERVISOR_WEDGED]
+        assert wedged == [], f"{label}: a goal check must never wedge the supervisor: {wedged}"
+        goal_kinds = {e.get("event") for e in events} & {GOAL_CHECK, GOAL_ASSESSMENT}
+        if expect_goal_events:
+            # done_check never passes (the crash script never touches `done`) --
+            # goal_check still fires every round even though it never
+            # satisfies; proves goal-checking itself ran alongside the crashes.
+            assert GOAL_CHECK in goal_kinds, f"{label}: expected goal_check events, got {events}"
+        else:
+            assert goal_kinds == set(), (
+                f"{label}: goal_* events present with no [goal] configured: {goal_kinds}"
+            )
+
+    # The differential itself: identical stop round and identical verdict
+    # whether or not [goal] is configured.
+    assert proc_no_goal.returncode == proc_with_goal.returncode
+    no_goal_crash = [
+        e for e in read_events_for_current_month(no_goal_log_dir) if e.get("event") == "crash_loop"
+    ][0]
+    with_goal_crash = [
+        e
+        for e in read_events_for_current_month(with_goal_log_dir)
+        if e.get("event") == "crash_loop"
+    ][0]
+    assert no_goal_crash["consecutive"] == with_goal_crash["consecutive"]
+    assert no_goal_crash["exit_code"] == with_goal_crash["exit_code"]
+
+
+def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_absent(
+    tmp_path: Path,
+) -> None:
+    """P5 (I13) default-path same-tree property: flipping [goal] off via
+    `_write_config`'s with_goal=False must not perturb prompt assembly at
+    all. Compares the assembled prompt for a with_goal=False config against a
+    SEPARATELY hand-authored config that never mentions goal machinery at all
+    (no [goal] table, no [[goal.checks]], no ledger.md [prompt] files entry)
+    -- written independently of `_write_config` so a subtly wrong
+    with_goal=False branch (e.g. an off-by-one dropping the wrong [prompt]
+    files entry) can't escape detection by comparing itself to itself. Pure
+    config-load + assemble_prompt -- no serve subprocess needed.
+    """
+    toggled_dir = tmp_path / "toggled"
+    toggled_dir.mkdir()
+    (toggled_dir / "prompt.md").write_text(_VALID_PROMPT)
+    toggled_path = _write_config(toggled_dir, agent_script=_TREADMILL_SCRIPT, with_goal=False)
+
+    naive_dir = tmp_path / "naive"
+    naive_dir.mkdir()
+    (naive_dir / "prompt.md").write_text(_VALID_PROMPT)
+    naive_path = naive_dir / "agent-runner.toml"
+    naive_path.write_text(
+        "schema_version = 1\n"
+        "[agent]\n"
+        f"command = {json.dumps(['sh', '-c', _TREADMILL_SCRIPT, 'sh'])}\n"
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{naive_dir}"\n'
+        f'log_dir = "{tmp_path / "naive_logs"}"\n'
+        "restart_delay_s = 1\n"
+        "[prompt]\n"
+        'files = ["prompt.md"]\n'
+        "[vcs]\n"
+        'dirty_action = "ignore"\n'
+    )
+
+    cfg_toggled = load_config(toggled_path)
+    cfg_naive = load_config(naive_path)
+    assert cfg_toggled.goal is None, "with_goal=False must produce cfg.goal is None"
+    assert cfg_naive.goal is None
+
+    ctx = {"round_num": 1, "phase": None}
+    prompt_toggled = assemble_prompt(cfg_toggled, phase=None, context=ctx)
+    prompt_naive = assemble_prompt(cfg_naive, phase=None, context=ctx)
+
+    assert prompt_toggled == prompt_naive, (
+        "the goal path must add nothing to the assembled prompt when off -- "
+        f"toggled={prompt_toggled!r}\nnaive={prompt_naive!r}"
     )
