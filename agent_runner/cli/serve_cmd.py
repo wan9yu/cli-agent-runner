@@ -43,6 +43,7 @@ from agent_runner.api import (
     emit_schedule_paused,
     emit_schedule_phase_skipped,
     emit_schedule_resumed,
+    emit_session_resumed,
     emit_stop_file_detected,
     outer_round_ceiling_s,
 )
@@ -558,9 +559,8 @@ def _is_fresh_eyes_round(*, round_num: int, every_n: int | None) -> bool:
     return round_num % every_n == 0
 
 
-def _apply_fresh_eyes(cfg, log_dir, round_num: int, round_env: dict) -> None:
+def _apply_fresh_eyes(cfg, log_dir, round_num: int, round_env: dict, fresh_eyes: bool) -> None:
     """Set the round's fresh-eyes env flag and emit the trigger event when due."""
-    fresh_eyes = _is_fresh_eyes_round(round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n)
     round_env["AGENT_RUNNER_FRESH_EYES"] = "1" if fresh_eyes else "0"
     if fresh_eyes:
         emit_fresh_eyes_round_triggered(
@@ -659,6 +659,45 @@ def _apply_cooperative_signal_env(
     round_env["AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL"] = name
 
 
+def _apply_resume_env(
+    cfg, round_env: dict, phase_arg: str | None, is_fresh_eyes: bool, session_ids: dict, log_dir
+) -> None:
+    """Publish this round's cross-round-resume flag + session id via
+    AGENT_RUNNER_RESUME_FLAG / AGENT_RUNNER_RESUME_SESSION_ID -- the 4th
+    serve->child env single-source (siblings _apply_reap_grace_env /
+    _apply_cooperative_signal_env). UNLIKE those boot-invariant siblings the id
+    is MUTABLE per-phase state: `session_ids` (keyed by PHASE, not binary --
+    per-role continuity) carries it across rounds; a first-use OR fresh-eyes
+    round mints a new uuid. A non-resume phase (resolve_resume_flag is None)
+    POPS both keys so a prior resume-capable phase's id never leaks onto this
+    round's child argv. Emits session_resumed only when RESUMING (id reused)."""
+    import uuid
+
+    from agent_runner._plugin_manifest import resolve_resume_flag
+
+    # Resume needs serve to PIN the child's phase. When phase_arg is None but
+    # [phases] exists, serve is non-phase-aware (phase_policy="wait", or
+    # --ignore-schedule) and the round child SELF-ROTATES phases by round_num --
+    # serve cannot know which agent ran, so publishing the base id would bleed
+    # one role's session across all rotated roles. Cold-start (pop) when the
+    # phase is ambiguous; resume only with an explicit phase or a single base
+    # agent (empty phases.list).
+    flag = resolve_resume_flag(cfg.profile_for(phase_arg).agent.binary)
+    if flag is None or (phase_arg is None and cfg.phases.list):
+        round_env.pop("AGENT_RUNNER_RESUME_FLAG", None)
+        round_env.pop("AGENT_RUNNER_RESUME_SESSION_ID", None)
+        return
+    sid = session_ids.get(phase_arg)
+    resuming = sid is not None and not is_fresh_eyes
+    if not resuming:
+        sid = str(uuid.uuid4())
+        session_ids[phase_arg] = sid
+    round_env["AGENT_RUNNER_RESUME_FLAG"] = flag
+    round_env["AGENT_RUNNER_RESUME_SESSION_ID"] = sid
+    if resuming:
+        emit_session_resumed(log_dir, session_id=sid, phase=phase_arg or "")
+
+
 def _capture_substrate(work_dir, cfg, log_dir, round_num, *, when):
     """Snapshot git-head + paths-hash and emit the round-substrate event for `when`."""
     git_head = compute_git_head(work_dir)
@@ -742,6 +781,10 @@ def cmd(args) -> int:
         _release_serve_lock(serve_lock_fd)
         raise ConfigError(f"phase-window overlap: {detail}; run `agent-runner doctor` for details")
     rounds_completed = 0
+    # Cross-round resume: this serve lifetime's minted session id per phase
+    # (None key = the base, no-override agent). Mutable, unlike grace_by_phase/
+    # cooperative_signal_by_phase above -- see _apply_resume_env.
+    session_ids: dict[str | None, str] = {}
     # Three independent consecutive-failure counters, one per breaker: b12
     # crash-loop (unknown short crashes), mem-loop (mem-terminated
     # rounds), no-progress (exit-0, no usage). LOC-neutral
@@ -801,10 +844,14 @@ def cmd(args) -> int:
             if stop["requested"]:
                 break  # SIGTERM landed during selection/back-off — don't spawn a round
             _capture_substrate(work_dir, cfg, log_dir, round_num, when="before")
-            _apply_fresh_eyes(cfg, log_dir, round_num, round_env)
+            is_fresh_eyes = _is_fresh_eyes_round(
+                round_num=round_num, every_n=cfg.runtime.fresh_eyes_every_n
+            )
+            _apply_fresh_eyes(cfg, log_dir, round_num, round_env, is_fresh_eyes)
             _apply_round_num_env(round_env, round_num)
             _apply_reap_grace_env(cfg, round_env, phase_arg, grace_by_phase)
             _apply_cooperative_signal_env(cfg, round_env, phase_arg, cooperative_signal_by_phase)
+            _apply_resume_env(cfg, round_env, phase_arg, is_fresh_eyes, session_ids, log_dir)
             round_log_path = log_dir / f"round-{round_num}.log"
             round_started = SYSTEM_CLOCK.monotonic()
             round_argv = [

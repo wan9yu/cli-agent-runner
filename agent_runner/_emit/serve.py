@@ -191,3 +191,15 @@ def emit_schedule_resumed(log_dir: Path, *, paused_for_s: int) -> None:
     from agent_runner.events import SCHEDULE_RESUMED, emit
 
     emit(log_dir, SCHEDULE_RESUMED, paused_for_s=paused_for_s)
+
+
+def emit_session_resumed(log_dir: Path, *, session_id: str, phase: str = "") -> None:
+    """Emit session_resumed when serve resumes an existing agent session on a
+    non-first round of an epoch (the runtime property peek cannot show). ``phase``
+    is omitted when empty so the base (no-override) phase stays a clean payload."""
+    from agent_runner.events import SESSION_RESUMED, emit
+
+    fields = {"session_id": session_id}
+    if phase:
+        fields["phase"] = phase
+    emit(log_dir, SESSION_RESUMED, **fields)

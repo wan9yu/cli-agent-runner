@@ -65,6 +65,7 @@ from agent_runner._emit.serve import (  # noqa: F401 — public re-export
     emit_schedule_paused,
     emit_schedule_phase_skipped,
     emit_schedule_resumed,
+    emit_session_resumed,
     emit_stalled_no_progress,
     emit_stop_file_detected,
 )
@@ -104,6 +105,7 @@ __all__ = [
     "emit_schedule_paused",
     "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
+    "emit_session_resumed",
     "emit_stale_index_lock_cleared",
     "emit_stalled_no_progress",
     "emit_stop_file_detected",

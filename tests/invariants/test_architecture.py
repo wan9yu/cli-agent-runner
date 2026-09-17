@@ -18,6 +18,7 @@ ALLOWED_SERVE_IMPORTS = {
     "os",
     "sys",
     "signal",
+    "uuid",
 }
 ALLOWED_SERVE_FROM = [
     ("agent_runner", {"metrics", "phase_select", "schedule"}),
@@ -25,7 +26,10 @@ ALLOWED_SERVE_FROM = [
         "agent_runner._notify",
         {"Listener", "NullListener", "NULL_LISTENER", "open_listener"},
     ),
-    ("agent_runner._plugin_manifest", {"resolve_sigterm_grace_s", "resolve_cooperative_signal"}),
+    (
+        "agent_runner._plugin_manifest",
+        {"resolve_sigterm_grace_s", "resolve_cooperative_signal", "resolve_resume_flag"},
+    ),
     ("agent_runner.config", {"ConfigError"}),
     ("agent_runner._substrate", {"compute_git_head", "compute_paths_hash"}),
     ("agent_runner.agent_runtime", {"_detect_container_run"}),
@@ -55,6 +59,7 @@ ALLOWED_SERVE_FROM = [
             "emit_schedule_paused",
             "emit_schedule_phase_skipped",
             "emit_schedule_resumed",
+            "emit_session_resumed",
             "outer_round_ceiling_s",
         },
     ),

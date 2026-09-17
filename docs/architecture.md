@@ -248,6 +248,7 @@ The result is recorded as `RoundResult.dirty_outcome: DirtyOutcome | None`, whic
 - `service_upgrade_rollback_failed`
 - `service_upgrade_rolled_back`
 - `service_upgraded`
+- `session_resumed`
 - `smoke_check_failed`
 - `stale_index_lock_cleared`
 - `stalled_no_progress`

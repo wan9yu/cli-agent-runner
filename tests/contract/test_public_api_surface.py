@@ -217,6 +217,7 @@ EXPECTED_API_SURFACE = {
     "emit_schedule_paused",
     "emit_schedule_phase_skipped",
     "emit_schedule_resumed",
+    "emit_session_resumed",
     "emit_stale_index_lock_cleared",
     # "emit_stalled_no_progress" added 0.2.16 Task 6: exit-0 no-progress breaker
     # (pi-class CLIs exit 0 on a provider failure that never reaches the model).

@@ -62,6 +62,7 @@ from agent_runner._emit import (  # noqa: E402,F401 — intentional bottom re-ex
     emit_schedule_paused,
     emit_schedule_phase_skipped,
     emit_schedule_resumed,
+    emit_session_resumed,
     emit_stale_index_lock_cleared,
     emit_stalled_no_progress,
     emit_stop_file_detected,
