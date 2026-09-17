@@ -1,6 +1,7 @@
 """Main round orchestration. Conducts the other modules; does not touch
 subprocess / git / prompt details directly. Pure rotation — no event-driven
-branches based on prior round state (§7 IMMUTABLE).
+branches based on prior round state (§7 IMMUTABLE) — EXCEPT the advisory-only
+goal-ledger fold, which the goal firewall proves cannot alter control flow.
 """
 
 from __future__ import annotations
@@ -438,6 +439,15 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     # Write the context to round-context.json
     context_store.atomic_write_json(log_dir / context_store.CONTEXT_FILE, base_ctx)
+
+    # Advisory-only goal steering, assessed BEFORE this round's own round_start
+    # lands -- so its window is the last k COMPLETED rounds, never this one.
+    if cfg.goal is not None:
+        from agent_runner.goal import assess_treadmill, write_ledger_advisory
+
+        advisory = assess_treadmill(log_dir)
+        if advisory is not None:
+            write_ledger_advisory(Path(cfg.goal.ledger), advisory, log_dir=log_dir)
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
     _agent_binary = profile.agent.binary

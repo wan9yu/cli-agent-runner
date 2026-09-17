@@ -298,6 +298,11 @@ codifies
 guarded_by
 current_state
 
+# agent_runner.goal.Advisory
+observation
+question
+confidence
+
 # agent_runner.hooks.HookContext
 work_dir
 log_dir

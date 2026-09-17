@@ -107,11 +107,20 @@ def test_git_cli_calls_should_be_limited_to_sanctioned_modules() -> None:
 
 
 def test_runner_module_should_not_read_events_jsonl() -> None:
-    """Ouroboros defense: runner writes events.jsonl but must never
-    read it back. Strict since 0.2.11 — after the back-off moved to ``_throttle``,
-    runner imports ``_throttle`` in NEITHER form, never globs ``events-*.jsonl``, and
-    never opens an events file. The events-derived throttle state that drives back-off
-    is read only by ``_throttle`` (which serve, not runner, calls)."""
+    """Ouroboros defense: runner writes events.jsonl but must never read it
+    back DIRECTLY. Strict since 0.2.11 — runner imports ``_throttle`` in
+    NEITHER form, never globs ``events-*.jsonl``, and never opens an events
+    file or calls ``event_log.scan``/``_tail_events`` itself.
+
+    0.3.12 carves out exactly ONE events-reading edge: ``agent_runner.goal``
+    (the advisory-only treadmill assessor + lessons-ledger writer, wired
+    behind ``cfg.goal is not None``). The read is delegated INTO goal.py —
+    which no firewall-scanned module (``_throttle.py``/``monitor.py``/
+    ``_monitor_detectors.py``/``_monitor_registry.py``/``_monitor_state.py``,
+    see ``tests/invariants/test_event_int_coercion.py``'s ``_SCANNED``) ever
+    imports — and the fold is structurally advisory-only (``goal.Advisory``
+    has no kill/severity/action field), so this edge cannot become a new way
+    for runner to branch on prior round state (§7)."""
     tree = ast.parse((PKG / "runner.py").read_text())
     import_targets: list[str] = []
     glob_patterns: list[str] = []
@@ -134,8 +143,18 @@ def test_runner_module_should_not_read_events_jsonl() -> None:
     assert import_targets, "no imports scanned in runner.py"  # vacuity-guard
     throttle_imports = [t for t in import_targets if "_throttle" in t]
     assert throttle_imports == [], f"runner.py imports _throttle (ouroboros): {throttle_imports}"
+    event_log_imports = [
+        t for t in import_targets if t == "agent_runner.event_log" or t == "event_log"
+    ]
+    assert event_log_imports == [], (
+        f"runner.py imports event_log directly (ouroboros): {event_log_imports}"
+    )
     events_globs = [g for g in glob_patterns if "events" in g]
     assert events_globs == [], f"runner.py globs events files (ouroboros read): {events_globs}"
+
+    assert "agent_runner.goal" in import_targets, (
+        "runner.py's ONE sanctioned events-reading edge (agent_runner.goal) is missing"
+    )
 
 
 def test_run_one_round_should_have_no_event_triggered_branches() -> None:
