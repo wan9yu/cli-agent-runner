@@ -21,6 +21,8 @@ import json
 import time
 from datetime import UTC, datetime
 
+import pytest
+
 from .conftest import _ssh
 
 # Ceiling for the whole property-wait loop. The growth child paces itself at
@@ -85,6 +87,10 @@ def _parse_ts(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
+# The repo-wide pytest-timeout default (60s) bounds wedged unit tests; this
+# real-hardware run needs the per-property wait ceiling plus the one-time pi
+# install + unit setup + teardown, so override it for this item.
+@pytest.mark.timeout(_WAIT_TIMEOUT_S + 600)
 def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup(
     pi_pre_oom_unit: dict,
     pi_workdir: str,
