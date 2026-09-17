@@ -109,3 +109,68 @@ def test_run_goal_checks_should_emit_one_event_per_check_when_multiple_checks_co
     evs = _events(tmp_log_dir)
     assert [e["name"] for e in evs] == ["a", "b"]
     assert [e["satisfied"] for e in evs] == [True, False]
+
+
+def test_run_goal_checks_should_emit_unsatisfied_when_command_missing(
+    tmp_log_dir: Path, tmp_path: Path
+) -> None:
+    """A misconfigured check (typo'd binary, missing from PATH) must not
+    crash the round child -- run_bounded's own subprocess.Popen raises OSError
+    before its timeout machinery ever engages; the check just reads as
+    unsatisfied, advisory-only."""
+    goal = GoalConfig(
+        checks=(_check("missing", ["definitely-not-a-binary-xyz"]),), ledger="ledger.md"
+    )
+
+    run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)
+
+    [ev] = _events(tmp_log_dir)
+    assert ev["event"] == "goal_check"
+    assert ev["name"] == "missing"
+    assert ev["satisfied"] is False
+    assert ev["value"] is None
+    assert ev["timed_out"] is False
+    assert ev["skipped"] is False
+    assert "error" in ev
+
+
+def test_run_goal_checks_should_resolve_relative_cwd_against_work_dir(
+    tmp_log_dir: Path, tmp_path: Path
+) -> None:
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "marker.txt").write_text("x")
+    goal = GoalConfig(
+        checks=(_check("in-sub", ["sh", "-c", "test -f marker.txt"], cwd="sub"),),
+        ledger="ledger.md",
+    )
+
+    run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)
+
+    [ev] = _events(tmp_log_dir)
+    assert ev["satisfied"] is True
+
+
+def test_resolve_check_cwd_should_keep_absolute_cwd_as_is(tmp_path: Path) -> None:
+    from agent_runner.goal import _resolve_check_cwd
+
+    absolute = tmp_path / "elsewhere"
+
+    resolved = _resolve_check_cwd(str(absolute), tmp_path / "work")
+
+    assert resolved == absolute
+
+
+def test_run_goal_checks_should_treat_non_finite_value_as_unparsed(
+    tmp_log_dir: Path, tmp_path: Path
+) -> None:
+    """nan isn't even equal to itself -- the treadmill assessor's "did the
+    value change" comparison must never see one."""
+    goal = GoalConfig(
+        checks=(_check("nan-check", ["sh", "-c", "echo nan; exit 1"]),), ledger="ledger.md"
+    )
+
+    run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)
+
+    [ev] = _events(tmp_log_dir)
+    assert ev["value"] is None

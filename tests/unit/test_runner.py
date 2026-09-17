@@ -478,6 +478,54 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
     assert len(stash_calls) == 1, "stash_orphan should be called once for stash mode"
 
 
+def test_run_one_round_inner_should_run_goal_checks_before_stash_removes_the_edit(
+    monkeypatch: pytest.MonkeyPatch, tmp_git_repo: Path
+) -> None:
+    """Pins the call-site placement: a goal check must observe the round's own
+    edit BEFORE vcs_state.resolve_dirty_tree's real `git stash -u` removes it
+    (dirty_action="stash") -- a future refactor that moved the call below
+    resolve_dirty_tree would flip this check's `satisfied` to False, catching
+    the regression. Uses a REAL git repo/stash (no vcs_state mocking) so the
+    ordering is genuinely exercised, not merely asserted."""
+    from agent_runner import runner
+    from agent_runner.config import GoalConfig, _GoalCheckConfig
+
+    log_dir = tmp_git_repo.parent / f"goal-order-logs-{tmp_git_repo.name}"
+    log_dir.mkdir()
+    prompt = tmp_git_repo.parent / f"goal-order-prompt-{tmp_git_repo.name}.md"
+    prompt.write_text("hi")
+
+    def fake_run(**_kwargs):
+        (tmp_git_repo / "edited.txt").write_text("from agent")
+        return RunResult(exit_code=0, duration_s=1.0, timed_out=False, pid=0)
+
+    monkeypatch.setattr(runner, "agent_runtime", _make_mock_runtime(fake_run))
+
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=["{prompt}"]),
+        runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir),
+        prompt=PromptConfig(file=prompt),
+        vcs=VcsConfig(dirty_action="stash"),
+        phases=PhasesConfig(),
+        goal=GoalConfig(
+            checks=(_GoalCheckConfig(name="edited", cmd=["sh", "-c", "test -f edited.txt"]),),
+            ledger="ledger.md",
+        ),
+    )
+
+    round_result = runner._run_one_round_inner(cfg)
+
+    assert round_result.stashed is True, "the real git stash must have run"
+    assert not (tmp_git_repo / "edited.txt").exists(), "stash should have removed the edit"
+    from tests._test_helpers import read_events_for_current_month
+
+    goal_events = [e for e in read_events_for_current_month(log_dir) if e["event"] == "goal_check"]
+    assert len(goal_events) == 1
+    assert goal_events[0]["satisfied"] is True, (
+        "goal check ran AFTER the stash removed the edit -- placement regressed"
+    )
+
+
 def test_run_one_round_inner_should_skip_stash_when_dirty_action_is_ignore(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

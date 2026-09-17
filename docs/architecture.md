@@ -207,6 +207,7 @@ The result is recorded as `RoundResult.dirty_outcome: DirtyOutcome | None`, whic
 - `dirty_commit_failed`
 - `dirty_detected`
 - `fresh_eyes_round_triggered`
+- `goal_check`
 - `hook_failed`
 - `host_cgroup_memory_limit`
 - `max_rounds_reached`

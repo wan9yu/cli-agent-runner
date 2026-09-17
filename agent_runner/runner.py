@@ -533,6 +533,9 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         exit_cause=_exit_cause(result),
     )
 
+    # Run goal checks HERE, before vcs_state.resolve_dirty_tree below, so a
+    # check observes the round's edits pre-stash (dirty_action="stash" would
+    # otherwise clean the tree out from under it).
     if cfg.goal is not None:
         from agent_runner.goal import run_goal_checks
 
