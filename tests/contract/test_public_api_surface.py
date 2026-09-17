@@ -49,6 +49,7 @@ EXPECTED_EVENTS_API = {
     "now_iso_ms",
     "parse_iso_ms",
     "KNOWN_EVENT_KINDS",
+    "register_plugin_kind",
 }
 
 EXPECTED_HOOKS_API = {

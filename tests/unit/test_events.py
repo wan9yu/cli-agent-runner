@@ -8,11 +8,24 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner import events
-from agent_runner.events import KNOWN_EVENT_KINDS, emit
+from agent_runner.events import KNOWN_EVENT_KINDS, emit, register_plugin_kind
 
 
 def _read_jsonl(p: Path) -> list[dict]:
     return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+
+
+@pytest.fixture(autouse=True)
+def _restore_plugin_kinds():
+    """Hermetic isolation: ``_PLUGIN_KINDS`` is a module-global. Without a
+    snapshot+restore, a registration in one test leaks into KNOWN_EVENT_KINDS
+    for every later test (and flips docgen/count SSOTs + the monitor-remote
+    relay's ``sorted(KNOWN_EVENT_KINDS)`` pin).
+    """
+    snapshot = set(events._PLUGIN_KINDS)
+    yield
+    events._PLUGIN_KINDS.clear()
+    events._PLUGIN_KINDS.update(snapshot)
 
 
 def test_emit_should_write_json_line_when_kind_is_known(tmp_log_dir: Path) -> None:
@@ -249,3 +262,46 @@ def test_emit_transient_error_backoff_capped_should_omit_new_fields_with_old_sig
     # skip emitting None-valued kwargs).
     assert "original_reset_at_epoch" not in payload
     assert "consecutive_count" not in payload
+
+
+def test_register_plugin_kind_should_allow_emit_when_name_is_namespaced(
+    tmp_log_dir: Path,
+) -> None:
+    register_plugin_kind("myplugin_ok")
+
+    emit(tmp_log_dir, "myplugin_ok", round_num=1)
+
+    files = list(tmp_log_dir.glob("events-*.jsonl"))
+    rows = _read_jsonl(files[0])
+    assert rows[0]["event"] == "myplugin_ok"
+
+
+def test_emit_should_still_raise_value_error_when_kind_is_unregistered(
+    tmp_log_dir: Path,
+) -> None:
+    with pytest.raises(ValueError, match="unknown event kind"):
+        emit(tmp_log_dir, "typo_unregistered")
+
+
+def test_register_plugin_kind_should_raise_when_name_collides_with_builtin() -> None:
+    with pytest.raises(ValueError):
+        register_plugin_kind("round_start")
+
+
+def test_register_plugin_kind_should_raise_when_first_segment_is_builtin_prefix() -> None:
+    with pytest.raises(ValueError):
+        register_plugin_kind("round_myplugin")
+
+
+def test_register_plugin_kind_should_raise_when_name_has_no_underscore() -> None:
+    with pytest.raises(ValueError):
+        register_plugin_kind("plain")
+
+
+def test_register_plugin_kind_should_grow_known_event_kinds_when_registered() -> None:
+    before = len(KNOWN_EVENT_KINDS)
+
+    register_plugin_kind("myplugin_grew")
+
+    assert "myplugin_grew" in KNOWN_EVENT_KINDS
+    assert len(KNOWN_EVENT_KINDS) == before + 1

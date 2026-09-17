@@ -4,8 +4,11 @@
 supervisor code, collected by reflection (see ``_collect_builtin_kinds``).
 
 Public API:
-- ``KNOWN_EVENT_KINDS`` — the set of known kinds; supports ``in`` and iteration.
-  Preserved so ``from agent_runner.events import KNOWN_EVENT_KINDS`` still works.
+- ``KNOWN_EVENT_KINDS`` — the set of known kinds (builtin + plugin-registered);
+  supports ``in`` and iteration. Preserved so
+  ``from agent_runner.events import KNOWN_EVENT_KINDS`` still works.
+- ``register_plugin_kind(name)`` — an out-of-tree plugin registers a
+  namespaced custom event kind so ``emit()`` accepts it.
 - ``emit(log_dir, kind, /, **fields)`` — append a structured event line.
   ``log_dir`` and ``kind`` are positional-only so callers can pass
   ``log_dir=...`` as a payload field name without parameter shadowing.
@@ -117,29 +120,75 @@ def _collect_builtin_kinds() -> frozenset[str]:
 
 _BUILTIN_KINDS: frozenset[str] = _collect_builtin_kinds()
 
+# Runtime-registered plugin event kinds (out-of-tree producers). Unlike
+# _BUILTIN_KINDS this is mutable and populated at import/registration time by
+# plugin code via register_plugin_kind(), not by reflection over this module.
+_PLUGIN_KINDS: set[str] = set()
+
 
 def _is_known(name: str) -> bool:
-    return name in _BUILTIN_KINDS
+    return name in _BUILTIN_KINDS or name in _PLUGIN_KINDS
+
+
+def register_plugin_kind(name: str) -> None:
+    """Register a namespaced custom event kind for an out-of-tree plugin.
+
+    Restores a minimal affordance a prior release's subtraction of the
+    ``event_kinds`` manifest field removed: a plugin installed on a target
+    host still needs a validated way to emit its own event kinds through the
+    same ``emit()``/events-*.jsonl stream core uses, rather than
+    hand-appending JSON lines (unvalidated, and liable to collide with a
+    builtin kind).
+
+    ``name`` must be lowercase snake_case, contain at least one ``_`` (so it
+    is namespaced — e.g. ``myplugin_ok``), and its first underscore-segment
+    must not be a prefix any builtin kind uses (derived programmatically from
+    _BUILTIN_KINDS, not hand-maintained — e.g. ``round_myplugin`` collides
+    with the ``round_*`` builtin namespace even though ``round_myplugin``
+    itself isn't a builtin kind). Raises ValueError on any violation.
+    """
+    if (
+        not isinstance(name, str)
+        or not name
+        or name.startswith("_")
+        or not name.islower()
+        or not name.replace("_", "").isalnum()
+    ):
+        raise ValueError(f"invalid plugin event kind: {name!r}")
+    if "_" not in name:
+        raise ValueError(f"plugin event kind must be namespaced (contain '_'): {name!r}")
+    if name in _BUILTIN_KINDS:
+        raise ValueError(f"plugin event kind collides with a builtin kind: {name!r}")
+    prefix = name.split("_", 1)[0]
+    builtin_prefixes = {k.split("_", 1)[0] for k in _BUILTIN_KINDS}
+    if prefix in builtin_prefixes:
+        raise ValueError(f"plugin event kind {name!r} uses builtin-owned prefix {prefix!r}")
+    _PLUGIN_KINDS.add(name)
 
 
 class _KnownEventKindsView:
-    """Read-only view of built-in event kinds.
+    """Read-only view of known event kinds — builtin plus plugin-registered.
 
     Backward compat for ``from agent_runner.events import KNOWN_EVENT_KINDS``.
-    Supports ``in`` and ``iter``; intentionally does NOT support mutation.
+    Supports ``in`` and ``iter``; intentionally does NOT support mutation
+    (use ``register_plugin_kind()`` to add a plugin kind).
     """
 
     def __contains__(self, item: object) -> bool:
         return isinstance(item, str) and _is_known(item)
 
     def __iter__(self) -> Iterator[str]:
-        yield from sorted(_BUILTIN_KINDS)
+        yield from sorted(_BUILTIN_KINDS | _PLUGIN_KINDS)
 
     def __len__(self) -> int:
-        return len(_BUILTIN_KINDS)
+        return len(_BUILTIN_KINDS | _PLUGIN_KINDS)
 
     def __repr__(self) -> str:
-        return f"<KNOWN_EVENT_KINDS: {len(_BUILTIN_KINDS)} built-in>"
+        total = len(_BUILTIN_KINDS | _PLUGIN_KINDS)
+        return (
+            f"<KNOWN_EVENT_KINDS: {total} known "
+            f"({len(_BUILTIN_KINDS)} built-in, {len(_PLUGIN_KINDS)} plugin)>"
+        )
 
 
 KNOWN_EVENT_KINDS = _KnownEventKindsView()
