@@ -189,7 +189,7 @@ def pi_growth_script(pi_workdir: str) -> str:
     script_path = f"{pi_workdir}/growth_child.py"
     body = (
         "#!/usr/bin/env python3\n"
-        '"""Synthetic pre-OOM growth child for the agent-runner v0.3.11 gated\n'
+        '"""Synthetic pre-OOM growth child for agent-runner\'s gated\n'
         "real-cgroup e2e test (tests/e2e/test_e2e_pre_oom.py). Paced growth is\n"
         "REQUIRED -- see that module's docstring for why an unpaced loop would\n"
         'prove nothing.\n"""\n'
@@ -307,7 +307,7 @@ def pi_pre_oom_unit(
     exec_start = f"{pi_install_agent_runner} serve --config {pi_pre_oom_config} --max-rounds 1"
     body = (
         "[Unit]\n"
-        "Description=agent-runner v0.3.11 pre-OOM property e2e (transient test unit)\n"
+        "Description=agent-runner pre-OOM property e2e (transient test unit)\n"
         "\n"
         "[Service]\n"
         "Type=simple\n"
@@ -320,12 +320,19 @@ def pi_pre_oom_unit(
     )
     encoded = base64.b64encode(body.encode()).decode()
     _ssh(f"sudo -H git config --global --add safe.directory {pi_workdir}")
-    _ssh(
-        f"echo '{encoded}' | base64 -d | sudo tee {unit_path} > /dev/null && "
-        "sudo systemctl daemon-reload && "
-        f"sudo systemctl start {unit}"
-    )
+    # The try starts BEFORE the tee/daemon-reload/start write, not after: the
+    # unit file can land on disk (tee succeeds) even when daemon-reload or
+    # start then fails (Type=simple's start returns non-zero when ExecStart
+    # can't launch) -- with the old ordering that partial-setup failure
+    # raised past a `try` that hadn't started yet, so `finally` never ran and
+    # the unit file leaked on the real host. Starting the try here guarantees
+    # the same cleanup fires however far setup got.
     try:
+        _ssh(
+            f"echo '{encoded}' | base64 -d | sudo tee {unit_path} > /dev/null && "
+            "sudo systemctl daemon-reload && "
+            f"sudo systemctl start {unit}"
+        )
         yield {
             "unit": unit,
             # Delegate=yes does not relocate the unit in the cgroup tree -- a
@@ -336,6 +343,9 @@ def pi_pre_oom_unit(
             "cgroup_path": f"/sys/fs/cgroup/system.slice/{unit}",
         }
     finally:
+        # Tolerant of partial setup (check=False on every step): the unit may
+        # never have been started, or never even written, depending on how
+        # far the try block above got before raising.
         _ssh(f"sudo systemctl stop {unit}", check=False)
         _ssh(f"sudo rm -f {unit_path}", check=False)
         _ssh("sudo systemctl daemon-reload", check=False)

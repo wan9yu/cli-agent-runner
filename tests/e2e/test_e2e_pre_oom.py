@@ -1,4 +1,4 @@
-"""Gated real-cgroup pre-OOM property (v0.3.11 Component D-2).
+"""Gated real-cgroup pre-OOM property (Component D-2).
 
 THE PROPERTY: agent-runner TERMINATES + REAPS a memory-pressuring agent when
 HOST-wide swap/PSI crosses the calibration, on a real host, BEFORE the host
@@ -129,7 +129,7 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
         f"{_WAIT_TIMEOUT_S}s. kinds_seen={kinds_seen}. Two distinct failure "
         "modes: (a) the mid-round floor is genuinely not arming/terminating in "
         "time -- a CRITICAL finding, harden calibration/brake-arm/drain timing "
-        "before shipping v0.3.11; (b) serve itself is swap-starved in the "
+        "before shipping this release; (b) serve itself is swap-starved in the "
         "150M co-resident leaf and never got to sample -- bump MemoryMax so "
         "the growth child dominates without starving the supervisor, then "
         "re-run. Check host_cgroup_memory_limit's 'defer' field first: True "
