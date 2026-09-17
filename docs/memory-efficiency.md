@@ -717,6 +717,80 @@ since 0.2.17. No constrained-host-specific claim this release — resume is a
 pi-only session-id mechanism verified so far by an ssh-pi property test, not
 a memory-pressure-path change.
 
+## 0.3.10 → 0.3.11
+
+Three additive changes: a host disk/inode-growth `%`/hr WARNING detector
+(`detect_disk_growth`, the monitor's 14th built-in detector, reading a new
+`inode_used_pct` field `metrics.collect` derives from `os.statvfs`),
+`events.register_plugin_kind` (a namespaced custom-event-kind affordance for
+out-of-tree plugins, restoring a slice of the 0.3.9-removed `event_kinds`
+manifest field), and the small-host pre-OOM terminate-before-coma property
+now pinned as tests-of-record (test-only, no runtime code). Same macOS
+harness (§ methodology above), comparing **v0.3.10** = `bd63ce4` (measured
+in a throwaway worktree) against **0.3.11**, the tip of this branch.
+
+### 1. Import/startup RSS
+
+| | v0.3.10 | 0.3.11 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.55 MB | 23.46 MB | −0.10 MB (flat, within noise) |
+| RSS range | 23.45–23.70 MB | 23.34–23.56 MB | |
+| `sys.modules` count | 211 | 211 | +0 |
+
+Flat, as expected: `os.statvfs` is an attribute call on the already-imported
+stdlib `os` module (`metrics.py` imports `os` at module level already, for
+`os.getloadavg`) — it adds no new import edge. `register_plugin_kind` and its
+backing `_PLUGIN_KINDS` set are new names inside the already-imported
+`events.py`, not a new module. A direct `sys.modules` set diff of the
+`agent_runner.*` modules `import agent_runner.cli` loads confirms
+byte-for-byte identical, 70 modules, before and after.
+
+### 2. Base dependencies
+
+Unchanged: `psutil>=5.9` is still the only runtime dependency
+(`pip show cli-agent-runner` → `Requires: psutil`; `pyproject.toml`
+`dependencies` identical on both sides). No new dependency and no new extra.
+
+### 3. Module count, source LOC, largest module
+
+Tracked source only (`git ls-files`/`git ls-tree`, same convention as the
+rows above).
+
+| | v0.3.10 | 0.3.11 | Δ |
+|---|---|---|---|
+| `.py` files | 81 | 81 | +0 |
+| total LOC | 20,338 | 20,507 | +169 |
+| largest module | `migrations.py`, 972 | `migrations.py`, 972 | +0 |
+
+The `+169` LOC is the disk-growth detector + its config sub-table fields +
+the `register_plugin_kind` validation logic, plus their tests and the
+`docs/migrations/0.3.md` adaptation notes (not counted in this source-only
+table). No module decomposition this release; `migrations.py` stays the
+largest module, unchanged in size (this release's migration-notes additions
+landed in `docs/`, not in the executable `migrations.py` transform table).
+
+### 4. Per-round allocation growth
+
+`tests/invariants/test_round_alloc_growth.py` green, unmodified harness — no
+per-round reader it covers (`round_outcome`, `_active_throttles`,
+`post_round_decision`) changed shape. `detect_disk_growth` is one more
+closure in the monitor's existing `run_all_detectors` poll list (13 → 14,
+same shape as the other 13 detector entries, not a new retained per-round
+data structure), and `register_plugin_kind` runs once at plugin import/load
+time, not per round.
+
+### Constrained-host (honesty)
+
+Dev-host-relative (macOS) numbers only, same methodology as every release
+since 0.2.17. The disk/inode-growth detector's real value is generalized
+host-disk-pressure signal on a constrained field host under sustained
+session/log growth — unverified live so far (observability-only, no action
+path); the pre-OOM terminate-before-coma property is the release's
+constrained-host-relevant verification, covered separately by the
+always-on small-host calibration tests-of-record plus the
+`AGENT_RUNNER_E2E_PI`-gated real-cgroup property test, not by this page's
+RSS axis.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:

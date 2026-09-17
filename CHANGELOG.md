@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] - UNRELEASED
+
+### Added
+- Host disk/inode-growth WARNING detector: `[monitor.host_health.disk]` gains `disk_growth_pct_per_hr_warning`/`inode_growth_pct_per_hr_warning` (default 5.0%/hr each); a new `disk_growth` monitor alert kind (observability-only, no action taken).
+- `agent_runner.events.register_plugin_kind(name)` restores a namespaced custom-event-kind affordance for out-of-tree plugins, validated against the builtin-kind namespace.
+
+### Verified
+- Pre-OOM host-pressure terminate: small-host PSI/swap calibration pinned as always-on tests-of-record, plus a gated real-cgroup property test (`AGENT_RUNNER_E2E_PI`) confirming host-pressure terminate+reap fires before the host becomes unresponsive.
+
+### Docs
+- `docs/migrations/0.3.md` clarifies the 0.3.9 seam-subtraction adaptation contract (fold-in via `post_round_hooks`, `event_kinds` replacement) and documents `register_plugin_kind`.
+
+No config migration required. `peek --json` schema stays `2.6`.
+
 ## [0.3.10] - 2026-09-17
 
 ### Added
