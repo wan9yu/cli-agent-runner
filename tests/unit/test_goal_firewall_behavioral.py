@@ -171,3 +171,4 @@ def test_round_outcome_should_be_byte_identical_with_and_without_goal_events(
     assert "sentinel-goal-agent" not in outcome_with.usage_capable_by_agent
     assert "sentinel-goal-agent" not in outcome_with.latest_transient_per_agent
     assert "sentinel-goal-agent" not in outcome_with.newest_usage_ts_by_agent
+    assert "sentinel-goal-agent" not in outcome_with.backoff_exponent_by_agent

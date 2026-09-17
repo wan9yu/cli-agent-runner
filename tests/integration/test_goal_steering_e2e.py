@@ -247,8 +247,14 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
     consecutive rounds -- IDENTICALLY whether or not [goal] is configured. A
     real goal-check subprocess running after every crashed round must not
     inflate round_duration_s past CRASH_LOOP_SHORT_EXIT_S (which would
-    silently DISARM the breaker) and must not itself wedge the round
-    supervisor (round_supervisor_wedged must never fire from a check).
+    silently DISARM the breaker). The round_supervisor_wedged assertion below
+    is a cheap sanity check, not independent proof of "a check can't wedge
+    the supervisor" -- that guarantee is BY CONSTRUCTION via
+    timeout_budget's goal_checks_allowance_s fold into outer_ceiling_s (see
+    _serve_policy.timeout_budget), not something this fast-crashing fixture
+    can observe: a real wedge would surface as this test's own subprocess
+    TimeoutExpired (the outer ceiling vastly exceeds the 90s _run_serve
+    timeout here) before round_supervisor_wedged could ever be written.
 
     max_rounds == CRASH_LOOP_THRESHOLD bounds worst-case runtime regardless of
     pass/fail: if the breaker ever failed to fire, serve would cleanly hit
@@ -288,8 +294,11 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
             f"{label}: expected exactly {CRASH_LOOP_THRESHOLD} round logs (the breaker "
             f"must stop AT the threshold, not before or after), found {round_logs}"
         )
+        # Sanity check only -- see docstring: the "a check can't wedge the
+        # supervisor" guarantee is by construction (timeout_budget's
+        # goal_checks_allowance_s fold), not proven by this observation.
         wedged = [e for e in events if e.get("event") == ROUND_SUPERVISOR_WEDGED]
-        assert wedged == [], f"{label}: a goal check must never wedge the supervisor: {wedged}"
+        assert wedged == [], f"{label}: unexpected round_supervisor_wedged: {wedged}"
         goal_kinds = {e.get("event") for e in events} & {GOAL_CHECK, GOAL_ASSESSMENT}
         if expect_goal_events:
             # done_check never passes (the crash script never touches `done`) --
@@ -319,15 +328,33 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
 def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_absent(
     tmp_path: Path,
 ) -> None:
-    """P5 (I13) default-path same-tree property: flipping [goal] off via
-    `_write_config`'s with_goal=False must not perturb prompt assembly at
-    all. Compares the assembled prompt for a with_goal=False config against a
-    SEPARATELY hand-authored config that never mentions goal machinery at all
-    (no [goal] table, no [[goal.checks]], no ledger.md [prompt] files entry)
-    -- written independently of `_write_config` so a subtly wrong
-    with_goal=False branch (e.g. an off-by-one dropping the wrong [prompt]
-    files entry) can't escape detection by comparing itself to itself. Pure
-    config-load + assemble_prompt -- no serve subprocess needed.
+    """P5 (I13) default-path zero-footprint property.
+
+    Two DISTINCT checks, not one:
+
+    1. An ABSOLUTE anchor: for this fixed, fully-deterministic ``ctx``, the
+       naive (goal-naive) config's assembled prompt must be EXACTLY the
+       round-context json header plus the raw ``prompt.md`` body, byte for
+       byte -- nothing more, nothing less. This is the actual "goal path adds
+       nothing when off" lock: a relative comparison against another arm
+       cannot catch a leak that lands in BOTH arms (e.g. an unconditional
+       addition to ``assemble_prompt``, or one keyed on ``cfg.goal is None``)
+       -- an earlier version of this test did exactly that differential-only
+       comparison and a fable mutation (appending an unconditional literal to
+       ``_round_support.assemble_prompt``) proved it STILL PASSED. The exact-
+       bytes anchor below closes that gap: any extra byte anywhere fails it,
+       regardless of which arm(s) it lands in.
+    2. A differential: the with_goal=False `_write_config` fixture must match
+       a SEPARATELY, independently hand-authored config that never mentions
+       goal machinery at all (no [goal] table, no [[goal.checks]], no
+       ledger.md [prompt] files entry) -- written independently of
+       `_write_config` so a subtly wrong with_goal=False branch (e.g. an
+       off-by-one dropping the wrong [prompt] files entry) can't escape
+       detection by comparing itself to itself. This is fixture fidelity, not
+       a production lock by itself -- check 1 is what makes this test load-
+       bearing.
+
+    Pure config-load + assemble_prompt -- no serve subprocess needed.
     """
     toggled_dir = tmp_path / "toggled"
     toggled_dir.mkdir()
@@ -362,7 +389,27 @@ def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_
     prompt_toggled = assemble_prompt(cfg_toggled, phase=None, context=ctx)
     prompt_naive = assemble_prompt(cfg_naive, phase=None, context=ctx)
 
+    # Check 1 (ABSOLUTE anchor -- see docstring): for this fixed ctx, the
+    # round-context header (prompt_loader._format_context_block's documented
+    # ```json round-context ...``` shape) is fully deterministic, so the
+    # ENTIRE assembled prompt is pinned exact-bytes, not just "matches the
+    # other arm". 785 bytes total (header + the 740-byte _VALID_PROMPT body).
+    expected_naive_prompt = (
+        '```json round-context\n{\n  "round_num": 1,\n  "phase": null\n}\n```\n\n' + _VALID_PROMPT
+    )
+    assert prompt_naive == expected_naive_prompt, (
+        "ABSOLUTE anchor failed: the goal-naive config's assembled prompt must "
+        "be EXACTLY the round-context header + the raw prompt.md body -- any "
+        "extra bytes anywhere (even ones that would also land in the toggled "
+        f"arm) must fail here.\nprompt_naive={prompt_naive!r}\n"
+        f"expected={expected_naive_prompt!r}"
+    )
+
+    # Check 2 (differential -- fixture fidelity, see docstring): the
+    # with_goal=False fixture matches the independently hand-authored naive
+    # config byte for byte.
     assert prompt_toggled == prompt_naive, (
-        "the goal path must add nothing to the assembled prompt when off -- "
-        f"toggled={prompt_toggled!r}\nnaive={prompt_naive!r}"
+        "the with_goal=False fixture diverged from the independently "
+        f"hand-authored goal-naive config -- toggled={prompt_toggled!r}\n"
+        f"naive={prompt_naive!r}"
     )
