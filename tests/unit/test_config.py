@@ -427,6 +427,35 @@ auto_stop_on = "oauth_fail"
         load_config(toml)
 
 
+def test_goal_prefixed_auto_stop_on_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    """A goal-steering kind can never opt into the auto-stop kill path --
+    the advisory goal_check/goal_assessment path must stay structurally
+    unable to reach a kill decision (see
+    tests/invariants/test_goal_firewall.py)."""
+    from agent_runner.config import ConfigError
+
+    toml = _write_toml(
+        tmp_path,
+        """
+[agent]
+command = ["my-agent"]
+prompt_arg_template = ["{prompt}"]
+[runtime]
+work_dir = "."
+log_dir = "/tmp/logs"
+[prompt]
+file = "prompts/main.md"
+[monitor]
+auto_stop_on = ["oauth_fail", "goal_check"]
+""",
+    )
+
+    with pytest.raises(ConfigError, match="monitor.auto_stop_on"):
+        load_config(toml)
+
+
 def test_agent_env_block_should_populate_env_when_loaded(tmp_path: Path) -> None:
     toml = _write_toml(
         tmp_path,

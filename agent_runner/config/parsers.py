@@ -535,6 +535,21 @@ def _validate_remote_failure_tolerance(value: Any) -> int:
     return v
 
 
+def _validate_auto_stop_on(value: Any) -> list[str]:
+    """Validate monitor.auto_stop_on: a list of detector names, none of which
+    may carry the goal-steering prefix. The advisory goal-steering path must
+    stay structurally unable to opt into the kill path -- see
+    tests/invariants/test_goal_firewall.py."""
+    names = _require_str_list(value, field="monitor.auto_stop_on")
+    for name in names:
+        if name.startswith("goal"):
+            raise ConfigError(
+                f"monitor.auto_stop_on: {name!r} not allowed -- goal-steering kinds "
+                "are advisory-only and can never opt into the auto-stop kill path"
+            )
+    return names
+
+
 def _parse_monitor(monitor_d: dict) -> MonitorConfig:
     """Parse + validate the ``[monitor]`` table (incl. nested
     ``[monitor.host_health]`` and its ``.disk``/``.memory``/``.pressure``
@@ -635,7 +650,7 @@ def _parse_monitor(monitor_d: dict) -> MonitorConfig:
         auto_stop_on=(
             list(_DEFAULT_AUTO_STOP_ON)
             if "auto_stop_on" not in monitor_d
-            else _require_str_list(monitor_d["auto_stop_on"], field="monitor.auto_stop_on")
+            else _validate_auto_stop_on(monitor_d["auto_stop_on"])
         ),
         remote_failure_tolerance_s=_validate_remote_failure_tolerance(
             monitor_d.get("remote_failure_tolerance_s", _DEFAULT_REMOTE_FAILURE_TOLERANCE_S),

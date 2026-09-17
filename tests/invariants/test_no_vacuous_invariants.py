@@ -35,6 +35,7 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_docs_index_complete.py",
     "test_event_kind_registry.py",
     "test_event_kinds_ssot.py",
+    "test_goal_firewall.py",
     "test_hook_contract_docs.py",
     "test_module_sizes.py",
     "test_no_ai_signatures.py",
