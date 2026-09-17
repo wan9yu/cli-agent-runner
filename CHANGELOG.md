@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.10] - UNRELEASED
+## [0.3.10] - 2026-09-17
 
 ### Added
 - Cross-round resume for `pi`: `PluginManifest.resume_flag` (pi = `--session-id`) lets a preset declare an idempotent session flag; `serve` mints one session id per phase and publishes it via `AGENT_RUNNER_RESUME_FLAG`/`AGENT_RUNNER_RESUME_SESSION_ID`, and the round child appends `[flag, id]` to its command. claude/gemini/codewhale/kimi are untouched (`resume_flag` stays `None`) — later release.
