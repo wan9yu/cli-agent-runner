@@ -56,7 +56,8 @@ def outer_round_ceiling_s(cfg: Config, phase_arg: str | None) -> int:
             (cfg.profile_for(p).runtime.round_budget_s for p in (cfg.phases.list or [])),
             default=cfg.runtime.round_budget_s,
         )
-    _, outer_ceiling = timeout_budget(inner)
+    goal_checks_allowance_s = cfg.goal.checks_allowance_s if cfg.goal is not None else 0
+    _, outer_ceiling = timeout_budget(inner, goal_checks_allowance_s=goal_checks_allowance_s)
     return outer_ceiling
 
 

@@ -63,6 +63,29 @@ def test_budget_should_scale_linearly_with_round_timeout():
     assert b_ceiling - a_ceiling == 100
 
 
+def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance():
+    """The goal-check executor's own time budget folds into the SAME single
+    ceiling rather than a second one -- a slow check must never trip
+    round_supervisor_wedged (the goal path causing a kill would be a firewall
+    breach by timing)."""
+    _, without = _serve_policy.timeout_budget(100)
+    _, with_allowance = _serve_policy.timeout_budget(100, goal_checks_allowance_s=33)
+
+    assert with_allowance - without == 33
+
+
+def test_timeout_stop_sec_should_still_clear_outer_ceiling_with_a_nonzero_goal_allowance():
+    """service_unit.py's TimeoutStopSec margin (>= _ROUND_TERM_GRACE_S above
+    the outer ceiling) must survive a widened ceiling too -- a `systemctl
+    stop` must not SIGKILL a round that is draining normally just because a
+    goal-check allowance was folded in."""
+    timeout_stop_sec, outer_ceiling_s = _serve_policy.timeout_budget(
+        100, goal_checks_allowance_s=33
+    )
+
+    assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
+
+
 def test_leaf_margin_constants_should_mirror_their_source_of_truth():
     """_serve_policy is a dependency-free leaf (service_unit.py must not import
     api.py -- cycle), so two of its margin constants (_REAP_GRACE_S,

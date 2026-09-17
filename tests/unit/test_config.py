@@ -2577,6 +2577,50 @@ def test_goal_checks_should_parse_when_loaded(tmp_path: Path) -> None:
     assert second.timeout_s == 10  # default
 
 
+def test_goal_checks_allowance_s_should_sum_check_timeouts_plus_kill_grace_when_loaded(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + "[goal]\n"
+        'ledger = "ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest", "-q"]\n'
+        "timeout_s = 20\n"
+        "[[goal.checks]]\n"
+        'name = "lint"\n'
+        'cmd = ["ruff", "check", "."]\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    # timeout_s: 20 (explicit) + 10 (default) = 30, plus the bounded-subprocess
+    # kill grace (_bounded._KILL_GRACE_S == 3).
+    assert cfg.goal.checks_allowance_s == 33
+
+
+def test_goal_checks_allowance_s_should_equal_kill_grace_when_no_checks(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.md").write_text("a")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["a.md", "ledger.md"]\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.checks_allowance_s == 3
+
+
 def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
     toml = _write_toml(

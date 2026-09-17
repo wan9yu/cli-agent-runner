@@ -303,17 +303,18 @@ _STOP_GRACE_MARGIN_S = 10  # pad above _ROUND_TERM_GRACE_S for systemd stop-requ
 _ROUND_UNREAPED_RC = 137  # 128 + SIGKILL(9): reads as a kill in the crash-loop path
 
 
-def timeout_budget(round_budget_s: int) -> tuple[int, int]:
+def timeout_budget(round_budget_s: int, *, goal_checks_allowance_s: int = 0) -> tuple[int, int]:
     """Single source for the round-timeout safety budget.
 
     Returns ``(timeout_stop_sec, outer_ceiling_s)``:
 
     - ``outer_ceiling_s`` — the in-process outer wall-clock ceiling for the
       round subprocess (``api.outer_round_ceiling_s``): ``round_budget_s``
-      plus reap grace + git-commit ceiling + hook allowance, so it only trips
-      when the round supervisor itself is wedged, never during its own
-      bounded post-round cleanup. The reap margin must cover the widest grace
-      ANY round can be configured with -- a cooperative agent's
+      plus reap grace + git-commit ceiling + hook allowance + the goal-check
+      executor's own allowance, so it only trips when the round supervisor
+      itself is wedged, never during its own bounded post-round cleanup (nor
+      a slow-but-still-bounded goal check). The reap margin must cover the
+      widest grace ANY round can be configured with -- a cooperative agent's
       ``sigterm_grace_s`` is boot-capped at ``_ROUND_TERM_GRACE_S``
       (``config/models.py``'s mirror of this module's single source), not
       the non-cooperative default ``_REAP_GRACE_S``, so the margin is
@@ -324,12 +325,19 @@ def timeout_budget(round_budget_s: int) -> tuple[int, int]:
       SIGTERM to reach and drain the round (``_ROUND_TERM_GRACE_S``) plus a
       stop-request overhead pad, so `systemctl stop` never SIGKILLs a round
       that is draining normally.
+
+    ``goal_checks_allowance_s`` (default 0, byte-identical to the old
+    signature when omitted) is the caller's ``GoalConfig.checks_allowance_s``
+    when ``[goal]`` is configured -- folded into this ONE ceiling rather than
+    a second, separate one, so the goal-check path can never itself trip
+    ``round_supervisor_wedged``.
     """
     outer_ceiling_s = (
         round_budget_s
         + max(_REAP_GRACE_S, _ROUND_TERM_GRACE_S)
         + _GIT_COMMIT_TIMEOUT_S
         + _HOOK_ALLOWANCE_S
+        + goal_checks_allowance_s
     )
     timeout_stop_sec = outer_ceiling_s + _ROUND_TERM_GRACE_S + _STOP_GRACE_MARGIN_S
     return timeout_stop_sec, outer_ceiling_s

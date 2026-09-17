@@ -336,6 +336,22 @@ class GoalConfig:
     checks: tuple[_GoalCheckConfig, ...]
     ledger: str
 
+    @property
+    def checks_allowance_s(self) -> int:
+        """Worst-case wall-clock the goal-check executor can consume in one
+        round: every check's own timeout plus the bounded-subprocess kill
+        grace, so the round-timeout budget (``_serve_policy.timeout_budget``)
+        can fold it into the single outer ceiling -- a slow check must never
+        trip ``round_supervisor_wedged`` itself.
+
+        Local import: this module sits on the frozen startup graph
+        (``test_import_footprint.py``), and ``_bounded`` does not -- a
+        module-scope import here would pull it onto that graph.
+        """
+        from agent_runner._bounded import _KILL_GRACE_S
+
+        return sum(c.timeout_s for c in self.checks) + _KILL_GRACE_S
+
 
 @dataclass(frozen=True)
 class Profile:
