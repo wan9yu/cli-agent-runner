@@ -733,7 +733,7 @@ in a throwaway worktree) against **0.3.11**, the tip of this branch.
 
 | | v0.3.10 | 0.3.11 | Δ |
 |---|---|---|---|
-| RSS (avg of 5 cold runs) | 23.55 MB | 23.46 MB | −0.10 MB (flat, within noise) |
+| RSS (avg of 5 cold runs) | 23.55 MB | 23.46 MB | −0.09 MB (flat, within noise) |
 | RSS range | 23.45–23.70 MB | 23.34–23.56 MB | |
 | `sys.modules` count | 211 | 211 | +0 |
 
@@ -775,7 +775,7 @@ landed in `docs/`, not in the executable `migrations.py` transform table).
 per-round reader it covers (`round_outcome`, `_active_throttles`,
 `post_round_decision`) changed shape. `detect_disk_growth` is one more
 closure in the monitor's existing `run_all_detectors` poll list (13 → 14,
-same shape as the other 13 detector entries, not a new retained per-round
+same shape as the existing detector entries, not a new retained per-round
 data structure), and `register_plugin_kind` runs once at plugin import/load
 time, not per round.
 
