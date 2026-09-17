@@ -1,0 +1,177 @@
+"""End-to-end: the ``[goal]`` treadmill assessor's advisory-only fold, under
+a REAL ``serve`` loop with a synthetic (non-LLM) agent.
+
+The assessor reads the events tail from inside the round subprocess ``serve``
+spawns each round -- a shape a mock or a unit test around ``assess_treadmill``
+in isolation cannot exercise, because the in-progress round's own pre-spawn
+``round_substrate_before`` event is already in that tail by the time the
+assessor runs. Only a real ``serve`` loop, with real round subprocesses,
+proves the advisory actually reaches the FRESH round's own prompt (not a
+stale unit-test event list).
+
+The synthetic agent (a tiny ``sh -c`` script) exits 0, touches a per-round
+marker file (the CLI-agnostic "activity" signal via git dirty-tree
+detection), and echoes its own full prompt argument to stdout -- which
+``serve`` captures verbatim into that round's ``logs/rounds/R{n}-*.log``.
+Echoing the prompt is how this test proves the ledger's advisory bytes
+actually reached the fresh child's argv, not just that the ledger file was
+written.
+
+No ssh, no LLM -- plain CI.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from tests._test_helpers import read_events_for_current_month
+
+# Same size floor test_bounded_run.py's fixtures rely on: the startup battery's
+# prompt_smoke_passes check requires >= 500 assembled bytes.
+_VALID_PROMPT = "placeholder agent task prompt line. " * 20
+
+# Exits 0, touches a per-round marker (the round's own git-dirty activity
+# signal), and echoes the full prompt it was given -- serve captures that
+# echo verbatim into the round's own agent log.
+_TREADMILL_SCRIPT = "printf '%s' \"$1\"; touch tick-$AGENT_RUNNER_ROUND_NUM; exit 0"
+
+# Same shape, but also touches `done` once the round number reaches 3 -- the
+# goal-check `test -f done` starts passing from round 3 onward, so the
+# assessor should see the check's status change and never call it stuck.
+_CONVERGING_SCRIPT = 'printf \'%s\' "$1"; [ "$AGENT_RUNNER_ROUND_NUM" -ge 3 ] && touch done; exit 0'
+
+
+def _init_git(work_dir: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=work_dir, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=work_dir, check=True)
+    # logs/ gitignored so the round-to-round "dirty" signal comes only from
+    # the agent's own per-round marker file, not from event-log churn.
+    (work_dir / ".gitignore").write_text("logs/\n")
+    (work_dir / "prompt.md").write_text(_VALID_PROMPT)
+    subprocess.run(["git", "add", ".gitignore", "prompt.md"], cwd=work_dir, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        cwd=work_dir,
+        check=True,
+    )
+
+
+def _write_config(tmp_path: Path, *, agent_script: str) -> Path:
+    """A real agent-runner.toml wiring [goal] + a synthetic sh agent.
+
+    ``[prompt] files`` lists the lessons ledger at index 1 (the boot guard
+    requires index >= 1 -- the ledger doesn't exist at cold start). ``[vcs]
+    dirty_action = "ignore"`` leaves the round's marker file in the tree so
+    ``dirty_detected`` fires every round without git noise from stashing or
+    auto-committing.
+    """
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    command = json.dumps(["sh", "-c", agent_script, "sh"])
+    toml = tmp_path / "agent-runner.toml"
+    toml.write_text(
+        "schema_version = 1\n"
+        "[agent]\n"
+        f"command = {command}\n"
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{tmp_path}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "restart_delay_s = 1\n"
+        "[prompt]\n"
+        'files = ["prompt.md", "ledger.md"]\n'
+        "[vcs]\n"
+        'dirty_action = "ignore"\n'
+        "[goal]\n"
+        'ledger = "ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "done_check"\n'
+        'cmd = ["test", "-f", "done"]\n'
+    )
+    return toml
+
+
+def _run_serve(cfg_path: Path, *, max_rounds: int, timeout_s: int) -> subprocess.CompletedProcess:
+    # Real `serve`, run in the FOREGROUND (never backgrounded) with its own
+    # bounded subprocess timeout -- the pattern tests/integration/
+    # test_bounded_run.py uses for the same reason (widened for real python
+    # interpreter startup x N rounds, not because anything is expected to hang).
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent_runner.cli",
+            "--config",
+            str(cfg_path),
+            "serve",
+            "--max-rounds",
+            str(max_rounds),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
+
+
+@pytest.mark.timeout(120)
+def test_goal_steering_should_fold_one_advisory_into_the_fresh_round_when_treadmilling(
+    tmp_path: Path,
+) -> None:
+    _init_git(tmp_path)
+    cfg_path = _write_config(tmp_path, agent_script=_TREADMILL_SCRIPT)
+    log_dir = tmp_path / "logs"
+
+    # k (_TREADMILL_WINDOW_ROUNDS) = 3: the assessor needs 3 completed rounds
+    # in its window before it can fire (round 4), plus one more round (5) to
+    # prove the edge-trigger doesn't refire on a still-matching pattern.
+    proc = _run_serve(cfg_path, max_rounds=5, timeout_s=100)
+
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    events = read_events_for_current_month(log_dir)
+    assessments = [e for e in events if e.get("event") == "goal_assessment"]
+    assert len(assessments) == 1, f"expected exactly one goal_assessment event, got {assessments}"
+
+    ledger_path = tmp_path / "ledger.md"
+    assert ledger_path.exists(), "the advisory fired but the ledger was never written"
+    ledger_content = ledger_path.read_text(encoding="utf-8")
+    assert ledger_content.count("### Goal assessment --") == 1, (
+        f"expected exactly one advisory block in the ledger, got:\n{ledger_content!r}"
+    )
+
+    # The load-bearing assertion: round 4 (K+1) is the fresh child whose own
+    # prompt must carry the just-written advisory -- proving the steer
+    # reached the fresh subprocess, not merely that the ledger got written.
+    r4_logs = sorted((log_dir / "rounds").glob("R4-*.log"))
+    assert len(r4_logs) == 1, f"expected exactly one R4 round log, found {r4_logs}"
+    r4_content = r4_logs[0].read_text(encoding="utf-8")
+    assert ledger_content in r4_content, (
+        "the ledger's advisory bytes did not reach round 4's fresh agent "
+        f"subprocess prompt.\nledger:\n{ledger_content!r}\n\nR4 log:\n{r4_content!r}"
+    )
+
+
+@pytest.mark.timeout(120)
+def test_goal_steering_should_never_advise_when_the_goal_converges(tmp_path: Path) -> None:
+    _init_git(tmp_path)
+    cfg_path = _write_config(tmp_path, agent_script=_CONVERGING_SCRIPT)
+    log_dir = tmp_path / "logs"
+
+    proc = _run_serve(cfg_path, max_rounds=5, timeout_s=100)
+
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    events = read_events_for_current_month(log_dir)
+    assessments = [e for e in events if e.get("event") == "goal_assessment"]
+    assert assessments == [], f"a converging goal must never be advised, got {assessments}"
+
+    ledger_path = tmp_path / "ledger.md"
+    assert not ledger_path.exists(), (
+        f"no advisory should ever be written to the ledger, found: "
+        f"{ledger_path.read_text(encoding='utf-8')!r}"
+    )
