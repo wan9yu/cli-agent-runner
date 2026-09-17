@@ -50,8 +50,17 @@ def _wait_until(predicate, timeout_s: float, interval_s: float = 1.0) -> bool:
 
 def _read_events(pi_workdir: str) -> list[dict]:
     """Every event line under this round's log_dir, oldest -> newest, tolerant
-    of a not-yet-created events file (round hasn't started ticking yet)."""
-    r = _ssh(f"cat {pi_workdir}/logs/events-*.jsonl 2>/dev/null", check=False)
+    of a not-yet-created events file (round hasn't started ticking yet).
+
+    serve runs as root in the system-scope unit (required -- the host has no
+    user cgroup delegation), so its event logs and the log_dir are root-owned;
+    read them under ``sudo sh -c`` so both the glob expansion and the cat run
+    as root, not as the unprivileged ssh user (which would silently read zero
+    events depending on root's umask)."""
+    r = _ssh(
+        f"sudo sh -c 'cat {pi_workdir}/logs/events-*.jsonl 2>/dev/null'",
+        check=False,
+    )
     out: list[dict] = []
     for line in r.stdout.splitlines():
         line = line.strip()
@@ -125,6 +134,27 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
     kinds_seen = sorted({e.get("event") for e in seen_events})
     print(f"[pre-oom] {len(seen_events)} events captured; kinds={kinds_seen}")
 
+    if fired is None:
+        # Self-diagnose a zero/weak-signal failure inline (defer symptom via
+        # swap.max, child growth via current, leaf OOM, host-pressure envelope)
+        # so the failure mode is legible without a separate post-mortem.
+        diag = _ssh(
+            f"sudo sh -c 'echo swap.max=$(cat {cgroup_path}/memory.swap.max 2>/dev/null); "
+            f"echo current=$(cat {cgroup_path}/memory.current 2>/dev/null); "
+            f"cat {cgroup_path}/memory.events 2>/dev/null'",
+            check=False,
+        )
+        print(f"[pre-oom][diag] leaf cgroup:\n{diag.stdout}{diag.stderr}")
+        psi = [
+            s["psi_full_avg10"] for _, s in pressure_samples if s.get("psi_full_avg10") is not None
+        ]
+        sout = [s["swap_sout"] for _, s in pressure_samples if s.get("swap_sout") is not None]
+        print(
+            f"[pre-oom][diag] {len(pressure_samples)} host samples; "
+            f"psi_full_avg10 {(min(psi), max(psi)) if psi else 'NA'}; "
+            f"swap_sout {(min(sout), max(sout)) if sout else 'NA'}"
+        )
+
     # go/no-go watch-item (co-residency): serve runs IN the same 150M leaf as
     # the growth child, so its own ~10s sampler could itself be swap-starved.
     # A full-timeout miss with zero critical/brake/terminate signal at all is
@@ -197,8 +227,11 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
     # branch: the brake throttles, it does not kill the round, so no reap is
     # expected when only memory_high_engaged fired. ---
     if outcome == "TERMINATE":
+        # sudo: the growth child runs as root (child of the root serve unit);
+        # a bare pgrep could miss it (false "reaped") if the host hides other
+        # users' PIDs.
         reaped = _wait_until(
-            lambda: _ssh(f"pgrep -f {pi_growth_script}", check=False).returncode != 0,
+            lambda: _ssh(f"sudo pgrep -f {pi_growth_script}", check=False).returncode != 0,
             timeout_s=_REAP_TIMEOUT_S,
         )
         assert reaped, (

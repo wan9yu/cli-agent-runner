@@ -240,6 +240,10 @@ def pi_pre_oom_config(pi_workdir: str, pi_growth_script: str, pi_venv_python: st
     prompt_path = f"{pi_workdir}/p.md"
     log_dir = f"{pi_workdir}/logs"
     body = (
+        # schema_version boot gate (v0.3.0): serve rejects a config without it
+        # ("config predates schema_version"). Must be the file's first line,
+        # before any [table] header, per TOML top-level-key ordering.
+        "schema_version = 1\n"
         "[agent]\n"
         f'command = ["{pi_venv_python}", "{pi_growth_script}"]\n'
         'prompt_arg_template = ["{prompt}"]\n'
