@@ -220,6 +220,20 @@ def _resolve_cooperative_signal() -> signal.Signals:
     return resolved if resolved is not None else signal.SIGTERM
 
 
+def _resolve_resume_args() -> list[str]:
+    """The ``[flag, session_id]`` the round child appends for cross-round
+    resume, or ``[]`` when no serve parent published them (systemd / standalone
+    ``round`` -> cold start by construction). Pure consumption -- the id is
+    minted once serve-side and copied verbatim; the child NEVER derives it.
+    Sibling of ``_resolve_reap_grace_s`` / ``_resolve_cooperative_signal``: the
+    same serve->child env single-source, both-vars-or-neither."""
+    flag = os.environ.get("AGENT_RUNNER_RESUME_FLAG")
+    session_id = os.environ.get("AGENT_RUNNER_RESUME_SESSION_ID")
+    if flag and session_id:
+        return [flag, session_id]
+    return []
+
+
 def _previous_block(prev: context_store.Status | None, dirty_last: bool) -> dict[str, Any] | None:
     if prev is None:
         return None
@@ -507,6 +521,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         on_container_orphan_risk=_container_orphan_risk_emit,
         reap_grace_s=_resolve_reap_grace_s(),
         cooperative_first_signal=_resolve_cooperative_signal(),
+        resume_args=_resolve_resume_args(),
     )
     events.emit(
         log_dir,

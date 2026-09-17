@@ -634,6 +634,7 @@ def run(
     clock: Clock = SYSTEM_CLOCK,
     reap_grace_s: int = REAP_GRACE_S,
     cooperative_first_signal: signal.Signals = signal.SIGTERM,
+    resume_args: tuple[str, ...] = (),
 ) -> RunResult:
     """Spawn the agent subprocess and wait for exit or timeout.
 
@@ -652,6 +653,14 @@ def run(
     wall stays SIGTERM-first, never by luck. Defaults to SIGTERM (``None``
     cooperative_stop / standalone `agent-runner round`), so every existing caller
     is unchanged.
+
+    resume_args: ``[flag, session_id]`` appended after ``command`` and before
+    the prompt args, for a resume-capable agent picking its session back up
+    across rounds. The id is minted once by the caller's own env-published
+    single-source (``runner._resolve_resume_args``) and copied verbatim here --
+    this module never mints or derives one (no ``os.environ`` read; see the
+    module docstring). Defaults to ``()``, so every existing caller's argv is
+    byte-identical to before.
 
     work_dir: the agent child's working directory; callers pass the
     already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
@@ -760,10 +769,11 @@ def run(
     # template for stdin mode, but run() must be safe even if called
     # directly with a mismatched template. In stdin mode, never substitute
     # {prompt} into argv — build it verbatim so the prompt cannot reach argv.
+    resumed_command = list(spawn_command) + list(resume_args)
     argv = (
-        list(spawn_command) + list(prompt_arg_template)
+        list(resumed_command) + list(prompt_arg_template)
         if stdin_mode
-        else _build_argv(spawn_command, prompt_arg_template, prompt)
+        else _build_argv(resumed_command, prompt_arg_template, prompt)
     )
     # PWD pinned last — it mirrors cwd= (a correctness pin, not a knob), so
     # an [agent.env] PWD cannot silently diverge from where the child runs.
