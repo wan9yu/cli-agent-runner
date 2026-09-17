@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from agent_runner import vcs_state
+from agent_runner import _bounded, vcs_state
 from tests._test_helpers import read_events_for_current_month
 
 
@@ -38,8 +38,13 @@ def test_run_with_timeout_should_escalate_to_killpg_when_term_ignored(tmp_path, 
     """A plain `sleep` dies on the first SIGTERM, so it never exercises the killpg
     branch. A child that IGNORES SIGTERM proves TERM->grace->KILL actually reaches
     the KILL step: (a) GitTimeout still raised, (b) os.killpg(SIGKILL) fired, and
-    (c) the process is verifiably dead afterward -- not just terminate()-then-hope."""
-    monkeypatch.setattr(vcs_state, "_GIT_KILL_GRACE_S", 1)  # keep the test fast
+    (c) the process is verifiably dead afterward -- not just terminate()-then-hope.
+
+    The escalation mechanism itself now lives in the sanctioned run_bounded
+    primitive (agent_runner._bounded); vcs_state._run_with_timeout is a thin
+    wrapper, so the grace constant and killpg spy patch that module instead.
+    """
+    monkeypatch.setattr(_bounded, "_KILL_GRACE_S", 1)  # keep the test fast
     calls: list[tuple[int, int]] = []
     real_killpg = os.killpg
 
@@ -47,7 +52,7 @@ def test_run_with_timeout_should_escalate_to_killpg_when_term_ignored(tmp_path, 
         calls.append((pgid, sig))
         real_killpg(pgid, sig)
 
-    monkeypatch.setattr(vcs_state.os, "killpg", spy_killpg)
+    monkeypatch.setattr(_bounded.os, "killpg", spy_killpg)
 
     ignore_term = (
         "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"

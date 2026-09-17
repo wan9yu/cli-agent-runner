@@ -11,8 +11,6 @@ Stash safety rules (R820 + §9 IMMUTABLE):
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess  # noqa: TID251 — vcs_state.py is the only sanctioned git CLI caller
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -27,9 +25,6 @@ from agent_runner.clock import SYSTEM_CLOCK
 # Fixed git-commit ceiling (plugin-first: no new config knob). Feeds the outer
 # round ceiling (api.outer_round_ceiling_s) and is enforced on the commit itself.
 GIT_COMMIT_TIMEOUT_S = 120
-
-
-_GIT_KILL_GRACE_S = 3  # git dies fast on TERM; grace before we killpg the session
 
 
 class GitTimeout(RuntimeError, EnvironmentalError):  # noqa: N818 — brief-specified name
@@ -59,29 +54,18 @@ def _run_with_timeout(
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess in its OWN session under a wall-clock timeout, escalating
     TERM -> grace -> killpg on breach so a hung git leaves no descendants. Raises
-    GitTimeout on breach."""
-    proc = subprocess.Popen(
-        argv,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    try:
-        out, err = proc.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
-        try:
-            proc.communicate(timeout=_GIT_KILL_GRACE_S)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except OSError:
-                pass
-            proc.communicate()
-        raise GitTimeout(f"git {' '.join(argv[1:])[:100]} exceeded {timeout}s") from None
+    GitTimeout on breach.
+
+    Thin wrapper over the sanctioned ``run_bounded`` primitive (function-scope
+    import so ``agent_runner._bounded`` stays out of the startup graph) --
+    preserves git's existing raise-contract for ``_git`` callers.
+    """
+    from agent_runner._bounded import run_bounded
+
+    res = run_bounded(argv, cwd=cwd, timeout_s=timeout)
+    if res.timed_out:
+        raise GitTimeout(f"git {' '.join(argv[1:])[:100]} exceeded {timeout}s")
+    return subprocess.CompletedProcess(argv, res.rc, res.stdout, res.stderr)
 
 
 def _git(

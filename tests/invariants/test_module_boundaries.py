@@ -57,6 +57,7 @@ def test_subprocess_imports_should_be_limited_to_sanctioned_modules() -> None:
     # Sanctioned by repo-relative path, not basename: rglob sees 4 __init__.py.
     # Mirrors pyproject.toml's "subprocess".msg and per-file-ignores.
     sanctioned = {
+        "_bounded.py",
         "_install.py",
         "_lifecycle.py",
         "_procwait.py",

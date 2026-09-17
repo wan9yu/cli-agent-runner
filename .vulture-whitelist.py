@@ -6,6 +6,12 @@
 # bare name below marks one field "used". SSOT = the @dataclass definitions in
 # agent_runner/; a new field is covered by regenerating, never by editing here.
 
+# agent_runner._bounded.BoundedResult
+rc
+stdout
+stderr
+timed_out
+
 # agent_runner._monitor_state.LocalSource
 log_dir
 
