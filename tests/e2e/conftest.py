@@ -59,7 +59,10 @@ def pi_workdir(pi_session) -> Iterator[str]:
     try:
         yield workdir
     finally:
-        _ssh(f"rm -rf {workdir}", check=False)
+        # sudo: a root-scope serve unit (the pre-oom test) writes root-owned
+        # event logs into workdir/logs, which a bare pi-user rm can't remove --
+        # leaving skeleton dirs that leak on /tmp and pollute later glob reads.
+        _ssh(f"sudo rm -rf {workdir}", check=False)
 
 
 @pytest.fixture

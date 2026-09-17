@@ -103,9 +103,10 @@ def _parse_ts(ts: str) -> datetime:
 def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup(
     pi_pre_oom_unit: dict,
     pi_workdir: str,
-    pi_growth_script: str,
     pi_venv_python: str,
 ) -> None:
+    # (pi_growth_script is installed transitively via pi_pre_oom_config; the
+    # reap check matches its basename directly, so no direct param is needed.)
     unit = pi_pre_oom_unit["unit"]
     cgroup_path = pi_pre_oom_unit["cgroup_path"]
 
@@ -227,11 +228,14 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
     # branch: the brake throttles, it does not kill the round, so no reap is
     # expected when only memory_high_engaged fired. ---
     if outcome == "TERMINATE":
-        # sudo: the growth child runs as root (child of the root serve unit);
-        # a bare pgrep could miss it (false "reaped") if the host hides other
-        # users' PIDs.
+        # sudo: the growth child runs as root (child of the root serve unit),
+        # so a bare pgrep could miss it if the host hides other users' PIDs.
+        # The `[g]` bracket makes the pattern match the child's cmdline
+        # ("growth_child.py") but NOT the sudo/pgrep wrapper's own cmdline
+        # (literal "[g]rowth_child.py"), which would otherwise self-match and
+        # make the check report "still running" forever.
         reaped = _wait_until(
-            lambda: _ssh(f"sudo pgrep -f {pi_growth_script}", check=False).returncode != 0,
+            lambda: _ssh("sudo pgrep -f '[g]rowth_child.py'", check=False).returncode != 0,
             timeout_s=_REAP_TIMEOUT_S,
         )
         assert reaped, (
