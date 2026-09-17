@@ -1,4 +1,4 @@
-"""Cross-round pi session resume, end-to-end on ArgusPi.
+"""Cross-round pi session resume, end-to-end on the remote pi host.
 
 The first test drives the REAL `pi` CLI against a real provider to prove
 resume is an actual, observable property (session file identity + growth +
@@ -204,7 +204,7 @@ def pi_resume_config(pi_workdir: str) -> str:
     return cfg_path
 
 
-def test_two_round_pi_run_should_resume_the_same_session_when_run_on_argus_pi(
+def test_two_round_pi_run_should_resume_the_same_session_when_run_on_the_pi_host(
     pi_install_agent_runner: str,
     pi_workdir: str,
     pi_resume_config: str,

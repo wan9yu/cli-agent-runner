@@ -658,9 +658,9 @@ def run(
     the prompt args, for a resume-capable agent picking its session back up
     across rounds. The id is minted once by the caller's own env-published
     single-source (``runner._resolve_resume_args``) and copied verbatim here --
-    this module never mints or derives one (no ``os.environ`` read; see the
-    module docstring). Defaults to ``()``, so every existing caller's argv is
-    byte-identical to before.
+    this module never mints or derives one (no ``os.environ`` read for the
+    session id; see the module docstring). Defaults to ``()``, so every
+    existing caller's argv is byte-identical to before.
 
     work_dir: the agent child's working directory; callers pass the
     already-absolute cfg.runtime.work_dir. CLIs with no --cwd flag of their
