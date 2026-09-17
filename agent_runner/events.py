@@ -99,6 +99,16 @@ TRANSIENT_ERROR_RECOVERED = "transient_error_recovered"
 UPGRADE_START_FAILED = "upgrade_start_failed"
 
 
+def _is_snake_case_kind(s: str) -> bool:
+    """The legal event-kind name rule: lowercase snake_case, no leading '_'.
+
+    Single source shared by _collect_builtin_kinds (filtering this module's
+    constants) and register_plugin_kind (validating plugin-supplied names) so
+    the two cannot drift if the naming rule ever changes.
+    """
+    return s.islower() and not s.startswith("_") and s.replace("_", "").isalnum()
+
+
 def _collect_builtin_kinds() -> frozenset[str]:
     """Single-source: every module-level UPPER_CASE str constant whose value
     is a snake_case kind name is a builtin event kind. Drift between the
@@ -110,11 +120,7 @@ def _collect_builtin_kinds() -> frozenset[str]:
     return frozenset(
         v
         for k, v in vars(mod).items()
-        if k.isupper()
-        and isinstance(v, str)
-        and v.islower()
-        and not v.startswith("_")
-        and v.replace("_", "").isalnum()
+        if k.isupper() and isinstance(v, str) and _is_snake_case_kind(v)
     )
 
 
@@ -147,16 +153,13 @@ def register_plugin_kind(name: str) -> None:
     with the ``round_*`` builtin namespace even though ``round_myplugin``
     itself isn't a builtin kind). Raises ValueError on any violation.
     """
-    if (
-        not isinstance(name, str)
-        or not name
-        or name.startswith("_")
-        or not name.islower()
-        or not name.replace("_", "").isalnum()
-    ):
+    if not isinstance(name, str) or not name or not _is_snake_case_kind(name):
         raise ValueError(f"invalid plugin event kind: {name!r}")
     if "_" not in name:
         raise ValueError(f"plugin event kind must be namespaced (contain '_'): {name!r}")
+    # An exact builtin collision is also caught by the prefix check below (a
+    # builtin's own first-segment is always a builtin prefix), but flag it here
+    # for a clearer, more specific error message.
     if name in _BUILTIN_KINDS:
         raise ValueError(f"plugin event kind collides with a builtin kind: {name!r}")
     prefix = name.split("_", 1)[0]

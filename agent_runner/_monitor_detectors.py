@@ -262,8 +262,10 @@ def detect_disk_growth(
         age_s = (latest_ts - ts).total_seconds()
         if age_s < 0 or age_s > growth_window_s:
             continue  # future-dated, or aged out of the growth window
-        if baseline_ts is None or ts < baseline_ts:
-            baseline, baseline_ts = m, ts
+        # metrics is chronologically ascending, so the first in-window sample
+        # is the oldest -- the widest baseline; no later sample can be older.
+        baseline, baseline_ts = m, ts
+        break
 
     if baseline is None or baseline_ts is None or baseline_ts >= latest_ts:
         return None  # no earlier in-window sample to diff against
