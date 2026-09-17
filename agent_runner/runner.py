@@ -533,6 +533,16 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         exit_cause=_exit_cause(result),
     )
 
+    if cfg.goal is not None:
+        from agent_runner.goal import run_goal_checks
+
+        run_goal_checks(
+            cfg.goal,
+            work_dir=cfg.runtime.work_dir,
+            log_dir=log_dir,
+            dry_run=cfg.runtime.dry_run,
+        )
+
     _scan_round_log_for_network_blip(
         log_dir=log_dir,
         log_path=log_path,
