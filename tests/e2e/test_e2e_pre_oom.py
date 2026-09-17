@@ -8,6 +8,16 @@ This is NOT a cgroup ``memory.events.oom_kill`` race: the leaf's own OOM
 killer staying silent (0) while the host survives is part of the property,
 not the mechanism that proves it.
 
+What this proves, and what it does not: under the 150M ``MemoryMax`` safety
+envelope, the paced growth child's own cgroup-limit memstall dominates
+HOST-wide PSI-full, which drives the real
+``sample() -> host_health.memory_pressure -> 3-sample streak -> _terminate_round
+-> reap`` loop at the PSI rung. So it demonstrates that production loop is live
+and calibrated on real hardware under real swap-out load. It deliberately does
+NOT exercise an UNCAPPED agent (unsafe on a ~0.5 GB host): the strong
+"before the host becomes unresponsive" claim for the uncapped case rests on this
+proven loop plus the D-1 calibration ladder -- inferred, not demonstrated here.
+
 Gated behind ``AGENT_RUNNER_E2E_PI`` (via the ``pi_session`` fixture chain,
 reached transitively through ``pi_pre_oom_unit`` -> ``pi_pre_oom_config`` ->
 ``pi_workdir`` -> ``pi_session``) -- skips cleanly when unset, and is never
@@ -210,7 +220,10 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
     if psi_samples:
         peak_dt, peak_val = max(psi_samples, key=lambda p: p[1])
         fired_dt = _parse_ts(fired["ts"])
-        margin_s = (peak_dt - fired_dt).total_seconds()
+        # fired - peak: positive means agent-runner acted AFTER PSI-full crested
+        # (the peak preceded the terminate); negative means pressure was still
+        # rising when it acted (peak came after).
+        margin_s = (fired_dt - peak_dt).total_seconds()
         print(
             f"MARGIN: {outcome} fired at {fired_dt.isoformat()}; host PSI-full peaked "
             f"{peak_val:.1f} at {peak_dt.isoformat()} ({margin_s:+.1f}s relative to the "

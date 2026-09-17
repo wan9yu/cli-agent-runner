@@ -230,15 +230,18 @@ def pi_growth_script(pi_workdir: str) -> str:
 @pytest.fixture
 def pi_pre_oom_config(pi_workdir: str, pi_growth_script: str, pi_venv_python: str) -> str:
     """Write agent-runner.toml on pi pointing ``[agent] command`` at the paced
-    growth-child, with the memory.high soft-brake armed
-    (``[monitor.host_health.brake] memory_high = true``) so BOTH halves of the
-    property under test (the softer brake, or the hard terminate) have a
-    write path. Every other ``[monitor.host_health.pressure]`` threshold is
-    left at its shipped default -- this test proves the property against the
-    REAL calibration, not a loosened one. ``round_budget_s`` is generous
-    (900s): the growth child paces itself at ~8 MB/2.5s, so crossing the
-    finite MemoryMax and then sustaining critical host swap/PSI pressure for
-    3 consecutive ~10s ticks takes real wall-clock minutes."""
+    growth-child. ``[monitor.host_health.brake] memory_high = true`` arms the
+    soft-brake, but with the unit's static ``MemoryHigh=120M`` already binding,
+    the dynamic brake is inert here: ``metrics.engage_leaf_memory_high``'s
+    monotone guard writes nothing once ``target = memory.current >= 120M`` (with
+    the shipped ``step_pct=0``). So in practice ONLY the hard terminate is
+    exercised -- which is the moat property; the brake staying quiet just keeps
+    the TERMINATE outcome clean. Every ``[monitor.host_health.pressure]``
+    threshold is left at its shipped default -- this test proves the property
+    against the REAL calibration, not a loosened one. ``round_budget_s`` is
+    generous (900s): the growth child paces itself at ~8 MB/2.5s, so crossing
+    the finite MemoryMax and then sustaining critical host PSI pressure for 3
+    consecutive ~10s ticks takes real wall-clock minutes."""
     cfg_path = f"{pi_workdir}/agent-runner.toml"
     prompt_path = f"{pi_workdir}/p.md"
     log_dir = f"{pi_workdir}/logs"
@@ -322,12 +325,17 @@ def pi_pre_oom_unit(
         "[Service]\n"
         "Type=simple\n"
         "Environment=HOME=/root\n"
-        # MemoryHigh (below MemoryMax) makes the approach to the cap a graceful
-        # throttle, not a hard reclaim whose PSI-full spike could trip the
-        # mid-round floor as a cgroup-reclaim artifact rather than genuine host
-        # pressure -- serve's own boot advisory (_serve_cgroup own_scope hint)
-        # prescribes this for a memory.max + unbounded-swap + terminate-armed
-        # shape. Keeps the terminate honestly host-pressure-driven.
+        # MemoryHigh (below MemoryMax) satisfies serve's own_scope boot advisory
+        # (_serve_cgroup.py: memory.max set without memory.high). Note what that
+        # advisory actually says: a cgroup-limit throttle's PSI-full rise WILL
+        # trip the mid-round floor in this memory.max + unbounded-swap + terminate
+        # -armed shape. The fixture keeps that shape deliberately -- it is a
+        # bounded, SAFE host-PSI generator (the child's stall is capped at 150M)
+        # that drives the REAL sample->pressure->streak->terminate->reap loop at
+        # the PSI rung. It does not make the terminate "more honest"; it makes the
+        # throttle graceful (no hard-reclaim burst) and the TERMINATE outcome
+        # clean. The strong before-coma claim for an UNCAPPED agent is inferred
+        # from this proven loop + the D-1 ladder, not demonstrated here.
         "MemoryHigh=120M\n"
         "MemoryMax=150M\n"
         "MemorySwapMax=infinity\n"
