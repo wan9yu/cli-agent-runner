@@ -342,6 +342,7 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
     with_goal_log_dir = with_goal_dir / "logs"
     proc_with_goal = _run_serve(with_goal_cfg, max_rounds=CRASH_LOOP_THRESHOLD, timeout_s=90)
 
+    crash_loop_by_dir: dict[Path, dict] = {}
     for label, proc, log_dir, expect_goal_events in (
         ("without [goal]", proc_no_goal, no_goal_log_dir, False),
         ("with [goal]", proc_with_goal, with_goal_log_dir, True),
@@ -356,6 +357,7 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
         assert crash_loop_events[0]["consecutive"] == CRASH_LOOP_THRESHOLD, (
             f"{label}: {crash_loop_events[0]}"
         )
+        crash_loop_by_dir[log_dir] = crash_loop_events[0]
         round_logs = sorted((log_dir / "rounds").glob("R*-*.log"))
         assert len(round_logs) == CRASH_LOOP_THRESHOLD, (
             f"{label}: expected exactly {CRASH_LOOP_THRESHOLD} round logs (the breaker "
@@ -378,16 +380,11 @@ def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) 
             )
 
     # The differential itself: identical stop round and identical verdict
-    # whether or not [goal] is configured.
+    # whether or not [goal] is configured. Reuses the loop's already-read
+    # crash_loop events above rather than re-reading each log_dir.
     assert proc_no_goal.returncode == proc_with_goal.returncode
-    no_goal_crash = [
-        e for e in read_events_for_current_month(no_goal_log_dir) if e.get("event") == "crash_loop"
-    ][0]
-    with_goal_crash = [
-        e
-        for e in read_events_for_current_month(with_goal_log_dir)
-        if e.get("event") == "crash_loop"
-    ][0]
+    no_goal_crash = crash_loop_by_dir[no_goal_log_dir]
+    with_goal_crash = crash_loop_by_dir[with_goal_log_dir]
     assert no_goal_crash["consecutive"] == with_goal_crash["consecutive"]
     assert no_goal_crash["exit_code"] == with_goal_crash["exit_code"]
 
@@ -460,7 +457,7 @@ def test_goal_steering_should_leave_prompt_assembly_byte_identical_when_goal_is_
     # round-context header (prompt_loader._format_context_block's documented
     # ```json round-context ...``` shape) is fully deterministic, so the
     # ENTIRE assembled prompt is pinned exact-bytes, not just "matches the
-    # other arm". 785 bytes total (header + the 740-byte _VALID_PROMPT body).
+    # other arm". 785 bytes total (header + the 720-byte _VALID_PROMPT body).
     expected_naive_prompt = (
         '```json round-context\n{\n  "round_num": 1,\n  "phase": null\n}\n```\n\n' + _VALID_PROMPT
     )

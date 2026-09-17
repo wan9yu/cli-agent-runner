@@ -40,7 +40,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent_runner._round_outcome import RoundOutcome, round_outcome
+from agent_runner._round_outcome import round_outcome
 from agent_runner.events import (
     AGENT_USAGE_RECORDED,
     GOAL_ASSESSMENT,
@@ -156,7 +156,6 @@ def test_round_outcome_should_be_byte_identical_with_and_without_goal_events(
     # Guard 2 (non-vacuity): the shared outcome carries real signal -- proves
     # round_outcome read the REAL events correctly, not that it went blind to
     # everything (which would also satisfy the equality above vacuously).
-    assert isinstance(outcome_with, RoundOutcome)
     assert outcome_with.mem_terminated is True
     assert outcome_with.usage_capable is True
     assert outcome_with.newest_usage_ts == "2026-01-01T00:00:01.000Z"

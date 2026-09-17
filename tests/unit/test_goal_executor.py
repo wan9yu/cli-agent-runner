@@ -181,11 +181,17 @@ def test_run_goal_checks_should_not_crash_when_check_emits_non_utf8_output(
 ) -> None:
     """Fail-open on non-UTF-8 output: a check emitting a non-UTF-8 byte must not
     raise a UnicodeDecodeError (a non-OSError) past run_goal_checks' guard and
-    read as a round crash. Mutation check: dropping errors="replace" from
-    _bounded's Popen makes run_bounded raise UnicodeDecodeError here and this
-    test errors out."""
+    read as a round crash. INDEPENDENT lock on errors="replace" -- not merely on
+    run_goal_checks' own guard: UnicodeDecodeError is a ValueError subclass, so
+    the executor's (OSError, ValueError) catch would ALSO swallow it cleanly
+    (satisfied=False, timed_out=False, error=<str>) if errors="replace" were
+    dropped from _bounded's Popen -- a bare satisfied/timed_out assertion
+    would pass under that mutation too. The trailing parseable token proves
+    the check's stdout was actually READ (degraded, not lost): asserting the
+    parsed value AND the absence of an `error` field fails under the mutation,
+    since the guard's own emit sets value=None and a non-empty `error`."""
     goal = GoalConfig(
-        checks=(_check("latin1", ["sh", "-c", "printf '\\377'; exit 1"]),), ledger="ledger.md"
+        checks=(_check("latin1", ["sh", "-c", "printf '\\377 7'; exit 1"]),), ledger="ledger.md"
     )
 
     run_goal_checks(goal, work_dir=tmp_path, log_dir=tmp_log_dir, dry_run=False)  # must not raise
@@ -194,6 +200,8 @@ def test_run_goal_checks_should_not_crash_when_check_emits_non_utf8_output(
     assert ev["event"] == "goal_check"
     assert ev["satisfied"] is False
     assert ev["timed_out"] is False
+    assert "error" not in ev
+    assert ev["value"] == 7.0
 
 
 def test_run_goal_checks_should_report_unsatisfied_when_cmd_contains_a_nul_byte(

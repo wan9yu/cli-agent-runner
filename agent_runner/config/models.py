@@ -394,6 +394,13 @@ class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     goal: GoalConfig | None = None
 
+    @property
+    def goal_checks_allowance_s(self) -> int:
+        """``goal.checks_allowance_s``, or 0 when ``[goal]`` is absent -- the
+        one-liner both ``_lifecycle.outer_round_ceiling_s`` and
+        ``service_unit``'s ``TimeoutStopSec`` derivation need, deduped here."""
+        return self.goal.checks_allowance_s if self.goal is not None else 0
+
     def profile_for(self, phase: str | None) -> Profile:
         """Resolve the effective execution profile for a phase.
 

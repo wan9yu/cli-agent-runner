@@ -57,7 +57,10 @@ from agent_runner.config.models import (  # noqa: F401 — public re-export
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,
 )
-from agent_runner.config.validators import _reject_control_chars  # noqa: F401
+from agent_runner.config.validators import (  # noqa: F401 — public re-export
+    _reject_control_chars,
+    _resolve_against_work_dir,
+)
 
 __all__ = [
     "AgentConfig",

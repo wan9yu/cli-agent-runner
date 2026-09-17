@@ -36,7 +36,7 @@ from agent_runner import event_log, events
 from agent_runner._bounded import run_bounded
 from agent_runner._redact import redact_secrets
 from agent_runner._throttle import _coerce_float
-from agent_runner.config import GoalConfig
+from agent_runner.config import GoalConfig, _resolve_against_work_dir
 from agent_runner.events import emit
 
 
@@ -62,11 +62,15 @@ def _last_float_token(stdout: str) -> float | None:
 def _resolve_check_cwd(check_cwd: str | None, work_dir: Path) -> Path:
     """Resolve a ``[[goal.checks]]`` entry's ``cwd`` against ``work_dir`` (see
     ``_GoalCheckConfig``'s docstring: the check runner resolves it, not the
-    config loader). ``/`` keeps an already-absolute ``check_cwd`` as-is and
-    expands a leading ``~``; ``None`` falls back to ``work_dir`` itself."""
+    config loader). An already-absolute ``check_cwd`` (after a leading ``~``
+    expansion) passes through as-is; a relative one is joined to ``work_dir``
+    and ``.resolve()``d -- the same ``_resolve_against_work_dir`` canonicalization
+    every other path in the config layer gets. ``None``/empty falls back to
+    ``work_dir`` itself."""
     if not check_cwd:
         return work_dir
-    return work_dir / Path(check_cwd).expanduser()
+    resolved = _resolve_against_work_dir(Path(check_cwd).expanduser(), work_dir)
+    return resolved  # type: ignore[return-value]
 
 
 def run_goal_checks(
@@ -157,8 +161,11 @@ def write_ledger_advisory(ledger_path: Path, advisory: Advisory, *, log_dir: Pat
     """PREPEND ``advisory`` as one bounded markdown block onto ``ledger_path``
     (newest first), TRUNCATE the whole file to <= 8192 bytes at a block
     boundary (oldest blocks dropped first, the newest always kept even if it
-    alone exceeds the cap), and write it atomically (``<path>.tmp`` then
-    ``os.replace``, so a reader never observes a half-written ledger).
+    alone exceeds the cap), and write it atomically (``<path>.tmp``, fsynced,
+    then ``os.replace``, so a reader never observes a half-written ledger; an
+    exception mid-write -- e.g. ENOSPC -- unlinks the tmp file before
+    re-raising rather than leaving it stray -- mirrors
+    ``context_store.atomic_write_json``'s discipline).
 
     Every field is run through ``_redact.redact_secrets`` BEFORE it touches
     disk or the emitted event -- a goal-check's stdout (the raw material an
@@ -205,8 +212,15 @@ def write_ledger_advisory(ledger_path: Path, advisory: Advisory, *, log_dir: Pat
     content = _LEDGER_BLOCK_SEP.join(kept)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = ledger_path.with_name(ledger_path.name + ".tmp")
-    tmp_path.write_text(content, encoding="utf-8")
-    os.replace(tmp_path, ledger_path)
+    try:
+        with tmp_path.open("w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, ledger_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
     emit(
         log_dir,

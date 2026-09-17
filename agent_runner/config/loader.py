@@ -71,13 +71,15 @@ def _reject_goal_ledger_not_listed(cfg: Config) -> None:
     phase_names: list[str | None] = list(cfg.phases.list) if cfg.phases.list else [None]
     for phase_name in phase_names:
         where = "[prompt]" if phase_name is None else f"[phases.{phase_name}.prompt]"
-        override = cfg.phases.overrides.get(phase_name) if phase_name is not None else None
-        if override is not None and override.prompt_files is not None:
-            files = [str(p) for p in override.prompt_files]
-        elif cfg.prompt.file is not None:
-            files = []  # single `file=` form: never carries a second entry
-        else:
-            files = [str(p) for p in cfg.prompt.files]
+        prompt_files = cfg.profile_for(phase_name).prompt_files
+        # No override -> [] via cfg.prompt.files, which is already [] when the
+        # single `file=` form is in play (parser-enforced): never carries a
+        # second entry.
+        files = (
+            [str(p) for p in prompt_files]
+            if prompt_files is not None
+            else [str(p) for p in cfg.prompt.files]
+        )
         if ledger not in files or files.index(ledger) == 0:
             raise ConfigError(
                 f"{where}: [goal] ledger {ledger!r} is not listed in the resolved "
@@ -102,9 +104,14 @@ def _reject_goal_ledger_in_stash_swept_tree(cfg: Config) -> None:
     ``_reject_goal_ledger_not_listed``."""
     if cfg.goal is None:
         return
-    ledger = Path(cfg.goal.ledger)
-    work_dir = cfg.runtime.work_dir
-    log_dir = cfg.runtime.log_dir
+    # .resolve() all three: an absolute log_dir (or ledger) is NOT canonicalized
+    # by _expand_and_resolve (only a relative path is), so a symlinked absolute
+    # log_dir (e.g. /tmp -> /private/tmp on macOS) would otherwise FALSE-REJECT
+    # a ledger genuinely under it -- work_dir is always canonical already
+    # (loader.load_config resolves it unconditionally), so this is a no-op there.
+    ledger = Path(cfg.goal.ledger).resolve()
+    work_dir = cfg.runtime.work_dir.resolve()
+    log_dir = cfg.runtime.log_dir.resolve()
     if ledger.is_relative_to(work_dir) and not ledger.is_relative_to(log_dir):
         raise ConfigError(
             f"[goal] ledger {cfg.goal.ledger!r} resolves inside runtime.work_dir "

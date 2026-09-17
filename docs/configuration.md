@@ -717,11 +717,13 @@ ledger = "logs/lessons.md"
 [[goal.checks]]
 name = "tests"
 cmd = ["pytest", "-q"]
+timeout_s = 5           # keep the summed budget below the fast-spin give-up window (see below)
 
 [[goal.checks]]
 name = "lint"
 cmd = ["ruff", "check", "."]
 cwd = "subdir"          # optional; resolved against runtime.work_dir
+timeout_s = 5
 
 [prompt]
 files = ["prompt.md", "logs/lessons.md"]

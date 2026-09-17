@@ -23,8 +23,9 @@ Two hardening properties beyond the plain TERM/KILL escalation:
   ``cli.common.install_term_handler``, which raises ``KeyboardInterrupt``)
   propagates out of ``communicate()`` while the command runs in its own
   session and would otherwise never be signalled. Any ``BaseException`` out of
-  a wait therefore SIGKILLs the whole group and closes the pipes before
-  re-raising, mirroring ``agent_runtime.run``'s contract for the agent.
+  a wait therefore SIGKILLs the whole group, closes the pipes, and reaps under
+  one bounded ``_KILL_GRACE_S`` wait before re-raising, mirroring
+  ``agent_runtime._kill_pgroup``'s bounded-wait-after-SIGKILL.
 
 Kept out of the startup import graph on purpose (see
 tests/invariants/test_import_footprint.py): callers import it function-scope.
@@ -46,7 +47,7 @@ class BoundedResult:
     rc: int
     stdout: str
     stderr: str
-    timed_out: bool = False
+    timed_out: bool
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
@@ -70,16 +71,26 @@ def _drain_after_kill(proc: subprocess.Popen, exc: subprocess.TimeoutExpired) ->
 
     A ``setsid``-detached descendant can still hold the stdout/stderr pipe open,
     so stop waiting on it: close the read ends and reap the (already-SIGKILLed)
-    immediate child under one more ``_KILL_GRACE_S`` cap. The TimeoutExpired
-    from the prior ``communicate`` carries whatever was captured so far on
-    POSIX; fall back to empty strings if it did not."""
+    immediate child under one more ``_KILL_GRACE_S`` cap. ``TimeoutExpired.output``
+    is ``bytes`` even on this text-mode Popen (the partial read captured at
+    timeout bypasses the text-decoding wrapper), so decode it here with the
+    same ``errors="replace"`` policy; fall back to empty strings if the
+    attribute isn't bytes at all."""
     _close_pipes(proc)
     try:
         proc.wait(timeout=_KILL_GRACE_S)
     except subprocess.TimeoutExpired:
         pass
-    out = exc.output if isinstance(exc.output, str) else ""
-    err = exc.stderr if isinstance(exc.stderr, str) else ""
+    out = (
+        exc.output.decode("utf-8", errors="replace")
+        if isinstance(exc.output, (bytes, bytearray))
+        else ""
+    )
+    err = (
+        exc.stderr.decode("utf-8", errors="replace")
+        if isinstance(exc.stderr, (bytes, bytearray))
+        else ""
+    )
     return out, err
 
 
@@ -88,8 +99,9 @@ def run_bounded(argv: list[str], *, cwd: Path, timeout_s: int) -> BoundedResult:
     TERM -> grace -> killpg on breach so a hung command leaves no reachable
     descendants. Returns timed_out=True on breach -- never raises on breach.
     A ``BaseException`` out of a wait (e.g. a SIGTERM-driven KeyboardInterrupt)
-    SIGKILLs the group and closes the pipes, then re-raises, so an interrupted
-    check is torn down rather than orphaned. ``errors="replace"`` keeps a
+    SIGKILLs the group, closes the pipes, and reaps under one bounded
+    ``_KILL_GRACE_S`` wait, then re-raises, so an interrupted check is torn
+    down (not left a zombie) rather than orphaned. ``errors="replace"`` keeps a
     non-UTF-8 byte in the command's output from raising a UnicodeDecodeError
     past the caller's fail-open guard."""
     proc = subprocess.Popen(
@@ -116,4 +128,8 @@ def run_bounded(argv: list[str], *, cwd: Path, timeout_s: int) -> BoundedResult:
     except BaseException:
         _kill_group(proc)
         _close_pipes(proc)
+        try:
+            proc.wait(timeout=_KILL_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass
         raise

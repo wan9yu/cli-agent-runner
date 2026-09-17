@@ -14,6 +14,7 @@ in-progress round's own substrate-before is always already in the tail."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -99,7 +100,7 @@ def test_assess_treadmill_should_return_advisory_when_dirty_and_check_unchanged(
     assert advisory.question
     # Type-structural firewall: no kill/severity/action/terminate field exists
     # on the dataclass at all -- not merely unset.
-    field_names = {f.name for f in __import__("dataclasses").fields(advisory)}
+    field_names = {f.name for f in dataclasses.fields(advisory)}
     assert field_names == {"observation", "question", "confidence"}
 
 
