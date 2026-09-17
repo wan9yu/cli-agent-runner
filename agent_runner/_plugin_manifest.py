@@ -43,6 +43,13 @@ class PluginManifest:
     SIGTERM-first at the reap site (today's behavior), never "skip the first
     signal"."""
 
+    resume_flag: str | None = None
+    """The flag that carries a supervisor-chosen session id on EVERY round for a
+    CLI whose session flag is IDEMPOTENT (create-or-resume). pi = "--session-id".
+    ``None`` = no resume (today's cold start). Resolved ONLY by
+    ``resolve_resume_flag``; ``__post_init__`` rejects an empty string. Source-
+    verified per preset (pi's --session-id is idempotent), NEVER assumed."""
+
     def __post_init__(self) -> None:
         # Errors-unlikely-by-construction: an unknown signal name (or a
         # freeze/zero-grace one like SIGSTOP/SIGKILL) is unrepresentable -- it
@@ -51,6 +58,10 @@ class PluginManifest:
             raise ValueError(
                 "cooperative_stop must be one of {None, 'SIGTERM', 'SIGINT'}, "
                 f"got {self.cooperative_stop!r}"
+            )
+        if self.resume_flag is not None and not self.resume_flag:
+            raise ValueError(
+                f"resume_flag must be None or a non-empty flag string, got {self.resume_flag!r}"
             )
 
 
@@ -100,6 +111,21 @@ def resolve_cooperative_signal(agent_binary: str | None) -> signal.Signals | Non
     per phase from its own registry and publishes the result via env, so the
     round child never re-derives (and skews) it."""
     return _COOPERATIVE_SIGNALS.get(_cooperative_stop_for_name(agent_binary))
+
+
+def resolve_resume_flag(agent_binary: str | None) -> str | None:
+    """The resume flag the agent named `agent_binary` declares, or None when no
+    such manifest is registered (or it declares no resume). THE registry lookup
+    for resume -- sibling to resolve_cooperative_signal, the SAME
+    ``m.name == agent_binary`` join (so it stays correct whenever a preset's
+    manifest name is kept equal to its agent binary). serve resolves it once
+    per phase and publishes the id via env so the round child never
+    re-derives. No signal table: the flag string IS what serve publishes and
+    the child appends, so the scan IS the resolve."""
+    for m in _LOADED_MANIFESTS:
+        if m.name == agent_binary:
+            return m.resume_flag
+    return None
 
 
 def cooperative_signal_from_name(name: str | None) -> signal.Signals | None:

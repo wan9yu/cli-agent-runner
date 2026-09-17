@@ -17,6 +17,7 @@ buffer
 name
 post_round_hooks
 cooperative_stop
+resume_flag
 
 # agent_runner._round_outcome.RoundOutcome
 mem_terminated

@@ -32,6 +32,30 @@ from agent_runner.config.validators import (
 _CURRENT_SCHEMA_VERSION = 1
 
 
+def _reject_static_resume_flag(cfg) -> None:
+    """A resume-capable preset must not already carry its resume_flag token in
+    the static command/prompt_arg_template -- agent-runner injects [flag, id]
+    per round, so a static copy would duplicate it. Boot refusal (ConfigError)
+    keeps best-effort-never-error at round time. Runs AFTER
+    load_and_register_plugins so resolve_resume_flag can see the manifests
+    (it is registry-backed, unlike the boot-time {prompt} guard)."""
+    from agent_runner._plugin_manifest import resolve_resume_flag
+
+    agents = [(None, cfg.agent)] + [
+        (name, ov.agent) for name, ov in cfg.phases.overrides.items() if ov.agent is not None
+    ]
+    for phase_name, a in agents:
+        flag = resolve_resume_flag(a.binary)
+        if flag is None:
+            continue
+        if flag in a.command or flag in a.prompt_arg_template:
+            where = "[agent]" if phase_name is None else f"[phases.{phase_name}.agent]"
+            raise ConfigError(
+                f"{where} command already contains {flag!r}: agent-runner injects it "
+                "per round for cross-round resume; remove it from the static command"
+            )
+
+
 def _check_schema_version(raw: dict) -> None:
     """Boot gate: a config's ``schema_version`` decouples the on-disk config
     shape from the installed package version, so a config can be migrated
@@ -132,5 +156,7 @@ def load_config(toml_path: Path) -> Config:
     load_and_register_plugins(plugins, log_dir=cfg.runtime.log_dir)
     if plugins.disable:
         apply_plugin_disable(plugins.disable)
+
+    _reject_static_resume_flag(cfg)
 
     return cfg

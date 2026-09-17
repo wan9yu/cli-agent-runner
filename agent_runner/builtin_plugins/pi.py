@@ -281,5 +281,8 @@ def _is_auth_error(text: str | None) -> bool:
 
 
 PLUGIN = PluginManifest(
-    name="pi", post_round_hooks=(PiErrorDetector(),), cooperative_stop="SIGTERM"
+    name="pi",
+    post_round_hooks=(PiErrorDetector(),),
+    cooperative_stop="SIGTERM",
+    resume_flag="--session-id",
 )

@@ -257,3 +257,32 @@ def test_resolve_sigterm_grace_s_should_return_default_when_agent_binary_is_none
     from agent_runner.agent_runtime import REAP_GRACE_S
 
     assert resolve_sigterm_grace_s(None, 9) == REAP_GRACE_S
+
+
+def test_resolve_resume_flag_should_return_the_declared_flag_when_binary_matches():
+    from agent_runner._plugin_manifest import PluginManifest, register_manifest, resolve_resume_flag
+
+    register_manifest(PluginManifest(name="pi", resume_flag="--session-id"))
+
+    assert resolve_resume_flag("pi") == "--session-id"
+
+
+def test_resolve_resume_flag_should_return_none_when_binary_has_no_manifest():
+    from agent_runner._plugin_manifest import resolve_resume_flag
+
+    assert resolve_resume_flag("nope") is None
+
+
+def test_manifest_should_reject_an_empty_resume_flag():
+    from agent_runner._plugin_manifest import PluginManifest
+
+    with pytest.raises(ValueError, match="resume_flag"):
+        PluginManifest(name="x", resume_flag="")
+
+
+def test_pi_preset_should_declare_the_session_id_resume_flag():
+    from agent_runner.builtin_plugins import claude_rate_limit, gemini, pi
+
+    assert pi.PLUGIN.resume_flag == "--session-id"
+    assert gemini.PLUGIN.resume_flag is None
+    assert claude_rate_limit.PLUGIN.resume_flag is None
