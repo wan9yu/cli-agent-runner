@@ -132,18 +132,22 @@ class Advisory:
 _TREADMILL_WINDOW_ROUNDS = 3
 
 _LEDGER_MAX_BYTES = 8192
-# Block separator for the ledger's markdown: distinctive enough that a check's
-# real stdout (redacted free text) is vanishingly unlikely to contain it, so
-# splitting the existing file back into prior blocks round-trips cleanly.
-_LEDGER_BLOCK_SEP = "\n\n<!-- goal-assessment-boundary -->\n\n"
+# Blocks are separated by a single blank line -- plain prose, no HTML-comment
+# marker cluttering every prompt this ledger gets folded into ([prompt] files
+# is raw text, not rendered markdown, so a literal `<!-- ... -->` would be
+# visible to the agent on every round). Safe as a round-trip delimiter because
+# a block's own generated lines (below) never contain a blank line internally.
+_LEDGER_BLOCK_SEP = "\n\n"
 
 
 def _format_advisory_block(*, observation: str, question: str, confidence: str, ts: str) -> str:
+    # No trailing newline -- _LEDGER_BLOCK_SEP alone supplies the blank line
+    # between this block and the next one it's joined with.
     return (
         f"### Goal assessment -- {ts}\n"
         f"- Observation: {observation}\n"
         f"- Question: {question}\n"
-        f"- Confidence: {confidence}\n"
+        f"- Confidence: {confidence}"
     )
 
 
@@ -248,6 +252,16 @@ def _git_head_moved(bucket: list[dict]) -> bool:
     return before is not None and after is not None and before != after
 
 
+def _round_has_activity(bucket: list[dict]) -> bool:
+    """CLI-agnostic activity signal for one round's bucket: >= 1 dirty event,
+    or its own substrate before/after git HEAD differs. Shared by the window
+    gate and the backward episode-boundary walk below."""
+    has_dirty = any(
+        ev.get("event") in (events.DIRTY_DETECTED, events.DIRTY_AUTO_COMMITTED) for ev in bucket
+    )
+    return has_dirty or _git_head_moved(bucket)
+
+
 def _coerced_check_value(raw_value: object) -> float | None:
     """``goal_check.value`` read defensively: ``None`` stays ``None``
     (unparsed check output); anything else goes through ``_coerce_float`` so a
@@ -260,26 +274,60 @@ def _coerced_check_value(raw_value: object) -> float | None:
     return None if math.isnan(coerced) else coerced
 
 
-def assess_treadmill(log_dir: Path, *, k: int = _TREADMILL_WINDOW_ROUNDS) -> Advisory | None:
-    """Advisory-only treadmill signal: fires IFF, across the last ``k`` rounds
-    (default :data:`_TREADMILL_WINDOW_ROUNDS`) --
+def _check_signature(bucket: list[dict]) -> dict[str, tuple[bool, float | None]]:
+    """Per-check-name ``(satisfied, value)`` for every non-skipped
+    ``goal_check`` in one round's bucket -- the window gate folds these across
+    the whole window; the episode-boundary walk compares one round's
+    signature at a time against the window's constant one."""
+    sig: dict[str, tuple[bool, float | None]] = {}
+    for ev in bucket:
+        if ev.get("event") != events.GOAL_CHECK or ev.get("skipped"):
+            continue
+        name = ev.get("name")
+        if not isinstance(name, str):
+            continue
+        sig[name] = (bool(ev.get("satisfied")), _coerced_check_value(ev.get("value")))
+    return sig
 
-    1. **Activity** (CLI-agnostic): EACH round shows >= 1 of
-       ``events.DIRTY_DETECTED`` / ``events.DIRTY_AUTO_COMMITTED``, OR its own
-       ``round_substrate_before``/``_after`` git HEAD differs. Deliberately
-       never reads ``agent_usage_recorded`` / ``anomaly_repetitive_tool`` --
-       both are agent-specific, and a custom ``[agent] command`` with no
-       usage-emitting plugin must still be assessable.
-    2. **No convergence**: no ``goal_check``'s ``satisfied`` OR (``_coerce_float``-read)
-       ``value`` differs across the rounds it appeared in, for ANY check name.
-       A window with no non-skipped ``goal_check`` at all has no signal to
-       judge convergence by, so it does NOT fire (vacuous "nothing changed"
-       is not treated as "stuck").
-    3. **Not already fired** (edge-trigger): no ``goal_assessment`` appears in
-       the tail from the window's first round onward -- the emitted event IS
-       the fired-marker for this exact stuck signature; re-arms only once the
-       signature clears (gate 1 fails) or a check's status/value moves (gate
-       2 fails, which naturally rolls the window forward past the old fire).
+
+def assess_treadmill(
+    log_dir: Path, *, current_round: int, k: int = _TREADMILL_WINDOW_ROUNDS
+) -> Advisory | None:
+    """Advisory-only treadmill signal: fires IFF, across the last ``k``
+    COMPLETED rounds strictly before ``current_round`` (default
+    :data:`_TREADMILL_WINDOW_ROUNDS`) --
+
+    1. **Activity** (CLI-agnostic, :func:`_round_has_activity`): EACH round
+       shows >= 1 of ``events.DIRTY_DETECTED`` / ``events.DIRTY_AUTO_COMMITTED``,
+       OR its own ``round_substrate_before``/``_after`` git HEAD differs.
+       Deliberately never reads ``agent_usage_recorded`` /
+       ``anomaly_repetitive_tool`` -- both are agent-specific, and a custom
+       ``[agent] command`` with no usage-emitting plugin must still be
+       assessable.
+    2. **No convergence**: no ``goal_check``'s ``satisfied`` OR
+       (``_coerce_float``-read) ``value`` differs across the rounds it
+       appeared in, for ANY check name. A window with no non-skipped
+       ``goal_check`` at all has no signal to judge convergence by, so it
+       does NOT fire (vacuous "nothing changed" is not treated as "stuck").
+    3. **Not already fired** (edge-trigger, keyed off the EPISODE, not the
+       window): walk backward from the window over earlier completed rounds
+       that still match the window's activity + per-check signature; the
+       first round the pattern breaks marks the episode boundary, and the
+       round right after it is the episode's start. No ``goal_assessment``
+       may appear in the tail from that round onward -- the emitted event IS
+       the fired-marker. This re-arms exactly when the design calls for it:
+       once the signature clears (gate 1 fails) or a check's status/value
+       moves (gate 2 fails) somewhere in the episode, NOT merely once the
+       fixed-size window slides past the round that fired.
+
+    ``current_round`` excludes the round currently being assessed FOR: under
+    `serve`, ``round_substrate_before(round_num=current_round)`` is already in
+    the tail (serve emits it before spawning the child -- see
+    ``cli/serve_cmd.py``'s ``_capture_substrate``), so without this the
+    in-progress round would itself be "the newest round in the window" with
+    no activity yet recorded, permanently failing gate 1. NOT the forbidden
+    ``agent`` parameter -- it makes "last k completed rounds" true by
+    construction, independent of any particular pre-spawn serve event.
 
     Reads only the newest two monthly ``events-*.jsonl`` files
     (:func:`event_log.newest_scope`) -- the same tail window every other
@@ -288,45 +336,49 @@ def assess_treadmill(log_dir: Path, *, k: int = _TREADMILL_WINDOW_ROUNDS) -> Adv
     tail = list(event_log.scan(log_dir, event_log.newest_scope(2)))
     tagged = _tag_rounds(tail)
 
-    round_nums = sorted({rn for rn, _ in tagged if rn is not None})
+    round_nums = sorted({rn for rn, _ in tagged if rn is not None and rn < current_round})
     if len(round_nums) < k:
         return None
     window = round_nums[-k:]
-    window_start = window[0]
 
     buckets: dict[int, list[dict]] = {}
     for rn, ev in tagged:
-        if rn in window:
+        if rn in round_nums:
             buckets.setdefault(rn, []).append(ev)
 
     # Gate 1: activity in EVERY round of the window.
     for rn in window:
-        bucket = buckets.get(rn, [])
-        has_dirty = any(
-            ev.get("event") in (events.DIRTY_DETECTED, events.DIRTY_AUTO_COMMITTED) for ev in bucket
-        )
-        if not has_dirty and not _git_head_moved(bucket):
+        if not _round_has_activity(buckets.get(rn, [])):
             return None
 
     # Gate 2: no goal_check status/value change across the window.
     check_series: dict[str, list[tuple[bool, float | None]]] = {}
     for rn in window:
-        for ev in buckets.get(rn, []):
-            if ev.get("event") != events.GOAL_CHECK or ev.get("skipped"):
-                continue
-            name = ev.get("name")
-            if not isinstance(name, str):
-                continue
-            entry = (bool(ev.get("satisfied")), _coerced_check_value(ev.get("value")))
+        for name, entry in _check_signature(buckets.get(rn, [])).items():
             check_series.setdefault(name, []).append(entry)
     if not check_series:
         return None  # nothing objective to judge convergence by -- no signal, no advisory
     for series in check_series.values():
-        if len({s for s, _v in series}) > 1 or len({v for _s, v in series}) > 1:
+        if len(set(series)) > 1:
             return None  # a check moved -- converging, not stuck
+    constant_sig = {name: series[0] for name, series in check_series.items()}
 
-    # Gate 3: edge-trigger -- already fired for this signature?
-    start_idx = next(i for i, (rn, _ev) in enumerate(tagged) if rn == window_start)
+    # Gate 3: edge-trigger, keyed off the EPISODE start, not the window start.
+    # Walk backward over earlier completed rounds while each still matches
+    # the window's activity + signature; the last round that still matches is
+    # the episode's start.
+    window_start_idx = len(round_nums) - k
+    episode_start = window[0]
+    for prev_idx in range(window_start_idx - 1, -1, -1):
+        prev_rn = round_nums[prev_idx]
+        prev_bucket = buckets.get(prev_rn, [])
+        if not _round_has_activity(prev_bucket):
+            break
+        if _check_signature(prev_bucket) != constant_sig:
+            break
+        episode_start = prev_rn
+
+    start_idx = next(i for i, (rn, _ev) in enumerate(tagged) if rn == episode_start)
     already_fired = any(ev.get("event") == events.GOAL_ASSESSMENT for _rn, ev in tagged[start_idx:])
     if already_fired:
         return None

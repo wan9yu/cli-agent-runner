@@ -950,3 +950,41 @@ def test_resolve_reap_grace_s_should_fall_back_when_env_value_is_non_positive(mo
     monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "-3")
 
     assert runner._resolve_reap_grace_s() == REAP_GRACE_S
+
+
+def test_run_one_round_should_not_crash_when_the_advisory_fold_hits_an_os_error(
+    tmp_git_repo: Path,
+    fake_agent_script: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail-open (IMPORTANT 3 fable fix): the advisory fold is
+    observability-only, never a control-flow gate -- an OSError while writing
+    the lessons ledger (here: a DIRECTORY sitting at the configured ledger
+    path) must not propagate out of _run_one_round_inner and read as a round
+    crash. The round must still complete and emit round_start normally."""
+    import dataclasses
+
+    from agent_runner import goal as goal_module
+    from agent_runner.config import GoalConfig
+
+    cfg = _make_config(tmp_git_repo, fake_agent_script)
+    ledger_as_directory = cfg.runtime.log_dir.parent / "ledger-is-a-directory"
+    ledger_as_directory.mkdir(parents=True)
+    cfg = dataclasses.replace(cfg, goal=GoalConfig(checks=(), ledger=str(ledger_as_directory)))
+    # Force the "an advisory is ready to fold" branch deterministically --
+    # real treadmill history needs k rounds of setup irrelevant to this test.
+    monkeypatch.setattr(
+        goal_module,
+        "assess_treadmill",
+        lambda *args, **kwargs: goal_module.Advisory(
+            observation="stuck", question="why?", confidence="medium"
+        ),
+    )
+
+    result = run_one_round(cfg)
+
+    assert result.exit_code == 0
+    [events_file] = list(cfg.runtime.log_dir.glob("events-*.jsonl"))
+    kinds = [json.loads(line)["event"] for line in events_file.read_text().splitlines()]
+    assert "round_start" in kinds
+    assert "goal_assessment" not in kinds  # the write failed before the emit ever ran

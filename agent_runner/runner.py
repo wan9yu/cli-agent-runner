@@ -445,9 +445,18 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
     if cfg.goal is not None:
         from agent_runner.goal import assess_treadmill, write_ledger_advisory
 
-        advisory = assess_treadmill(log_dir)
-        if advisory is not None:
-            write_ledger_advisory(Path(cfg.goal.ledger), advisory, log_dir=log_dir)
+        try:
+            advisory = assess_treadmill(log_dir, current_round=round_num)
+            if advisory is not None:
+                write_ledger_advisory(Path(cfg.goal.ledger), advisory, log_dir=log_dir)
+        except OSError as exc:
+            # Fail-open (mirrors the SMOKE_CHECK_FAILED emit guard above): the
+            # advisory fold is observability-only, never a control-flow gate --
+            # an I/O error here (unwritable ledger parent, ENOSPC, a vanished
+            # events shard mid-scan) must not propagate out of this function
+            # and read as a round crash. Skip the advisory; the round proceeds
+            # exactly as if cfg.goal were None.
+            print(f"agent-runner: WARNING goal steering skipped: {exc}", file=sys.stderr)
 
     events.emit(log_dir, events.ROUND_START, round_num=round_num, phase=phase)
     _agent_binary = profile.agent.binary

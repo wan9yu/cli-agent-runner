@@ -143,11 +143,18 @@ def test_runner_module_should_not_read_events_jsonl() -> None:
     assert import_targets, "no imports scanned in runner.py"  # vacuity-guard
     throttle_imports = [t for t in import_targets if "_throttle" in t]
     assert throttle_imports == [], f"runner.py imports _throttle (ouroboros): {throttle_imports}"
-    event_log_imports = [
-        t for t in import_targets if t == "agent_runner.event_log" or t == "event_log"
-    ]
+    banned_read_imports = {
+        "agent_runner.event_log",
+        "event_log",
+        # events.py's own read helpers -- importing these directly would let
+        # runner.py read events-*.jsonl without ever touching event_log.py or
+        # goal.py, slipping past both bans above.
+        "agent_runner.events.iter_event_dicts",
+        "agent_runner.events.open_events_jsonl",
+    }
+    event_log_imports = [t for t in import_targets if t in banned_read_imports]
     assert event_log_imports == [], (
-        f"runner.py imports event_log directly (ouroboros): {event_log_imports}"
+        f"runner.py imports an events-read helper directly (ouroboros): {event_log_imports}"
     )
     events_globs = [g for g in glob_patterns if "events" in g]
     assert events_globs == [], f"runner.py globs events files (ouroboros read): {events_globs}"
