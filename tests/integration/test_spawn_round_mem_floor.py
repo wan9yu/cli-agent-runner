@@ -33,6 +33,7 @@ block for a real ~10s interval."""
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 import time
 from pathlib import Path
@@ -251,6 +252,68 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
 
     events = read_events_for_current_month(log_dir)
     assert [e for e in events if e.get("event") == "round_mem_terminated"] == []
+
+
+_SWAP_STEP_ABOVE_FLOOR_BYTES = 40 * 1024 * 1024  # > the 32 MiB default noise floor, EVERY tick
+
+
+def _swap_climb_sample_fn():
+    """The swap-leg terminate counterpart to `_slow_swap_sample_fn` above:
+    PSI unreadable, mem_free critically low throughout, but swap_sout climbs
+    by a fixed >32 MiB step on EVERY tick (not a slow trickle). The very
+    first tick's delta is always 0 (`_spawn_round` seeds `prev_tick_sample`
+    from that same first sample -- see its docstring), so the streak only
+    starts climbing from the second tick onward; by the fourth tick the
+    per-tick delta has stayed above the noise floor for 3 sustained ticks in
+    a row, crossing the default `critical_consecutive_samples`."""
+    calls = {"n": 0}
+
+    def _fn():
+        calls["n"] += 1
+        return {
+            "psi_some_avg10": None,
+            "psi_full_avg10": None,
+            "mem_free_mb": 5,
+            "mem_available_mb": 4000,
+            "swap_sout": calls["n"] * _SWAP_STEP_ABOVE_FLOOR_BYTES,
+        }
+
+    return _fn
+
+
+def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_floor_every_tick(
+    tmp_path,
+):
+    """The DOES-terminate counterpart to
+    test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor
+    above: same PSI-off, mem_free-critical shape, but the per-tick swap-out
+    delta stays ABOVE the 32 MiB floor on every tick instead of trickling
+    below it -- sustained critical pressure via the swap leg alone (PSI is
+    this host's only OTHER path to critical, and it has none) terminates the
+    round exactly as the PSI-based path does."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    rc = serve_cmd._spawn_round(
+        argv,
+        log_dir / "round-1.log",
+        {},
+        timeout_s=300,
+        round_num=1,
+        host_health_cfg=MonitorHostHealthConfig(),
+        clock=_TickingClock(),
+        sample_fn=_swap_climb_sample_fn(),
+    )
+
+    assert rc != 0  # terminated, not a clean exit
+
+    events = read_events_for_current_month(log_dir)
+    terminated = [e for e in events if e.get("event") == "round_mem_terminated"]
+    assert len(terminated) == 1
+    assert terminated[0]["severity"] == "critical"
+    assert terminated[0]["signal"] == "swap_out_rate"
+    assert terminated[0]["consecutive"] == 3
 
 
 def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(tmp_path):
@@ -1168,6 +1231,92 @@ def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engag
     released = [e for e in events if e.get("event") == "memory_high_released"]
     # NO "recovered" -- held through critical
     assert [e["reason"] for e in released] == ["round_end"]
+
+
+def test_spawn_round_should_engage_brake_then_terminate_when_warning_precedes_sustained_critical(
+    tmp_path, monkeypatch
+):
+    """D-1 tests-of-record for the brake-engage -> terminate ORDER: the soft
+    brake (memory.high) engages first on sustained WARNING pressure, and if
+    pressure keeps worsening to sustained CRITICAL the hard floor still
+    terminates the round on top of it -- the brake is a softer, earlier
+    action, never a substitute for the terminate floor. Both halves are
+    asserted so this can never silently pass as a no-op (e.g. a future
+    change that made the brake swallow the pressure and skip the terminate
+    check would fail `rc != 0` here).
+
+    `defer_to_cgroup` is explicitly False -- a fully-bounded cgroup would
+    correctly defer to the kernel instead (see
+    test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded),
+    which would make the terminate half unreachable and this test vacuous.
+
+    Arming (`_BRAKE_ARMED_BY_LOG_DIR`) happens at serve-boot in
+    `_probe_and_emit_cgroup_defer` in production, not inside `_spawn_round`
+    itself, so this test sets it directly the way that boot step would have
+    -- and resets it afterward, since it is global mutable state keyed by a
+    tmp_path this process will not reuse, but must not leak into any other
+    test that happens to construct the same log_dir."""
+    from agent_runner import metrics
+    from agent_runner.cli import _serve_cgroup
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    calls = {"engage": 0, "restore": []}
+
+    def _fake_engage(*, step_pct):
+        calls["engage"] += 1
+        return {
+            "engaged": True,
+            "previous": "max",
+            "written": 999,
+            "memory_current": 300 * 1024 * 1024,
+        }
+
+    def _fake_restore(previous, **_k):
+        calls["restore"].append(previous)
+        return True
+
+    monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
+    monkeypatch.setattr(metrics, "restore_leaf_memory_high", _fake_restore)
+    # Frozen dataclasses: must CONSTRUCT the brake config, never mutate a
+    # field of an existing instance in place (that raises FrozenInstanceError).
+    hh = dataclasses.replace(
+        MonitorHostHealthConfig(),
+        brake=_HostHealthBrakeConfig(memory_high=True, warning_consecutive_samples=3),
+    )
+    _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir] = True
+    try:
+        calls_n = {"n": 0}
+
+        def _sample_fn():
+            calls_n["n"] += 1
+            # 3 sustained warning ticks engage the brake; pressure then
+            # worsens to sustained critical, which must still terminate.
+            return _WARNING_SAMPLE if calls_n["n"] <= 3 else _CRITICAL_SAMPLE
+
+        rc = serve_cmd._spawn_round(
+            argv,
+            log_dir / "round-1.log",
+            {},
+            timeout_s=300,
+            round_num=1,
+            host_health_cfg=hh,
+            clock=_TickingClock(),
+            sample_fn=_sample_fn,
+            defer_to_cgroup=False,
+        )
+
+        assert calls["engage"] == 1  # the brake engaged -- not a no-op
+        assert rc != 0  # ...and the round still terminated, not a clean exit
+
+        events = read_events_for_current_month(log_dir)
+        kinds = [e.get("event") for e in events]
+        assert kinds.count("memory_high_engaged") == 1
+        assert kinds.count("round_mem_terminated") == 1
+        assert calls["restore"] == ["max"]  # the finally restored the brake on the terminate exit
+    finally:
+        del _serve_cgroup._BRAKE_ARMED_BY_LOG_DIR[log_dir]
 
 
 def test_spawn_round_should_skip_sampling_when_host_health_cfg_is_none(tmp_path):

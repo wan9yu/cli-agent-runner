@@ -247,6 +247,99 @@ def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg() -> No
     assert p is not None and p.severity == "critical" and p.signal == "psi"
 
 
+def test_memory_pressure_should_be_critical_when_psi_full_avg10_hits_default_critical_bar() -> None:
+    """Ladder-calibration rung (D-1 tests-of-record), DEFAULT thresholds:
+    psi_full_avg10 >= full_avg10_critical (60.0) is critical on its own --
+    the host HAS PSI, the strongest signal, and needs no other corroborating
+    reading. Pinned at the exact boundary (60.0, not comfortably above it) to
+    lock the `>=` comparison itself, not just "somewhere past the bar"."""
+    cfg = MonitorHostHealthConfig()
+    sample = {
+        "psi_some_avg10": 65.0,
+        "psi_full_avg10": 60.0,
+        "mem_free_mb": 4000,
+        "mem_available_mb": 4000,
+    }
+
+    pressure = host_health.memory_pressure(sample, {}, cfg)
+
+    assert pressure is not None
+    assert pressure.severity == "critical"
+    assert pressure.signal == "psi"
+
+
+def test_memory_pressure_should_be_critical_when_swap_exceeds_floor_and_memfree_critical() -> None:
+    """Ladder-calibration rung (D-1 tests-of-record), DEFAULT thresholds:
+    PSI unreadable, swap-out delta ~300MB (comfortably above the default 32
+    MiB noise floor) while mem_free_mb (5) is below the default free_low_mb
+    (16) -- the "actively dying" critical escalation."""
+    cfg = MonitorHostHealthConfig()
+    prev = {"swap_sout": 0, "mem_free_mb": 5, "mem_available_mb": 4000, "psi_some_avg10": None}
+    cur = {
+        "swap_sout": 300 * 1024 * 1024,
+        "mem_free_mb": 5,
+        "mem_available_mb": 4000,
+        "psi_some_avg10": None,
+    }
+
+    pressure = host_health.memory_pressure(cur, prev, cfg)
+
+    assert pressure is not None
+    assert pressure.severity == "critical"
+    assert pressure.signal == "swap_out_rate"
+
+
+def test_memory_pressure_should_warn_when_swap_exceeds_noise_floor_but_memfree_ample() -> None:
+    """Ladder-calibration rung (D-1 tests-of-record), DEFAULT thresholds: the
+    same above-floor swap-out delta as the critical rung above, but
+    mem_free_mb (200) stays comfortably above free_low_mb (16) -- stays a
+    warning, not critical; critical is gated on MemFree, not delta magnitude."""
+    cfg = MonitorHostHealthConfig()
+    prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 4000, "psi_some_avg10": None}
+    cur = {
+        "swap_sout": 300 * 1024 * 1024,
+        "mem_free_mb": 200,
+        "mem_available_mb": 4000,
+        "psi_some_avg10": None,
+    }
+
+    pressure = host_health.memory_pressure(cur, prev, cfg)
+
+    assert pressure is not None
+    assert pressure.severity == "warning"
+    assert pressure.signal == "swap_out_rate"
+
+
+def test_memory_pressure_should_warn_combined_low_when_swap_quiet_at_default_thresholds() -> None:
+    """Ladder-calibration rung (D-1 tests-of-record), DEFAULT thresholds: PSI
+    unreadable, swap-out delta at/below the noise floor (no evidence from
+    that tier), mem_free_mb (~5) and mem_available_mb (~82) BOTH below their
+    default floors (16 / 200) -- the combined-low warning tier."""
+    cfg = MonitorHostHealthConfig()
+    prev = {"swap_sout": 0, "mem_free_mb": 5, "mem_available_mb": 82, "psi_some_avg10": None}
+    cur = {"swap_sout": 0, "mem_free_mb": 5, "mem_available_mb": 82, "psi_some_avg10": None}
+
+    pressure = host_health.memory_pressure(cur, prev, cfg)
+
+    assert pressure is not None
+    assert pressure.severity == "warning"
+    assert pressure.signal == "combined_low"
+
+
+def test_memory_pressure_should_be_healthy_when_memfree_and_memavail_clear_default_thresholds() -> (
+    None
+):
+    """Ladder-calibration rung (D-1 tests-of-record), DEFAULT thresholds: no
+    swap movement, mem_free_mb (200) and mem_available_mb (4000) both
+    comfortably clear their default floors -- the healthy-verdict rung, the
+    baseline every other rung above is calibrated against."""
+    cfg = MonitorHostHealthConfig()
+    prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 4000, "psi_some_avg10": None}
+    cur = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 4000, "psi_some_avg10": None}
+
+    assert host_health.memory_pressure(cur, prev, cfg) is None
+
+
 def test_cgroup_growth_rate_pressure_should_return_none_when_rate_is_none() -> None:
 
     result = host_health.cgroup_growth_rate_pressure(None, MonitorHostHealthConfig())
