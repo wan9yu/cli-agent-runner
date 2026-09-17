@@ -304,11 +304,16 @@ def assess_treadmill(
        ``anomaly_repetitive_tool`` -- both are agent-specific, and a custom
        ``[agent] command`` with no usage-emitting plugin must still be
        assessable.
-    2. **No convergence**: no ``goal_check``'s ``satisfied`` OR
-       (``_coerce_float``-read) ``value`` differs across the rounds it
-       appeared in, for ANY check name. A window with no non-skipped
-       ``goal_check`` at all has no signal to judge convergence by, so it
-       does NOT fire (vacuous "nothing changed" is not treated as "stuck").
+    2. **No convergence, and not already met**: no ``goal_check``'s
+       ``satisfied`` OR (``_coerce_float``-read) ``value`` differs across the
+       rounds it appeared in, for ANY check name, AND at least one check in
+       the window is unsatisfied. A window with no non-skipped ``goal_check``
+       at all has no signal to judge convergence by, so it does NOT fire
+       (vacuous "nothing changed" is not treated as "stuck"). A window where
+       EVERY check is satisfied -- even if that satisfied signature is
+       perfectly constant -- is "done", not stuck, so it does NOT fire
+       either: a constant signature alone doesn't mean stuck, it can just as
+       well mean the goal was met and the agent kept working past it.
     3. **Not already fired** (edge-trigger, keyed off the EPISODE, not the
        window): walk backward from the window over earlier completed rounds
        that still match the window's activity + per-check signature; the
@@ -351,7 +356,9 @@ def assess_treadmill(
         if not _round_has_activity(buckets.get(rn, [])):
             return None
 
-    # Gate 2: no goal_check status/value change across the window.
+    # Gate 2: no goal_check status/value change across the window, and not
+    # every check already satisfied (a constant ALL-satisfied signature is
+    # "done", not "stuck" -- see the constant_sig check below).
     check_series: dict[str, list[tuple[bool, float | None]]] = {}
     for rn in window:
         for name, entry in _check_signature(buckets.get(rn, [])).items():
@@ -362,6 +369,8 @@ def assess_treadmill(
         if len(set(series)) > 1:
             return None  # a check moved -- converging, not stuck
     constant_sig = {name: series[0] for name, series in check_series.items()}
+    if all(satisfied for satisfied, _value in constant_sig.values()):
+        return None  # goal met and stable -- convergence, not a treadmill
 
     # Gate 3: edge-trigger, keyed off the EPISODE start, not the window start.
     # Walk backward over earlier completed rounds while each still matches

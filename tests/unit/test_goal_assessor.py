@@ -170,6 +170,23 @@ def test_assess_treadmill_should_return_none_when_check_satisfied_flips(tmp_path
     assert assess_treadmill(log_dir, current_round=4) is None
 
 
+def test_assess_treadmill_should_return_none_when_every_check_is_satisfied_and_stable(
+    tmp_path: Path,
+) -> None:
+    """A goal that's MET and stable (every check satisfied, unchanged across
+    the window) must never be misread as stuck -- a constant signature alone
+    doesn't mean treadmilling, it can just as well mean the goal was met and
+    the agent kept working past it. Regression pin for the false-steer where
+    gate 2 only checked for a CHANGED signature, never for an UNSATISFIED
+    one."""
+    log_dir = tmp_path / "logs"
+    for n in (1, 2, 3):
+        _write(log_dir, *_round(n, dirty=True, check_satisfied=True))
+    _write(log_dir, _pending_substrate_before(4))
+
+    assert assess_treadmill(log_dir, current_round=4) is None
+
+
 def test_assess_treadmill_should_return_none_when_already_fired_for_this_signature(
     tmp_path: Path,
 ) -> None:

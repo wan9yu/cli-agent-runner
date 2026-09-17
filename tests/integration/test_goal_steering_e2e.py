@@ -40,10 +40,15 @@ _VALID_PROMPT = "placeholder agent task prompt line. " * 20
 # echo verbatim into the round's own agent log.
 _TREADMILL_SCRIPT = "printf '%s' \"$1\"; touch tick-$AGENT_RUNNER_ROUND_NUM; exit 0"
 
-# Same shape, but also touches `done` once the round number reaches 3 -- the
-# goal-check `test -f done` starts passing from round 3 onward, so the
-# assessor should see the check's status change and never call it stuck.
-_CONVERGING_SCRIPT = 'printf \'%s\' "$1"; [ "$AGENT_RUNNER_ROUND_NUM" -ge 3 ] && touch done; exit 0'
+# Same shape (including the same per-round marker, so gate 1's activity
+# signal is agent-driven in BOTH variants), but also touches `done` once the
+# round number reaches 3 -- the goal-check `test -f done` starts passing from
+# round 3 onward and then stays satisfied, so this differs from
+# _TREADMILL_SCRIPT in exactly one variable: whether/when `done` gets touched.
+_CONVERGING_SCRIPT = (
+    "printf '%s' \"$1\"; touch tick-$AGENT_RUNNER_ROUND_NUM; "
+    '[ "$AGENT_RUNNER_ROUND_NUM" -ge 3 ] && touch done; exit 0'
+)
 
 
 def _init_git(work_dir: Path) -> None:
@@ -51,8 +56,13 @@ def _init_git(work_dir: Path) -> None:
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=work_dir, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=work_dir, check=True)
     subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=work_dir, check=True)
-    # logs/ gitignored so the round-to-round "dirty" signal comes only from
-    # the agent's own per-round marker file, not from event-log churn.
+    # logs/ gitignored so event-log churn never contributes to the round-to-
+    # round "dirty" signal. The agent's own per-round marker file (tick-N)
+    # provides genuine per-round activity in both variants; the untracked
+    # agent-runner.toml (written below, never committed) is ALSO dirty every
+    # round, so it isn't load-bearing for gate 1 here -- but the marker file
+    # alone is sufficient, which is what keeps gate 1 robust even if the toml
+    # were later gitignored too.
     (work_dir / ".gitignore").write_text("logs/\n")
     (work_dir / "prompt.md").write_text(_VALID_PROMPT)
     subprocess.run(["git", "add", ".gitignore", "prompt.md"], cwd=work_dir, check=True)
@@ -156,14 +166,36 @@ def test_goal_steering_should_fold_one_advisory_into_the_fresh_round_when_treadm
         f"subprocess prompt.\nledger:\n{ledger_content!r}\n\nR4 log:\n{r4_content!r}"
     )
 
+    # Pin the firing to EXACTLY round 4, not "at or before" it: the ledger is
+    # a [prompt] files entry, so once written it rides in EVERY subsequent
+    # round's prompt too -- a window-size regression that fired as early as
+    # round 3 would still put the marker in both R3 and R4 logs and still
+    # satisfy the count==1 / substring checks above. goal_assessment carries
+    # no round_num, so the round logs' own content is the only way to pin it.
+    marker = "### Goal assessment --"
+    for n in (1, 2, 3):
+        early_logs = sorted((log_dir / "rounds").glob(f"R{n}-*.log"))
+        assert len(early_logs) == 1, f"expected exactly one R{n} round log, found {early_logs}"
+        early_content = early_logs[0].read_text(encoding="utf-8")
+        assert marker not in early_content, (
+            f"the advisory fired too early -- its marker already appears in "
+            f"round {n}'s log:\n{early_content!r}"
+        )
 
-@pytest.mark.timeout(120)
+
+@pytest.mark.timeout(140)
 def test_goal_steering_should_never_advise_when_the_goal_converges(tmp_path: Path) -> None:
     _init_git(tmp_path)
     cfg_path = _write_config(tmp_path, agent_script=_CONVERGING_SCRIPT)
     log_dir = tmp_path / "logs"
 
-    proc = _run_serve(cfg_path, max_rounds=5, timeout_s=100)
+    # K+3 (not K+2): the goal is satisfied+stable from round 3 onward, so
+    # rounds 3-5 alone would already be a constant-satisfied window at round
+    # 6's assessment -- one round short of that (max_rounds=5) never actually
+    # exercises the "every check satisfied and stable" gate this test exists
+    # to pin; six rounds gives the assessor a full satisfied-and-stable
+    # window (rounds 3,4,5) to (wrongly, pre-fix) call stuck at round 6.
+    proc = _run_serve(cfg_path, max_rounds=6, timeout_s=120)
 
     assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
     events = read_events_for_current_month(log_dir)
