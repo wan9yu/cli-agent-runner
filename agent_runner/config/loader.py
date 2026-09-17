@@ -13,6 +13,7 @@ from agent_runner.config.errors import ConfigError
 from agent_runner.config.models import Config, PhasesConfig
 from agent_runner.config.parsers import (
     _parse_agent,
+    _parse_goal,
     _parse_monitor,
     _parse_phase_overrides,
     _parse_plugins,
@@ -53,6 +54,35 @@ def _reject_static_resume_flag(cfg) -> None:
             raise ConfigError(
                 f"{where} command already contains {flag!r}: agent-runner injects it "
                 "per round for cross-round resume; remove it from the static command"
+            )
+
+
+def _reject_goal_ledger_not_listed(cfg: Config) -> None:
+    """A [goal].ledger doesn't exist at cold start -- it's written by the agent
+    mid-run -- so it must ride in [prompt] files at index >= 1: index 0 is a
+    fatal-on-missing read (prompt_loader.py), and the single `file=` form can
+    never carry a second entry at all. Checks every configured phase's own
+    effective files list, mirroring Config.profile_for's override-or-base
+    resolution rule for prompt_files (no override -> the base [prompt] table)."""
+    if cfg.goal is None:
+        return
+    ledger = cfg.goal.ledger
+    phase_names: list[str | None] = list(cfg.phases.list) if cfg.phases.list else [None]
+    for phase_name in phase_names:
+        where = "[prompt]" if phase_name is None else f"[phases.{phase_name}.prompt]"
+        override = cfg.phases.overrides.get(phase_name) if phase_name is not None else None
+        if override is not None and override.prompt_files is not None:
+            files = [str(p) for p in override.prompt_files]
+        elif cfg.prompt.file is not None:
+            files = []  # single `file=` form: never carries a second entry
+        else:
+            files = [str(p) for p in cfg.prompt.files]
+        if ledger not in files or files.index(ledger) == 0:
+            raise ConfigError(
+                f"{where}: [goal] ledger {ledger!r} is not listed in the resolved "
+                "prompt files at index >= 1 (the single `file=` form can't carry it, "
+                f"and index 0 doesn't exist at cold start); list {ledger!r} in "
+                "[prompt] files at index >= 1"
             )
 
 
@@ -136,6 +166,11 @@ def load_config(toml_path: Path) -> Config:
     monitor = _parse_monitor(_require_table(raw, "monitor"))
     plugins = _parse_plugins(_require_table(raw, "plugins"))
     schedule_cfg = _parse_schedule(_require_table(raw, "schedule"))
+    goal = (
+        _parse_goal(_require_table(raw, "goal"), project_name=project_name, work_dir=work_dir)
+        if "goal" in raw
+        else None
+    )
 
     cfg = Config(
         agent=agent,
@@ -146,6 +181,7 @@ def load_config(toml_path: Path) -> Config:
         phases=phases_cfg,
         plugins=plugins,
         schedule=schedule_cfg,
+        goal=goal,
     )
 
     # Verify + import discovered agent_runner.plugins entry points now that
@@ -158,5 +194,6 @@ def load_config(toml_path: Path) -> Config:
         apply_plugin_disable(plugins.disable)
 
     _reject_static_resume_flag(cfg)
+    _reject_goal_ledger_not_listed(cfg)
 
     return cfg

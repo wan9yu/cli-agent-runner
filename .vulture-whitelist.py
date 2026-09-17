@@ -167,6 +167,11 @@ monitor
 phases
 plugins
 schedule
+goal
+
+# agent_runner.config.models.GoalConfig
+checks
+ledger
 
 # agent_runner.config.models.MonitorConfig
 auth_fail_patterns
@@ -237,6 +242,12 @@ pause_windows
 # agent_runner.config.models.VcsConfig
 stash_idempotency_s
 dirty_action
+
+# agent_runner.config.models._GoalCheckConfig
+name
+cmd
+cwd
+timeout_s
 
 # agent_runner.config.models._HostHealthBrakeConfig
 memory_high

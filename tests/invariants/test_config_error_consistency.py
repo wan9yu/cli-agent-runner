@@ -44,6 +44,7 @@ _TOP_LEVEL_TABLES = (
     "phases",
     "plugins",
     "schedule",
+    "goal",
 )
 
 

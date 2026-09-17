@@ -32,6 +32,15 @@ DEFAULT_TERMINAL_MARKER = '"type":"result"'
 # agent's preset gets from the round leader (see AgentConfig.sigterm_grace_s).
 DEFAULT_SIGTERM_GRACE_S = 10
 
+# Default [[goal.checks]] timeout_s: an objective goal-check is a lightweight
+# scriptable sanity command (e.g. a lint/test run), not another agent round.
+DEFAULT_GOAL_CHECK_TIMEOUT_S = 10
+
+# Boot cap for [[goal.checks]] timeout_s: a value above this is rejected
+# outright, not clamped, so one slow check can't silently eat the round's
+# own time budget.
+_MAX_GOAL_CHECK_TIMEOUT_S = 30
+
 # Ceiling for [agent] sigterm_grace_s: sits a STRICT ~3s BELOW _serve_policy's
 # _ROUND_TERM_GRACE_S (15, the supervisor's own wait for the round leader) --
 # NOT equal to it. The margin buys the round LEADER's own cooperative
@@ -307,6 +316,28 @@ class ScheduleConfig:
 
 
 @dataclass(frozen=True)
+class _GoalCheckConfig:
+    """One ``[[goal.checks]]`` entry: an objective, scriptable check (e.g. a
+    lint or test run) the operator trusts over the agent's own self-report.
+    ``cwd`` is a raw operator string, resolved by the check runner, not here."""
+
+    name: str
+    cmd: list[str]
+    cwd: str | None = None
+    timeout_s: int = DEFAULT_GOAL_CHECK_TIMEOUT_S
+
+
+@dataclass(frozen=True)
+class GoalConfig:
+    """The ``[goal]`` table: objective goal-checks plus the lessons-ledger
+    path threaded into the prompt across rounds. ``Config.goal`` stays
+    ``None`` when ``[goal]`` is absent -- the steering loop is opt-in."""
+
+    checks: tuple[_GoalCheckConfig, ...]
+    ledger: str
+
+
+@dataclass(frozen=True)
 class Profile:
     """Fully-resolved per-phase execution profile.
 
@@ -333,6 +364,7 @@ class Config:
     phases: PhasesConfig = field(default_factory=PhasesConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+    goal: GoalConfig | None = None
 
     def profile_for(self, phase: str | None) -> Profile:
         """Resolve the effective execution profile for a phase.
@@ -429,3 +461,7 @@ _PROMPT_ALLOWED_FIELDS = frozenset(
 
 # Keys allowed under a [schedule] table (top-level or per-phase).
 _SCHEDULE_ALLOWED_FIELDS = frozenset({"timezone", "run_windows", "pause_windows"})
+
+# Keys allowed under the [goal] table and each [[goal.checks]] entry.
+_GOAL_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(GoalConfig))
+_GOAL_CHECK_ALLOWED_FIELDS = frozenset(f.name for f in dataclasses.fields(_GoalCheckConfig))

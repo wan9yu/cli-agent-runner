@@ -21,6 +21,7 @@ from agent_runner.cli.init_cmd import _preset_names
 from agent_runner.config import (
     AgentConfig,
     Config,
+    GoalConfig,
     MonitorConfig,
     MonitorHostHealthConfig,
     PhasesConfig,
@@ -29,6 +30,7 @@ from agent_runner.config import (
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _GoalCheckConfig,
     _HostHealthBrakeConfig,
     _HostHealthDiskConfig,
     _HostHealthMemoryConfig,
@@ -72,6 +74,7 @@ _SECTIONS: list[tuple[str, type, list[tuple[str, type]]]] = [
     ("phases", PhasesConfig, []),
     ("plugins", PluginsConfig, []),
     ("schedule", ScheduleConfig, []),
+    ("goal", GoalConfig, [("goal.checks", _GoalCheckConfig)]),
 ]
 
 

@@ -220,7 +220,7 @@ def test_replace_block_should_insert_regex_special_chars_verbatim_when_body_cont
 
 
 def test_render_config_schema_table_should_include_phases_and_plugins_sections() -> None:
-    """_SECTIONS must cover all 7 Config fields — [plugins] disable was undocumented."""
+    """_SECTIONS must cover all 9 Config fields — [plugins] disable was undocumented."""
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()

@@ -19,10 +19,13 @@ from agent_runner.config.models import (
     _DEFAULT_AUTH_PATTERNS,
     _DEFAULT_AUTO_STOP_ON,
     _DEFAULT_REMOTE_FAILURE_TOLERANCE_S,
+    _GOAL_ALLOWED_FIELDS,
+    _GOAL_CHECK_ALLOWED_FIELDS,
     _HOST_HEALTH_BRAKE_ALLOWED_FIELDS,
     _HOST_HEALTH_DISK_ALLOWED_FIELDS,
     _HOST_HEALTH_MEMORY_ALLOWED_FIELDS,
     _HOST_HEALTH_PRESSURE_ALLOWED_FIELDS,
+    _MAX_GOAL_CHECK_TIMEOUT_S,
     _MAX_SIGTERM_GRACE_S,
     _MONITOR_ALLOWED_FIELDS,
     _MONITOR_HOST_HEALTH_ALLOWED_FIELDS,
@@ -38,9 +41,11 @@ from agent_runner.config.models import (
     _VALID_PROMPT_DELIVERY,
     _VALID_TRANSIENT_ERROR_ACTIONS,
     _VCS_ALLOWED_FIELDS,
+    DEFAULT_GOAL_CHECK_TIMEOUT_S,
     DEFAULT_SIGTERM_GRACE_S,
     DEFAULT_TERMINAL_MARKER,
     AgentConfig,
+    GoalConfig,
     MonitorConfig,
     MonitorHostHealthConfig,
     PhaseOverride,
@@ -49,6 +54,7 @@ from agent_runner.config.models import (
     RuntimeConfig,
     ScheduleConfig,
     VcsConfig,
+    _GoalCheckConfig,
     _HostHealthBrakeConfig,
     _HostHealthDiskConfig,
     _HostHealthMemoryConfig,
@@ -337,6 +343,43 @@ def _parse_schedule(schedule_d: dict, *, label: str = "schedule") -> ScheduleCon
         run_windows=_parse_list("run_windows"),
         pause_windows=_parse_list("pause_windows"),
     )
+
+
+def _parse_goal_check(check_d: Any, *, index: int) -> _GoalCheckConfig:
+    """Parse one ``[[goal.checks]]`` entry."""
+    label = f"goal.checks.{index}"
+    if not isinstance(check_d, dict):
+        raise ConfigError(
+            f"[[goal.checks]] entry {index}: must be a table, got {type(check_d).__name__}"
+        )
+    _reject_unknown_fields(check_d, _GOAL_CHECK_ALLOWED_FIELDS, label)
+    name = str(_require(check_d, "name"))
+    cmd = _require_str_list(_require(check_d, "cmd"), field=f"{label}.cmd")
+    if not cmd:
+        raise ConfigError(f"{label}.cmd: must be a non-empty list")
+    cwd = str(check_d["cwd"]) if "cwd" in check_d else None
+    timeout_s = _require_positive_int(
+        check_d.get("timeout_s", DEFAULT_GOAL_CHECK_TIMEOUT_S), field=f"{label}.timeout_s"
+    )
+    if timeout_s > _MAX_GOAL_CHECK_TIMEOUT_S:
+        raise ConfigError(
+            f"{label}.timeout_s: must be <= {_MAX_GOAL_CHECK_TIMEOUT_S}, got {timeout_s}"
+        )
+    return _GoalCheckConfig(name=name, cmd=cmd, cwd=cwd, timeout_s=timeout_s)
+
+
+def _parse_goal(goal_d: dict, *, project_name: str, work_dir: Path) -> GoalConfig:
+    """Parse + validate the ``[goal]`` table: objective goal-checks plus the
+    lessons-ledger path. Mirrors ``_parse_schedule``'s shape (a top-level
+    table plus a nested list of sub-tables)."""
+    _reject_unknown_fields(goal_d, _GOAL_ALLOWED_FIELDS, "goal")
+    checks_raw = goal_d.get("checks", [])
+    if not isinstance(checks_raw, list):
+        raise ConfigError(f"goal.checks: must be a list of tables, got {type(checks_raw).__name__}")
+    checks = tuple(_parse_goal_check(c, index=i) for i, c in enumerate(checks_raw))
+    ledger_raw = str(_require(goal_d, "ledger"))
+    ledger = str(_expand_and_resolve(ledger_raw, project_name, work_dir))
+    return GoalConfig(checks=checks, ledger=ledger)
 
 
 def _parse_runtime(runtime_d: dict, *, project_name: str, work_dir: Path) -> RuntimeConfig:

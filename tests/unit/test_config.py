@@ -2517,3 +2517,222 @@ def test_load_config_should_reject_non_integer_schema_version_when_loaded(tmp_pa
 
     with pytest.raises(ConfigError, match="schema_version must be an integer"):
         load_config(toml)
+
+
+# --- [goal] table: objective goal-checks + lessons-ledger ---
+
+_MIN_AGENT_RUNTIME = """\
+[agent]
+command = ["true"]
+prompt_arg_template = ["{{prompt}}"]
+[runtime]
+work_dir = "{tmp_path}"
+log_dir = "{tmp_path}/logs"
+"""
+
+
+def test_goal_should_be_none_when_table_absent(tmp_path: Path) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path) + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is None
+
+
+def test_goal_checks_should_parse_when_loaded(tmp_path: Path) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + "[goal]\n"
+        'ledger = "ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest", "-q"]\n'
+        'cwd = "sub"\n'
+        "timeout_s = 20\n"
+        "[[goal.checks]]\n"
+        'name = "lint"\n'
+        'cmd = ["ruff", "check", "."]\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.ledger == str(tmp_path / "ledger.md")
+    assert len(cfg.goal.checks) == 2
+    first, second = cfg.goal.checks
+    assert first.name == "tests"
+    assert first.cmd == ["pytest", "-q"]
+    assert first.cwd == "sub"
+    assert first.timeout_s == 20
+    assert second.name == "lint"
+    assert second.cmd == ["ruff", "check", "."]
+    assert second.cwd is None
+    assert second.timeout_s == 10  # default
+
+
+def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "ledger.md"\nbogus = true\n',
+    )
+
+    with pytest.raises(ValueError, match=r"unknown \[goal\] field"):
+        load_config(toml)
+
+
+def test_goal_check_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest"]\n'
+        "bogus = 1\n",
+    )
+
+    with pytest.raises(ValueError, match=r"unknown \[goal\.checks\.0\] field"):
+        load_config(toml)
+
+
+def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "ledger.md"\n'
+        "[[goal.checks]]\n"
+        'name = "tests"\n'
+        'cmd = ["pytest"]\n'
+        "timeout_s = 999\n",
+    )
+
+    with pytest.raises(ValueError, match=r"goal\.checks\.0\.timeout_s.*<= 30"):
+        load_config(toml)
+
+
+def test_goal_scalar_ledger_should_be_rejected_when_not_string(tmp_path: Path) -> None:
+    """goal.checks must be a list of tables, not a scalar -- the bare-scalar
+    footgun _require_str_list guards elsewhere."""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "ledger.md"\nchecks = "nope"\n',
+    )
+
+    with pytest.raises(ValueError, match=r"goal\.checks.*list of tables"):
+        load_config(toml)
+
+
+def test_goal_ledger_missing_from_prompt_files_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md"]\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+        load_config(toml)
+
+
+def test_goal_ledger_at_index_zero_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["ledger.md", "prompt.md"]\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+        load_config(toml)
+
+
+def test_goal_with_single_prompt_file_form_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + f'[prompt]\nfile = "{tmp_path}/prompt.md"\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+        load_config(toml)
+
+
+def test_goal_ledger_at_index_one_should_load_successfully(tmp_path: Path) -> None:
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.goal.ledger == str(tmp_path / "ledger.md")
+
+
+def test_goal_with_phase_empty_prompt_files_should_raise_config_error_when_loaded(
+    tmp_path: Path,
+) -> None:
+    """A phase whose own prompt.files = [] sends no prompt at all -- under
+    [goal] that's still an error, since the ledger can never ride along."""
+    (tmp_path / "prompt.md").write_text("p")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["prompt.md", "ledger.md"]\n'
+        + '[phases]\nlist = ["dev"]\n'
+        "[phases.dev.prompt]\nfiles = []\n" + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    with pytest.raises(ValueError, match=r"\[phases\.dev\.prompt\]: \[goal\] ledger .*index >= 1"):
+        load_config(toml)
+
+
+def test_goal_with_phase_override_ledger_at_index_one_should_load_successfully(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.md").write_text("a")
+    toml = _write_toml(
+        tmp_path,
+        _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
+        + '[prompt]\nfiles = ["a.md", "ledger.md"]\n'
+        + '[phases]\nlist = ["dev"]\n'
+        "[phases.dev.prompt]\n"
+        'files = ["a.md", "ledger.md"]\n' + '[goal]\nledger = "ledger.md"\n',
+    )
+
+    cfg = load_config(toml)
+
+    assert cfg.goal is not None
+    assert cfg.phases.overrides["dev"].prompt_files == [tmp_path / "a.md", tmp_path / "ledger.md"]

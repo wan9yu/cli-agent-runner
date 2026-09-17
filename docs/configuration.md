@@ -152,6 +152,22 @@ running with newly-set `dirty_action = "auto_commit"` is undefined).
 | `timezone` | `str \| None` | None |
 | `run_windows` | `tuple[schedule.Window, ...]` | () |
 | `pause_windows` | `tuple[schedule.Window, ...]` | () |
+
+### `[goal]`
+
+| Field | Type | Default |
+|---|---|---|
+| `checks` | `tuple[_GoalCheckConfig, ...]` | — |
+| `ledger` | `str` | — |
+
+#### `[goal.checks]`
+
+| Field | Type | Default |
+|---|---|---|
+| `name` | `str` | — |
+| `cmd` | `list[str]` | — |
+| `cwd` | `str \| None` | None |
+| `timeout_s` | `int` | 10 |
 <!-- /gen:config-schema -->
 
 ### `agent.prompt_delivery`
