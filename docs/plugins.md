@@ -47,6 +47,7 @@ empty:
 | `name` | `str` | The plugin's own identity — `[plugins] disable` keys on this, not on any individual hook's own `.name`. |
 | `post_round_hooks` | `tuple[PostRoundHook, ...]` | Runs after each agent round. |
 | `cooperative_stop` | `Literal["SIGTERM", "SIGINT"] \| None` | The signal this preset's agent CLI catches to drain/wrap up when a round is stopped (`None` = no cooperative drain — the hard SIGTERM-first path). Reported under `peek --json`'s `plugins.cooperative_stop` (§ below). |
+| `resume_flag` | `str \| None` | The idempotent session flag `serve` injects on every round of this preset for cross-round resume (pi = `--session-id`); `serve` mints one session id per phase and the round child appends `[flag, id]` to its command. `None` = no resume (cold start every round, today's behavior for every other preset). |
 
 A plugin that provides more than one capability just fills in more than one
 field on the same manifest — there is nothing to register per-capability.

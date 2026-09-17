@@ -652,6 +652,71 @@ since 0.2.17. No constrained-host-specific claim this release — the
 subtraction is host-independent code removal, not a runtime-behavior change
 under pressure.
 
+## 0.3.9 → 0.3.10
+
+Cross-round resume for `pi`: `PluginManifest.resume_flag` (a new dataclass
+field, `str | None`, default `None`), `resolve_resume_flag`, a per-phase
+session-id mint + env publish (`AGENT_RUNNER_RESUME_FLAG`/
+`AGENT_RUNNER_RESUME_SESSION_ID`) in `serve_cmd`, the round child appending
+`[flag, id]`, a `session_resumed` event, and a config boot guard. Same macOS
+harness (§ methodology above), comparing **v0.3.9** = `095c5f1` (measured in a
+throwaway worktree) against **0.3.10**, the tip of this branch.
+
+### 1. Import/startup RSS
+
+| | v0.3.9 | 0.3.10 | Δ |
+|---|---|---|---|
+| RSS (avg of 5 cold runs) | 23.42 MB | 23.39 MB | −0.03 MB (flat, within noise) |
+| RSS range | 23.39–23.45 MB | 23.34–23.42 MB | |
+| `sys.modules` count | 211 | 211 | +0 |
+
+Flat, as expected: `uuid` (the only new stdlib name resume touches) is
+imported inside `_apply_resume_env`, not at module level, so it never joins
+the cold-startup graph — confirmed directly (`"uuid" in sys.modules` is
+`False` after `import agent_runner.cli`), not just inferred from a flat RSS
+number. A direct `sys.modules` set diff (not just the count) confirms the
+`agent_runner.*` module set `import agent_runner.cli` loads is byte-for-byte
+identical, 211 modules, before and after — the same check this page has run
+at every release since 0.3.9's own close-out.
+
+### 2. Base dependencies
+
+Unchanged: `psutil>=5.9` is still the only runtime dependency
+(`pip show cli-agent-runner` → `Requires: psutil`). Resume introduces no new
+dependency and no new extra.
+
+### 3. Module count, source LOC, largest module
+
+Tracked source only (`git ls-tree`, same convention as the rows above).
+
+| | v0.3.9 | 0.3.10 | Δ |
+|---|---|---|---|
+| `.py` files | 81 | 81 | +0 |
+| total LOC | 20,195 | 20,338 | +143 |
+| largest module | `migrations.py`, 972 | `migrations.py`, 972 | +0 |
+
+The `+143` LOC is the new manifest field, its resolver, the boot guard, the
+per-phase env publish/consume, the `session_resumed` event, and their tests
+— no module decomposition this release.
+
+### 4. Per-round allocation growth
+
+`tests/invariants/test_round_alloc_growth.py` green, unmodified harness.
+`_apply_resume_env` runs once per round (same call site as the other
+per-round `serve_cmd` readers) and, on the no-resume branch every
+non-`pi` preset takes, does two dict `.pop()`s and returns — no new retained
+per-round state. On the resume branch (`pi` only), the session id is minted
+once per phase at `serve` startup (`session_ids` dict, sized by phase count,
+not by round count) and reused verbatim every round after — not re-allocated
+per round.
+
+### Constrained-host (honesty)
+
+Dev-host-relative (macOS) numbers only, same methodology as every release
+since 0.2.17. No constrained-host-specific claim this release — resume is a
+pi-only session-id mechanism verified so far by an ssh-pi property test, not
+a memory-pressure-path change.
+
 ## Enforcement
 
 Four invariant tests keep these numbers from drifting silently:
