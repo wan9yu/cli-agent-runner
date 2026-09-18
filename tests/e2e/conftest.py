@@ -11,11 +11,13 @@ import os
 import subprocess
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 PI_HOST = "pi"
 E2E_FLAG = "AGENT_RUNNER_E2E_PI"
+_GROWTH_CHILD_SRC = Path(__file__).resolve().parent / "growth_child.py"
 
 
 def _ssh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
@@ -182,47 +184,18 @@ def pi_growth_script(pi_workdir: str) -> str:
     ``pi_workdir``, for test_e2e_pre_oom.py's real-cgroup pre-OOM property.
 
     Written as a real script installed via base64 (not an inline ``python -c``
-    with escaped newlines). Growth is PACED -- appends+touches ~8 MB every
-    ~2.5s -- deliberately: an unpaced allocate loop exhausts memory in ~2s,
-    inside the first ~10s mid-round sample tick agent-runner's serve loop
-    uses (``_MEM_CHECK_INTERVAL_S``), so the loop would never get a chance to
-    sample before the kernel acted first. Grows without bound so it crosses
-    the unit's finite MemoryMax and spills into the host's unbounded swap --
-    agent-runner terminating it IS the property under test, not a bug here."""
+    with escaped newlines) from ``tests/e2e/growth_child.py``. Growth is PACED
+    -- appends+touches ~8 MB every ~2.5s -- deliberately: an unpaced allocate
+    loop exhausts memory in ~2s, inside the first ~10s mid-round sample tick
+    agent-runner's serve loop uses (``_MEM_CHECK_INTERVAL_S``), so the loop
+    would never get a chance to sample before the kernel acted first. Grows
+    without bound so it crosses the unit's finite MemoryMax and spills into
+    the host's unbounded swap -- agent-runner terminating it IS the property
+    under test, not a bug here."""
     script_path = f"{pi_workdir}/growth_child.py"
-    body = (
-        "#!/usr/bin/env python3\n"
-        '"""Synthetic pre-OOM growth child for agent-runner\'s gated\n'
-        "real-cgroup e2e test (tests/e2e/test_e2e_pre_oom.py). Paced growth is\n"
-        "REQUIRED -- see that module's docstring for why an unpaced loop would\n"
-        'prove nothing.\n"""\n'
-        "\n"
-        "from __future__ import annotations\n"
-        "\n"
-        "import time\n"
-        "\n"
-        "_CHUNK_BYTES = 8 * 1024 * 1024\n"
-        "_PAGE_BYTES = 4096\n"
-        "_PACE_S = 2.5\n"
-        "\n"
-        "\n"
-        "def main() -> None:\n"
-        "    chunks: list[bytearray] = []\n"
-        "    while True:\n"
-        "        block = bytearray(_CHUNK_BYTES)\n"
-        "        for i in range(0, _CHUNK_BYTES, _PAGE_BYTES):\n"
-        "            block[i] = 1  # touch every page -- an untouched bytearray is "
-        "virtual-only\n"
-        "        chunks.append(block)\n"
-        "        time.sleep(_PACE_S)\n"
-        "\n"
-        "\n"
-        'if __name__ == "__main__":\n'
-        "    main()\n"
-    )
     import base64
 
-    encoded = base64.b64encode(body.encode()).decode()
+    encoded = base64.b64encode(_GROWTH_CHILD_SRC.read_bytes()).decode()
     _ssh(f"echo '{encoded}' | base64 -d > {script_path}")
     return script_path
 
