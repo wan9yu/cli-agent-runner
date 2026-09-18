@@ -37,3 +37,11 @@
 - files: tests/e2e/conftest.py, tests/e2e/test_e2e_pre_oom.py
 - verification: `.venv/bin/python -m pytest tests/e2e/test_e2e_pre_oom.py -q` → 3 skipped; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
 - notes: assumed PI control pytest timeout includes +600 install budget matching treatment; local uses +120 per plan. Two thin wrappers (PI + local CGROUP) share `_assert_control`. Skip-closed (unset env => skip) is the honest local proof; did not export e2e flags or run sudo/systemctl. Did not add OOMPolicy or memory.oom.group.
+
+## 2026-09-18 SECURITY reframe + CHANGELOG stub
+
+- item: Root SECURITY.md gains one paragraph: isolation is the operator's job (exec_prefix, dedicated user, no passwordless sudo, egress); agent-runner stays lifecycle-safety. CHANGELOG adds ## [0.3.13] - UNRELEASED. No docs/SECURITY.md. Optional results template under gitignored docs/internal/notes is allowed and must not be staged.
+- rationale: plan says docs last. Last remaining unfinished item.
+- files: SECURITY.md, CHANGELOG.md
+- verification: `.venv/bin/python -m pytest tests/invariants/test_docs_index_complete.py tests/invariants/test_doc_claims_match_ssot.py -q` → 4 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean; `docs/SECURITY.md` absent
+- notes: assumed not naming a competitor in SECURITY.md (Ralph item asks for the operator-vs-lifecycle split). Did not edit runbook.md (not in the Ralph item). Results template written under gitignored docs/internal/notes and not staged. Did not claim uncapped-before-coma or a live two-arm run.

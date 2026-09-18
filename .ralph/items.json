@@ -79,8 +79,8 @@
         "Insert CHANGELOG ## [0.3.13] - UNRELEASED above 0.3.12. Do not claim uncapped-before-coma.",
         "Confirm docs/SECURITY.md does not exist. Run tests/invariants/test_docs_index_complete.py tests/invariants/test_doc_claims_match_ssot.py and the ruff gate."
       ],
-      "passes": false,
-      "regression_notes": ""
+      "passes": true,
+      "regression_notes": "4 passed (test_docs_index_complete + test_doc_claims_match_ssot); ruff check+format clean. docs/SECURITY.md absent. CHANGELOG [0.3.13] UNRELEASED; no uncapped-before-coma claim. Results template gitignored, not staged."
     }
   ]
 }
