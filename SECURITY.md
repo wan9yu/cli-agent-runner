@@ -37,6 +37,12 @@ unprivileged user, inside a container or VM, without passwordless sudo, and
 with egress limits. The supervisor's defenses bound the blast radius of a
 *misbehaving* agent, not a *hostile* one.
 
+Isolation is the operator's job. Isolation-enforcing supervisors exist;
+agent-runner deliberately is not one of them. Lifecycle-safety stays ours
+(round timeouts, process-group reaping, orphan stashing, auto-stop on
+critical alerts). Containment stays yours: `[agent] exec_prefix`, a dedicated
+unprivileged user, no passwordless sudo, and egress limits.
+
 ## Containment
 
 If you need to bound what the agent can reach, run it inside a container (or

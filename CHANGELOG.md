@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] - UNRELEASED
+
+### Added
+- Two production cgroup modes are now checkable on the same paced growth child: treatment (`MemorySwapMax` infinity) still cooperatively terminates and reaps; control (`MemorySwapMax=0`) defers to kernel cgroup-OOM of the capped child. Both leave the host up. The uncapped-before-coma case stays inferred.
+- `metrics.sample()` always includes corroborating `psi_full_total`, `io_psi_some_avg10`, and `io_psi_full_avg10` (`None` when unread). They are not kill rungs; `host_health.memory_pressure` stays blind to them.
+- `host_cgroup_memory_limit` carries `defer` as a bool (`True` when both caps are finite and plausible, including `MemorySwapMax=0`).
+- `round_cgroup_memory` may carry those PSI fields as optional flat keys at emit time; omitted when unread.
+
+### Docs
+- SECURITY.md: isolation is the operator's job (`exec_prefix`, dedicated user, no passwordless sudo, egress); agent-runner stays lifecycle-safety.
+
+No config migration required. `peek --json` schema stays `2.6`.
+
 ## [0.3.12] - 2026-09-18
 
 ### Added
