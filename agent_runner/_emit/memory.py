@@ -176,6 +176,9 @@ def emit_round_cgroup_memory(
     events_oom_delta: int,
     events_oom_kill_delta: int,
     bounding_cgroup_path: str | None,
+    io_psi_some_avg10: float | None = None,
+    io_psi_full_avg10: float | None = None,
+    psi_full_total: float | int | None = None,
 ) -> None:
     """Emit once per round: the round's peak cgroup ``memory.current`` (+swap) and
     the ``memory.events`` DELTAS (high/max/oom/oom_kill) over the round, read at the
@@ -190,9 +193,24 @@ def emit_round_cgroup_memory(
     process's own) cgroup; here it names the BOUNDING ANCESTOR (the one whose
     ``memory.max`` actually binds). Same key, two meanings across the two
     events an operator correlates would be a trap -- events.md pins field
-    semantics permanently once shipped, so the distinct name is chosen now."""
+    semantics permanently once shipped, so the distinct name is chosen now.
+
+    Optional corroborating PSI fields (``io_psi_some_avg10``,
+    ``io_psi_full_avg10``, ``psi_full_total``) come from ``metrics.sample()``
+    at emit time. Each is omitted when unread (``None``). They ride FLAT on
+    this event -- never copied into ``Pressure.context``, so the kill ladder
+    stays blind to them."""
     from agent_runner.events import ROUND_CGROUP_MEMORY, emit
 
+    extra = {
+        k: v
+        for k, v in (
+            ("io_psi_some_avg10", io_psi_some_avg10),
+            ("io_psi_full_avg10", io_psi_full_avg10),
+            ("psi_full_total", psi_full_total),
+        )
+        if v is not None
+    }
     emit(
         log_dir,
         ROUND_CGROUP_MEMORY,
@@ -204,6 +222,7 @@ def emit_round_cgroup_memory(
         events_oom_delta=events_oom_delta,
         events_oom_kill_delta=events_oom_kill_delta,
         bounding_cgroup_path=bounding_cgroup_path,
+        **extra,
     )
 
 
