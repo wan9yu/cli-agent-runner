@@ -29,3 +29,11 @@
 - files: tests/e2e/growth_child.py, tests/e2e/conftest.py, tests/unit/test_growth_child_constants.py
 - verification: `.venv/bin/python -m pytest tests/unit/test_growth_child_constants.py -q` → 1 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
 - notes: assumed the constants test lives under tests/unit because CI and build.sh --ignore=tests/e2e. pi_growth_script still base64-over-ssh (same install path), reading tests/e2e/growth_child.py bytes instead of an inlined string. Importing the module does not enter main().
+
+## 2026-09-18 skip-closed control-arm e2e
+
+- item: A skip-closed control-arm e2e exists: same unit as treatment except MemorySwapMax=0, MemoryHigh=120M kept, no oom.group and no OOMPolicy=kill. Unset AGENT_RUNNER_E2E_CGROUP and AGENT_RUNNER_E2E_PI, the new test skips. Assertions in source require defer true, no round_mem_terminated, no memory_high_engaged, events_oom_kill_delta>=1 or INVALID, DEFER-FIRST or KERNEL-FIRST named, growth child gone, host still answers.
+- rationale: plan prefers skip-closed control tests after extracting growth_child.py. First remaining unfinished item.
+- files: tests/e2e/conftest.py, tests/e2e/test_e2e_pre_oom.py
+- verification: `.venv/bin/python -m pytest tests/e2e/test_e2e_pre_oom.py -q` → 3 skipped; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
+- notes: assumed PI control pytest timeout includes +600 install budget matching treatment; local uses +120 per plan. Two thin wrappers (PI + local CGROUP) share `_assert_control`. Skip-closed (unset env => skip) is the honest local proof; did not export e2e flags or run sudo/systemctl. Did not add OOMPolicy or memory.oom.group.

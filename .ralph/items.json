@@ -68,8 +68,8 @@
         "Add the control-arm test and shared assertions. Gate with existing PI flag and/or AGENT_RUNNER_E2E_CGROUP. Control wait ceiling 180s.",
         "Without those env flags, run .venv/bin/python -m pytest tests/e2e/test_e2e_pre_oom.py -q and confirm skip (not fail, not pass). Do not export the e2e flags. Run the ruff gate."
       ],
-      "passes": false,
-      "regression_notes": ""
+      "passes": true,
+      "regression_notes": "3 skipped (test_e2e_pre_oom.py without AGENT_RUNNER_E2E_CGROUP/PI); ruff check+format clean. Control unit MemorySwapMax=0, MemoryHigh=120M kept, no oom.group/OOMPolicy. Assertions in source: defer true, no round_mem_terminated, no memory_high_engaged, events_oom_kill_delta>=1 or INVALID, DEFER-FIRST or KERNEL-FIRST named, growth child gone, host still answers."
     },
     {
       "category": "functional",
