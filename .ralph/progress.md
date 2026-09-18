@@ -13,3 +13,11 @@
 - files: agent_runner/_emit/memory.py, agent_runner/cli/_serve_cgroup.py, tests/unit/test_cgroup_probe.py, tests/e2e/test_e2e_pre_oom.py
 - verification: `.venv/bin/python -m pytest tests/unit/test_cgroup_probe.py -q` → 55 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
 - notes: defer is a required emit kwarg (every probe is yes/no). Did not touch runbook.md (docs item). Pre-existing pi-lens typing findings in _serve_cgroup left untouched.
+
+## 2026-09-18 round_cgroup_memory corroborating PSI fields
+
+- item: round_cgroup_memory may carry optional flat io_psi_some_avg10, io_psi_full_avg10, and psi_full_total from metrics.sample() at emit time. They are omitted when unread. They are never copied into Pressure.context.
+- rationale: plan prefers locking ladder-blindness and defer-field contracts before e2e fixture work. First remaining unfinished item after host_cgroup_memory_limit.defer.
+- files: agent_runner/_emit/memory.py, agent_runner/cli/_serve_cgroup.py, tests/unit/test_serve_round_cgroup_spine.py
+- verification: `.venv/bin/python -m pytest tests/unit/test_serve_round_cgroup_spine.py tests/unit/test_serve_round_oom_killed.py -q` → 19 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
+- notes: assumed sample() runs only on the successful emit path (skip-no-op paths do not sample); each None key is omitted independently. Did not edit host_health.py, events.md, or runbook.md. Pre-existing pi-lens typing findings in _serve_cgroup left untouched.

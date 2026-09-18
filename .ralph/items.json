@@ -45,8 +45,8 @@
         "Thread optional kwargs through emit_round_cgroup_memory and _emit_round_cgroup_memory; call sample() once at emit.",
         "Run .venv/bin/python -m pytest tests/unit/test_serve_round_cgroup_spine.py tests/unit/test_serve_round_oom_killed.py -q and the ruff gate."
       ],
-      "passes": false,
-      "regression_notes": ""
+      "passes": true,
+      "regression_notes": "19 passed (test_serve_round_cgroup_spine + test_serve_round_oom_killed); ruff check+format clean. Optional PSI fields omitted when unread/None; present when sample() read them. Not copied into Pressure.context."
     },
     {
       "category": "functional",

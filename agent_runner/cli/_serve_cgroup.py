@@ -128,6 +128,8 @@ def _emit_round_cgroup_memory(
     def _delta(key: str) -> int:
         return max(0, cur_ev.get(key, 0) - base_ev.get(key, 0))
 
+    # One sample() at emit -- corroborating IO/mem-PSI, omitted when unread.
+    s = metrics.sample()
     emit_round_cgroup_memory(
         log_dir,
         round_num=round_num,
@@ -138,6 +140,9 @@ def _emit_round_cgroup_memory(
         events_oom_delta=_delta("oom"),
         events_oom_kill_delta=_delta("oom_kill"),
         bounding_cgroup_path=state["bounding_cgroup_path"],
+        io_psi_some_avg10=s.get("io_psi_some_avg10"),
+        io_psi_full_avg10=s.get("io_psi_full_avg10"),
+        psi_full_total=s.get("psi_full_total"),
     )
     return cur, oom_kill_baseline
 

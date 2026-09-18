@@ -133,6 +133,82 @@ def test_emit_round_cgroup_memory_should_emit_deltas_when_baseline_present(tmp_p
     assert "cgroup_path" not in ev  # that name means the LEAF in host_cgroup_memory_limit
 
 
+def test_emit_round_cgroup_memory_should_carry_sample_psi_when_present(tmp_path, monkeypatch):
+    """Corroborating IO/mem-PSI fields ride flat on round_cgroup_memory
+    (not inside Pressure.context) when sample() actually read them."""
+    log_dir = tmp_path
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+        "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
+        "peak_current": 300_000_000,
+        "peak_swap": 100_000_000,
+        "bounding_cgroup_path": "/user.slice",
+    }
+    monkeypatch.setattr(
+        _serve_cgroup.metrics,
+        "cgroup_memory_usage",
+        lambda **k: {
+            "memory_events": {"high": 25, "max": 0, "oom": 0, "oom_kill": 0},
+            "memory_current": 310_000_000,
+            "memory_swap_current": 0,
+            "cgroup_path": "/user.slice",
+        },
+    )
+    monkeypatch.setattr(
+        _serve_cgroup.metrics,
+        "sample",
+        lambda: {
+            "io_psi_some_avg10": 1.25,
+            "io_psi_full_avg10": 0.5,
+            "psi_full_total": 42,
+        },
+    )
+
+    _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
+
+    ev = [e for e in _events(log_dir) if e["event"] == "round_cgroup_memory"][0]
+    assert ev["io_psi_some_avg10"] == 1.25
+    assert ev["io_psi_full_avg10"] == 0.5
+    assert ev["psi_full_total"] == 42
+    assert "context" not in ev  # never stuffed into Pressure.context
+
+
+def test_emit_round_cgroup_memory_should_omit_sample_psi_when_unread(tmp_path, monkeypatch):
+    log_dir = tmp_path
+    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
+        "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
+        "peak_current": 300_000_000,
+        "peak_swap": 100_000_000,
+        "bounding_cgroup_path": "/user.slice",
+    }
+    monkeypatch.setattr(
+        _serve_cgroup.metrics,
+        "cgroup_memory_usage",
+        lambda **k: {
+            "memory_events": {"high": 25, "max": 0, "oom": 0, "oom_kill": 0},
+            "memory_current": 310_000_000,
+            "memory_swap_current": 0,
+            "cgroup_path": "/user.slice",
+        },
+    )
+    monkeypatch.setattr(
+        _serve_cgroup.metrics,
+        "sample",
+        lambda: {
+            "io_psi_some_avg10": None,
+            "io_psi_full_avg10": None,
+            "psi_full_total": None,
+        },
+    )
+
+    _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
+
+    ev = [e for e in _events(log_dir) if e["event"] == "round_cgroup_memory"][0]
+    assert "io_psi_some_avg10" not in ev
+    assert "io_psi_full_avg10" not in ev
+    assert "psi_full_total" not in ev
+    assert ev["events_high_delta"] == 15
+
+
 def test_emit_round_cgroup_memory_should_return_empty_when_no_finite_bound(tmp_path):
     log_dir = tmp_path
 
