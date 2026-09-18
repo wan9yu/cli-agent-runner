@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.12] - UNRELEASED
+## [0.3.12] - 2026-09-18
 
 ### Added
 - `[goal]` config table: a markdown lessons `ledger` (listed in `[prompt] files` at index >= 1, and — since it must survive the round's own `git stash` — required to sit under `log_dir` or outside `work_dir`) plus `[[goal.checks]]` (`name`, `cmd` argv, optional `timeout_s`) — objective, CLI-agnostic checks the round child runs after each round's agent exits, each emitting a `goal_check` event (`satisfied` bool, optional `value`).
