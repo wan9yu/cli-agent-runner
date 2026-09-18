@@ -21,3 +21,11 @@
 - files: agent_runner/_emit/memory.py, agent_runner/cli/_serve_cgroup.py, tests/unit/test_serve_round_cgroup_spine.py
 - verification: `.venv/bin/python -m pytest tests/unit/test_serve_round_cgroup_spine.py tests/unit/test_serve_round_oom_killed.py -q` → 19 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
 - notes: assumed sample() runs only on the successful emit path (skip-no-op paths do not sample); each None key is omitted independently. Did not edit host_health.py, events.md, or runbook.md. Pre-existing pi-lens typing findings in _serve_cgroup left untouched.
+
+## 2026-09-18 extract growth_child.py
+
+- item: The paced pre-OOM child lives in tests/e2e/growth_child.py (8 MiB every 2.5s, page-touch). pi_growth_script installs that file instead of an inlined string. Importing the module does not start the infinite loop.
+- rationale: plan prefers extracting growth_child.py after ladder-blindness/defer-field contracts, before skip-closed control tests. First remaining unfinished item.
+- files: tests/e2e/growth_child.py, tests/e2e/conftest.py, tests/unit/test_growth_child_constants.py
+- verification: `.venv/bin/python -m pytest tests/unit/test_growth_child_constants.py -q` → 1 passed; `.venv/bin/ruff check . && .venv/bin/ruff format --check .` clean
+- notes: assumed the constants test lives under tests/unit because CI and build.sh --ignore=tests/e2e. pi_growth_script still base64-over-ssh (same install path), reading tests/e2e/growth_child.py bytes instead of an inlined string. Importing the module does not enter main().

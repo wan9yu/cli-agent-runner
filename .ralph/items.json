@@ -57,8 +57,8 @@
         "Change tests/e2e/conftest.py pi_growth_script to ship that file.",
         "Run the constants test plus the ruff gate."
       ],
-      "passes": false,
-      "regression_notes": ""
+      "passes": true,
+      "regression_notes": "1 passed (test_growth_child_constants); ruff check+format clean. pi_growth_script ships tests/e2e/growth_child.py via base64; import does not start the loop."
     },
     {
       "category": "functional",
