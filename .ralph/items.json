@@ -34,8 +34,8 @@
         "Point the existing tests/e2e/test_e2e_pre_oom.py diagnostic at host_cgroup_memory_limit.defer.",
         "Run .venv/bin/python -m pytest tests/unit/test_cgroup_probe.py -q and the ruff gate."
       ],
-      "passes": false,
-      "regression_notes": ""
+      "passes": true,
+      "regression_notes": "55 passed (test_cgroup_probe); ruff check+format clean. MemorySwapMax=0 emits defer true; missing swap.max emits defer false. D-2 diagnostic names host_cgroup_memory_limit.defer."
     },
     {
       "category": "functional",

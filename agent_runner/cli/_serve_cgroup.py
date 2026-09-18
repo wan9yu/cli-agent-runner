@@ -277,8 +277,9 @@ def _release_brake(log_dir: Path, round_num: int, previous: str, *, reason: str)
 
 def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = False) -> bool:
     """Probe this process's cgroup v2 memory budget once at serve startup,
-    emit host_cgroup_memory_limit for observability, and return whether the
-    mid-round hard floor should defer to kernel cgroup-OOM: True only when
+    emit host_cgroup_memory_limit (including the ``defer`` decision, not just
+    the inputs) for observability, and return whether the mid-round hard
+    floor should defer to kernel cgroup-OOM: True only when
     BOTH memory.max and memory.swap.max are finite (the field host's
     MemoryMax=320M + MemorySwapMax=160M shape) -- that budget is bounded end
     to end, so cgroup-OOM WILL fire and contain the agent while the host
@@ -401,6 +402,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
         memory_max=limits["memory_max"],
         memory_swap_max=swap_max,
         cgroup_path=limits["cgroup_path"],
+        defer=defer,
         swap_total_bytes=swap_total,
         swap_cap_pct=swap_cap_pct,
         memory_high=memory_high,

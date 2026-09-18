@@ -112,6 +112,7 @@ def emit_host_cgroup_memory_limit(
     memory_max: int | None,
     memory_swap_max: int | None,
     cgroup_path: str | None,
+    defer: bool,
     swap_total_bytes: int | None = None,
     swap_cap_pct: float | None = None,
     memory_high: int | None = None,
@@ -120,8 +121,11 @@ def emit_host_cgroup_memory_limit(
 ) -> None:
     """Emit once at serve startup: this process's cgroup v2 memory budget
     (``metrics.cgroup_memory_limits``). ``None`` fields mean unlimited (or
-    cgroup v2 unavailable). Serve uses this once to decide whether the
-    mid-round hard floor can defer to kernel cgroup-OOM -- see
+    cgroup v2 unavailable). ``defer`` is the already-computed mid-round-floor
+    decision (True when both caps are finite and plausible, including
+    ``MemorySwapMax=0``) -- the event carries that yes/no, not just the
+    inputs. Serve uses this once to decide whether the mid-round hard floor
+    can defer to kernel cgroup-OOM -- see
     ``emit_mem_pressure_deferred_to_cgroup`` below.
 
     This also carries an optional startup advisory
@@ -152,6 +156,7 @@ def emit_host_cgroup_memory_limit(
         memory_max=memory_max,
         memory_swap_max=memory_swap_max,
         cgroup_path=cgroup_path,
+        defer=defer,
         swap_total_bytes=swap_total_bytes,
         swap_cap_pct=swap_cap_pct,
         memory_high=memory_high,
