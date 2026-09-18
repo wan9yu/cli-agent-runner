@@ -340,6 +340,26 @@ def test_memory_pressure_should_be_healthy_when_memfree_and_memavail_clear_defau
     assert host_health.memory_pressure(cur, prev, cfg) is None
 
 
+def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys() -> None:
+    cfg = MonitorHostHealthConfig()
+    base = {
+        "psi_some_avg10": 1.0,
+        "psi_full_avg10": 0.5,
+        "mem_available_mb": 400,
+        "mem_free_mb": 200,
+        "swap_sout": 0,
+    }
+    poisoned = {
+        **base,
+        "io_psi_some_avg10": 99.0,
+        "io_psi_full_avg10": 99.0,
+        "psi_full_total": 10**12,
+    }
+    a = host_health.memory_pressure(base, {}, cfg)
+    b = host_health.memory_pressure(poisoned, {}, cfg)
+    assert a == b  # Pressure is a dataclass; verdict+context identical
+
+
 def test_cgroup_growth_rate_pressure_should_return_none_when_rate_is_none() -> None:
 
     result = host_health.cgroup_growth_rate_pressure(None, MonitorHostHealthConfig())
