@@ -1,8 +1,13 @@
-"""Pi e2e fixtures — opt-in via AGENT_RUNNER_E2E_PI=1.
+"""Pi / local-cgroup e2e fixtures.
 
-Uses the `pi` ssh alias (Tailscale-routed). Each test gets an isolated
-work_dir under /tmp on the pi, with the local agent-runner package tarball'd
-and installed into a per-test venv.
+Pi path: opt-in via AGENT_RUNNER_E2E_PI=1. Uses the `pi` ssh alias
+(Tailscale-routed). Each test gets an isolated work_dir under /tmp on the
+pi, with the local agent-runner package tarball'd and installed into a
+per-test venv.
+
+Local cgroup-v2 path: opt-in via AGENT_RUNNER_E2E_CGROUP=1. Skips on macOS
+/ no cgroup v2 / cannot create a memory-bounded unit / cannot set
+memory.swap.max. Never a default CI cell.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import pytest
 
 PI_HOST = "pi"
 E2E_FLAG = "AGENT_RUNNER_E2E_PI"
+CGROUP_FLAG = "AGENT_RUNNER_E2E_CGROUP"
 _GROWTH_CHILD_SRC = Path(__file__).resolve().parent / "growth_child.py"
 
 
@@ -36,6 +42,130 @@ def _scp(src: str, dst: str) -> None:
         check=True,
         timeout=120,
     )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _local_sh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["sh", "-c", cmd],
+        capture_output=True,
+        text=True,
+        check=check,
+        timeout=timeout,
+    )
+
+
+def _preoom_unit_body(exec_start: str, *, swap_max: str) -> str:
+    """Transient systemd unit for the pre-OOM e2e.
+
+    Treatment passes ``swap_max="infinity"``; control passes ``swap_max="0"``.
+    ``MemoryHigh=120M`` / ``MemoryMax=150M`` / ``Delegate=yes`` / ``Restart=no``
+    stay fixed. Do not add ``OOMPolicy=`` or ``memory.oom.group`` -- those
+    would kill serve and lose the emit.
+    """
+    return (
+        "[Unit]\n"
+        "Description=agent-runner pre-OOM property e2e (transient test unit)\n"
+        "\n"
+        "[Service]\n"
+        "Type=simple\n"
+        "Environment=HOME=/root\n"
+        "MemoryHigh=120M\n"
+        "MemoryMax=150M\n"
+        f"MemorySwapMax={swap_max}\n"
+        "Delegate=yes\n"
+        f"ExecStart={exec_start}\n"
+        "Restart=no\n"
+    )
+
+
+def _preoom_config_body(*, python: str, growth_script: str, workdir: str) -> str:
+    log_dir = f"{workdir}/logs"
+    prompt_path = f"{workdir}/p.md"
+    return (
+        # schema_version boot gate (v0.3.0): serve rejects a config without it
+        # ("config predates schema_version"). Must be the file's first line,
+        # before any [table] header, per TOML top-level-key ordering.
+        "schema_version = 1\n"
+        "[agent]\n"
+        f'command = ["{python}", "{growth_script}"]\n'
+        'prompt_arg_template = ["{prompt}"]\n'
+        "[runtime]\n"
+        f'work_dir = "{workdir}"\n'
+        f'log_dir = "{log_dir}"\n'
+        "round_budget_s = 900\n"
+        "[monitor.host_health.brake]\n"
+        "memory_high = true\n"
+        "[prompt]\n"
+        f'file = "{prompt_path}"\n'
+    )
+
+
+def _install_pre_oom_config(run, workdir: str, python: str, growth_script: str) -> str:
+    import base64
+
+    cfg_path = f"{workdir}/agent-runner.toml"
+    prompt_path = f"{workdir}/p.md"
+    body = _preoom_config_body(python=python, growth_script=growth_script, workdir=workdir)
+    # >= 500 bytes: the round's prompt_smoke_passes startup check (min 500)
+    # rejects a shorter prompt and the round exits 78 before any agent runs.
+    # The growth child ignores the prompt; this only has to clear the floor.
+    prompt_body = "Synthetic pre-OOM property e2e prompt; the growth child ignores it. " * 10
+    cfg_b64 = base64.b64encode(body.encode()).decode()
+    prompt_b64 = base64.b64encode(prompt_body.encode()).decode()
+    run(
+        f"echo '{prompt_b64}' | base64 -d > {prompt_path} && "
+        f"echo '{cfg_b64}' | base64 -d > {cfg_path} && "
+        f"echo 'logs/' > {workdir}/.gitignore && "
+        f"cd {workdir} && git add . && git -c commit.gpgsign=false commit -q -m fixture"
+    )
+    return cfg_path
+
+
+def _start_pre_oom_unit(
+    run,
+    *,
+    workdir: str,
+    agent_runner_bin: str,
+    config_path: str,
+    swap_max: str,
+) -> Iterator[dict]:
+    import base64
+
+    unit = f"agent-runner-preoom-{uuid.uuid4().hex[:8]}.service"
+    unit_path = f"/etc/systemd/system/{unit}"
+    exec_start = f"{agent_runner_bin} serve --config {config_path} --max-rounds 1"
+    body = _preoom_unit_body(exec_start, swap_max=swap_max)
+    encoded = base64.b64encode(body.encode()).decode()
+    run(f"sudo -H git config --global --add safe.directory {workdir}")
+    # The try starts BEFORE the tee/daemon-reload/start write, not after: the
+    # unit file can land on disk (tee succeeds) even when daemon-reload or
+    # start then fails -- with the old ordering that partial-setup failure
+    # raised past a `try` that hadn't started yet, so `finally` never ran and
+    # the unit file leaked on the real host.
+    try:
+        run(
+            f"echo '{encoded}' | base64 -d | sudo tee {unit_path} > /dev/null && "
+            "sudo systemctl daemon-reload && "
+            f"sudo systemctl start {unit}"
+        )
+        yield {
+            "unit": unit,
+            # Delegate=yes does not relocate the unit in the cgroup tree -- a
+            # system-scope unit with no Slice= override lands under the
+            # default system.slice.
+            "cgroup_path": f"/sys/fs/cgroup/system.slice/{unit}",
+        }
+    finally:
+        # Tolerant of partial setup (check=False on every step): the unit may
+        # never have been started, or never even written, depending on how
+        # far the try block above got before raising.
+        run(f"sudo systemctl stop {unit}", check=False)
+        run(f"sudo rm -f {unit_path}", check=False)
+        run("sudo systemctl daemon-reload", check=False)
 
 
 @pytest.fixture(scope="session")
@@ -215,41 +345,7 @@ def pi_pre_oom_config(pi_workdir: str, pi_growth_script: str, pi_venv_python: st
     generous (900s): the growth child paces itself at ~8 MB/2.5s, so crossing
     the finite MemoryMax and then sustaining critical host PSI pressure for 3
     consecutive ~10s ticks takes real wall-clock minutes."""
-    cfg_path = f"{pi_workdir}/agent-runner.toml"
-    prompt_path = f"{pi_workdir}/p.md"
-    log_dir = f"{pi_workdir}/logs"
-    body = (
-        # schema_version boot gate (v0.3.0): serve rejects a config without it
-        # ("config predates schema_version"). Must be the file's first line,
-        # before any [table] header, per TOML top-level-key ordering.
-        "schema_version = 1\n"
-        "[agent]\n"
-        f'command = ["{pi_venv_python}", "{pi_growth_script}"]\n'
-        'prompt_arg_template = ["{prompt}"]\n'
-        "[runtime]\n"
-        f'work_dir = "{pi_workdir}"\n'
-        f'log_dir = "{log_dir}"\n'
-        "round_budget_s = 900\n"
-        "[monitor.host_health.brake]\n"
-        "memory_high = true\n"
-        "[prompt]\n"
-        f'file = "{prompt_path}"\n'
-    )
-    # >= 500 bytes: the round's prompt_smoke_passes startup check (min 500)
-    # rejects a shorter prompt and the round exits 78 before any agent runs.
-    # The growth child ignores the prompt; this only has to clear the floor.
-    prompt_body = "Synthetic pre-OOM property e2e prompt; the growth child ignores it. " * 10
-    import base64
-
-    cfg_b64 = base64.b64encode(body.encode()).decode()
-    prompt_b64 = base64.b64encode(prompt_body.encode()).decode()
-    _ssh(
-        f"echo '{prompt_b64}' | base64 -d > {prompt_path} && "
-        f"echo '{cfg_b64}' | base64 -d > {cfg_path} && "
-        f"echo 'logs/' > {pi_workdir}/.gitignore && "
-        f"cd {pi_workdir} && git add . && git -c commit.gpgsign=false commit -q -m fixture"
-    )
-    return cfg_path
+    return _install_pre_oom_config(_ssh, pi_workdir, pi_venv_python, pi_growth_script)
 
 
 @pytest.fixture
@@ -285,65 +381,150 @@ def pi_pre_oom_unit(
     an error unrelated to the property under test. A ``safe.directory``
     exception is pre-seeded into root's OWN gitconfig (``sudo -H`` to force
     ``HOME=/root`` for the write, matching this unit's own
-    ``Environment=HOME=/root``) before the unit starts."""
-    import base64
+    ``Environment=HOME=/root``) before the unit starts.
 
-    unit = f"agent-runner-preoom-{uuid.uuid4().hex[:8]}.service"
-    unit_path = f"/etc/systemd/system/{unit}"
-    exec_start = f"{pi_install_agent_runner} serve --config {pi_pre_oom_config} --max-rounds 1"
-    body = (
-        "[Unit]\n"
-        "Description=agent-runner pre-OOM property e2e (transient test unit)\n"
-        "\n"
-        "[Service]\n"
-        "Type=simple\n"
-        "Environment=HOME=/root\n"
-        # MemoryHigh (below MemoryMax) satisfies serve's own_scope boot advisory
-        # (_serve_cgroup.py: memory.max set without memory.high). Note what that
-        # advisory actually says: a cgroup-limit throttle's PSI-full rise WILL
-        # trip the mid-round floor in this memory.max + unbounded-swap + terminate
-        # -armed shape. The fixture keeps that shape deliberately -- it is a
-        # bounded, SAFE host-PSI generator (the child's stall is capped at 150M)
-        # that drives the REAL sample->pressure->streak->terminate->reap loop at
-        # the PSI rung. It does not make the terminate "more honest"; it makes the
-        # throttle graceful (no hard-reclaim burst) and the TERMINATE outcome
-        # clean. The strong before-coma claim for an UNCAPPED agent is inferred
-        # from this proven loop + the D-1 ladder, not demonstrated here.
-        "MemoryHigh=120M\n"
-        "MemoryMax=150M\n"
-        "MemorySwapMax=infinity\n"
-        "Delegate=yes\n"
-        f"ExecStart={exec_start}\n"
-        "Restart=no\n"
+    MemoryHigh (below MemoryMax) satisfies serve's own_scope boot advisory
+    (_serve_cgroup.py: memory.max set without memory.high). A cgroup-limit
+    throttle's PSI-full rise WILL trip the mid-round floor in this
+    memory.max + unbounded-swap + terminate-armed shape. The fixture keeps
+    that shape deliberately -- it is a bounded, SAFE host-PSI generator
+    (the child's stall is capped at 150M) that drives the REAL
+    sample->pressure->streak->terminate->reap loop at the PSI rung. It does
+    not make the terminate "more honest"; it makes the throttle graceful
+    (no hard-reclaim burst) and the TERMINATE outcome clean. The strong
+    before-coma claim for an UNCAPPED agent is inferred from this proven
+    loop + the D-1 ladder, not demonstrated here."""
+    yield from _start_pre_oom_unit(
+        _ssh,
+        workdir=pi_workdir,
+        agent_runner_bin=pi_install_agent_runner,
+        config_path=pi_pre_oom_config,
+        swap_max="infinity",
     )
-    encoded = base64.b64encode(body.encode()).decode()
-    _ssh(f"sudo -H git config --global --add safe.directory {pi_workdir}")
-    # The try starts BEFORE the tee/daemon-reload/start write, not after: the
-    # unit file can land on disk (tee succeeds) even when daemon-reload or
-    # start then fails (Type=simple's start returns non-zero when ExecStart
-    # can't launch) -- with the old ordering that partial-setup failure
-    # raised past a `try` that hadn't started yet, so `finally` never ran and
-    # the unit file leaked on the real host. Starting the try here guarantees
-    # the same cleanup fires however far setup got.
+
+
+@pytest.fixture
+def pi_pre_oom_control_unit(
+    pi_workdir: str, pi_install_agent_runner: str, pi_pre_oom_config: str
+) -> Iterator[dict]:
+    """Control arm on pi: the treatment unit with only ``MemorySwapMax=0``.
+
+    Same MemoryHigh=120M / MemoryMax=150M / Delegate=yes / Restart=no. No
+    OOMPolicy= and no memory.oom.group. Fill time is MemoryMax-only
+    (~150M / 3.2 MB/s ≈ 50s); the test wait ceiling is 180s."""
+    yield from _start_pre_oom_unit(
+        _ssh,
+        workdir=pi_workdir,
+        agent_runner_bin=pi_install_agent_runner,
+        config_path=pi_pre_oom_config,
+        swap_max="0",
+    )
+
+
+@pytest.fixture(scope="session")
+def cgroup_session() -> Iterator[None]:
+    if not os.getenv(CGROUP_FLAG):
+        pytest.skip(f"set {CGROUP_FLAG}=1 to run local cgroup e2e tests")
+    controllers = Path("/sys/fs/cgroup/cgroup.controllers")
+    if not controllers.is_file():
+        pytest.skip("cgroup v2 not available")
     try:
-        _ssh(
-            f"echo '{encoded}' | base64 -d | sudo tee {unit_path} > /dev/null && "
-            "sudo systemctl daemon-reload && "
-            f"sudo systemctl start {unit}"
-        )
-        yield {
-            "unit": unit,
-            # Delegate=yes does not relocate the unit in the cgroup tree -- a
-            # system-scope unit with no Slice= override lands under the
-            # default system.slice. NOT independently verified against a
-            # live host by this task (no ssh access here) -- a go/no-go
-            # verify-item; see the task-4 report.
-            "cgroup_path": f"/sys/fs/cgroup/system.slice/{unit}",
-        }
+        names = controllers.read_text()
+    except OSError:
+        pytest.skip("cgroup v2 not available")
+    if "memory" not in names.split():
+        pytest.skip("cgroup v2 memory controller not available")
+    sudo = subprocess.run(
+        ["sudo", "-n", "true"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if sudo.returncode != 0:
+        pytest.skip("cannot create a memory-bounded unit (passwordless sudo required)")
+    yield
+
+
+@pytest.fixture
+def cgroup_workdir(cgroup_session) -> Iterator[str]:
+    workdir = f"/tmp/agent-runner-e2e-{uuid.uuid4().hex[:8]}"
+    _local_sh(
+        f"mkdir -p {workdir} && cd {workdir} && "
+        "git init -q -b main && "
+        "git config user.email t@t.com && "
+        "git config user.name t && "
+        "git config commit.gpgsign false && "
+        "echo init > README.md && "
+        "git add . && git commit -q -m init"
+    )
+    try:
+        yield workdir
     finally:
-        # Tolerant of partial setup (check=False on every step): the unit may
-        # never have been started, or never even written, depending on how
-        # far the try block above got before raising.
-        _ssh(f"sudo systemctl stop {unit}", check=False)
-        _ssh(f"sudo rm -f {unit_path}", check=False)
-        _ssh("sudo systemctl daemon-reload", check=False)
+        # sudo: a root-scope serve unit writes root-owned event logs into
+        # workdir/logs, which a bare user rm can't remove.
+        _local_sh(f"sudo rm -rf {workdir}", check=False)
+
+
+@pytest.fixture
+def cgroup_venv_python(cgroup_session) -> str:
+    python = _repo_root() / ".venv" / "bin" / "python3"
+    if not python.is_file():
+        pytest.skip("cannot create a memory-bounded unit (venv python missing)")
+    return str(python.resolve())
+
+
+@pytest.fixture
+def cgroup_growth_script(cgroup_workdir: str) -> str:
+    script_path = f"{cgroup_workdir}/growth_child.py"
+    Path(script_path).write_bytes(_GROWTH_CHILD_SRC.read_bytes())
+    return script_path
+
+
+@pytest.fixture
+def cgroup_pre_oom_config(
+    cgroup_workdir: str, cgroup_growth_script: str, cgroup_venv_python: str
+) -> str:
+    return _install_pre_oom_config(
+        _local_sh, cgroup_workdir, cgroup_venv_python, cgroup_growth_script
+    )
+
+
+@pytest.fixture
+def cgroup_pre_oom_control_unit(
+    cgroup_workdir: str,
+    cgroup_pre_oom_config: str,
+    cgroup_venv_python: str,
+) -> Iterator[dict]:
+    """Local control arm: treatment unit with only ``MemorySwapMax=0``.
+
+    Skip (do not fail) when the unit cannot be created or ``memory.swap.max``
+    cannot be set. Do not skip because host swap is small.
+    """
+    agent_runner = str(Path(cgroup_venv_python).resolve().parent / "agent-runner")
+    if not Path(agent_runner).is_file():
+        pytest.skip("cannot create a memory-bounded unit (agent-runner binary missing)")
+    gen = _start_pre_oom_unit(
+        _local_sh,
+        workdir=cgroup_workdir,
+        agent_runner_bin=agent_runner,
+        config_path=cgroup_pre_oom_config,
+        swap_max="0",
+    )
+    try:
+        info = next(gen)
+    except (subprocess.CalledProcessError, FileNotFoundError, PermissionError, OSError):
+        pytest.skip("cannot create a memory-bounded unit")
+    try:
+        probed = _local_sh(
+            f"sudo cat {info['cgroup_path']}/memory.swap.max",
+            check=False,
+        )
+        if probed.stdout.strip() != "0":
+            pytest.skip("cannot set memory.swap.max")
+        yield info
+    finally:
+        try:
+            next(gen)
+        except StopIteration:
+            pass
