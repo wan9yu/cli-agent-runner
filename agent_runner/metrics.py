@@ -17,14 +17,18 @@ from agent_runner.clock import SYSTEM_CLOCK
 from agent_runner.events import now_iso_ms
 
 _PSI_MEMORY_PATH = Path("/proc/pressure/memory")
+_PSI_IO_PATH = Path("/proc/pressure/io")
 
 
-def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float] | None:
-    """Parse ``/proc/pressure/memory``'s ``some``/``full`` ``avg10`` fields.
+def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float, int | None] | None:
+    """Parse a PSI file's ``some``/``full`` ``avg10`` and full-line ``total``.
 
-    Returns ``None`` when the file is absent (non-Linux, or a kernel built
-    without ``CONFIG_PSI``) or unreadable (``psi=0`` boot param) — the
-    caller (``host_health``) degrades gracefully down the signal ladder.
+    Returns ``(some_avg10, full_avg10, full_total)``. ``full_avg10`` is ``0.0``
+    when the full line is missing; ``full_total`` is ``int(total=)`` from the
+    full line, else ``None``. Returns ``None`` when the file is absent
+    (non-Linux, or a kernel built without ``CONFIG_PSI``) or unreadable
+    (``psi=0`` boot param) — the caller (``host_health``) degrades
+    gracefully down the signal ladder.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -32,11 +36,19 @@ def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float] | None:
         return None
     some_avg10: float | None = None
     full_avg10: float | None = None
+    full_total: int | None = None
     for line in text.splitlines():
         parts = line.split()
         if not parts:
             continue
         fields = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
+        if parts[0] == "full":
+            total_raw = fields.get("total")
+            if total_raw is not None:
+                try:
+                    full_total = int(total_raw)
+                except ValueError:
+                    pass
         raw = fields.get("avg10")
         if raw is None:
             continue
@@ -50,7 +62,7 @@ def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float] | None:
             full_avg10 = value
     if some_avg10 is None:
         return None
-    return some_avg10, full_avg10 if full_avg10 is not None else 0.0
+    return some_avg10, full_avg10 if full_avg10 is not None else 0.0, full_total
 
 
 def sample() -> dict[str, Any]:
@@ -58,22 +70,28 @@ def sample() -> dict[str, Any]:
 
     Deliberately NOT ``collect()`` (which shells out to ``pgrep`` for
     ``agent_process_count``, see ``_count_agent_processes`` below) — this is
-    psutil counters + one optional ``/proc`` file read, safe to call every
-    ~10s in a hot loop (e.g. a serve-loop mid-round check). ``host_health``
-    is the pure interpreter of what this returns; this function only samples.
+    psutil counters + optional ``/proc/pressure/{memory,io}`` reads, safe to
+    call every ~10s in a hot loop (e.g. a serve-loop mid-round check).
+    ``host_health`` is the pure interpreter of what this returns; this
+    function only samples. IO-PSI and mem-PSI ``total`` are corroborating
+    fields the ladder ignores.
 
     ``swap_sout`` is cumulative (bytes swapped out since boot) — callers
     wanting a rate/delta diff two samples themselves.
     """
     vm = psutil.virtual_memory()
     swap = psutil.swap_memory()
-    psi = _read_psi()
+    mem = _read_psi()
+    io = _read_psi(_PSI_IO_PATH)
     return {
         "mem_available_mb": vm.available // (1024 * 1024),
         "mem_free_mb": vm.free // (1024 * 1024),
         "swap_sout": swap.sout,
-        "psi_some_avg10": psi[0] if psi is not None else None,
-        "psi_full_avg10": psi[1] if psi is not None else None,
+        "psi_some_avg10": mem[0] if mem is not None else None,
+        "psi_full_avg10": mem[1] if mem is not None else None,
+        "psi_full_total": mem[2] if mem is not None else None,
+        "io_psi_some_avg10": io[0] if io is not None else None,
+        "io_psi_full_avg10": io[1] if io is not None else None,
     }
 
 
