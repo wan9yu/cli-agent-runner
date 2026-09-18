@@ -800,14 +800,16 @@ plus their config plumbing (`GoalConfig`/`_GoalCheckConfig`, a boot guard, a
 round-timeout-budget fold-in) and a config-level firewall keeping
 `goal`-prefixed event kinds out of `[monitor] auto_stop_on`. Same macOS
 harness (§ methodology above), comparing **v0.3.11** = `dfef642` (measured in
-a throwaway worktree) against **0.3.12**, the tip of this branch.
+a throwaway worktree) against **0.3.12** = `b068094` (this branch tip, after
+the fix wave and `/simplify`; footprint-gate remeasure — Task 9's earlier
+pass at `ed50e4c` was 23.44→23.41 MB, also flat).
 
 ### 1. Import/startup RSS
 
 | | v0.3.11 | 0.3.12 | Δ |
 |---|---|---|---|
-| RSS (avg of 5 cold runs) | 23.44 MB | 23.41 MB | −0.03 MB (flat, within noise) |
-| RSS range | 23.38–23.58 MB | 23.27–23.50 MB | |
+| RSS (avg of 5 cold runs) | 23.45 MB | 23.56 MB | +0.11 MB (flat, within noise) |
+| RSS range | 23.41–23.56 MB | 23.42–23.67 MB | |
 | `sys.modules` count | 211 | 211 | +0 |
 
 Flat, structurally, not just numerically: both new modules are kept off the
@@ -837,7 +839,7 @@ Tracked source only (`git ls-tree`, same convention as the rows above).
 | | v0.3.11 | 0.3.12 | Δ |
 |---|---|---|---|
 | `.py` files | 81 | 83 | +2 |
-| total LOC | 20,512 | 21,165 | +653 |
+| total LOC | 20,512 | 21,358 | +846 |
 | largest module | `migrations.py`, 972 | `migrations.py`, 972 | +0 |
 
 The two new files are `agent_runner/goal.py` and `agent_runner/_bounded.py`;
@@ -856,13 +858,27 @@ every other events-derived detector in this codebase already reads), once
 per round — a fixed-size read, not a full-history scan that grows with round
 count.
 
+**Footprint-gate deep-measure** (HEAD `b068094`, same macOS box, `tracemalloc`
+around a real `assess_treadmill` call): a synthetic 3-month tree whose oldest
+month was 10.2 MB / 32,000 events (unique pad string) and whose newest two
+months were 572 KB / 9,601 events (1,200 completed rounds + the in-progress
+round's `round_substrate_before`). The call selected only those two newest
+files; the old-month pad was absent from the materialized tail. Peak traced
+alloc during the call was 5.58 MB above baseline (~600 B/event Python-dict
+expansion of the 9,601 parsed events — not the unread 10.2 MB month). After
+return + `gc.collect()`, current traced alloc was +2.1 KB vs baseline: the
+`list(scan(...))` is transient, not retained. That peak is well inside a
+462 MB cgroup (supervisor cold RSS ~23.5 MB + ≤6 MB transient on the opt-in
+`[goal]` path). The deferred M2(b) streaming fold was **not** applied, so this
+is the `list(event_log.scan(newest_scope(2)))` materialization, once per round.
+
 ### Constrained-host (honesty)
 
 Dev-host-relative (macOS) numbers only, same methodology as every release
-since 0.2.17. `[goal]` is opt-in and off by default, so this release makes no
-constrained-host claim beyond the flat cold-startup number above; the
-goal-active path's bounded-events-tail read is a structural property noted
-here, not yet independently measured on a constrained host.
+since 0.2.17. `[goal]` is opt-in and off by default. The goal-active path's
+newest-2 bound and transient peak were measured on this macOS box as above,
+not independently re-run inside a 462 MB cgroup; no constrained-host RSS
+claim beyond the flat cold-startup number.
 
 ## Enforcement
 
