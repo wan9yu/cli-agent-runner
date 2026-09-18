@@ -179,7 +179,7 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
         "before shipping this release; (b) serve itself is swap-starved in the "
         "150M co-resident leaf and never got to sample -- bump MemoryMax so "
         "the growth child dominates without starving the supervisor, then "
-        "re-run. Check host_cgroup_memory_limit's 'defer' field first: True "
+        "re-run. Check host_cgroup_memory_limit.defer first: True "
         "means the fixture's cgroup shape is wrong (MemorySwapMax not really "
         "unbounded), not (a) or (b)."
     )

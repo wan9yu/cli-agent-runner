@@ -405,6 +405,46 @@ def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
     assert _probe_and_emit_cgroup_defer(log_dir) is expected
 
 
+def test_probe_and_emit_cgroup_defer_should_carry_defer_true_when_swap_max_is_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MemorySwapMax=0 is finite and plausible (0 <= host swap), so the
+    floor defers and host_cgroup_memory_limit.defer matches the return."""
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=150_000_000,
+        memory_swap_max=0,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    assert _probe_and_emit_cgroup_defer(log_dir) is True
+    assert _only_event(tmp_path)["defer"] is True
+
+
+def test_probe_and_emit_cgroup_defer_should_carry_defer_false_when_swap_max_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unbounded swap (memory.swap.max missing) keeps the floor armed and
+    emits defer false -- the event field equals the probe's return."""
+    from agent_runner.cli._serve_cgroup import _probe_and_emit_cgroup_defer
+
+    _patch_probe(
+        monkeypatch,
+        memory_max=150_000_000,
+        memory_swap_max=None,
+        mem_total=462_000_000,
+        swap_total=1_600_000_000,
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    assert _probe_and_emit_cgroup_defer(log_dir) is False
+    assert _only_event(tmp_path)["defer"] is False
+
+
 # --- 0.2.18 T1c: the swap-plausibility guard + startup swap-cap advisory ---
 #
 # Field-report ask #3: a huge MemorySwapMax (far above what the host actually
