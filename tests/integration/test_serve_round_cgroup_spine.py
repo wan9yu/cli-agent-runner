@@ -10,16 +10,16 @@ import pytest
 from agent_runner import _procwait
 from agent_runner.cli import _serve_cgroup, _serve_round
 from agent_runner.config import MonitorHostHealthConfig
-from tests._clock import TickingClock
+from tests._clock import PollLoopClock
 
 
 @pytest.fixture(autouse=True)
 def _fallback_wait_exit(monkeypatch):
     """_spawn_round's mid-round wait is one wait_exit call; its fast path is
     a real select/kqueue registration that blocks in real wall-clock and
-    cannot be driven by this file's fake-monotonic TickingClock (see
+    cannot be driven by this file's fake-monotonic PollLoopClock (see
     _procwait's module docstring) -- force the poll FALLBACK so the
-    ~10s-interval ticks below stay paced by TickingClock's virtual time
+    ~10s-interval ticks below stay paced by PollLoopClock's virtual time
     instead of a real select() timeout racing a fixed time.sleep(6) child."""
     monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
 
@@ -61,7 +61,7 @@ def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -291,7 +291,7 @@ def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_c
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -325,7 +325,7 @@ def test_spawn_round_should_use_rss_sum_source_when_no_finite_cgroup_bound(tmp_p
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -368,7 +368,7 @@ def test_spawn_round_should_never_pass_a_negative_rate_when_memory_drops_between
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -407,7 +407,7 @@ def test_spawn_round_should_not_crash_when_cgroup_source_fails_open_mid_round(
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,

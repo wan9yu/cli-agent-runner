@@ -1,15 +1,18 @@
-"""Test clocks — FakeClock and TickingClock, both the full Clock surface.
+"""Test clocks — FakeClock and PollLoopClock, both the full Clock surface.
 
 Lives in tests/ (not agent_runner/) so it has no production consumer to keep
 vulture happy.
 
 * ``FakeClock`` pins epoch, monotonic, UTC-now and tz-now together; ``sleep``
   advances virtual time, so a chunked pause loop terminates deterministically
-  instead of needing a monkeypatched ``stop`` flag.
-* ``TickingClock`` is for real-subprocess poll loops: ``monotonic()`` jumps
-  ``step`` per call so a 10s sample interval elapses without waiting 10s;
-  ``sleep()`` is a real short block so the child can actually exit. Do not
-  substitute FakeClock there — FakeClock.sleep never yields to a live child.
+  instead of needing a monkeypatched ``stop`` flag. Use this for unit tests
+  with no live child.
+* ``PollLoopClock`` is a live-child poll-fallback double, not a second kind
+  of time. ``monotonic()`` jumps ``step`` per call so a 10s sample interval
+  elapses without waiting 10s; ``sleep()`` is a real short block so the
+  child can actually exit. Do not substitute FakeClock there —
+  FakeClock.sleep never yields to a live child (the child's clock is the
+  kernel's, not ours).
 """
 
 from __future__ import annotations
@@ -60,8 +63,8 @@ class FakeClock:
         self._epoch += delta
 
 
-class TickingClock:
-    """Clock for real-subprocess poll loops.
+class PollLoopClock:
+    """Live-child poll-fallback double: fake monotonic, real sleep.
 
     ``monotonic()`` advances by ``step`` on every call so a ~10s sample interval
     elapses without waiting ~10 real seconds. ``sleep()`` is a real short block
@@ -69,6 +72,8 @@ class TickingClock:
     so a live child gets repeated chances to exit. Wall methods (``epoch`` /
     ``now_utc`` / ``now_in_zone``) sit on a fixed epoch so this is a full
     ``Clock``, not a two-method stub.
+
+    Do not use FakeClock here. The child process uses the kernel clock.
     """
 
     def __init__(self, step: float = 5.0, epoch: float = 1_700_000_000.0):

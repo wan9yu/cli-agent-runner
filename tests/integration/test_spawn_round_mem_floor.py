@@ -47,14 +47,14 @@ from agent_runner.config import (
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,
 )
-from tests._clock import TickingClock
+from tests._clock import PollLoopClock
 from tests._test_helpers import read_events_for_current_month
 
 
 @pytest.fixture(autouse=True)
 def _fallback_wait_exit(monkeypatch):
     """Every test below drives _spawn_round's mid-round loop by sample_fn
-    CALL COUNT (via the sentinel-waiting children + TickingClock), never by
+    CALL COUNT (via the sentinel-waiting children + PollLoopClock), never by
     real wall time. _spawn_round's mid-round wait is now one wait_exit call;
     its fast path is a real select/kqueue registration that blocks in real
     wall-clock and cannot be driven by a fake clock (see _procwait's module
@@ -157,7 +157,7 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
         timeout_s=300,  # large enough that the mem floor trips first, not the ceiling
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: _CRITICAL_SAMPLE,
     )
 
@@ -220,7 +220,7 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_slow_swap_sample_fn(sentinel),
     )
 
@@ -278,7 +278,7 @@ def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_swap_climb_sample_fn(),
     )
 
@@ -317,7 +317,7 @@ def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(t
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -347,7 +347,7 @@ def test_spawn_round_should_skip_sampling_when_round_finishes_before_first_check
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(step=0.01),  # never crosses the 10s interval boundary
+        clock=PollLoopClock(step=0.01),  # never crosses the 10s interval boundary
         sample_fn=lambda: calls.append(1) or _CRITICAL_SAMPLE,
     )
 
@@ -386,7 +386,7 @@ def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followe
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -443,7 +443,7 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=1)),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -479,7 +479,7 @@ def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(tm
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -536,14 +536,14 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
         # fallback wait_exit loop reads clock.monotonic() more often per
         # tick than the old proc.wait loop did (once inside wait_exit's own
         # poll, on top of the outer deadline/next_mem_check checks) -- pure
-        # TickingClock virtual-time bookkeeping, unrelated to the streak
+        # PollLoopClock virtual-time bookkeeping, unrelated to the streak
         # decision under test, but it burns through a tight budget faster.
         timeout_s=3000,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -600,7 +600,7 @@ def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
@@ -646,7 +646,7 @@ def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tm
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
@@ -677,7 +677,7 @@ def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path):
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: _CRITICAL_SAMPLE,
         defer_to_cgroup=False,
     )
@@ -739,7 +739,7 @@ def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -802,7 +802,7 @@ def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_a
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -858,7 +858,7 @@ def test_spawn_round_should_restore_soft_brake_when_terminated_by_sustained_crit
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn,
     )
 
@@ -924,7 +924,7 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
             timeout_s=300,
             round_num=1,
             host_health_cfg=hh,
-            clock=TickingClock(),
+            clock=PollLoopClock(),
             sample_fn=_sample_fn,
         )
 
@@ -971,7 +971,7 @@ def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -1014,7 +1014,7 @@ def test_spawn_round_should_carry_the_real_errno_when_engage_itself_fails(tmp_pa
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -1079,14 +1079,14 @@ def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_e
         log_dir / "round-1.log",
         {},
         # This test runs the most mid-round ticks in the file (engage at 1-3,
-        # then healthy 4..9), so the TickingClock's fake elapsed time climbs
+        # then healthy 4..9), so the PollLoopClock's fake elapsed time climbs
         # high; 3000s (matching the 11-tick test above) keeps the round ceiling
         # well clear of it, so a slow CI child's exit is always the round's end,
         # never a spurious timeout SIGTERM (the py3.11/macOS flake).
         timeout_s=3000,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample,
     )
 
@@ -1146,7 +1146,7 @@ def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample,
     )
 
@@ -1199,7 +1199,7 @@ def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engag
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample,
     )
 
@@ -1278,7 +1278,7 @@ def test_spawn_round_should_engage_brake_then_terminate_when_warning_precedes_su
             timeout_s=300,
             round_num=1,
             host_health_cfg=hh,
-            clock=TickingClock(),
+            clock=PollLoopClock(),
             sample_fn=_sample_fn,
             defer_to_cgroup=False,
         )
