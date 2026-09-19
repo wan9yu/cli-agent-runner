@@ -98,3 +98,66 @@ class PollLoopClock:
         if tz_name is None:
             return self.now_utc().astimezone()
         return self.now_utc().astimezone(ZoneInfo(tz_name))
+
+
+class FakeRoundProc:
+    """Popen stand-in when tests script ``wait_exit``. ``terminate()`` marks
+    the leader killed so the next ``wait_exit`` returns ``exited``."""
+
+    pid = 4242
+
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+        self.terminated = False
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self.returncode is None:
+            self.returncode = -15 if self.terminated else 0
+        return self.returncode
+
+
+def install_scripted_round(
+    monkeypatch,
+    clock: FakeClock,
+    *,
+    exit_after_timeouts: int | None = None,
+) -> None:
+    """Decision-test seam: no live child, FakeClock owns TIME, wait_exit owns WAIT.
+
+    Each ``timeout`` advances ``clock`` to ``deadline`` (as a real blocking
+    wait_exit would). After ``exit_after_timeouts`` timeouts the next call
+    returns ``exited`` with rc 0. ``terminate()`` makes the next wait_exit
+    return ``exited`` (covers ``_terminate_round`` grace waits). Do not use
+    this for OS plumbing tests.
+    """
+    from agent_runner.cli import _serve_round
+
+    timeouts = {"n": 0}
+
+    def _popen(*_a, **_k) -> FakeRoundProc:
+        return FakeRoundProc()
+
+    def _wait_exit(proc, *, deadline, clock=clock, wake_fd=None):
+        if getattr(proc, "terminated", False) or proc.returncode is not None:
+            if proc.returncode is None:
+                proc.returncode = -15
+            return "exited"
+        remaining = deadline - clock.monotonic()
+        if remaining > 0:
+            clock.advance(remaining)
+        timeouts["n"] += 1
+        if exit_after_timeouts is not None and timeouts["n"] > exit_after_timeouts:
+            proc.returncode = 0
+            return "exited"
+        return "timeout"
+
+    monkeypatch.setattr(_serve_round.subprocess, "Popen", _popen)
+    monkeypatch.setattr(_serve_round, "wait_exit", _wait_exit)
+    monkeypatch.setattr(_serve_round, "_snapshot_stray_descendants", lambda proc: [])
+    monkeypatch.setattr(_serve_round.os, "killpg", lambda *_a, **_k: None)
