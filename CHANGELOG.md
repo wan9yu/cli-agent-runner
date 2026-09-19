@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.13] - UNRELEASED
+## [0.3.13] - 2026-09-18
 
 ### Added
 - Two production cgroup modes are now checkable on the same paced growth child: treatment (`MemorySwapMax` infinity) still cooperatively terminates and reaps; control (`MemorySwapMax=0`) defers to kernel cgroup-OOM of the capped child. Both leave the host up. The uncapped-before-coma case stays inferred.
