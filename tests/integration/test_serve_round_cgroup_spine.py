@@ -3,25 +3,12 @@ per-round baseline/peak, carrying memory.events DELTAS (never absolutes) and
 the peak memory.current/swap over the round (not the cumulative memory.peak)."""
 
 import json
-import sys
 
-import pytest
-
-from agent_runner import _procwait
 from agent_runner.cli import _serve_cgroup, _serve_round
 from agent_runner.config import MonitorHostHealthConfig
-from tests._clock import PollLoopClock
+from tests._clock import FakeClock, install_scripted_round
 
-
-@pytest.fixture(autouse=True)
-def _fallback_wait_exit(monkeypatch):
-    """_spawn_round's mid-round wait is one wait_exit call; its fast path is
-    a real select/kqueue registration that blocks in real wall-clock and
-    cannot be driven by this file's fake-monotonic PollLoopClock (see
-    _procwait's module docstring) -- force the poll FALLBACK so the
-    ~10s-interval ticks below stay paced by PollLoopClock's virtual time
-    instead of a real select() timeout racing a fixed time.sleep(6) child."""
-    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+_DUMMY_ARGV = ["true"]
 
 
 def _events(log_dir):
@@ -46,7 +33,9 @@ def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is
     last-value-wins implementation would report the wrong peak."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
 
     readings = iter([_usage(100, 0), _usage(100, 0), _usage(500, 50), _usage(200, 10)])
     last = _usage(200, 10)
@@ -61,7 +50,7 @@ def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -271,7 +260,9 @@ def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_c
     per critical tick."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
 
     usages = iter([_usage(0, 0), _usage(1, 0), _usage(2, 0), _usage(3, 0), _usage(4, 0)])
     monkeypatch.setattr(
@@ -291,7 +282,7 @@ def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_c
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -310,7 +301,9 @@ def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_c
 def test_spawn_round_should_use_rss_sum_source_when_no_finite_cgroup_bound(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
+    argv = _DUMMY_ARGV
 
     monkeypatch.setattr(_serve_round.metrics, "cgroup_memory_usage", lambda **k: {})
     rss_readings = iter([100_000_000, 800_000_000, 1_500_000_000])
@@ -325,7 +318,7 @@ def test_spawn_round_should_use_rss_sum_source_when_no_finite_cgroup_bound(tmp_p
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -345,7 +338,9 @@ def test_spawn_round_should_never_pass_a_negative_rate_when_memory_drops_between
 ):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
+    argv = _DUMMY_ARGV
 
     usages = iter([_usage(0, 0), _usage(500_000_000, 0), _usage(100_000_000, 0)])
     monkeypatch.setattr(
@@ -368,7 +363,7 @@ def test_spawn_round_should_never_pass_a_negative_rate_when_memory_drops_between
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -391,7 +386,9 @@ def test_spawn_round_should_not_crash_when_cgroup_source_fails_open_mid_round(
     never raise out of the tick loop."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(6)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
 
     usages = iter([_usage(0, 0), _usage(500_000_000, 0), {}, _usage(600_000_000, 0)])
     monkeypatch.setattr(
@@ -407,7 +404,7 @@ def test_spawn_round_should_not_crash_when_cgroup_source_fails_open_mid_round(
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,

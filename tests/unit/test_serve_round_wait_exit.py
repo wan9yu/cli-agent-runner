@@ -2,20 +2,18 @@
 proc.wait(timeout=_ROUND_POLL_TICK_S) busy-poll. This is a MECHANISM change
 only -- the decision surface (terminate verdict, critical-streak cap) must
 stay byte-identical. tests/integration/test_spawn_round_mem_floor.py carries
-the full property suite (now redirected to the fallback path, since the fast
-path's real select/kqueue cannot be driven by a fake clock -- see
-_procwait's module docstring); this file adds the two guards SDD Task 3
-calls for: the plain exit-through-wait_exit path, and one byte-identical
-mem-critical scenario driven end to end via the fallback path."""
+the full property suite (scripted wait_exit + FakeClock). This file keeps
+the real-child returncode plumbing test, plus a decision-surface guard on
+the same scripted seam.
+"""
 
 from __future__ import annotations
 
 import sys
 
-from agent_runner import _procwait
 from agent_runner.cli import _serve_round
 from agent_runner.config import MonitorHostHealthConfig
-from tests._clock import FakeClock
+from tests._clock import FakeClock, install_scripted_round
 from tests._test_helpers import read_events_for_current_month
 
 _CRITICAL_SAMPLE = {
@@ -48,25 +46,21 @@ def test_spawn_round_should_return_returncode_via_wait_exit_when_proc_exits(tmp_
 
 
 def test_spawn_round_decision_surface_should_match_when_mem_critical(tmp_path, monkeypatch):
-    """Byte-identical guard: force the fallback path (exit_fd -> None, per
-    _procwait's own documented contract) so a FakeClock drives the mid-round
-    loop deterministically, then drive the same sustained-critical scenario
-    test_spawn_round_mem_floor.py's PSI test exercises -- the terminate
-    verdict at streak 3, and the 1 -> 2 -> 3 round_mem_critical_sample
-    build-up, must fire identically through the new single wait_exit call."""
-    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
+    """Sustained-critical terminate at streak 3 via scripted wait_exit +
+    FakeClock -- same decision surface as the mem_floor PSI test, no live child."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock)
 
     rc = _serve_round._spawn_round(
-        argv,
+        ["true"],
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=FakeClock(),
+        clock=clock,
         sample_fn=lambda: _CRITICAL_SAMPLE,
     )
 

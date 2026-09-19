@@ -27,19 +27,18 @@ longer crosses the floor at all (that host now relies on Task 1's
 config-tunable PSI thresholds, or a lowered `memory.swap_out_noise_floor_mb`,
 instead of the reverted cumulative accounting).
 
-Mirrors test_spawn_round_wedged.py's shape (real subprocess, TERM-first path)
-but with an injected clock that fakes elapsed wall time so the test does not
-block for a real ~10s interval."""
+Decision tests script wait_exit + FakeClock (no live child). Two skip-sampling
+tests keep a fast-exiting real child so they still prove the sampler is never
+invoked on the production wait_exit path.
+"""
 
 from __future__ import annotations
 
 import dataclasses
 import sys
-from pathlib import Path
 
 import pytest
 
-from agent_runner import _procwait
 from agent_runner.cli import serve_cmd
 from agent_runner.config import (
     MonitorHostHealthConfig,
@@ -47,40 +46,10 @@ from agent_runner.config import (
     _HostHealthMemoryConfig,
     _HostHealthPressureConfig,
 )
-from tests._clock import PollLoopClock
+from tests._clock import FakeClock, install_scripted_round
 from tests._test_helpers import read_events_for_current_month
 
-
-@pytest.fixture(autouse=True)
-def _fallback_wait_exit(monkeypatch):
-    """Every test below drives _spawn_round's mid-round loop by sample_fn
-    CALL COUNT (via the sentinel-waiting children + PollLoopClock), never by
-    real wall time. _spawn_round's mid-round wait is now one wait_exit call;
-    its fast path is a real select/kqueue registration that blocks in real
-    wall-clock and cannot be driven by a fake clock (see _procwait's module
-    docstring), so force the poll FALLBACK instead, and shrink its real
-    per-tick cadence from production's 1s to 0.01s -- the direct
-    replacement for the old proc.wait(timeout=_ROUND_POLL_TICK_S) shrink.
-    This is the one file in the suite allowed to do that;
-    test_spawn_round_wedged.py keeps the real fast path + real 1s tick as
-    the sole real-tick/real-TERM path."""
-    monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
-    monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.01)
-
-
-def _sentinel_child_argv(sentinel: Path) -> list[str]:
-    """A round-leader child that idles until ``sentinel`` exists, then exits
-    0 -- lets a test's sample_fn decide exactly how many mid-round ticks the
-    round survives (call-count-driven) instead of pinning a real
-    ``time.sleep(N)`` that either outruns or idles past the fast test tick."""
-    return [
-        sys.executable,
-        "-c",
-        "import pathlib, time\n"
-        f"p = pathlib.Path({str(sentinel)!r})\n"
-        "while not p.exists():\n"
-        "    time.sleep(0.01)\n",
-    ]
+_DUMMY_ARGV = ["true"]
 
 
 _CRITICAL_SAMPLE = {
@@ -106,7 +75,7 @@ _HEALTHY_SAMPLE = {
 }
 
 
-def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
+def _slow_swap_sample_fn(stop_after: int = 6):
     """PSI unreadable, MemAvailable inflated at 82MB (comfortably above
     avail_min_mb=40 -- combined-low genuinely cannot fire on MemAvailable
     alone), MemFree critically low (~5MB -- the "actively dying" condition
@@ -115,19 +84,11 @@ def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
     the 32 MiB floor. With the 0.2.16 per-tick `prev`, this NEVER reaches
     critical via the swap leg no matter how many ticks elapse (the reverted
     0.2.15 behavior made it cross cumulatively; see the module docstring).
-
-    Touches ``sentinel`` once ``stop_after`` ticks have been sampled --
-    comfortably past the 5th tick where the OLD cumulative accounting would
-    have crossed the 32 MiB floor -- so the sentinel-waiting round leader
-    (see ``_sentinel_child_argv``) exits promptly once the discriminator has
-    genuinely been exercised, instead of running a fixed real
-    ``time.sleep``."""
+    """
     calls = {"n": 0}
 
     def _fn():
         calls["n"] += 1
-        if calls["n"] >= stop_after:
-            sentinel.touch()
         return {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -140,7 +101,7 @@ def _slow_swap_sample_fn(sentinel: Path, stop_after: int = 6):
 
 
 def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure_sustained(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """PSI-based critical pressure exercises the mechanism (sampling cadence,
     terminate-and-emit, distinctness from round_supervisor_wedged) -- see
@@ -148,7 +109,9 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
     below for the actual field-bug coverage (that host has no PSI at all)."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=None)
+    argv = _DUMMY_ARGV
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -157,7 +120,7 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
         timeout_s=300,  # large enough that the mem floor trips first, not the ceiling
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: _CRITICAL_SAMPLE,
     )
 
@@ -190,7 +153,7 @@ def test_spawn_round_should_terminate_and_emit_events_when_psi_critical_pressure
 
 
 def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """The original field-bug shape under the 0.2.16 per-tick fix: PSI
     unreadable, MemAvailable inflated at 82MB well above avail_min_mb=40
@@ -204,14 +167,15 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
     lowered memory.swap_out_noise_floor_mb instead."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=6)
     # stop_after=6 (in _slow_swap_sample_fn) is comfortably past the 5th
     # ~10s tick where the OLD cumulative accounting would have crossed the
     # 32 MiB floor (10MB/tick * 4 deltas = 40MB) -- proving this is a
     # genuine behavior discriminator, not just "too short a run to matter
     # either way". The sentinel-waiting child exits the instant that many
     # ticks have actually been sampled, instead of pinning a real sleep.
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    argv = _DUMMY_ARGV
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -220,8 +184,8 @@ def test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
-        clock=PollLoopClock(),
-        sample_fn=_slow_swap_sample_fn(sentinel),
+        clock=clock,
+        sample_fn=_slow_swap_sample_fn(),
     )
 
     assert rc == 0  # never terminated -- the round completed on its own
@@ -258,7 +222,7 @@ def _swap_climb_sample_fn():
 
 
 def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_floor_every_tick(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """The DOES-terminate counterpart to
     test_spawn_round_should_not_terminate_when_slow_swap_trickle_stays_below_per_tick_noise_floor
@@ -269,7 +233,9 @@ def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_
     round exactly as the PSI-based path does."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=None)
+    argv = _DUMMY_ARGV
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -278,7 +244,7 @@ def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_swap_climb_sample_fn(),
     )
 
@@ -292,7 +258,9 @@ def test_spawn_round_should_terminate_when_swap_out_climbs_above_per_tick_noise_
     assert terminated[0]["consecutive"] == 3
 
 
-def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(tmp_path):
+def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(
+    tmp_path, monkeypatch
+):
     """The negative control for the cumulative-swap floor: a healthy host with
     ample MemFree (~4000MB) and near-zero cumulative swap-out (constant
     swap_sout) is sampled across several ~10s ticks and never reaches
@@ -300,14 +268,13 @@ def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(t
     and no round_supervisor_wedged."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
+    argv = _DUMMY_ARGV
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 3:  # a few ~10s ticks, same intent as the old sleep(3)
-            sentinel.touch()
         return _HEALTHY_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -317,7 +284,7 @@ def test_spawn_round_should_not_terminate_when_host_stays_healthy_across_ticks(t
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=40)),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -347,7 +314,6 @@ def test_spawn_round_should_skip_sampling_when_round_finishes_before_first_check
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(step=0.01),  # never crosses the 10s interval boundary
         sample_fn=lambda: calls.append(1) or _CRITICAL_SAMPLE,
     )
 
@@ -358,7 +324,7 @@ def test_spawn_round_should_skip_sampling_when_round_finishes_before_first_check
 
 
 def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followed_by_healthy_ticks(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """Hysteresis: one critical tick then healthy forever after must NOT
     terminate -- the default pressure.critical_consecutive_samples=3 means a
@@ -368,15 +334,14 @@ def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followe
     0.2.16 calibration signal an operator would otherwise never see."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=2)
+    argv = _DUMMY_ARGV
 
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 2:  # the one critical tick plus a healthy confirmation
-            sentinel.touch()
         return _CRITICAL_SAMPLE if calls["n"] == 1 else _HEALTHY_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -386,7 +351,7 @@ def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followe
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -400,7 +365,7 @@ def test_spawn_round_should_not_terminate_when_single_critical_sample_is_followe
 
 
 def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_tick_jump(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """THE critical swap-leg fix: swap_sout jumps once (one tick's delta above
     the noise floor) then goes flat (per-tick delta back to 0) while mem_free
@@ -412,16 +377,15 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
     so the round is NOT terminated."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
 
     jump = MonitorHostHealthConfig().memory.swap_out_noise_floor_mb * 1024 * 1024 + 1
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 4:  # jump tick + a couple of flat confirmation ticks
-            sentinel.touch()
         # tick 1: baseline (0). tick 2: one big jump (delta vs tick 1's
         # baseline crosses the noise floor). tick 3+: flat at the jumped
         # value (per-tick delta back to 0). avail_min_mb is set below the
@@ -443,7 +407,7 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(memory=_HostHealthMemoryConfig(avail_min_mb=1)),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -454,20 +418,21 @@ def test_spawn_round_should_not_terminate_when_swap_streak_resets_after_single_t
     assert "round_mem_terminated" not in kinds
 
 
-def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(tmp_path):
+def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(
+    tmp_path, monkeypatch
+):
     """in_round_terminate=False: sustained critical pressure must NEVER
     _terminate_round -- the loop keeps sampling (so a future re-enable or
     observability layer still sees the signal) but the kill switch is off."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 4:  # several sustained-critical ticks with the switch off
-            sentinel.touch()
         return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -479,7 +444,7 @@ def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(tm
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -490,7 +455,9 @@ def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(tm
     assert "round_mem_terminated" not in kinds
 
 
-def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset(tmp_path):
+def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset(
+    tmp_path, monkeypatch
+):
     """0.2.17: round_mem_critical_sample is capped at
     2 * pressure.critical_consecutive_samples (1..6 at the default 3) -- a
     sustained-critical don't-terminate run (here: the off switch) must not
@@ -502,6 +469,8 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
     the cap is per streak-episode, not a one-shot lifetime limit."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=11)
     # 8 critical ticks, 2 healthy ticks, then one more critical tick (11) --
     # comfortably past the cap (6) on both sides of the reset. Ticks beyond
     # 11 clamp back to healthy (rather than staying critical indefinitely,
@@ -511,16 +480,13 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
     # `consecutive` -- clamping keeps any such overshoot a no-op (a healthy
     # tick resets the streak and emits nothing) instead of resuming the
     # critical run past 6 again and re-tripping the cap assertions below.
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    argv = _DUMMY_ARGV
 
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
         n = calls["n"]
-        if n >= 11:
-            sentinel.touch()
         if n <= 8:
             return _CRITICAL_SAMPLE
         if n == 11:
@@ -536,14 +502,14 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
         # fallback wait_exit loop reads clock.monotonic() more often per
         # tick than the old proc.wait loop did (once inside wait_exit's own
         # poll, on top of the outer deadline/next_mem_check checks) -- pure
-        # PollLoopClock virtual-time bookkeeping, unrelated to the streak
+        # FakeClock virtual-time bookkeeping, unrelated to the streak
         # decision under test, but it burns through a tight budget faster.
         timeout_s=3000,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -565,7 +531,9 @@ def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_r
     assert consecutive[6] == 1
 
 
-def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(tmp_path):
+def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
+    tmp_path, monkeypatch
+):
     """The one cell _mid_round_action's own unit test proves structurally but
     no integration test drove end to end: in_round_terminate=False AND
     defer_to_cgroup=True at once. The off switch wins over cgroup-defer (see
@@ -581,14 +549,13 @@ def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
     mem_pressure_deferred_to_cgroup and fail."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
+    argv = _DUMMY_ARGV
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 3:
-            sentinel.touch()
         return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -600,7 +567,7 @@ def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_terminate=False)
         ),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
@@ -616,7 +583,9 @@ def test_spawn_round_should_emit_nothing_when_off_switch_overrides_cgroup_defer(
     assert kinds.count("round_mem_critical_sample") >= 1
 
 
-def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tmp_path):
+def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(
+    tmp_path, monkeypatch
+):
     """0.2.16 Task 3: when the cgroup's (mem+swap) budget is bounded end to
     end (both memory.max and memory.swap.max finite -- exactly the field
     host's MemoryMax=320M + MemorySwapMax=160M), kernel cgroup-OOM WILL fire
@@ -629,14 +598,13 @@ def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tm
     calibration signal independent of the terminate-vs-defer choice."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
+    argv = _DUMMY_ARGV
     calls = {"n": 0}
 
     def _sample_fn():
         calls["n"] += 1
-        if calls["n"] >= 4:
-            sentinel.touch()
         return _CRITICAL_SAMPLE
 
     rc = serve_cmd._spawn_round(
@@ -646,7 +614,7 @@ def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tm
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
         defer_to_cgroup=True,
     )
@@ -661,14 +629,16 @@ def test_spawn_round_should_defer_to_cgroup_when_memory_and_swap_both_bounded(tm
     assert "round_supervisor_wedged" not in kinds
 
 
-def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path):
+def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path, monkeypatch):
     """Only memory.max finite (systemd's MemoryMax-without-MemorySwapMax
     default -- swap unbounded) means cgroup-OOM never fires on its own (the
     agent just swaps), so defer_to_cgroup is False and the floor stays
     armed: sustained critical pressure still terminates exactly as T2 did."""
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=None)
+    argv = _DUMMY_ARGV
 
     rc = serve_cmd._spawn_round(
         argv,
@@ -677,7 +647,7 @@ def test_spawn_round_should_terminate_when_defer_to_cgroup_is_false(tmp_path):
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: _CRITICAL_SAMPLE,
         defer_to_cgroup=False,
     )
@@ -707,12 +677,12 @@ def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
     calls = {"engage": 0, "restore": []}
 
     def _fake_engage(*, step_pct):
         calls["engage"] += 1
-        sentinel.touch()  # let the sentinel-child leader exit right after engage
         return {
             "engaged": True,
             "previous": "max",
@@ -733,13 +703,13 @@ def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained
     )
 
     rc = serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -768,8 +738,9 @@ def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_a
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "exit.sentinel"
-    argv = _sentinel_child_argv(sentinel)
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
+    argv = _DUMMY_ARGV
     calls = {"engage": 0}
 
     def _fake_engage(*, step_pct):
@@ -791,8 +762,6 @@ def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_a
 
     def _sample_fn():
         calls_n["n"] += 1
-        if calls_n["n"] >= 3:  # a few no-pressure ticks with the zeroed threshold
-            sentinel.touch()
         return _HEALTHY_SAMPLE  # memory_pressure() returns None for this sample
 
     rc = serve_cmd._spawn_round(
@@ -802,7 +771,7 @@ def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_a
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -821,7 +790,9 @@ def test_spawn_round_should_restore_soft_brake_when_terminated_by_sustained_crit
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=None)
+    argv = _DUMMY_ARGV
     calls = {"restore": []}
 
     def _fake_engage(*, step_pct):
@@ -858,7 +829,7 @@ def test_spawn_round_should_restore_soft_brake_when_terminated_by_sustained_crit
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample_fn,
     )
 
@@ -882,7 +853,9 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=20)
+    argv = _DUMMY_ARGV
     calls = {"restore": []}
 
     def _fake_engage(*, step_pct):
@@ -924,7 +897,7 @@ def test_spawn_round_should_restore_brake_and_propagate_original_exception_when_
             timeout_s=300,
             round_num=1,
             host_health_cfg=hh,
-            clock=PollLoopClock(),
+            clock=clock,
             sample_fn=_sample_fn,
         )
 
@@ -942,10 +915,10 @@ def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
 
     def _fake_engage(*, step_pct):
-        sentinel.touch()
         return {
             "engaged": True,
             "previous": "max",
@@ -965,13 +938,13 @@ def test_spawn_round_should_emit_write_failed_when_restore_itself_fails(tmp_path
     )
 
     rc = serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -994,10 +967,10 @@ def test_spawn_round_should_carry_the_real_errno_when_engage_itself_fails(tmp_pa
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=3)
 
     def _fake_engage(*, step_pct):
-        sentinel.touch()
         return {"engaged": False, "errno": errno_mod.EACCES}
 
     monkeypatch.setattr(metrics, "engage_leaf_memory_high", _fake_engage)
@@ -1008,13 +981,13 @@ def test_spawn_round_should_carry_the_real_errno_when_engage_itself_fails(tmp_pa
     )
 
     rc = serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=lambda: _WARNING_SAMPLE,
     )
 
@@ -1041,7 +1014,8 @@ def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_e
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=9)
     seq = {"n": 0}
     restore_calls = {"n": 0}
 
@@ -1049,8 +1023,6 @@ def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_e
         seq["n"] += 1
         if seq["n"] <= 3:
             return _WARNING_SAMPLE  # 3 warning ticks -> engage
-        if seq["n"] >= 9:
-            sentinel.touch()  # a few failing-restore healthy ticks past the threshold
         return _HEALTHY_SAMPLE
 
     def _fake_restore(previous, **_k):
@@ -1075,18 +1047,18 @@ def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_e
     )
 
     rc = serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         # This test runs the most mid-round ticks in the file (engage at 1-3,
-        # then healthy 4..9), so the PollLoopClock's fake elapsed time climbs
+        # then healthy 4..9), so FakeClock elapsed time climbs
         # high; 3000s (matching the 11-tick test above) keeps the round ceiling
         # well clear of it, so a slow CI child's exit is always the round's end,
         # never a spurious timeout SIGTERM (the py3.11/macOS flake).
         timeout_s=3000,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample,
     )
 
@@ -1109,7 +1081,8 @@ def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=6)
     seq = {"n": 0}
     restores = []
 
@@ -1119,7 +1092,6 @@ def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(
 
     def _fake_restore(previous, **_k):
         restores.append(previous)
-        sentinel.touch()  # let the leader exit once the recovery release has fired
         return True
 
     monkeypatch.setattr(
@@ -1140,13 +1112,13 @@ def test_spawn_round_should_release_soft_brake_when_warning_clears_for_n_ticks(
     )
 
     serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample,
     )
 
@@ -1163,7 +1135,8 @@ def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engag
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    sentinel = tmp_path / "go"
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=4)
     seq = {"n": 0}
 
     def _sample():
@@ -1171,7 +1144,6 @@ def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engag
         if seq["n"] <= 3:
             return _WARNING_SAMPLE  # engage
         if seq["n"] == 4:
-            sentinel.touch()  # end the round on the critical tick
             return _CRITICAL_SAMPLE  # a critical sample must NOT release the brake
         return _CRITICAL_SAMPLE
 
@@ -1193,13 +1165,13 @@ def test_spawn_round_should_hold_soft_brake_when_a_critical_sample_follows_engag
     )
 
     serve_cmd._spawn_round(
-        _sentinel_child_argv(sentinel),
+        _DUMMY_ARGV,
         log_dir / "round-1.log",
         {},
         timeout_s=300,
         round_num=1,
         host_health_cfg=hh,
-        clock=PollLoopClock(),
+        clock=clock,
         sample_fn=_sample,
     )
 
@@ -1237,7 +1209,9 @@ def test_spawn_round_should_engage_brake_then_terminate_when_warning_precedes_su
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    clock = FakeClock()
+    install_scripted_round(monkeypatch, clock, exit_after_timeouts=None)
+    argv = _DUMMY_ARGV
     calls = {"engage": 0, "restore": []}
 
     def _fake_engage(*, step_pct):
@@ -1278,7 +1252,7 @@ def test_spawn_round_should_engage_brake_then_terminate_when_warning_precedes_su
             timeout_s=300,
             round_num=1,
             host_health_cfg=hh,
-            clock=PollLoopClock(),
+            clock=clock,
             sample_fn=_sample_fn,
             defer_to_cgroup=False,
         )
