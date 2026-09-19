@@ -4,22 +4,22 @@ the peak memory.current/swap over the round (not the cumulative memory.peak)."""
 
 import json
 import sys
-import time
 
 import pytest
 
 from agent_runner import _procwait
 from agent_runner.cli import _serve_cgroup, _serve_round
 from agent_runner.config import MonitorHostHealthConfig
+from tests._clock import TickingClock
 
 
 @pytest.fixture(autouse=True)
 def _fallback_wait_exit(monkeypatch):
     """_spawn_round's mid-round wait is one wait_exit call; its fast path is
     a real select/kqueue registration that blocks in real wall-clock and
-    cannot be driven by this file's fake-monotonic _TickingClock (see
+    cannot be driven by this file's fake-monotonic TickingClock (see
     _procwait's module docstring) -- force the poll FALLBACK so the
-    ~10s-interval ticks below stay paced by _TickingClock's virtual time
+    ~10s-interval ticks below stay paced by TickingClock's virtual time
     instead of a real select() timeout racing a fixed time.sleep(6) child."""
     monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
 
@@ -36,28 +36,6 @@ def _usage(current, swap):
         "memory_events": {},
         "cgroup_path": "/x",
     }
-
-
-class _TickingClock:
-    """monotonic() advances by `step` on every call -- fakes elapsed wall time
-    so a ~10s mid-round sample interval elapses without a real ~10s wait
-    (mirrors tests/integration/test_spawn_round_mem_floor.py's helper).
-    sleep() is a real (short, production-cadence) block, deliberately NOT
-    advancing the fake monotonic time -- the poll fallback's own per-tick
-    pacing, keeping each tick roughly 1 real second apart so ~6 ticks elapse
-    across this file's fixed real time.sleep(6) round leaders, same as the
-    old proc.wait(timeout=1) loop did."""
-
-    def __init__(self, step: float = 5.0):
-        self._t = 0.0
-        self._step = step
-
-    def monotonic(self) -> float:
-        self._t += self._step
-        return self._t
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
 
 
 def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is_lower(
@@ -83,7 +61,7 @@ def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
+        clock=TickingClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -99,8 +77,7 @@ def test_spawn_round_should_track_peak_as_max_across_ticks_when_later_reading_is
     assert state["peak_swap"] == 50
 
 
-def test_emit_round_cgroup_memory_should_emit_deltas_when_baseline_present(tmp_path, monkeypatch):
-    log_dir = tmp_path
+def _prime_round_cgroup_emit(log_dir, monkeypatch, sample=None):
     _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
         "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
         "peak_current": 300_000_000,
@@ -117,6 +94,13 @@ def test_emit_round_cgroup_memory_should_emit_deltas_when_baseline_present(tmp_p
             "cgroup_path": "/user.slice",
         },
     )
+    if sample is not None:
+        monkeypatch.setattr(_serve_cgroup.metrics, "sample", lambda: sample)
+
+
+def test_emit_round_cgroup_memory_should_emit_deltas_when_baseline_present(tmp_path, monkeypatch):
+    log_dir = tmp_path
+    _prime_round_cgroup_emit(log_dir, monkeypatch)
 
     _serve_cgroup._emit_round_cgroup_memory(log_dir, log_dir / "round-7.log", 7)
 
@@ -137,26 +121,10 @@ def test_emit_round_cgroup_memory_should_carry_sample_psi_when_present(tmp_path,
     """Corroborating IO/mem-PSI fields ride flat on round_cgroup_memory
     (not inside Pressure.context) when sample() actually read them."""
     log_dir = tmp_path
-    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
-        "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
-        "peak_current": 300_000_000,
-        "peak_swap": 100_000_000,
-        "bounding_cgroup_path": "/user.slice",
-    }
-    monkeypatch.setattr(
-        _serve_cgroup.metrics,
-        "cgroup_memory_usage",
-        lambda **k: {
-            "memory_events": {"high": 25, "max": 0, "oom": 0, "oom_kill": 0},
-            "memory_current": 310_000_000,
-            "memory_swap_current": 0,
-            "cgroup_path": "/user.slice",
-        },
-    )
-    monkeypatch.setattr(
-        _serve_cgroup.metrics,
-        "sample",
-        lambda: {
+    _prime_round_cgroup_emit(
+        log_dir,
+        monkeypatch,
+        sample={
             "io_psi_some_avg10": 1.25,
             "io_psi_full_avg10": 0.5,
             "psi_full_total": 42,
@@ -174,26 +142,10 @@ def test_emit_round_cgroup_memory_should_carry_sample_psi_when_present(tmp_path,
 
 def test_emit_round_cgroup_memory_should_omit_sample_psi_when_unread(tmp_path, monkeypatch):
     log_dir = tmp_path
-    _serve_cgroup._ROUND_CGROUP_STATE_BY_LOG_DIR[log_dir] = {
-        "baseline_events": {"high": 10, "max": 0, "oom": 0, "oom_kill": 0},
-        "peak_current": 300_000_000,
-        "peak_swap": 100_000_000,
-        "bounding_cgroup_path": "/user.slice",
-    }
-    monkeypatch.setattr(
-        _serve_cgroup.metrics,
-        "cgroup_memory_usage",
-        lambda **k: {
-            "memory_events": {"high": 25, "max": 0, "oom": 0, "oom_kill": 0},
-            "memory_current": 310_000_000,
-            "memory_swap_current": 0,
-            "cgroup_path": "/user.slice",
-        },
-    )
-    monkeypatch.setattr(
-        _serve_cgroup.metrics,
-        "sample",
-        lambda: {
+    _prime_round_cgroup_emit(
+        log_dir,
+        monkeypatch,
+        sample={
             "io_psi_some_avg10": None,
             "io_psi_full_avg10": None,
             "psi_full_total": None,
@@ -339,7 +291,7 @@ def test_spawn_round_should_emit_growth_warning_once_per_crossing_episode_when_c
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
+        clock=TickingClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -373,7 +325,7 @@ def test_spawn_round_should_use_rss_sum_source_when_no_finite_cgroup_bound(tmp_p
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
+        clock=TickingClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -416,7 +368,7 @@ def test_spawn_round_should_never_pass_a_negative_rate_when_memory_drops_between
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
+        clock=TickingClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,
@@ -455,7 +407,7 @@ def test_spawn_round_should_not_crash_when_cgroup_source_fails_open_mid_round(
         timeout_s=300,
         round_num=1,
         host_health_cfg=MonitorHostHealthConfig(),
-        clock=_TickingClock(),
+        clock=TickingClock(),
         sample_fn=lambda: {
             "psi_some_avg10": None,
             "psi_full_avg10": None,

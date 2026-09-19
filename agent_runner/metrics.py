@@ -43,12 +43,10 @@ def _read_psi(path: Path = _PSI_MEMORY_PATH) -> tuple[float, float, int | None] 
             continue
         fields = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
         if parts[0] == "full":
-            total_raw = fields.get("total")
-            if total_raw is not None:
-                try:
-                    full_total = int(total_raw)
-                except ValueError:
-                    pass
+            try:
+                full_total = int(fields["total"])
+            except (KeyError, ValueError):
+                pass
         raw = fields.get("avg10")
         if raw is None:
             continue
@@ -81,17 +79,17 @@ def sample() -> dict[str, Any]:
     """
     vm = psutil.virtual_memory()
     swap = psutil.swap_memory()
-    mem = _read_psi()
-    io = _read_psi(_PSI_IO_PATH)
+    mem = _read_psi() or (None, None, None)
+    io_some, io_full, _ = _read_psi(_PSI_IO_PATH) or (None, None, None)
     return {
         "mem_available_mb": vm.available // (1024 * 1024),
         "mem_free_mb": vm.free // (1024 * 1024),
         "swap_sout": swap.sout,
-        "psi_some_avg10": mem[0] if mem is not None else None,
-        "psi_full_avg10": mem[1] if mem is not None else None,
-        "psi_full_total": mem[2] if mem is not None else None,
-        "io_psi_some_avg10": io[0] if io is not None else None,
-        "io_psi_full_avg10": io[1] if io is not None else None,
+        "psi_some_avg10": mem[0],
+        "psi_full_avg10": mem[1],
+        "psi_full_total": mem[2],
+        "io_psi_some_avg10": io_some,
+        "io_psi_full_avg10": io_full,
     }
 
 

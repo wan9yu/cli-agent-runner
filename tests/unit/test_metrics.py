@@ -70,34 +70,6 @@ def test_read_psi_should_parse_avg10_when_psi_file_present(tmp_path: Path) -> No
     assert _read_psi(psi_path) == (12.34, 1.50, 111)
 
 
-def test_read_psi_should_parse_full_total_when_present(tmp_path: Path) -> None:
-    p = tmp_path / "memory"
-    p.write_text(
-        "some avg10=12.34 avg60=5.00 avg300=1.00 total=999\n"
-        "full avg10=1.50 avg60=0.50 avg300=0.10 total=111\n"
-    )
-    assert _read_psi(p) == (12.34, 1.50, 111)
-
-
-def test_read_psi_should_return_none_total_when_full_line_has_no_total(
-    tmp_path: Path,
-) -> None:
-    p = tmp_path / "memory"
-    p.write_text("some avg10=3.00 avg60=1.00 avg300=0.00 total=5\n")
-    parsed = _read_psi(p)
-    assert parsed is not None
-    some, full, total = parsed
-    assert (some, full) == (3.00, 0.0)
-    assert total is None
-
-
-def test_sample_should_include_io_and_total_keys_even_when_unread() -> None:
-    s = sample()
-    assert "psi_full_total" in s
-    assert "io_psi_some_avg10" in s
-    assert "io_psi_full_avg10" in s
-
-
 def test_read_psi_should_default_full_to_zero_when_full_line_missing(
     tmp_path: Path,
 ) -> None:

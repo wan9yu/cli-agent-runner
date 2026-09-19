@@ -281,11 +281,7 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
     # swaps rather than getting cgroup-OOM-killed (a defer-shape symptom, or
     # MemorySwapMax not really unbounded on the live unit). ---
     leaf_events = _ssh(f"sudo cat {cgroup_path}/memory.events", check=False)
-    oom_kill = 0
-    for line in leaf_events.stdout.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[0] == "oom_kill":
-            oom_kill = int(parts[1])
+    oom_kill = _parse_oom_kill(leaf_events.stdout)
     assert oom_kill == 0, (
         f"leaf memory.events oom_kill={oom_kill} at {cgroup_path} -- the "
         "cgroup's own OOM killer fired, meaning the child was kernel-OOM-"
@@ -302,6 +298,15 @@ def _parse_oom_kill(text: str) -> int:
         if len(parts) == 2 and parts[0] == "oom_kill":
             oom_kill = int(parts[1])
     return oom_kill
+
+
+def _max_oom_kill_delta(events: list[dict]) -> int:
+    deltas = [
+        int(e.get("events_oom_kill_delta") or 0)
+        for e in events
+        if e.get("event") == "round_cgroup_memory"
+    ]
+    return max(deltas, default=0)
 
 
 def _assert_control(
@@ -331,10 +336,7 @@ def _assert_control(
         "control arm must not engage the soft brake: memory_high_engaged present"
     )
 
-    cgroup_mem = [e for e in events if e.get("event") == "round_cgroup_memory"]
-    oom_delta = 0
-    if cgroup_mem:
-        oom_delta = max(int(e.get("events_oom_kill_delta") or 0) for e in cgroup_mem)
+    oom_delta = _max_oom_kill_delta(events)
     if oom_delta < 1:
         if leaf_oom_kill >= 1:
             pytest.fail(
@@ -400,11 +402,7 @@ def _run_control_arm(*, run, unit_info: dict, workdir: str) -> None:
     print(f"[control] {len(events)} events captured; kinds={kinds}")
 
     child_gone = run("sudo pgrep -f '[g]rowth_child.py'", check=False).returncode != 0
-    cgroup_mem = [e for e in events if e.get("event") == "round_cgroup_memory"]
-    oom_delta = 0
-    if cgroup_mem:
-        oom_delta = max(int(e.get("events_oom_kill_delta") or 0) for e in cgroup_mem)
-    if oom_delta < 1 or not child_gone:
+    if _max_oom_kill_delta(events) < 1 or not child_gone:
         diag = run(
             f"sudo sh -c 'echo current=$(cat {cgroup_path}/memory.current 2>/dev/null); "
             f"echo swap.current=$(cat {cgroup_path}/memory.swap.current 2>/dev/null); "
