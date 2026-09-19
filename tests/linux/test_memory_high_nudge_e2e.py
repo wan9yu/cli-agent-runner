@@ -26,7 +26,7 @@ from agent_runner.config import (
     MonitorHostHealthConfig,
     _HostHealthPressureConfig,
 )
-from tests._clock import TickingClock
+from tests._clock import PollLoopClock
 from tests._test_helpers import read_events_for_current_month
 from tests.integration.test_spawn_round_mem_floor import (
     _CRITICAL_SAMPLE,
@@ -37,7 +37,7 @@ from tests.integration.test_spawn_round_mem_floor import (
 @pytest.fixture(autouse=True)
 def _fallback_wait_exit(monkeypatch):
     """Same rationale as test_spawn_round_mem_floor.py's own autouse fixture
-    (see its docstring): TickingClock's monotonic() is fake, but the fast
+    (see its docstring): PollLoopClock's monotonic() is fake, but the fast
     exit_fd path's select.select still blocks in REAL wall-clock for however
     many (fake) seconds `remaining` computes to -- so force the poll
     FALLBACK and shrink its real per-tick cadence to 0.01s. This does not
@@ -122,7 +122,7 @@ def test_nudge_should_sigterm_the_agent_within_one_tick_and_end_tier_nudge_witho
         host_health_cfg=MonitorHostHealthConfig(
             pressure=_HostHealthPressureConfig(in_round_nudge=True)
         ),
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn_once_ready(ready, _CRITICAL_SAMPLE),
     )
 
@@ -161,7 +161,7 @@ def test_nudge_should_not_suppress_the_hard_terminate_when_the_agent_ignores_the
         timeout_s=300,
         round_num=1,
         host_health_cfg=cfg,
-        clock=TickingClock(),
+        clock=PollLoopClock(),
         sample_fn=_sample_fn_once_ready(ready, _CRITICAL_SAMPLE),
     )
 
