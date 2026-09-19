@@ -1,13 +1,20 @@
-"""FakeClock — advanceable virtual time for tests.
+"""Test clocks — FakeClock and TickingClock, both the full Clock surface.
 
 Lives in tests/ (not agent_runner/) so it has no production consumer to keep
-vulture happy. One instance pins epoch, monotonic, UTC-now and tz-now together;
-``sleep`` advances virtual time, so a chunked pause loop terminates deterministically
-instead of needing a monkeypatched ``stop`` flag.
+vulture happy.
+
+* ``FakeClock`` pins epoch, monotonic, UTC-now and tz-now together; ``sleep``
+  advances virtual time, so a chunked pause loop terminates deterministically
+  instead of needing a monkeypatched ``stop`` flag.
+* ``TickingClock`` is for real-subprocess poll loops: ``monotonic()`` jumps
+  ``step`` per call so a 10s sample interval elapses without waiting 10s;
+  ``sleep()`` is a real short block so the child can actually exit. Do not
+  substitute FakeClock there — FakeClock.sleep never yields to a live child.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -51,3 +58,38 @@ class FakeClock:
         """Shift the WALL clock only (simulates an NTP step); monotonic unmoved —
         so a deadline measured on monotonic must be unaffected."""
         self._epoch += delta
+
+
+class TickingClock:
+    """Clock for real-subprocess poll loops.
+
+    ``monotonic()`` advances by ``step`` on every call so a ~10s sample interval
+    elapses without waiting ~10 real seconds. ``sleep()`` is a real short block
+    and does **not** advance monotonic — the poll fallback's per-tick pacing,
+    so a live child gets repeated chances to exit. Wall methods (``epoch`` /
+    ``now_utc`` / ``now_in_zone``) sit on a fixed epoch so this is a full
+    ``Clock``, not a two-method stub.
+    """
+
+    def __init__(self, step: float = 5.0, epoch: float = 1_700_000_000.0):
+        self._mono = 0.0
+        self._step = step
+        self._epoch = epoch
+
+    def epoch(self) -> float:
+        return self._epoch
+
+    def monotonic(self) -> float:
+        self._mono += self._step
+        return self._mono
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+    def now_utc(self) -> datetime:
+        return datetime.fromtimestamp(self._epoch, UTC)
+
+    def now_in_zone(self, tz_name: str | None) -> datetime:
+        if tz_name is None:
+            return self.now_utc().astimezone()
+        return self.now_utc().astimezone(ZoneInfo(tz_name))

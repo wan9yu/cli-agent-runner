@@ -12,10 +12,11 @@ memory.swap.max. Never a default CI cell.
 
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 
 import pytest
@@ -26,36 +27,31 @@ CGROUP_FLAG = "AGENT_RUNNER_E2E_CGROUP"
 _GROWTH_CHILD_SRC = Path(__file__).resolve().parent / "growth_child.py"
 
 
+def _run_cmd(
+    argv: list[str], *, check: bool = True, timeout: int = 120
+) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, capture_output=True, text=True, check=check, timeout=timeout)
+
+
 def _ssh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["ssh", PI_HOST, cmd],
-        capture_output=True,
-        text=True,
-        check=check,
-        timeout=timeout,
-    )
+    return _run_cmd(["ssh", PI_HOST, cmd], check=check, timeout=timeout)
 
 
 def _scp(src: str, dst: str) -> None:
-    subprocess.run(
-        ["scp", "-q", src, f"{PI_HOST}:{dst}"],
-        check=True,
-        timeout=120,
-    )
+    _run_cmd(["scp", "-q", src, f"{PI_HOST}:{dst}"])
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def _local_sh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["sh", "-c", cmd],
-        capture_output=True,
-        text=True,
-        check=check,
-        timeout=timeout,
-    )
+    return _run_cmd(["sh", "-c", cmd], check=check, timeout=timeout)
+
+
+def _b64(data: str | bytes) -> str:
+    raw = data.encode() if isinstance(data, str) else data
+    return base64.b64encode(raw).decode()
 
 
 def _preoom_unit_body(exec_start: str, *, swap_max: str) -> str:
@@ -105,8 +101,6 @@ def _preoom_config_body(*, python: str, growth_script: str, workdir: str) -> str
 
 
 def _install_pre_oom_config(run, workdir: str, python: str, growth_script: str) -> str:
-    import base64
-
     cfg_path = f"{workdir}/agent-runner.toml"
     prompt_path = f"{workdir}/p.md"
     body = _preoom_config_body(python=python, growth_script=growth_script, workdir=workdir)
@@ -114,8 +108,8 @@ def _install_pre_oom_config(run, workdir: str, python: str, growth_script: str) 
     # rejects a shorter prompt and the round exits 78 before any agent runs.
     # The growth child ignores the prompt; this only has to clear the floor.
     prompt_body = "Synthetic pre-OOM property e2e prompt; the growth child ignores it. " * 10
-    cfg_b64 = base64.b64encode(body.encode()).decode()
-    prompt_b64 = base64.b64encode(prompt_body.encode()).decode()
+    cfg_b64 = _b64(body)
+    prompt_b64 = _b64(prompt_body)
     run(
         f"echo '{prompt_b64}' | base64 -d > {prompt_path} && "
         f"echo '{cfg_b64}' | base64 -d > {cfg_path} && "
@@ -125,6 +119,26 @@ def _install_pre_oom_config(run, workdir: str, python: str, growth_script: str) 
     return cfg_path
 
 
+def _make_workdir(run) -> Iterator[str]:
+    workdir = f"/tmp/agent-runner-e2e-{uuid.uuid4().hex[:8]}"
+    run(
+        f"mkdir -p {workdir} && cd {workdir} && "
+        "git init -q -b main && "
+        "git config user.email t@t.com && "
+        "git config user.name t && "
+        "git config commit.gpgsign false && "
+        "echo init > README.md && "
+        "git add . && git commit -q -m init"
+    )
+    try:
+        yield workdir
+    finally:
+        # sudo: a root-scope serve unit writes root-owned event logs into
+        # workdir/logs, which a bare user rm can't remove -- leaving skeleton
+        # dirs that leak on /tmp and pollute later glob reads.
+        run(f"sudo rm -rf {workdir}", check=False)
+
+
 def _start_pre_oom_unit(
     run,
     *,
@@ -132,14 +146,12 @@ def _start_pre_oom_unit(
     agent_runner_bin: str,
     config_path: str,
     swap_max: str,
-) -> Iterator[dict]:
-    import base64
-
+) -> Generator[dict, None, None]:
     unit = f"agent-runner-preoom-{uuid.uuid4().hex[:8]}.service"
     unit_path = f"/etc/systemd/system/{unit}"
     exec_start = f"{agent_runner_bin} serve --config {config_path} --max-rounds 1"
     body = _preoom_unit_body(exec_start, swap_max=swap_max)
-    encoded = base64.b64encode(body.encode()).decode()
+    encoded = _b64(body)
     run(f"sudo -H git config --global --add safe.directory {workdir}")
     # The try starts BEFORE the tee/daemon-reload/start write, not after: the
     # unit file can land on disk (tee succeeds) even when daemon-reload or
@@ -178,23 +190,7 @@ def pi_session() -> Iterator[None]:
 
 @pytest.fixture
 def pi_workdir(pi_session) -> Iterator[str]:
-    workdir = f"/tmp/agent-runner-e2e-{uuid.uuid4().hex[:8]}"
-    _ssh(
-        f"mkdir -p {workdir} && cd {workdir} && "
-        "git init -q -b main && "
-        "git config user.email t@t.com && "
-        "git config user.name t && "
-        "git config commit.gpgsign false && "
-        "echo init > README.md && "
-        "git add . && git commit -q -m init"
-    )
-    try:
-        yield workdir
-    finally:
-        # sudo: a root-scope serve unit (the pre-oom test) writes root-owned
-        # event logs into workdir/logs, which a bare pi-user rm can't remove --
-        # leaving skeleton dirs that leak on /tmp and pollute later glob reads.
-        _ssh(f"sudo rm -rf {workdir}", check=False)
+    yield from _make_workdir(_ssh)
 
 
 @pytest.fixture
@@ -212,9 +208,7 @@ def pi_fake_agent(pi_workdir: str) -> str:
         "esac\n"
     )
     # Use base64 to avoid shell quoting hell with the heredoc + bash $vars
-    import base64
-
-    encoded = base64.b64encode(body.encode()).decode()
+    encoded = _b64(body)
     _ssh(f"echo '{encoded}' | base64 -d > {script_path} && chmod +x {script_path}")
     return script_path
 
@@ -229,15 +223,18 @@ def _pi_install_pkg_dir(pi_session) -> Iterator[str]:
     The installed venv is independent of any test's work_dir — tests invoke the
     binary by absolute path while keeping their per-test sandbox isolated.
     """
-    repo_root = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
     tar = f"/tmp/agent-runner-e2e-{uuid.uuid4().hex[:8]}.tar.gz"
     subprocess.run(
-        ["tar", "czf", tar, "-C", repo_root, "agent_runner", "pyproject.toml", "README.md"],
+        [
+            "tar",
+            "czf",
+            tar,
+            "-C",
+            str(_repo_root()),
+            "agent_runner",
+            "pyproject.toml",
+            "README.md",
+        ],
         check=True,
     )
     pi_pkg_dir = f"/tmp/agent-runner-e2e-pkg-{uuid.uuid4().hex[:8]}"
@@ -284,10 +281,8 @@ def pi_config(pi_workdir: str, pi_fake_agent: str) -> str:
         f'file = "{prompt_path}"\n'
     )
     prompt_body = "Test prompt body. " * 50
-    import base64
-
-    cfg_b64 = base64.b64encode(body.encode()).decode()
-    prompt_b64 = base64.b64encode(prompt_body.encode()).decode()
+    cfg_b64 = _b64(body)
+    prompt_b64 = _b64(prompt_body)
     _ssh(
         f"echo '{prompt_b64}' | base64 -d > {prompt_path} && "
         f"echo '{cfg_b64}' | base64 -d > {cfg_path} && "
@@ -323,9 +318,7 @@ def pi_growth_script(pi_workdir: str) -> str:
     the host's unbounded swap -- agent-runner terminating it IS the property
     under test, not a bug here."""
     script_path = f"{pi_workdir}/growth_child.py"
-    import base64
-
-    encoded = base64.b64encode(_GROWTH_CHILD_SRC.read_bytes()).decode()
+    encoded = _b64(_GROWTH_CHILD_SRC.read_bytes())
     _ssh(f"echo '{encoded}' | base64 -d > {script_path}")
     return script_path
 
@@ -425,22 +418,13 @@ def pi_pre_oom_control_unit(
 def cgroup_session() -> Iterator[None]:
     if not os.getenv(CGROUP_FLAG):
         pytest.skip(f"set {CGROUP_FLAG}=1 to run local cgroup e2e tests")
-    controllers = Path("/sys/fs/cgroup/cgroup.controllers")
-    if not controllers.is_file():
-        pytest.skip("cgroup v2 not available")
     try:
-        names = controllers.read_text()
+        names = Path("/sys/fs/cgroup/cgroup.controllers").read_text()
     except OSError:
         pytest.skip("cgroup v2 not available")
     if "memory" not in names.split():
         pytest.skip("cgroup v2 memory controller not available")
-    sudo = subprocess.run(
-        ["sudo", "-n", "true"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
+    sudo = _run_cmd(["sudo", "-n", "true"], timeout=10, check=False)
     if sudo.returncode != 0:
         pytest.skip("cannot create a memory-bounded unit (passwordless sudo required)")
     yield
@@ -448,22 +432,7 @@ def cgroup_session() -> Iterator[None]:
 
 @pytest.fixture
 def cgroup_workdir(cgroup_session) -> Iterator[str]:
-    workdir = f"/tmp/agent-runner-e2e-{uuid.uuid4().hex[:8]}"
-    _local_sh(
-        f"mkdir -p {workdir} && cd {workdir} && "
-        "git init -q -b main && "
-        "git config user.email t@t.com && "
-        "git config user.name t && "
-        "git config commit.gpgsign false && "
-        "echo init > README.md && "
-        "git add . && git commit -q -m init"
-    )
-    try:
-        yield workdir
-    finally:
-        # sudo: a root-scope serve unit writes root-owned event logs into
-        # workdir/logs, which a bare user rm can't remove.
-        _local_sh(f"sudo rm -rf {workdir}", check=False)
+    yield from _make_workdir(_local_sh)
 
 
 @pytest.fixture
@@ -524,7 +493,4 @@ def cgroup_pre_oom_control_unit(
             pytest.skip("cannot set memory.swap.max")
         yield info
     finally:
-        try:
-            next(gen)
-        except StopIteration:
-            pass
+        gen.close()
