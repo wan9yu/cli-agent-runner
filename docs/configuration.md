@@ -6,36 +6,61 @@ writes a templated copy you can edit.
 ## Config reload
 
 `agent-runner.toml` changes do NOT take effect mid-round. Two processes
-read the file, and they do not share one `Config` object:
+read the file, and they do not share one `Config` object.
 
-- **`serve`** loads the TOML once at startup and reuses that copy for the
-  session: schedule windows, `phase_policy`, phase rotation (the `--phase`
-  it passes to each child), the outer round-timeout ceiling, host-health /
-  cgroup defer, breakers, `max_rounds` / `stop_file`, log retention,
-  restart delay, and resolved SIGTERM grace.
-- **Each `round` child** re-reads the same path at spawn: `[prompt]` files
-  (including the `[goal]` ledger), `[[goal.checks]]`, `[agent]`, `[vcs]`,
-  and that child's `round_budget_s`.
+- **Cold (`serve` boot copy).** `serve` loads the TOML once at startup and
+  keeps that object for the session: schedule windows, `phase_policy`,
+  phase-aware `--phase` selection, the outer round-timeout ceiling (boot
+  `round_budget_s` plus the boot check-timeout allowance), host-health /
+  cgroup defer, breakers, `max_rounds` / `stop_file`, serve-side log
+  retention, restart delay, and the SIGTERM grace / cooperative-stop signal
+  it publishes into the child environment.
+- **Hot (`round` child).** Each `round` child re-reads the same path at
+  spawn: `[prompt]` files (including a `[goal]` ledger listed there),
+  `[[goal.checks]]` command lines, `[vcs]`, and `[agent]` prompt delivery /
+  `env`.
+- **Mixed — restart to keep inner and outer aligned.** The child re-reads
+  these, but `serve` still uses the boot copy for a related decision:
+  - `round_budget_s`, check `timeout_s`, and the *number* of
+    `[[goal.checks]]`: the child's inner timeout and post-agent checks
+    follow the new file; serve's outer ceiling does not. Raising any of
+    these without restart can SIGKILL the child as
+    `round_supervisor_wedged` (not exit 78).
+  - `[agent]` `command` / binary / whether it is a container run: the child
+    spawns the new command; serve's throttle, grace, and cgroup-defer still
+    follow the boot profile.
 
-A prompt / check / agent-command edit can therefore take effect on the
-**next** round without restarting serve. Edits to the serve-cached set
-still need:
+A prompt / check-command-line edit can take effect on the **next** round
+without restarting serve. Cold and mixed edits still need:
 
 ```bash
 agent-runner restart
 ```
 
-**Do not rename, add, or reorder `[phases]` under a running serve.** Serve
-passes `--phase` from its boot list; the child validates against a freshly
-loaded list. A mismatch is `ConfigError` → exit 78 → `config_broken` →
-permanent give-up until restart. A torn (partial) TOML write is the same
-exit. An outer loop that rewrites the file between rounds must replace it
-atomically (`os.replace` a complete file).
+**Exit 78 (`config_broken`).** Any child `ConfigError` or permanent startup
+smoke does this: torn (partial) TOML, unknown keys, ledger placement rules,
+or prompt smoke (empty, under 500 bytes, or a bad first character). An outer
+loop that rewrites TOML or prompt files between rounds must replace each
+file atomically (`os.replace` a complete file) and keep prompts well-formed.
+The generated systemd unit lists 78 in `RestartPreventExitStatus`, so the
+service stays down until `agent-runner restart`. A script that drives
+`serve` itself must not auto-restart on 78/75/70.
 
-This split is for per-round prompt and ledger updates. It is not a general
-hot-reload. When in doubt, restart. Changing config *mid-round* would still
-tear semantics (e.g. `dirty_action` flipping from `stash` to `auto_commit`
-while a round is running).
+**`[phases]` is not a blanket brick.** Serve passes `--phase` only when it
+is phase-aware (`phase_policy = "skip"`, or any phase has its own
+`schedule`) **and** not `--ignore-schedule`. Then a `--phase` missing from
+the child's freshly loaded list is `ConfigError` → 78. Under the default
+`wait` with prompt overrides only, serve passes no `--phase`; the child
+self-rotates on the new list — a semantic change, not 78. When in doubt,
+restart.
+
+`peek --json` reloads the TOML live; it can show a cold set `serve` is not
+using. Past rounds: [events.md](events.md).
+
+This split is for per-round prompt and check updates. It is not a general
+hot-reload. Changing config *mid-round* would still tear semantics (e.g.
+`dirty_action` flipping from `stash` to `auto_commit` while a round is
+running).
 
 ## TOML schema
 

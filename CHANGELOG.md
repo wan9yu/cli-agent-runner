@@ -8,8 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Docs
-- `docs/configuration.md` Config reload no longer claims serve reuses one `Config` for every round. The round child re-reads the TOML; serve's boot copy stays the schedule / phase / ceiling / host-health set.
+- `docs/configuration.md` Config reload: cold / hot / mixed lifetimes; exit 78 is child `ConfigError` or prompt smoke, not every `[phases]` edit; default `wait` self-rotates. The round child re-reads the TOML; serve's boot copy stays the schedule / phase / ceiling / host-health set.
 - `[goal]` treadmill: the round child looks back across completed rounds, not serve.
+- `docs/events.md`: JSONL is history; `peek --json` is live, not a past-config replay.
 
 ## [0.3.13] - 2026-09-18
 

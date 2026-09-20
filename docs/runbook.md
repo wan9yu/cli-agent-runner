@@ -37,17 +37,13 @@ correctly (process still runs as your user, not root).
 
 ## Daily operations
 
-> **Restart after any TOML change, to be safe**: each round runs as its own
-> subprocess and re-reads `agent-runner.toml` fresh, so a change to per-round
-> fields (agent command, prompt files, goal checks) already takes effect on
-> the very next round. `serve` itself loads the config once at startup and
-> reuses that copy for the session — schedule windows, `phase_policy`, phase
-> rotation, the outer round-timeout ceiling, host-health, breakers, and log
-> retention keep the OLD values until `agent-runner restart`. **Do not edit
-> `[phases]` names or order under a running serve** — serve passes `--phase`
-> from its boot list; a stale name is exit 78 (`config_broken`) and the unit
-> stays down. When in doubt, restart. Semantics: [configuration.md](configuration.md)
-> § Config reload.
+> **Restart after any TOML change, to be safe.** Each round re-reads
+> `agent-runner.toml`. Prompt files and goal-check command lines take effect
+> next round. Rewrite TOML and prompts atomically (`os.replace`); a torn file or
+> prompt smoke is exit 78 (`config_broken`) and the unit stays down. Mixed keys
+> (budgets, check count, `[agent]` command) need `agent-runner restart` or inner
+> and outer can diverge (`round_supervisor_wedged`, not 78). Semantics:
+> [configuration.md](configuration.md) § Config reload.
 
 ### Health check
 
