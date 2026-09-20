@@ -30,6 +30,7 @@ move it to the doc whose charter it belongs to (see the decision procedure in
 | [recipes/aider.md](recipes/aider.md) | Per-CLI walkthrough — aider |
 | [recipes/codewhale.md](recipes/codewhale.md) | Per-CLI walkthrough — codewhale |
 | [recipes/container-pi.md](recipes/container-pi.md) | Per-CLI walkthrough — pi (+ kimi/claude/podman deltas) run in a container via `exec_prefix` |
+| [recipes/between-rounds.md](recipes/between-rounds.md) | Recipe — between-round prompt swap against a running serve |
 | [recipes/deploy-all-in-one.md](recipes/deploy-all-in-one.md) | Recipe — supervisor + agent CLI in one container |
 | [recipes/kimi.md](recipes/kimi.md) | Per-CLI walkthrough — Kimi Code CLI + Kimi K3 via the claude preset |
 | [recipes/pi.md](recipes/pi.md) | Per-CLI walkthrough — Pi Coding Agent + Kimi K3 via a Moonshot provider |
