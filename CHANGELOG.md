@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Docs
-- `docs/configuration.md` Config reload no longer claims serve reuses one `Config` for every round. The round child re-reads the TOML; serve's boot copy stays the schedule / phase / ceiling / host-health set. Editing `[phases]` under a running serve is documented as exit 78 (`config_broken`).
+- `docs/configuration.md` Config reload no longer claims serve reuses one `Config` for every round. The round child re-reads the TOML; serve's boot copy stays the schedule / phase / ceiling / host-health set.
+- `[goal]` treadmill: the round child looks back across completed rounds, not serve.
 
 ## [0.3.13] - 2026-09-18
 
