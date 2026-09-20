@@ -67,6 +67,8 @@ from agent_runner.config.validators import (  # noqa: F401 — public re-export
 
 
 def _digest_mod():
+    """Load digest.py on first use. importlib keeps hashlib off the serve
+    startup graph and avoids a static sibling import pyright cannot resolve."""
     import importlib
 
     return importlib.import_module("agent_runner.config.digest")
