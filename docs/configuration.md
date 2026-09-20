@@ -772,7 +772,7 @@ the round.
 
 ### The treadmill assessor (advisory-only)
 
-At the start of each round, `serve` looks back across the last three
+At the start of each round, the round child looks back across the last three
 *completed* rounds. If every one of them showed activity (a dirty working
 tree, an auto-commit, or the round's own git HEAD moving — CLI-agnostic, not
 tied to any agent-specific usage event) **and** at least one `goal_check` was
