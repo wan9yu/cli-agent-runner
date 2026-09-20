@@ -55,7 +55,9 @@ self-rotates on the new list — a semantic change, not 78. When in doubt,
 restart.
 
 `peek --json` reloads the TOML live; it can show a cold set `serve` is not
-using. Past rounds: [events.md](events.md).
+using. Past rounds: [events.md](events.md). Each `round_start` carries
+`config_digest` for the hot surface the child actually loaded (label only;
+the kill path does not read it).
 
 This split is for per-round prompt and check updates. It is not a general
 hot-reload. Changing config *mid-round* would still tear semantics (e.g.
