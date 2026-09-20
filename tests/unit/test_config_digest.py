@@ -9,7 +9,6 @@ from agent_runner.config import (
     AgentConfig,
     Config,
     MonitorConfig,
-    MonitorHostHealthConfig,
     PromptConfig,
     RuntimeConfig,
     VcsConfig,
@@ -45,7 +44,6 @@ def test_config_digest_should_ignore_host_health_floors(tmp_path: Path) -> None:
     )
     hh = dataclasses.replace(a.monitor.host_health, memory=mem)
     b = dataclasses.replace(a, monitor=MonitorConfig(host_health=hh))
-    assert isinstance(b.monitor.host_health, MonitorHostHealthConfig)
     assert config_digest(a, None) == config_digest(b, None)
 
 

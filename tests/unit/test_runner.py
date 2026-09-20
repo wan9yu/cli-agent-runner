@@ -77,11 +77,11 @@ def test_run_one_round_should_emit_config_digest_on_round_start(
     run_one_round(cfg)
     run_one_round(cfg)
     [events_file] = list(cfg.runtime.log_dir.glob("events-*.jsonl"))
-    starts = [
-        json.loads(line)
-        for line in events_file.read_text().splitlines()
-        if json.loads(line).get("event") == "round_start"
-    ]
+    starts = []
+    for line in events_file.read_text().splitlines():
+        ev = json.loads(line)
+        if ev.get("event") == "round_start":
+            starts.append(ev)
     assert len(starts) == 2
     assert starts[0]["config_digest"]
     assert starts[0]["config_changed"] is True
