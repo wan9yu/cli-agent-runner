@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/events.md`: JSONL is history; `peek --json` is live, not a past-config replay. Config reload points at `round_start.config_digest`.
 - `[goal]` ledger: truncated to 8192 bytes; extra notes go in another `[prompt] files` entry.
 - `round` is not a substitute for `serve`.
+- Recipe: `docs/recipes/between-rounds.md` + `examples/between_rounds.py` — swap a prompt between rounds of a running serve; do not auto-restart on 78/75/70.
 
 ## [0.3.13] - 2026-09-18
 
