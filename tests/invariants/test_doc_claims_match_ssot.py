@@ -30,8 +30,16 @@ REPO = Path(__file__).resolve().parents[2]
 
 def _verb_count() -> int:
     p = _build_parser()
-    subs = [a for a in p._subparsers._group_actions if hasattr(a, "choices")]
-    return len({c for a in subs for c in a.choices})
+    subparsers = p._subparsers
+    if subparsers is None:
+        return 0
+    subs = [a for a in subparsers._group_actions if hasattr(a, "choices")]
+    names: set[str] = set()
+    for a in subs:
+        choices = getattr(a, "choices", None)
+        if choices:
+            names.update(choices)
+    return len(names)
 
 
 def _monitor_interval_default() -> int:
@@ -190,3 +198,19 @@ def _classification_ssot() -> set[str]:
     from agent_runner.builtin_plugins._constants import _BACK_OFF_DEFAULTS
 
     return set(_BACK_OFF_DEFAULTS) | {"rate_limit_account"}
+
+
+def test_configuration_md_config_reload_should_describe_serve_boot_vs_round_reread() -> None:
+    """configuration.md once claimed serve reuses one Config for every round.
+    The round child re-reads the TOML (round_cmd.cmd → cfg_from_args); serve's
+    boot copy is the schedule/phase/ceiling set. Guard the section so the lie
+    cannot return."""
+    text = (REPO / "docs/configuration.md").read_text(encoding="utf-8")
+    assert "## Config reload" in text
+    section = text.split("## Config reload", 1)[1].split("\n## ", 1)[0]
+    assert "reuses the loaded `Config` for every round" not in section
+    assert "re-reads" in section
+    assert "restart" in section.lower()
+    assert "config_broken" in section
+    round_cmd = (REPO / "agent_runner/cli/round_cmd.py").read_text(encoding="utf-8")
+    assert "cfg_from_args_or_config_error" in round_cmd
