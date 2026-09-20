@@ -5,17 +5,37 @@ writes a templated copy you can edit.
 
 ## Config reload
 
-`agent-runner.toml` changes do NOT take effect mid-round. The supervisor
-reads the TOML once at startup and reuses the loaded `Config` for every
-round. To pick up a TOML change:
+`agent-runner.toml` changes do NOT take effect mid-round. Two processes
+read the file, and they do not share one `Config` object:
+
+- **`serve`** loads the TOML once at startup and reuses that copy for the
+  session: schedule windows, `phase_policy`, phase rotation (the `--phase`
+  it passes to each child), the outer round-timeout ceiling, host-health /
+  cgroup defer, breakers, `max_rounds` / `stop_file`, log retention,
+  restart delay, and resolved SIGTERM grace.
+- **Each `round` child** re-reads the same path at spawn: `[prompt]` files
+  (including the `[goal]` ledger), `[[goal.checks]]`, `[agent]`, `[vcs]`,
+  and that child's `round_budget_s`.
+
+A prompt / check / agent-command edit can therefore take effect on the
+**next** round without restarting serve. Edits to the serve-cached set
+still need:
 
 ```bash
 agent-runner restart
 ```
 
-This is intentional: changing config mid-round would tear semantics (e.g.
-a round dispatched with `dirty_action = "stash"` but committing while
-running with newly-set `dirty_action = "auto_commit"` is undefined).
+**Do not rename, add, or reorder `[phases]` under a running serve.** Serve
+passes `--phase` from its boot list; the child validates against a freshly
+loaded list. A mismatch is `ConfigError` → exit 78 → `config_broken` →
+permanent give-up until restart. A torn (partial) TOML write is the same
+exit. An outer loop that rewrites the file between rounds must replace it
+atomically (`os.replace` a complete file).
+
+This split is for per-round prompt and ledger updates. It is not a general
+hot-reload. When in doubt, restart. Changing config *mid-round* would still
+tear semantics (e.g. `dirty_action` flipping from `stash` to `auto_commit`
+while a round is running).
 
 ## TOML schema
 
