@@ -35,7 +35,7 @@ from agent_runner.agent_runtime import signal_name
 from agent_runner.api import assemble_prompt as _api_assemble_prompt
 from agent_runner.api_types import RoundResult
 from agent_runner.clock import SYSTEM_CLOCK
-from agent_runner.config import Config, ConfigError
+from agent_runner.config import Config, ConfigError, round_start_fields
 from agent_runner.events import (
     AGENT_NETWORK_BLIP,
     now_iso_ms,
@@ -459,8 +459,6 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             print(f"agent-runner: WARNING goal steering skipped: {exc}", file=sys.stderr)
 
     # Label only — kill/give-up must not read config_digest (test_config_digest_firewall).
-    from agent_runner.config import round_start_fields
-
     events.emit(
         log_dir,
         events.ROUND_START,
