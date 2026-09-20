@@ -102,7 +102,9 @@ there:
 ### `agent-runner round`
 
 Run one supervisor round and exit. Used internally by `serve` and systemd; you
-can also invoke directly to debug.
+can also invoke directly to debug. A loop of `round` is not a substitute for
+`serve`: you then own scheduling, isolation (pre-OOM / defer), and give-up
+breakers. Config lifetimes: [configuration.md](configuration.md) § Config reload.
 
 ### `agent-runner serve [--once]`
 
