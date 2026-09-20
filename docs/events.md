@@ -17,6 +17,10 @@ Event **kind names** (`round_start`, `agent_self_terminated`, etc.) are the
 Consumers that branch on `evt["event"]` are implicitly versioned: a kind they
 don't recognize is silently ignored; a kind they recognize has stable fields.
 
+History is the monthly JSONL (read complete lines; the last line of a live
+file may be partial). `peek --json` is a live snapshot of current TOML and
+process state, not a replay of which config produced a past round.
+
 ## Why no explicit `schema_version: int` field?
 
 The kind name already serves as the discriminator. Adding `schema_version: int`
