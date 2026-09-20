@@ -493,7 +493,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
 
     grace_kill_ignore_patterns = [re.compile(p) for p in cfg.runtime.grace_kill_ignore_patterns]
 
-    def _grace_extended_emit(live: list[str], ignored: list[str]) -> None:
+    def _grace_extended_emit(live: list[dict], ignored: list[dict]) -> None:
         api.emit_round_grace_extended(
             log_dir,
             round_num=round_num,
@@ -545,7 +545,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
         on_container_orphan_risk=_container_orphan_risk_emit,
         reap_grace_s=_resolve_reap_grace_s(),
         cooperative_first_signal=_resolve_cooperative_signal(),
-        resume_args=_resolve_resume_args(),
+        resume_args=tuple(_resolve_resume_args()),
     )
     events.emit(
         log_dir,

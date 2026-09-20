@@ -12,9 +12,9 @@ time for whichever module reaches for it.
 
 from __future__ import annotations
 
-from agent_runner.config.digest import config_digest as config_digest
-from agent_runner.config.digest import round_start_fields as round_start_fields
-from agent_runner.config.digest import snapshot_fields as snapshot_fields
+from pathlib import Path
+from typing import Any
+
 from agent_runner.config.errors import ConfigError
 from agent_runner.config.loader import (  # noqa: F401 — public re-export
     _CURRENT_SCHEMA_VERSION,
@@ -64,6 +64,27 @@ from agent_runner.config.validators import (  # noqa: F401 — public re-export
     _reject_control_chars,
     _resolve_against_work_dir,
 )
+
+
+def _digest_mod():
+    import importlib
+
+    return importlib.import_module("agent_runner.config.digest")
+
+
+def config_digest(cfg: Config, phase: str | None) -> str:
+    return _digest_mod().config_digest(cfg, phase)
+
+
+def snapshot_fields(cfg: Config, phase: str | None) -> dict[str, Any]:
+    return _digest_mod().snapshot_fields(cfg, phase)
+
+
+def round_start_fields(
+    cfg: Config, phase: str | None, log_dir: Path, round_num: int
+) -> dict[str, Any]:
+    return _digest_mod().round_start_fields(cfg, phase, log_dir, round_num)
+
 
 __all__ = [
     "AgentConfig",
