@@ -14,7 +14,7 @@ from typing import Any
 from agent_runner.config.models import Config
 
 
-def _prompt_files(cfg: Config, phase: str | None) -> list[str]:
+def digest_payload(cfg: Config, phase: str | None) -> dict[str, Any]:
     profile = cfg.profile_for(phase)
     if profile.prompt_files is not None:
         files = profile.prompt_files
@@ -24,16 +24,11 @@ def _prompt_files(cfg: Config, phase: str | None) -> list[str]:
         files = [cfg.prompt.file]
     else:
         files = []
-    return [p.as_posix() for p in files]
-
-
-def digest_payload(cfg: Config, phase: str | None) -> dict[str, Any]:
-    profile = cfg.profile_for(phase)
     checks: list[dict[str, Any]] = []
     if cfg.goal is not None:
         checks = [{"name": c.name, "cmd": list(c.cmd)} for c in cfg.goal.checks]
     return {
-        "prompt_files": _prompt_files(cfg, phase),
+        "prompt_files": [p.as_posix() for p in files],
         "checks": checks,
         "vcs_dirty_action": cfg.vcs.dirty_action,
         "prompt_delivery": profile.agent.prompt_delivery,
@@ -41,11 +36,11 @@ def digest_payload(cfg: Config, phase: str | None) -> dict[str, Any]:
     }
 
 
-def config_digest(cfg: Config, phase: str | None) -> str:
+def _digest_hex(payload: dict[str, Any]) -> str:
     import hashlib  # function-scoped: hashlib is forbidden on serve startup
 
     blob = json.dumps(
-        digest_payload(cfg, phase),
+        payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -53,8 +48,15 @@ def config_digest(cfg: Config, phase: str | None) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def config_digest(cfg: Config, phase: str | None) -> str:
+    return _digest_hex(digest_payload(cfg, phase))
+
+
 def snapshot_fields(cfg: Config, phase: str | None) -> dict[str, Any]:
-    payload = digest_payload(cfg, phase)
+    return _snapshot(digest_payload(cfg, phase))
+
+
+def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "config_prompt_files": payload["prompt_files"],
         "config_check_names": [c["name"] for c in payload["checks"]],
@@ -68,13 +70,13 @@ def last_round_start_digest(log_dir: Path) -> str | None:
 
     Fail-open: a missing or unreadable JSONL is treated as no prior digest.
     """
+    from agent_runner.events import iter_event_dicts
+
     last: str | None = None
     try:
         paths = sorted(log_dir.glob("events-*.jsonl"))
     except OSError:
         return None
-    from agent_runner.events import iter_event_dicts
-
     for path in paths:
         try:
             for ev in iter_event_dicts(path):
@@ -91,14 +93,15 @@ def last_round_start_digest(log_dir: Path) -> str | None:
 def round_start_fields(
     cfg: Config, phase: str | None, log_dir: Path, round_num: int
 ) -> dict[str, Any]:
-    digest = config_digest(cfg, phase)
-    prev = last_round_start_digest(log_dir)
+    payload = digest_payload(cfg, phase)
+    digest = _digest_hex(payload)
+    changed = last_round_start_digest(log_dir) != digest
     fields: dict[str, Any] = {
         "round_num": round_num,
         "phase": phase,
         "config_digest": digest,
-        "config_changed": prev != digest,
+        "config_changed": changed,
     }
-    if fields["config_changed"]:
-        fields.update(snapshot_fields(cfg, phase))
+    if changed:
+        fields.update(_snapshot(payload))
     return fields

@@ -458,10 +458,7 @@ def _run_one_round_inner(cfg: Config, *, phase_override: str | None = None) -> R
             # exactly as if cfg.goal were None.
             print(f"agent-runner: WARNING goal steering skipped: {exc}", file=sys.stderr)
 
-    # Observability-only: config_digest labels this round's Config-reload
-    # surface. The kill/give-up path must not read it (see
-    # test_config_digest_firewall). Snapshot extras fire only when the digest
-    # changes -- not a control branch on round outcome.
+    # Label only — kill/give-up must not read config_digest (test_config_digest_firewall).
     from agent_runner.config import round_start_fields
 
     events.emit(
