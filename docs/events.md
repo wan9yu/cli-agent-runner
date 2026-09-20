@@ -35,6 +35,7 @@ for evt in stream_events_jsonl(log_dir):
     if evt["event"] == "round_start":
         round_num = evt["round_num"]  # guaranteed stable
         phase = evt.get("phase")  # guaranteed stable
+        digest = evt.get("config_digest")  # append-only label; never a kill input
         # any new fields → ignored unless we read them
     elif evt["event"] == "agent_self_terminated":
         reason = evt.get("reason", "")  # guaranteed stable

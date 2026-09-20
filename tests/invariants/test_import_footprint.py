@@ -150,6 +150,7 @@ EXPECTED_STARTUP_PKG_MODULES = frozenset(
         "agent_runner.cli.upgrade_cmd",
         "agent_runner.clock",
         "agent_runner.config",
+        "agent_runner.config.digest",
         "agent_runner.config.errors",
         "agent_runner.config.loader",
         "agent_runner.config.models",
