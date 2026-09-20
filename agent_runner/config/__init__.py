@@ -12,6 +12,9 @@ time for whichever module reaches for it.
 
 from __future__ import annotations
 
+from agent_runner.config.digest import config_digest as config_digest
+from agent_runner.config.digest import round_start_fields as round_start_fields
+from agent_runner.config.digest import snapshot_fields as snapshot_fields
 from agent_runner.config.errors import ConfigError
 from agent_runner.config.loader import (  # noqa: F401 — public re-export
     _CURRENT_SCHEMA_VERSION,
@@ -77,5 +80,8 @@ __all__ = [
     "RuntimeConfig",
     "ScheduleConfig",
     "VcsConfig",
+    "config_digest",
     "load_config",
+    "round_start_fields",
+    "snapshot_fields",
 ]
