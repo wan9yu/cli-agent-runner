@@ -77,6 +77,7 @@ def test_serve_should_exit_after_current_round_when_sigterm_received(
     fake_agent_script: Path,
 ) -> None:
     toml = _write_toml(tmp_git_repo, fake_agent_script, round_timeout=10)
+
     env = os.environ.copy()
     env["FAKE_AGENT_BEHAVIOR"] = "succeed"
     proc = subprocess.Popen(

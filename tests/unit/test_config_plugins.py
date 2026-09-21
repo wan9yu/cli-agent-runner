@@ -48,6 +48,7 @@ def test_disable_pre_round_hooks_should_be_rejected_as_unknown_key_when_loaded(
     not silently ignored, not still honored. `agent-runner migrate` drops it
     (see tests/unit/test_migrations.py)."""
     (tmp_path / "prompt.md").write_text("p")
+
     body = _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path).replace(
         "[runtime]",
         "[runtime]\ndisable_pre_round_hooks = true",
@@ -112,6 +113,7 @@ def test_negative_round_log_retention_should_be_rejected_when_loaded(
 ) -> None:
     """Negative is still meaningless — rejected at load, not silently coerced."""
     (tmp_path / "prompt.md").write_text("p")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -257,6 +259,7 @@ def test_phase_name_not_in_list_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -281,6 +284,7 @@ def test_unknown_field_in_phase_sub_table_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -374,6 +378,7 @@ def test_both_prompt_file_and_files_set_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "x.md").write_text("x")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -459,6 +464,7 @@ def test_dirty_action_invalid_value_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -484,6 +490,7 @@ def test_orphan_action_in_toml_should_raise_with_migration_hint_when_loaded(
 ) -> None:
     """vcs.orphan_action removed in 0.1.18 — TOML using it must raise with migration hint."""
     cfg_path = tmp_path / "agent-runner.toml"
+
     (tmp_path / "p.md").write_text("hi")
     cfg_path.write_text(
         "schema_version = 1\n"

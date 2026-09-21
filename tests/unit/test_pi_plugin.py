@@ -240,6 +240,7 @@ def test_successful_round_should_report_usage_from_final_message_when_after_roun
     assert kw["cost_usd"] is None  # pi reports cost 0 without catalog pricing
     assert kw["duration_ms"] == 12607  # session header -> final message timestamp
     assert kw["tool_call_count"] == 0
+
     assert kw["success"] is True
 
 
@@ -258,6 +259,7 @@ def test_multi_turn_round_should_sum_usage_across_messages_when_after_round(tmp_
     assert kw["cached_tokens"] == 130  # 40 + 90
     assert kw["cost_usd"] == 0.0031  # usage.cost.total, summed the same way
     assert kw["tool_call_count"] == 1
+
     assert kw["model"] == "mockok/mock-ok"
 
 
@@ -286,6 +288,7 @@ def test_retry_then_success_should_report_final_usage_without_transient_error_wh
     kw = usage_emit.call_args.kwargs
     assert kw["input_tokens"] == 793  # failed attempt contributed zeros
     assert kw["output_tokens"] == 45
+
     assert kw["success"] is True
 
 
@@ -383,6 +386,7 @@ def test_round_killed_before_agent_end_should_report_usage_from_message_ends_whe
     auth_emit.assert_not_called()
     kw = usage_emit.call_args.kwargs
     assert kw["input_tokens"] == 793
+
     assert kw["success"] is False
 
 
@@ -393,6 +397,7 @@ def test_only_thinking_deltas_should_emit_nothing_when_after_round(tmp_path):
 
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
+
     auth_emit.assert_not_called()
 
 
@@ -403,6 +408,7 @@ def test_non_pi_binary_should_emit_nothing_when_after_round(tmp_path):
 
     usage_emit.assert_not_called()
     err_emit.assert_not_called()
+
     auth_emit.assert_not_called()
 
 
@@ -466,4 +472,5 @@ def test_classify_pi_error_should_map_only_observed_error_shapes_when_invoked():
     assert _classify_pi_error('404: {"message":"model not found"}') is None
     assert _classify_pi_error('400: {"message":"bad request"}') is None
     assert _classify_pi_error("") is None
+
     assert _classify_pi_error(None) is None

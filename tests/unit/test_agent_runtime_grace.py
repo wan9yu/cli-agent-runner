@@ -256,6 +256,7 @@ def test_live_children_should_return_empty_when_process_has_no_children():
 
 
 def test_live_children_should_include_backgrounded_child_when_present():
+
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
 
     try:
@@ -274,6 +275,8 @@ def test_live_children_should_include_backgrounded_child_when_present():
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
+
+    assert p.returncode is not None
 
 
 def test_live_children_should_return_empty_when_process_already_exited():
@@ -440,6 +443,7 @@ def test_live_children_should_split_ignored_and_live_when_pattern_matches():
     # test_live_children_should_not_leak_secret_when_argv0_rewritten) -- both
     # children exec into the same "sleep" binary, so their stored names are
     # indistinguishable and only "matched" tells them apart.
+
     p = subprocess.Popen(
         ["bash", "-c", "exec -a snapshot-bash-xyz sleep 30 & sleep 30 & wait"],
         start_new_session=True,
@@ -472,6 +476,7 @@ def test_live_children_should_split_ignored_and_live_when_pattern_matches():
 
 
 def test_live_children_should_treat_all_children_as_live_when_no_ignore_patterns():
+
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
 
     try:
@@ -486,6 +491,8 @@ def test_live_children_should_treat_all_children_as_live_when_no_ignore_patterns
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
+
+    assert p.returncode is not None
 
 
 def test_run_should_kill_for_grace_when_only_ignored_helper_remains_alive(tmp_path, monkeypatch):
@@ -587,6 +594,8 @@ def test_live_children_should_not_leak_secret_when_argv0_rewritten():
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
 
+    assert p.returncode is not None
+
 
 def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
     """Ignore-pattern matches on full cmdline; the stored ignored entry records
@@ -612,6 +621,8 @@ def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
     finally:
         os.killpg(os.getpgid(p.pid), signal.SIGKILL)
         p.wait()
+
+    assert p.returncode is not None
 
 
 # The KeyboardInterrupt-shielding property for _kill_pgroup's fd-driven grace

@@ -47,19 +47,27 @@ CORPUS_SCANNING_INVARIANTS = (
 
 
 def test_registry_should_be_non_empty_when_invoked() -> None:
-    assert CORPUS_SCANNING_INVARIANTS, "registry emptied — the meta-check would be vacuous"
+
+    result = CORPUS_SCANNING_INVARIANTS
+
+    ok = bool(result)
+
+    assert ok, "registry emptied — the meta-check would be vacuous"
 
 
 def test_registry_entries_should_reference_existing_files_when_invoked() -> None:
-    for name in CORPUS_SCANNING_INVARIANTS:
-        assert (INV / name).is_file(), f"{name} listed but missing"
+    names = CORPUS_SCANNING_INVARIANTS
+
+    missing = [name for name in names if not (INV / name).is_file()]
+
+    assert missing == []
 
 
 def test_each_scanning_invariant_should_carry_a_vacuity_guard_when_invoked() -> None:
+    names = CORPUS_SCANNING_INVARIANTS
+
     missing = [
-        name
-        for name in CORPUS_SCANNING_INVARIANTS
-        if "# vacuity-guard" not in (INV / name).read_text(encoding="utf-8")
+        name for name in names if "# vacuity-guard" not in (INV / name).read_text(encoding="utf-8")
     ]
 
     assert not missing, f"scanning invariants without a `# vacuity-guard`: {missing}"

@@ -40,7 +40,9 @@ def _preset_text(name: str) -> str:
 def test_preset_should_contain_project_placeholder_when_loaded_as_text(name: str) -> None:
     text = _preset_text(name)
 
-    assert "{project}" in text, f"{name}.toml: missing {{project}} placeholder"
+    actual = "{project}"
+
+    assert actual in text, f"{name}.toml: missing {{project}} placeholder"
 
 
 @pytest.mark.parametrize("name", PRESET_NAMES)
@@ -60,6 +62,7 @@ def test_preset_prompt_arg_template_should_match_delivery_mode_when_parsed(name:
     presets (e.g. claude) deliberately omit it — the prompt travels on stdin
     instead, so it never lands in process argv."""
     text = _preset_text(name).replace("{project}", "test-project")
+
     parsed = tomllib.loads(text)
     template = parsed["agent"]["prompt_arg_template"]
 
@@ -244,7 +247,9 @@ def test_codewhale_preset_should_use_exec_stream_json_command_when_parsed() -> N
 def test_codewhale_preset_should_omit_agent_env_block_when_parsed() -> None:
     text = _preset_text("codewhale").replace("{project}", "test-project")
 
-    assert "env" not in tomllib.loads(text)["agent"]
+    actual = "env"
+
+    assert actual not in tomllib.loads(text)["agent"]
 
 
 def test_pi_recipe_command_block_should_match_pi_preset_when_parsed() -> None:

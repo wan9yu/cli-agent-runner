@@ -16,27 +16,43 @@ from agent_runner.vcs_state import (
 
 
 def test_detect_dirty_files_should_return_empty_list_when_tree_clean(tmp_git_repo: Path) -> None:
-    assert detect_dirty_files(tmp_git_repo) == []
+    actual = detect_dirty_files(tmp_git_repo)
+
+    expected = []
+
+    assert actual == expected
 
 
 def test_detect_dirty_files_should_return_path_when_file_modified(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "README.md").write_text("changed\n")
 
-    assert detect_dirty_files(tmp_git_repo) == ["README.md"]
+    actual = detect_dirty_files(tmp_git_repo)
+
+    assert actual == ["README.md"]
 
 
 def test_detect_dirty_files_should_return_path_when_file_untracked(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "new.txt").write_text("hi\n")
 
-    assert "new.txt" in detect_dirty_files(tmp_git_repo)
+    actual = "new.txt"
+
+    assert actual in detect_dirty_files(tmp_git_repo)
 
 
 def test_is_git_repo_should_return_false_when_dir_not_git(tmp_path: Path) -> None:
-    assert is_git_repo(tmp_path) is False
+    actual = is_git_repo(tmp_path)
+
+    expected = False
+
+    assert actual is expected
 
 
 def test_is_git_repo_should_return_true_when_dir_is_git_repo(tmp_git_repo: Path) -> None:
-    assert is_git_repo(tmp_git_repo) is True
+    actual = is_git_repo(tmp_git_repo)
+
+    expected = True
+
+    assert actual is expected
 
 
 def test_detect_dirty_files_should_return_new_path_only_when_file_renamed(
@@ -71,7 +87,11 @@ def test_stash_orphan_should_create_marked_stash_when_tree_dirty(tmp_git_repo: P
 
 
 def test_stash_orphan_should_return_none_when_tree_clean(tmp_git_repo: Path) -> None:
-    assert stash_orphan(tmp_git_repo, round_num=42, phase=None) is None
+    actual = stash_orphan(tmp_git_repo, round_num=42, phase=None)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_stash_orphan_should_return_existing_ref_when_called_again_within_idempotency_window(
@@ -220,6 +240,7 @@ def test_try_auto_commit_should_return_empty_string_when_nothing_staged(
     tmp_git_repo: Path,
 ) -> None:
     log_dir = tmp_git_repo / "logs"
+
     log_dir.mkdir()
     (log_dir / "x.log").write_text("noise\n")  # only excluded bookkeeping
 
@@ -227,5 +248,9 @@ def test_try_auto_commit_should_return_empty_string_when_nothing_staged(
 
 
 def test_try_auto_commit_should_raise_auto_commit_error_when_not_git_repo(tmp_path: Path) -> None:
-    with pytest.raises(AutoCommitError):
-        try_auto_commit(tmp_path, 1, None)  # not a git repo
+    dest = tmp_path
+
+    with pytest.raises(AutoCommitError) as caught:
+        try_auto_commit(dest, 1, None)
+
+    assert str(caught.value)

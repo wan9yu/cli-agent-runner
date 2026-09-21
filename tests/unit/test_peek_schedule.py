@@ -32,10 +32,14 @@ def test_latest_schedule_state_should_surface_phase_when_schedule_paused_event_h
         },
     ]
 
-    assert monitor.latest_schedule_state(events)["phase"] == "planning"
+    state = monitor.latest_schedule_state(events)
+    assert state is not None
+
+    assert state["phase"] == "planning"
 
 
 def test_latest_schedule_state_should_return_none_when_resumed_after_paused():
+
     events = [
         {
             "ts": "2026-08-22T10:00:00.000Z",
@@ -46,8 +50,15 @@ def test_latest_schedule_state_should_return_none_when_resumed_after_paused():
         {"ts": "2026-08-22T12:00:00.000Z", "event": "schedule_resumed", "paused_for_s": 7200},
     ]
 
-    assert monitor.latest_schedule_state(events) is None
+    actual = monitor.latest_schedule_state(events)
+
+    assert actual is None
 
 
 def test_latest_schedule_state_should_return_none_when_events_empty():
-    assert monitor.latest_schedule_state([]) is None
+
+    actual = monitor.latest_schedule_state([])
+
+    expected = None
+
+    assert actual is expected

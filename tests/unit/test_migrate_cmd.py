@@ -153,6 +153,7 @@ def test_disable_pre_round_hooks_should_be_dropped_and_load_clean_when_migrated(
             '[prompt]\nfile = "p.md"\n'
         ),
     )
+
     (tmp_path / "p.md").write_text("hi")
     rc = migrate_cmd.cmd(_args(cfg))
     assert rc == 0
@@ -171,6 +172,7 @@ def test_bare_command_config_should_load_when_migrated(tmp_path):
         f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
         f'[prompt]\nfile = "{tmp_path}/p.md"\n'
     )
+
     cfg = _write(tmp_path, body)
     rc = migrate_cmd.cmd(_args(cfg))
     assert rc == 0

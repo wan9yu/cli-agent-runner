@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,7 @@ list = ["diverge", "converge"]
 def test_missing_required_field_should_raise_with_field_name_when_loaded(
     tmp_path: Path,
 ) -> None:
+
     toml = _write_toml(tmp_path, "[agent]\ncommand = []\n")
 
     with pytest.raises(ValueError, match="prompt_arg_template"):
@@ -113,8 +115,11 @@ file = "./p.md"
 def test_nonexistent_toml_should_raise_filenotfound_when_loaded(
     tmp_path: Path,
 ) -> None:
-    with pytest.raises(FileNotFoundError):
+
+    with pytest.raises(FileNotFoundError) as caught:
         load_config(tmp_path / "nope.toml")
+
+    assert caught.value is not None
 
 
 def test_work_dir_dot_should_resolve_project_to_cwd_basename_when_loaded(
@@ -234,6 +239,7 @@ file = "prompts/main.md"
 
 
 def test_invalid_injection_mode_should_raise_when_loaded(tmp_path: Path) -> None:
+
     toml = _write_toml(
         tmp_path,
         """
@@ -249,8 +255,10 @@ context_injection_mode = "magic"
 """,
     )
 
-    with pytest.raises(ValueError, match="context_injection_mode"):
+    with pytest.raises(ValueError, match="context_injection_mode") as caught:
         load_config(toml)
+
+    assert re.search(r"context_injection_mode", str(caught.value))
 
 
 def test_no_monitor_block_should_use_default_patterns_when_loaded(
@@ -553,6 +561,7 @@ def test_round_timeout_per_phase_dict_should_raise_config_error_with_migration_h
 ) -> None:
     """Old runtime.round_timeout_per_phase = {...} syntax → ConfigError with migration path."""
     (tmp_path / "prompt.md").write_text("p")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\n"
@@ -604,13 +613,16 @@ file = "prompts/main.md"
 """,
     )
 
-    with pytest.raises(ValueError, match="round_budget_s.*must be an integer"):
+    with pytest.raises(ValueError, match="round_budget_s.*must be an integer") as caught:
         load_config(toml)
+
+    assert re.search(r"round_budget_s.*must be an integer", str(caught.value))
 
 
 def test_restart_delay_s_zero_should_raise_value_error_when_loaded(
     tmp_path: Path,
 ) -> None:
+
     toml = _write_toml(
         tmp_path,
         """
@@ -633,6 +645,7 @@ file = "prompts/main.md"
 def test_stash_idempotency_s_float_should_raise_value_error_when_loaded(
     tmp_path: Path,
 ) -> None:
+
     toml = _write_toml(
         tmp_path,
         """
@@ -740,8 +753,10 @@ remote_failure_tolerance_s = -5
 """,
     )
 
-    with pytest.raises(ValueError, match="must be >= 0"):
+    with pytest.raises(ValueError, match="must be >= 0") as caught:
         load_config(toml)
+
+    assert re.search(r"must be >= 0", str(caught.value))
 
 
 def test_excessive_remote_failure_tolerance_should_raise_when_loaded(tmp_path: Path) -> None:
@@ -758,6 +773,7 @@ def test_excessive_remote_failure_tolerance_should_raise_when_loaded(tmp_path: P
         "[monitor]\n"
         "remote_failure_tolerance_s = 86400\n"
     )
+
     (tmp_path / "prompt.md").write_text("p")
     cfg_path = _write_toml(tmp_path, body)
 

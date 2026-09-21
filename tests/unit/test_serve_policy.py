@@ -8,6 +8,7 @@ def test_serve_policy_should_export_stable_exit_code_constants_when_invoked() ->
 
     assert sp.PERMANENT_CONFIG_EXIT == 78
     assert sp.CRASH_LOOP_EXIT == 75
+
     assert sp.ENV_BATTERY_EXIT == 76
 
 
@@ -32,6 +33,7 @@ def test_api_should_re_export_same_policy_objects_as_serve_policy_when_invoked()
     assert api.post_round_decision is sp.post_round_decision
     assert api.PERMANENT_CONFIG_EXIT is sp.PERMANENT_CONFIG_EXIT
     assert api.CRASH_LOOP_EXIT is sp.CRASH_LOOP_EXIT
+
     assert api.ENV_BATTERY_EXIT is sp.ENV_BATTERY_EXIT
 
 
@@ -65,7 +67,9 @@ def test_mem_loop_decision_should_reset_when_not_triggered() -> None:
 def test_mem_loop_exit_should_equal_71_when_invoked() -> None:
     from agent_runner._serve_policy import MEM_LOOP_EXIT
 
-    assert MEM_LOOP_EXIT == 71
+    actual = MEM_LOOP_EXIT
+
+    assert actual == 71
 
 
 def test_mem_loop_exit_should_be_excluded_from_restart_prevent_list_when_unit_rendered(
@@ -157,6 +161,7 @@ def test_mem_loop_persistent_exit_should_be_distinct_from_other_exit_codes_when_
     )
 
     assert MEM_LOOP_PERSISTENT_EXIT == 70
+
     assert MEM_LOOP_PERSISTENT_EXIT not in (
         0,
         1,

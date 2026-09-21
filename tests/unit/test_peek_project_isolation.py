@@ -35,7 +35,10 @@ def test_peek_should_resolve_service_from_cwd_project_not_a_named_sibling_when_i
 
 
 def test_named_project_resolution_should_raise_when_charset_invalid() -> None:
+
     from agent_runner import api
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as caught:
         api.status("bad;name")
+
+    assert str(caught.value)

@@ -22,31 +22,37 @@ def test_plugin_entries_should_be_declared_when_invoked():
     entries = _read_plugin_entries()
 
     assert entries, "pyproject.toml declares no agent_runner.plugins entries"
+
     assert len(entries) >= 2, f"expected >=2 entries, got {len(entries)}"
 
 
 def test_entry_points_should_resolve_to_live_plugin_manifests_when_invoked():
     entries = _read_plugin_entries()
 
+    broken = []
     for name, target in entries.items():
         module_path, _, attr = target.partition(":")
-        assert attr, f"{name}: malformed target {target!r} (expected 'module:attr')"
-        mod = importlib.import_module(module_path)
-        manifest = getattr(mod, attr, None)
-        assert isinstance(manifest, PluginManifest), (
-            f"{name}: {target} does not resolve to a PluginManifest"
-        )
+        if not attr:
+            broken.append(f"{name}: malformed target {target!r} (expected 'module:attr')")
+            continue
+        manifest = getattr(importlib.import_module(module_path), attr, None)
+        if not isinstance(manifest, PluginManifest):
+            broken.append(f"{name}: {target} does not resolve to a PluginManifest")
+
+    assert broken == []
 
 
 def test_entry_point_names_should_match_manifest_name_when_invoked():
     entries = _read_plugin_entries()
 
+    mismatched = []
     for name, target in entries.items():
         module_path, _, attr = target.partition(":")
         manifest = getattr(importlib.import_module(module_path), attr)
-        assert manifest.name == name, (
-            f"entry_point '{name}' bound to manifest with name '{manifest.name}' — mismatch"
-        )
+        if manifest.name != name:
+            mismatched.append(f"{name} bound to {manifest.name}")
+
+    assert mismatched == []
 
 
 def test_legacy_claude_rate_limit_detector_alias_should_stay_removed_when_invoked():
@@ -58,14 +64,22 @@ def test_legacy_claude_rate_limit_detector_alias_should_stay_removed_when_invoke
     """
     entries = _read_plugin_entries()
 
-    assert "claude_rate_limit_detector" not in entries, "0.1.20-era alias should be gone"
+    actual = "claude_rate_limit_detector"
+
+    assert actual not in entries, "0.1.20-era alias should be gone"
 
 
 def test_declared_post_round_hooks_should_carry_after_round_when_resolved():
     entries = _read_plugin_entries()
 
+    missing = []
     for name, target in entries.items():
         module_path, _, attr = target.partition(":")
         manifest = getattr(importlib.import_module(module_path), attr)
-        for hook in manifest.post_round_hooks:
-            assert hasattr(hook, "after_round"), f"{name}: post_round_hook lacks after_round"
+        missing.extend(
+            f"{name}: post_round_hook lacks after_round"
+            for hook in manifest.post_round_hooks
+            if not hasattr(hook, "after_round")
+        )
+
+    assert missing == []

@@ -16,8 +16,10 @@ from agent_runner.migrations import MIGRATIONS, _describe
 def test_every_migration_should_describe_with_no_config_in_hand_when_invoked() -> None:
     assert MIGRATIONS, "MIGRATIONS registry emptied"  # vacuity-guard
 
-    for m in MIGRATIONS:
-        desc = _describe(m, {})
-        assert isinstance(desc, str) and desc.strip(), (
-            f"{m.describe!r} produced an empty/non-string description for docgen's {{}} call"
-        )
+    empty = [
+        repr(m.describe)
+        for m in MIGRATIONS
+        if not isinstance(_describe(m, {}), str) or not str(_describe(m, {})).strip()
+    ]
+
+    assert empty == [], f"docgen {{}} describe produced empty/non-string: {empty}"

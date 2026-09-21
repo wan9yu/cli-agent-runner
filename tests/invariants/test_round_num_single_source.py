@@ -29,6 +29,7 @@ def test_child_without_env_should_match_serve_derivation_when_invoked(
 
 def test_child_should_honor_serve_supplied_env_when_invoked(tmp_path: Path, monkeypatch) -> None:
     write_status(tmp_path, Status(round_num=5, running=False))
+
     monkeypatch.setenv("AGENT_RUNNER_ROUND_NUM", "42")
 
     assert runner._resolve_round_num(tmp_path) == 42
@@ -51,6 +52,7 @@ def test_crashed_child_should_not_reuse_existing_log_number_when_invoked(
 def test_garbage_env_should_fall_back_to_file_counter_when_invoked(
     tmp_path: Path, monkeypatch
 ) -> None:
+
     monkeypatch.setenv("AGENT_RUNNER_ROUND_NUM", "not-an-int")
 
     assert runner._resolve_round_num(tmp_path) == next_round_num(tmp_path) == 1

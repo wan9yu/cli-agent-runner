@@ -379,6 +379,7 @@ def test_unknown_key_should_be_reported_manual_when_present(text, check, check_n
     r = _run(text)
 
     assert any(check(m) for m in r.manual)
+
     if check_new_text:
         assert r.new_text == _stamped(text)  # unknown-key rejections never rewrite the text itself
 
@@ -586,6 +587,7 @@ def test_removed_plugins_sandbox_key_should_be_flagged_manual_when_migrated(text
     r = migrations.run_migrations(text, tomllib.loads(text))
 
     assert any(needle in m and "removed 0.3.9" in m for m in r.manual)
+
     assert r.new_text == _stamped(text)  # manual-only: the key is left in place
 
 

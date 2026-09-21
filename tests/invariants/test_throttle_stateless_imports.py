@@ -20,14 +20,15 @@ _FORBIDDEN = {"follow", "read_new", "read_new_raw"}
 
 def test_throttle_should_not_reach_the_offset_follow_path_when_scanned():
     tree = ast.parse(_THROTTLE.read_text(encoding="utf-8"))
+
     reached = set()
     for node in ast.walk(tree):
-        given_attr_on_module = (
+        if (
             isinstance(node, ast.Attribute)
             and isinstance(node.value, ast.Name)
             and node.value.id == "event_log"
-        )
-        if given_attr_on_module and node.attr in _FORBIDDEN:
+            and node.attr in _FORBIDDEN
+        ):
             reached.add(node.attr)
         if isinstance(node, ast.ImportFrom) and node.module == "agent_runner.event_log":
             reached |= {a.name for a in node.names} & _FORBIDDEN
@@ -38,4 +39,6 @@ def test_throttle_should_not_reach_the_offset_follow_path_when_scanned():
 def test_throttle_should_actually_use_the_event_log_scan_path_when_scanned():
     src = _THROTTLE.read_text(encoding="utf-8")
 
-    assert "event_log.scan" in src and "event_log.newest_month_files" in src
+    uses_scan = "event_log.scan" in src and "event_log.newest_month_files" in src
+
+    assert uses_scan

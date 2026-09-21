@@ -12,6 +12,7 @@ from tests.generate_vulture_whitelist import WHITELIST_PATH, generate
 
 def test_whitelist_should_match_on_disk_when_regenerated() -> None:
     committed = WHITELIST_PATH.read_text(encoding="utf-8")
+
     fresh = generate()
 
     assert committed == fresh, (

@@ -14,6 +14,7 @@ def _ev(kind: str, rn: int, ts: str, phase=None):
 
 def test_ancient_unclosed_round_should_not_latch_hung_after_later_rounds_when_invoked() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
+
     events = [
         _ev("round_start", 1, "2026-08-01T00:00:00Z"),  # round_end lost (crash) — stale
         _ev("round_start", 2, "2026-08-30T11:59:50Z"),  # newest open, only 10s old
@@ -45,6 +46,7 @@ def test_crashed_round_should_stop_latching_once_next_round_closes_when_invoked(
     that once round 2 (higher than the crashed round 1) has closed, round 1's
     crash is superseded and must NOT alert."""
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
+
     events = [
         _ev("round_start", 1, "2026-08-01T00:00:00Z"),  # crashed weeks ago, no round_end
         _ev("round_start", 2, "2026-08-30T11:00:00Z"),

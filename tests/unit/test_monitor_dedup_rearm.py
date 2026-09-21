@@ -93,6 +93,7 @@ def test_persisting_alert_should_refire_every_poll_when_verdict_is_draining(
     to re-arm so the identical, still-persisting alert is handed to on_alert
     again on the very next poll, instead of sitting suppressed under the
     normal dedup with no outcome ever recorded."""
+
     calls = _run_loop_over_persisting_alert(tmp_path, monkeypatch, on_alert_returns="draining")
 
     assert calls == 3  # every poll re-fired -- never suppressed
@@ -105,6 +106,7 @@ def test_persisting_alert_should_stay_suppressed_when_verdict_is_not_draining(
     final outcome for this episode, so the persisting alert must stay
     suppressed by the normal dedup -- re-arming here would re-run the stop
     attempt (and re-emit) every single poll instead of once per episode."""
+
     calls = _run_loop_over_persisting_alert(tmp_path, monkeypatch, on_alert_returns="failed")
 
     assert calls == 1  # suppressed on polls 2 and 3

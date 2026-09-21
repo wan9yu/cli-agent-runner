@@ -43,6 +43,7 @@ def test_work_dir_from_args_should_return_cwd_when_config_path_relative_default(
 def test_work_dir_from_args_should_raise_when_config_filename_wrong(
     tmp_path: Path,
 ) -> None:
+
     args = argparse.Namespace(config=tmp_path / "custom-name.toml")
 
     with pytest.raises(ValueError, match="agent-runner.toml"):

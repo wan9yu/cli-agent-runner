@@ -112,9 +112,11 @@ def test_goal_steering_should_stay_off_the_kill_path_when_scanned() -> None:
     wired into a stop/kill decision."""
     offenders = _goal_firewall_offenders(PKG)
 
-    assert offenders == [], (
-        "goal-steering surface referenced outside the permitted allowlist "
-        "-- the advisory/kill firewall is broken:\n" + "\n".join(offenders)
+    actual = offenders
+
+    assert actual == [], (
+        "goal-steering surface referenced outside the permitted allowlist -- "
+        "the advisory/kill firewall is broken:\n" + "\n".join(offenders)
     )
 
 

@@ -39,6 +39,7 @@ _PAIRS = [
 
 def test_config_literals_should_match_valid_frozensets_when_compared() -> None:
     failures: list[str] = []
+
     for cls, field, ssot in _PAIRS:
         # get_type_hints (not raw __annotations__): `from __future__ import
         # annotations` makes every annotation a string. Never call it on

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
@@ -32,6 +33,7 @@ def _disk_warning(value: float) -> Alert:
 def test_alert_identity_should_dedup_when_hung_round_elapsed_grows() -> None:
     # The elapsed_s growing every poll must NOT mint a new key (the ~2880/day spam).
     first = alert_identity(_hung(5, 100.0))
+
     second = alert_identity(_hung(5, 130.0))
 
     assert first == second
@@ -39,6 +41,7 @@ def test_alert_identity_should_dedup_when_hung_round_elapsed_grows() -> None:
 
 def test_alert_identity_should_differ_when_hung_round_number_differs() -> None:
     first = alert_identity(_hung(5, 100.0))
+
     second = alert_identity(_hung(6, 100.0))
 
     assert first != second
@@ -46,6 +49,7 @@ def test_alert_identity_should_differ_when_hung_round_number_differs() -> None:
 
 def test_alert_identity_should_key_on_detector_only_when_rate_type_alert() -> None:
     a1 = Alert("warning", "disk_warning", "m", {"value": 91.0, "threshold": 90.0}, "t")
+
     a2 = Alert("warning", "disk_warning", "m", {"value": 93.0, "threshold": 90.0}, "t")
 
     assert alert_identity(a1) == alert_identity(a2)
@@ -95,7 +99,8 @@ def test_monitor_loop_should_yield_each_distinct_episode_once_when_polled_repeat
             first = next(gen)
             second = next(gen)
         finally:
-            gen.close()
+            if isinstance(gen, types.GeneratorType):
+                gen.close()
 
     assert first.detector == "hung"
     assert second.detector == "disk_warning"
@@ -135,7 +140,8 @@ def test_seen_set_should_evict_oldest_episode_when_bound_exceeded(
                 next(gen)  # drain the fill phase
             replayed = next(gen)
         finally:
-            gen.close()
+            if isinstance(gen, types.GeneratorType):
+                gen.close()
 
     assert replayed.detector == "hung"
     assert replayed.context["round_num"] == 0

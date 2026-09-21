@@ -41,6 +41,7 @@ def _tracked_files() -> list[str]:
 
 def test_tracked_files_should_have_no_internal_codenames_when_scanned() -> None:
     files = _tracked_files()
+
     # vacuity-guard
     assert len(files) > 50, "tracked-file scan found too few files — scan is vacuous"
 
@@ -50,4 +51,5 @@ def test_tracked_files_should_have_no_internal_codenames_when_scanned() -> None:
         for i, line in enumerate(text.splitlines(), 1):
             if _FORBIDDEN.search(line):
                 hits.append(f"{rel}:{i}: {line.strip()[:80]}")
+
     assert not hits, "internal codenames leaked into tracked files:\n" + "\n".join(hits)

@@ -32,6 +32,7 @@ def test_spawn_command_should_equal_command_when_no_exec_prefix():
     agent = AgentConfig(command=["claude", "-p"], prompt_arg_template=[])
 
     assert agent.spawn_command(Path("/srv/proj")) == ["claude", "-p"]
+
     assert agent.binary == "claude"
 
 

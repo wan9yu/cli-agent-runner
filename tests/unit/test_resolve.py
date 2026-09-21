@@ -9,6 +9,7 @@ basename must keep working (no new break to dev-box paths).
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -24,39 +25,51 @@ from agent_runner.service_unit import serve_unit_filename
 def test_project_name_should_accept_spaced_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "my project"
 
-    assert _resolve.project_name(work_dir, strict=False) == "my project"
+    actual = _resolve.project_name(work_dir, strict=False)
+
+    assert actual == "my project"
 
 
 def test_project_name_should_accept_cjk_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "我的项目"
 
-    assert _resolve.project_name(work_dir, strict=False) == "我的项目"
+    actual = _resolve.project_name(work_dir, strict=False)
+
+    assert actual == "我的项目"
 
 
 def test_project_name_should_reject_spaced_basename_when_strict(tmp_path):
     work_dir = tmp_path / "my project"
 
-    with pytest.raises(ValueError, match="invalid project name"):
+    with pytest.raises(ValueError, match="invalid project name") as caught:
         _resolve.project_name(work_dir, strict=True)
+
+    assert re.search(r"invalid project name", str(caught.value))
 
 
 def test_project_name_should_reject_cjk_basename_when_strict(tmp_path):
     work_dir = tmp_path / "我的项目"
 
-    with pytest.raises(ValueError, match="invalid project name"):
+    with pytest.raises(ValueError, match="invalid project name") as caught:
         _resolve.project_name(work_dir, strict=True)
+
+    assert re.search(r"invalid project name", str(caught.value))
 
 
 def test_project_name_should_accept_plain_basename_when_strict(tmp_path):
     work_dir = tmp_path / "my-project_v1.2"
 
-    assert _resolve.project_name(work_dir, strict=True) == "my-project_v1.2"
+    actual = _resolve.project_name(work_dir, strict=True)
+
+    assert actual == "my-project_v1.2"
 
 
 def test_project_name_should_accept_plain_basename_when_lenient(tmp_path):
     work_dir = tmp_path / "my-project_v1.2"
 
-    assert _resolve.project_name(work_dir, strict=False) == "my-project_v1.2"
+    actual = _resolve.project_name(work_dir, strict=False)
+
+    assert actual == "my-project_v1.2"
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +78,7 @@ def test_project_name_should_accept_plain_basename_when_lenient(tmp_path):
 
 def test_config_path_should_return_explicit_config_when_args_config_is_set(tmp_path):
     cfg_file = tmp_path / "agent-runner.toml"
+
     cfg_file.write_text("")
     args = SimpleNamespace(config=cfg_file)
 
@@ -73,6 +87,7 @@ def test_config_path_should_return_explicit_config_when_args_config_is_set(tmp_p
 
 def test_config_path_should_default_to_cwd_toml_when_config_arg_absent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+
     args = SimpleNamespace()
 
     assert _resolve.config_path(args) == tmp_path.resolve() / "agent-runner.toml"
@@ -135,7 +150,10 @@ def test_config_path_should_anchor_to_symlink_dir_not_target_when_config_is_syml
 
 def test_unit_filename_should_equal_serve_unit_filename_output_when_invoked():
     assert _resolve.unit_filename("myproj") == serve_unit_filename("myproj")
-    assert _resolve.unit_filename("myproj") == "agent-runner@myproj.service"
+
+    actual = _resolve.unit_filename("myproj")
+
+    assert actual == "agent-runner@myproj.service"
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +162,7 @@ def test_unit_filename_should_equal_serve_unit_filename_output_when_invoked():
 
 def test_log_dir_should_read_from_config_when_toml_present(tmp_path):
     (tmp_path / "p.md").write_text("hi")
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
@@ -155,6 +174,7 @@ def test_log_dir_should_read_from_config_when_toml_present(tmp_path):
 
 def test_log_dir_should_fall_back_to_conventional_path_when_toml_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+
     work_dir = tmp_path / "noconfig"
     work_dir.mkdir()
 
@@ -170,11 +190,14 @@ def test_log_dir_should_fall_back_to_conventional_path_when_toml_missing(tmp_pat
 def test_default_log_dir_should_build_conventional_path_when_invoked(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    assert _resolve.default_log_dir("myproj") == tmp_path / ".agent-runner" / "myproj" / "logs"
+    actual = _resolve.default_log_dir("myproj")
+
+    assert actual == tmp_path / ".agent-runner" / "myproj" / "logs"
 
 
 def test_log_dir_should_match_default_log_dir_when_toml_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+
     work_dir = tmp_path / "noconfig"
     work_dir.mkdir()
 
@@ -189,6 +212,7 @@ def test_guard_against_clobber_should_raise_when_existing_unit_owned_by_differen
     tmp_path,
 ):
     serve_path = tmp_path / "agent-runner@proj.service"
+
     other_work_dir = tmp_path / "other-project"
     serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
     work_dir = tmp_path / "this-project"
@@ -199,6 +223,7 @@ def test_guard_against_clobber_should_raise_when_existing_unit_owned_by_differen
 
 def test_guard_against_clobber_should_no_op_when_existing_unit_owned_by_same_work_dir(tmp_path):
     work_dir = tmp_path / "this-project"
+
     serve_path = tmp_path / "agent-runner@proj.service"
     serve_path.write_text(f"WorkingDirectory={work_dir}\n")
 
@@ -207,6 +232,7 @@ def test_guard_against_clobber_should_no_op_when_existing_unit_owned_by_same_wor
 
 def test_guard_against_clobber_should_no_op_when_force_true_despite_different_owner(tmp_path):
     serve_path = tmp_path / "agent-runner@proj.service"
+
     other_work_dir = tmp_path / "other-project"
     serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
     work_dir = tmp_path / "this-project"
@@ -216,6 +242,7 @@ def test_guard_against_clobber_should_no_op_when_force_true_despite_different_ow
 
 def test_guard_against_clobber_should_no_op_when_no_existing_unit_file(tmp_path):
     serve_path = tmp_path / "agent-runner@proj.service"
+
     work_dir = tmp_path / "this-project"
 
     _resolve.guard_against_clobber(serve_path, work_dir, force=False)

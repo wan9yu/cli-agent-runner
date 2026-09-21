@@ -11,6 +11,7 @@ def test_malformed_events_prefix_select_should_be_accepted_when_parsed(capsys):
     """--select foo.bar (not events.<kind> form) is passed to existing subtree logic,
     not the events selector — this test verifies the argparse arg itself is accepted
     (validation happens at dispatch time, not parse time)."""
+
     args = _build_parser().parse_args(["peek", "--select", "foo.bar"])
 
     # Argparse accepts it; dispatch determines fate at runtime
@@ -37,5 +38,10 @@ def test_peek_should_reject_window_flag_via_argparse_when_invoked():
     """0.1.34+: --window was only consumed by the removed events.* selector.
     Verify argparse rejects --window on peek so it stays removed.
     """
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["peek", "--window", "10"])
+
+    argv = ["peek", "--window", "10"]
+
+    with pytest.raises(SystemExit) as caught:
+        _build_parser().parse_args(argv)
+
+    assert caught.value.code == 2

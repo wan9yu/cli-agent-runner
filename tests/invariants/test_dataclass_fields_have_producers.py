@@ -121,6 +121,7 @@ def test_projectstate_and_status_fields_should_have_a_producer_else_be_reserved_
     None
 ):
     offenders: list[str] = []
+
     checked = 0
     for class_name, cls in _TARGET_CLASSES.items():
         checked += len(dataclasses.fields(cls))
@@ -129,6 +130,7 @@ def test_projectstate_and_status_fields_should_have_a_producer_else_be_reserved_
         ]
 
     assert checked > 0, "no ProjectState/Status fields discovered"  # vacuity-guard
+
     assert not offenders, (
         f"field(s) with no non-default producer in agent_runner/: {offenders} — "
         "either give the field a real producer, or add it to _RESERVED with a "
@@ -138,9 +140,15 @@ def test_projectstate_and_status_fields_should_have_a_producer_else_be_reserved_
 
 def test_reserved_allowlist_should_name_real_fields_when_invoked() -> None:
     """Keep `_RESERVED` honest: no stale entries for renamed/removed fields."""
-    for class_name, field_name in _RESERVED:
-        names = {f.name for f in dataclasses.fields(_TARGET_CLASSES[class_name])}
-        assert field_name in names, f"_RESERVED names {class_name}.{field_name}, no such field"
+    reserved = list(_RESERVED)
+
+    missing = [
+        f"{class_name}.{field_name}"
+        for class_name, field_name in reserved
+        if field_name not in {f.name for f in dataclasses.fields(_TARGET_CLASSES[class_name])}
+    ]
+
+    assert missing == [], f"_RESERVED names missing fields: {missing}"
 
 
 def test_reserved_fields_should_be_documented_in_owning_docstring_when_invoked() -> None:
@@ -151,12 +159,20 @@ def test_reserved_fields_should_be_documented_in_owning_docstring_when_invoked()
         "Status": (_PKG / "context_store.py").read_text(encoding="utf-8"),
     }
 
-    for class_name, field_name in _RESERVED:
-        doc = _class_docstring(sources[class_name], class_name)
-        assert field_name in doc and "reserved" in doc and "0.3" in doc, (
-            f"{class_name}'s docstring must name {field_name!r} as reserved, "
-            f"populated in 0.3 — got docstring: {doc!r}"
+    undocumented = [
+        f"{class_name}.{field_name}"
+        for class_name, field_name in _RESERVED
+        if not (
+            field_name in _class_docstring(sources[class_name], class_name)
+            and "reserved" in _class_docstring(sources[class_name], class_name)
+            and "0.3" in _class_docstring(sources[class_name], class_name)
         )
+    ]
+
+    assert undocumented == [], (
+        "owning dataclass docstring must name each reserved field as reserved, "
+        f"populated in 0.3 — missing: {undocumented}"
+    )
 
 
 def test_offending_fields_should_flag_unlisted_always_default_field_when_invoked(

@@ -52,6 +52,7 @@ def test_round_num_should_increase_monotonically_when_supervisor_invoked_repeate
     pi_config: str,
     pi_workdir: str,
 ) -> None:
+
     base = (
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
         f"{pi_install_agent_runner} --config {pi_config} round"
@@ -72,6 +73,7 @@ def test_round_should_stash_orphan_changes_when_fake_agent_leaves_dirty_worktree
         f"FAKE_AGENT_BEHAVIOR=dirty WORK_DIR={pi_workdir} "
         f"{pi_install_agent_runner} --config {pi_config} round"
     )
+
     _ssh(cmd_dirty)
     cmd_succeed = (
         f"FAKE_AGENT_BEHAVIOR=succeed WORK_DIR={pi_workdir} "
@@ -81,6 +83,7 @@ def test_round_should_stash_orphan_changes_when_fake_agent_leaves_dirty_worktree
 
     ctx = json.loads(_ssh(f"cat {pi_workdir}/logs/round-context.json").stdout)
     assert "orphan_stash" in ctx
+
     assert ctx["orphan_stash"]["ref"]
 
 

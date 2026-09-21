@@ -39,6 +39,7 @@ def _events(log_dir):
 
 def test_resolve_resume_args_should_return_flag_and_id_when_both_env_present(monkeypatch):
     monkeypatch.setenv("AGENT_RUNNER_RESUME_FLAG", "--session-id")
+
     monkeypatch.setenv("AGENT_RUNNER_RESUME_SESSION_ID", "abc-123")
 
     assert runner._resolve_resume_args() == ["--session-id", "abc-123"]
@@ -46,6 +47,7 @@ def test_resolve_resume_args_should_return_flag_and_id_when_both_env_present(mon
 
 def test_resolve_resume_args_should_return_empty_when_either_env_absent(monkeypatch):
     monkeypatch.setenv("AGENT_RUNNER_RESUME_FLAG", "--session-id")
+
     monkeypatch.delenv("AGENT_RUNNER_RESUME_SESSION_ID", raising=False)
 
     assert runner._resolve_resume_args() == []
@@ -53,6 +55,7 @@ def test_resolve_resume_args_should_return_empty_when_either_env_absent(monkeypa
 
 def test_resolve_resume_args_should_return_empty_when_both_env_absent(monkeypatch):
     monkeypatch.delenv("AGENT_RUNNER_RESUME_FLAG", raising=False)
+
     monkeypatch.delenv("AGENT_RUNNER_RESUME_SESSION_ID", raising=False)
 
     assert runner._resolve_resume_args() == []  # cold-start by construction

@@ -16,7 +16,11 @@ from agent_runner.round_log import (
 
 
 def test_next_round_num_should_return_one_when_no_log_files(tmp_path: Path) -> None:
-    assert next_round_num(tmp_path) == 1
+    actual = next_round_num(tmp_path)
+
+    expected = 1
+
+    assert actual == expected
 
 
 def test_next_round_num_should_skip_past_max_when_existing_round_files(
@@ -24,7 +28,9 @@ def test_next_round_num_should_skip_past_max_when_existing_round_files(
 ) -> None:
     """next_round_num returns max(status, file_max) + 1 — file fallback wins when status absent."""
     (tmp_path / "round-5.log").write_text("x")
+
     (tmp_path / "round-7.log").write_text("x")
+
     assert next_round_num(tmp_path) == 8
 
 
@@ -312,7 +318,9 @@ def test_prune_rounds_dir_should_leave_unrelated_files_alone_when_invoked(tmp_pa
 def test_prune_rounds_dir_should_no_op_when_dir_missing(tmp_path: Path) -> None:
     outcome = prune_rounds_dir(tmp_path / "rounds", keep=5)
 
-    assert (outcome.deleted, outcome.deferred, outcome.existing) == (0, 0, 0)
+    actual = (outcome.deleted, outcome.deferred, outcome.existing)
+
+    assert actual == (0, 0, 0)
 
 
 def test_prune_rounds_dir_should_delete_nothing_when_fewer_files_than_keep(

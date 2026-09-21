@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -100,10 +101,12 @@ def test_run_one_round_should_increment_round_num_when_invoked_sequentially(
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
 
-    for expected in (1, 2, 3):
+    nums = []
+    for _ in range(3):
         run_one_round(cfg)
-        status = json.loads((cfg.runtime.log_dir / "status.json").read_text())
-        assert status["round_num"] == expected
+        nums.append(json.loads((cfg.runtime.log_dir / "status.json").read_text())["round_num"])
+
+    assert nums == [1, 2, 3]
 
 
 def test_run_one_round_should_set_phase_in_round_context_when_phases_configured(
@@ -117,6 +120,7 @@ def test_run_one_round_should_set_phase_in_round_context_when_phases_configured(
     assert ctx["phase"] == "a"
     run_one_round(cfg)
     ctx = json.loads((cfg.runtime.log_dir / "round-context.json").read_text())
+
     assert ctx["phase"] == "b"
 
 
@@ -152,6 +156,7 @@ def test_acquire_lock_else_raise_should_raise_lockheld_when_lock_already_held(
     tmp_path: Path,
 ) -> None:
     lock_path = tmp_path / "agent-runner.lock"
+
     fd = _acquire_lock_or_raise(lock_path)
 
     try:
@@ -162,12 +167,15 @@ def test_acquire_lock_else_raise_should_raise_lockheld_when_lock_already_held(
 
 
 def test_acquire_lock_else_raise_should_return_fd_when_no_existing_lock(tmp_path: Path) -> None:
-    fd = _acquire_lock_or_raise(tmp_path / "agent-runner.lock")
+    lock = tmp_path / "agent-runner.lock"
 
+    fd = _acquire_lock_or_raise(lock)
     try:
-        assert isinstance(fd, int)
+        held = isinstance(fd, int) and lock.exists()
     finally:
         os.close(fd)
+
+    assert held
 
 
 def test_run_one_round_should_exit_without_spawning_agent_when_smoke_check_fails(
@@ -210,7 +218,9 @@ def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_is_no
 ) -> None:
     cfg = _unit_cfg(tmp_path)
 
-    assert resolve_runtime_for_phase(cfg, None).round_budget_s == 1800
+    actual = resolve_runtime_for_phase(cfg, None).round_budget_s
+
+    assert actual == 1800
 
 
 def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_has_no_override(
@@ -218,7 +228,9 @@ def test_resolve_runtime_for_phase_should_return_global_timeout_when_phase_has_n
 ) -> None:
     cfg = _unit_cfg(tmp_path, round_budget_s=3600, phases=["dev"])
 
-    assert resolve_runtime_for_phase(cfg, "dev").round_budget_s == 3600
+    actual = resolve_runtime_for_phase(cfg, "dev").round_budget_s
+
+    assert actual == 3600
 
 
 def test_scan_round_log_for_network_blip_should_emit_blip_when_log_contains_connection_refused(
@@ -343,6 +355,7 @@ def test_acquire_lock_else_raise_should_include_pid_age_cmdline_when_holder_side
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log_dir = tmp_path / "logs"
+
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
     fd1 = _acquire_lock_or_raise(lock_path)
@@ -369,6 +382,7 @@ def test_acquire_lock_else_raise_should_note_stale_when_holder_sidecar_pid_stale
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
     sidecar = lock_path.parent / (lock_path.name + ".holder")
@@ -407,6 +421,7 @@ def test_acquire_lock_else_raise_should_note_missing_when_holder_sidecar_absent(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     log_dir.mkdir()
     lock_path = log_dir / "agent-runner.lock"
     sidecar = lock_path.parent / (lock_path.name + ".holder")
@@ -434,15 +449,19 @@ def test_phase_for_should_use_override_when_explicit_phase_given() -> None:
 def test_phase_for_should_raise_when_override_not_in_phases() -> None:
     from agent_runner.runner import _phase_for
 
-    with pytest.raises(ValueError, match="not in.*phases"):
+    with pytest.raises(ValueError, match="not in.*phases") as caught:
         _phase_for(1, ["dev", "qa"], override="bogus")
+
+    assert re.search(r"not in.*phases", str(caught.value))
 
 
 def test_phase_for_should_raise_when_phases_not_configured() -> None:
     from agent_runner.runner import _phase_for
 
-    with pytest.raises(ValueError, match=r"\[phases\]"):
+    with pytest.raises(ValueError, match=r"\[phases\]") as caught:
         _phase_for(1, None, override="dev")
+
+    assert re.search(r"\[phases\]", str(caught.value))
 
 
 def test_phase_for_should_rotate_by_round_num_when_no_override_given() -> None:

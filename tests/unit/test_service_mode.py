@@ -58,7 +58,9 @@ def test_detect_service_mode_should_return_none_when_no_unit_and_no_pidfile(
 ) -> None:
     mode = detect_service_mode("nonexistent-project", log_dir=tmp_path)
 
-    assert mode == ServiceMode.NONE
+    actual = mode
+
+    assert actual == ServiceMode.NONE
 
 
 def test_detect_service_mode_should_return_pid_file_when_unit_failed_but_pidfile_live(

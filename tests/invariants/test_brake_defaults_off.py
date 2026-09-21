@@ -15,28 +15,44 @@ def test_brake_and_nudge_should_default_off_when_invoked() -> None:
     hh = MonitorHostHealthConfig()
 
     assert hh.brake.memory_high is False
+
     assert hh.pressure.in_round_nudge is False
 
 
 def test_brake_floor_and_engage_guard_should_be_pinned_when_invoked() -> None:
+
     assert metrics._MIN_MEMORY_HIGH_BYTES == 64 * 1024 * 1024
-    assert metrics._MIN_BRAKE_CURRENT_BYTES == 128 * 1024 * 1024
+
+    actual = metrics._MIN_BRAKE_CURRENT_BYTES
+
+    assert actual == 128 * 1024 * 1024
 
 
 def test_brake_step_pct_should_be_boot_capped_at_50_when_invoked() -> None:
+
     from agent_runner.config.parsers import _MAX_BRAKE_STEP_PCT
 
-    assert _MAX_BRAKE_STEP_PCT == 50
+    actual = _MAX_BRAKE_STEP_PCT
+
+    assert actual == 50
 
 
 def test_write_helpers_should_only_target_the_resolved_leaf_never_an_ancestor_when_invoked() -> (
     None
 ):
-    for fn in (metrics.engage_leaf_memory_high, metrics.restore_leaf_memory_high):
-        src = inspect.getsource(fn)
-        assert "_leaf_dir(" in src  # write target resolved via the leaf helper only
-        assert "_bounding_ancestor_path" not in src
-        assert "cgroup_memory_high" not in src  # NEVER the ancestor-min read for the stash
+    writers = (metrics.engage_leaf_memory_high, metrics.restore_leaf_memory_high)
+
+    offenders = [
+        fn.__name__
+        for fn in writers
+        if (
+            "_leaf_dir(" not in inspect.getsource(fn)
+            or "_bounding_ancestor_path" in inspect.getsource(fn)
+            or "cgroup_memory_high" in inspect.getsource(fn)
+        )
+    ]
+
+    assert offenders == []
 
 
 def test_nudge_path_should_never_call_killpg_when_invoked() -> None:
@@ -45,4 +61,5 @@ def test_nudge_path_should_never_call_killpg_when_invoked() -> None:
     nudge_block = src.split('== "nudge"')[1].split("elif action")[0]
     assert "killpg(" not in nudge_block  # a call, not the block's own "NO killpg" comment
     assert "_terminate_round" not in nudge_block
+
     assert "proc.terminate()" in nudge_block

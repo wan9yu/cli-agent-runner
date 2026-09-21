@@ -33,6 +33,7 @@ _FORBIDDEN_STATE = {
 
 def test_select_phase_should_read_no_supervisor_state_when_invoked() -> None:
     tree = ast.parse(_SRC.read_text(encoding="utf-8"))
+
     hits: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in _FORBIDDEN_STATE:

@@ -9,6 +9,7 @@ typo'd threshold dropped with no signal. This file pins the fix.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 def test_load_config_should_raise_configerror_when_agent_env_is_scalar(tmp_path: Path) -> None:
     # Reached mid-[agent]-parse, before any other table is even consulted, so
     # only [agent] itself needs to be otherwise-valid.
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\nenv = "oops"\n',
@@ -37,6 +39,7 @@ def test_load_config_should_raise_configerror_when_agent_env_is_scalar(tmp_path:
 def test_load_config_should_raise_configerror_when_monitor_host_health_is_scalar(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -52,6 +55,7 @@ def test_load_config_should_raise_configerror_when_monitor_host_health_is_scalar
 def test_load_config_should_raise_configerror_when_monitor_host_health_has_unknown_key(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -67,6 +71,7 @@ def test_load_config_should_raise_configerror_when_monitor_host_health_has_unkno
 def test_load_config_should_raise_configerror_when_brake_has_unknown_key(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -82,6 +87,7 @@ def test_load_config_should_raise_configerror_when_brake_has_unknown_key(
 def test_load_config_should_raise_configerror_when_brake_step_pct_over_cap(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -113,6 +119,7 @@ def test_load_config_should_accept_brake_step_pct_zero_for_cap_at_current_when_i
 def test_load_config_should_raise_configerror_when_brake_step_pct_negative(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -128,6 +135,7 @@ def test_load_config_should_raise_configerror_when_brake_step_pct_negative(
 def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
     tmp_path: Path,
 ) -> None:
+
     p = _write(
         tmp_path,
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
@@ -153,5 +161,7 @@ def test_load_config_should_name_schedule_when_top_level_schedule_has_bad_key(
         "[schedule]\nbogus = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"unknown \[schedule\]"):
+    with pytest.raises(ConfigError, match=r"unknown \[schedule\]") as caught:
         load_config(p)
+
+    assert re.search(r"unknown \[schedule\]", str(caught.value))

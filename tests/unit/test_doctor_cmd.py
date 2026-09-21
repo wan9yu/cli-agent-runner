@@ -30,7 +30,12 @@ TZ = ZoneInfo("Asia/Shanghai")
 def test_brake_report_state_should_map_config_and_delegation_to_a_label_when_invoked(
     enabled, delegated, expected
 ) -> None:
-    assert brake_report_state(enabled, delegated) == expected
+
+    actual = brake_report_state(enabled, delegated)
+
+    expected = expected
+
+    assert actual == expected
 
 
 class _FakeProc:

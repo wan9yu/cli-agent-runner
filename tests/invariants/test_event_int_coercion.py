@@ -56,6 +56,7 @@ def test_bare_int_else_float_scanner_should_detect_planted_offender_when_invoked
 
 def test_scanned_modules_should_have_no_bare_int_else_float_on_event_get_when_invoked() -> None:
     offenders: list[tuple[str, int]] = []
+
     for name in _SCANNED:
         path = PKG / name
         tree = ast.parse(path.read_text(encoding="utf-8"))

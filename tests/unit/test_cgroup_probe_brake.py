@@ -24,29 +24,38 @@ def fake_cgroup(tmp_path: Path) -> _FakeCgroup:
 
 
 def test_brake_high_value_should_step_below_current_when_current_large() -> None:
+
     current = 300 * 1024 * 1024
 
-    assert metrics._brake_high_value(current, 10) == int(current * 0.9)
+    actual = metrics._brake_high_value(current, 10)
+
+    assert actual == int(current * 0.9)
 
 
 def test_brake_high_value_should_cap_at_current_when_step_pct_zero() -> None:
+
     current = 300 * 1024 * 1024
 
-    # step_pct=0 = cap-at-current: write memory.high == memory.current, so the
-    # kernel throttles further growth without a synchronous reclaim burst below
-    # current (the gentle mode for SD-backed latency-sensitive hosts).
-    assert metrics._brake_high_value(current, 0) == current
+    actual = metrics._brake_high_value(current, 0)
+
+    assert actual == current
 
 
 def test_brake_high_value_should_floor_at_64mib_when_step_would_go_lower() -> None:
     current = 130 * 1024 * 1024  # just over the 128MiB engage floor; 10% off = ~117MiB, fine
 
     assert metrics._brake_high_value(60 * 1024 * 1024 + 1, 10) is None  # below engage floor
+
     assert metrics._brake_high_value(current, 90) == 64 * 1024 * 1024  # clamp up to the 64MiB floor
 
 
 def test_brake_high_value_should_return_none_when_current_below_engage_floor() -> None:
-    assert metrics._brake_high_value(127 * 1024 * 1024, 10) is None
+
+    actual = metrics._brake_high_value(127 * 1024 * 1024, 10)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_engage_leaf_memory_high_should_write_leaf_and_stash_leaf_prior_when_delegated(

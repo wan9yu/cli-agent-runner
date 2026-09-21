@@ -22,11 +22,17 @@ def test_hook_context_should_carry_round_fields_when_constructed() -> None:
 
     assert ctx.round_num == 42
     assert ctx.phase == "diverge"
+
     assert ctx.agent_name == "some-cli"
 
 
 def test_hook_listings_should_be_empty_when_no_plugins_registered() -> None:
-    assert hooks.post_round_hooks() == []
+
+    actual = hooks.post_round_hooks()
+
+    expected = []
+
+    assert actual == expected
 
 
 def test_post_round_hook_should_be_visible_in_listing_when_registered() -> None:

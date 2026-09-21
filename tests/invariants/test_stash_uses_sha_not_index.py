@@ -38,6 +38,7 @@ def test_vcs_state_should_have_no_index_based_stash_ref_when_scanned() -> None:
     """§9 IMMUTABLE — forbid naming a stash by ``stash@{N}`` index (literal or the
     ``f"stash@{{{idx}}}"`` interpolated form) anywhere in real code."""
     tree = ast.parse((PKG / "vcs_state.py").read_text())
+
     docstrings = _docstring_constant_ids(tree)
     scanned = 0
     offenders: list[str] = []
@@ -54,6 +55,7 @@ def test_vcs_state_should_have_no_index_based_stash_ref_when_scanned() -> None:
                 offenders.append(ast.unparse(node))
 
     assert scanned > 0, "no string literals scanned in vcs_state.py"  # vacuity-guard
+
     assert offenders == [], f"vcs_state.py names a stash by index: {offenders}"
 
 
@@ -77,4 +79,5 @@ def test_prompt_template_should_name_stash_by_sha_not_index_when_scanned() -> No
         "prompt template uses an index-based stash verb; use `git stash apply <ref>`"
     )
     assert "git stash apply" in _PROMPT_TEMPLATE  # positive: SHA recovery documented
+
     assert "ref" in _PROMPT_TEMPLATE

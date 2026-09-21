@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from agent_runner.config import load_config
@@ -9,27 +11,36 @@ def _cfg(tmp_path, agent_extra):
 
 
 def test_prompt_delivery_should_default_to_argv_when_invoked(tmp_path):
+
     cfg = load_config(_cfg(tmp_path, agent_extra=""))
 
-    assert cfg.agent.prompt_delivery == "argv"
+    actual = cfg.agent.prompt_delivery
+
+    assert actual == "argv"
 
 
 def test_prompt_delivery_should_accept_stdin_when_template_has_no_prompt_token(tmp_path):
+
     cfg = load_config(_cfg(tmp_path, 'prompt_delivery = "stdin"\nprompt_arg_template = ["-p"]\n'))
 
-    assert cfg.agent.prompt_delivery == "stdin"
+    actual = cfg.agent.prompt_delivery
+
+    assert actual == "stdin"
 
 
 def test_prompt_delivery_should_reject_stdin_when_template_has_prompt_token(tmp_path):
-    with pytest.raises(ValueError, match="stdin"):
-        load_config(
-            _cfg(
-                tmp_path,
-                'prompt_delivery = "stdin"\nprompt_arg_template = ["-p", "{prompt}"]\n',
-            )
-        )
+    extra = 'prompt_delivery = "stdin"\nprompt_arg_template = ["-p", "{prompt}"]\n'
+
+    with pytest.raises(ValueError, match="stdin") as caught:
+        load_config(_cfg(tmp_path, extra))
+
+    assert re.search(r"stdin", str(caught.value))
 
 
 def test_prompt_delivery_should_reject_invalid_value_when_invoked(tmp_path):
-    with pytest.raises(ValueError):
-        load_config(_cfg(tmp_path, 'prompt_delivery = "file"\n'))
+    extra = 'prompt_delivery = "file"\n'
+
+    with pytest.raises(ValueError) as caught:
+        load_config(_cfg(tmp_path, extra))
+
+    assert "prompt_delivery" in str(caught.value)

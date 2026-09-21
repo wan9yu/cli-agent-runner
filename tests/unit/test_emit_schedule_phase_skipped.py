@@ -17,7 +17,9 @@ def _events(log_dir):
 
 def test_schedule_phase_skipped_kind_should_be_registered_builtin_when_invoked():
     assert events.SCHEDULE_PHASE_SKIPPED == "schedule_phase_skipped"
+
     assert "schedule_phase_skipped" in events.KNOWN_EVENT_KINDS
+
     assert "schedule_phase_skipped" in events._BUILTIN_KINDS
 
 
@@ -36,6 +38,9 @@ def test_emit_schedule_phase_skipped_should_write_payload_fields_when_invoked(tm
 
 
 def test_emit_schedule_phase_skipped_should_be_reexported_from_api_when_invoked():
+
     from agent_runner import api
 
-    assert api.emit_schedule_phase_skipped is emit_schedule_phase_skipped
+    actual = api.emit_schedule_phase_skipped
+
+    assert actual is emit_schedule_phase_skipped

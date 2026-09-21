@@ -24,6 +24,7 @@ def test_load_config_should_reject_a_resume_preset_whose_command_already_has_the
     tmp_path,
 ):
     register_manifest(PluginManifest(name="pi", resume_flag="--session-id"))
+
     write_min_config(
         tmp_path, agent_extra='command = ["pi", "--session-id", "x", "--mode", "json"]\n'
     )
@@ -36,6 +37,7 @@ def test_load_config_should_accept_a_resume_preset_without_the_flag_in_command_w
     tmp_path,
 ):
     register_manifest(PluginManifest(name="pi", resume_flag="--session-id"))
+
     write_min_config(tmp_path, agent_extra='command = ["pi", "--mode", "json"]\n')
 
     load_config(tmp_path / "agent-runner.toml")
@@ -45,4 +47,8 @@ def test_default_round_budget_should_survive_a_60s_pi_auto_retry_when_invoked():
     """pi's own ``auto_retry`` backs off up to ~60s mid-round; the round-budget
     hang detector must not false-kill a retrying round, so the shipped default
     needs comfortable headroom above that ceiling."""
-    assert RuntimeConfig(work_dir=Path("."), log_dir=Path(".")).round_budget_s >= 60
+    actual = RuntimeConfig(work_dir=Path("."), log_dir=Path(".")).round_budget_s
+
+    expected = 60
+
+    assert actual >= expected

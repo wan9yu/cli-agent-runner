@@ -86,6 +86,7 @@ def test_after_round_should_classify_rate_limit_model_when_429_retry_on_failed_r
     assert kw["classification"] == "rate_limit_model"
     assert kw["agent"] == "kimi"
     assert kw["reset_at_epoch"] == 1060  # now + 60s default back-off
+
     assert "429 Your account has hit the rate limit" in kw["raw"]
 
 
@@ -93,6 +94,7 @@ def test_after_round_should_classify_api_transient_5xx_when_503_retry_on_failed_
     err_emit = _run(tmp_path, [_RETRY_503, _RESUME_HINT])
 
     err_emit.assert_called_once()
+
     assert err_emit.call_args.kwargs["classification"] == "api_transient_5xx"
 
 
@@ -100,13 +102,16 @@ def test_after_round_should_not_emit_when_retry_absorbed_by_successful_round(tmp
     """kimi retries internally (max_attempts 10); a blip it recovered from is not
     a supervisor-level transient error — backing off after a successful round
     would be a false alarm."""
+
     err_emit = _run(tmp_path, [_RETRY_429, _ASSISTANT, _RESUME_HINT], result=make_run_result())
 
     err_emit.assert_not_called()
 
 
 def test_after_round_should_not_emit_when_agent_is_not_kimi(tmp_path):
-    err_emit = _run(tmp_path, [_RETRY_429], agent_name="claude")
+    agent_name = "claude"
+
+    err_emit = _run(tmp_path, [_RETRY_429], agent_name=agent_name)
 
     err_emit.assert_not_called()
 
@@ -115,6 +120,7 @@ def test_after_round_should_not_crash_when_round_log_missing(tmp_path):
     from agent_runner.builtin_plugins.kimi import KimiErrorDetector
 
     ctx = make_hook_context(tmp_path, agent_name="kimi")
+    assert ctx.agent_log_path is not None
     assert not ctx.agent_log_path.exists()
 
     with patch(f"{_MOD}.emit_transient_error_detected") as err_emit:
@@ -127,6 +133,7 @@ def test_after_round_should_not_emit_when_stderr_has_plain_text_auth_error(tmp_p
     """The round log merges stdout+stderr: kimi's fatal errors arrive as plain
     text (real captured 401 wording). Non-JSON lines must not crash the parser,
     and auth failure is oauth_fail territory, not a transient bucket."""
+
     err_emit = _run(
         tmp_path,
         "error: failed to run prompt: provider.auth_error: 401 Invalid Authentication\n"

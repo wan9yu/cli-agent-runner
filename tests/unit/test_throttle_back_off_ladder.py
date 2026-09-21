@@ -31,7 +31,9 @@ def _success(agent: str) -> dict:
 def test_backoff_exponent_should_be_zero_when_first_detection(tmp_path: Path) -> None:
     _write(tmp_path, [_detected("claude", 2_000)])
 
-    assert _throttle._backoff_exponent(tmp_path, "claude") == 0
+    actual = _throttle._backoff_exponent(tmp_path, "claude")
+
+    assert actual == 0
 
 
 def test_backoff_exponent_should_grow_when_detections_consecutive(tmp_path: Path) -> None:
@@ -40,7 +42,9 @@ def test_backoff_exponent_should_grow_when_detections_consecutive(tmp_path: Path
         [_detected("claude", 2_000), _detected("claude", 2_100), _detected("claude", 2_200)],
     )
 
-    assert _throttle._backoff_exponent(tmp_path, "claude") == 2
+    actual = _throttle._backoff_exponent(tmp_path, "claude")
+
+    assert actual == 2
 
 
 def test_backoff_exponent_should_not_reset_when_transient_error_recovered(tmp_path: Path) -> None:
@@ -54,7 +58,9 @@ def test_backoff_exponent_should_not_reset_when_transient_error_recovered(tmp_pa
         ],
     )
 
-    assert _throttle._backoff_exponent(tmp_path, "claude") == 1  # not pinned to 0
+    actual = _throttle._backoff_exponent(tmp_path, "claude")
+
+    assert actual == 1
 
 
 def test_backoff_exponent_should_reset_when_success_recorded(tmp_path: Path) -> None:

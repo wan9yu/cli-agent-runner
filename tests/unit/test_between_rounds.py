@@ -33,9 +33,11 @@ def test_atomic_replace_should_overwrite_complete_file_when_invoked(tmp_path: Pa
 
 def test_prompt_smoke_error_should_reject_short_else_dash_when_invoked(tmp_path: Path) -> None:
     br = _mod()
+
     assert br.prompt_smoke_error("") == "empty"
     assert br.prompt_smoke_error("-flag") == "bad first character"
     assert br.prompt_smoke_error("x" * 10) is not None
+
     assert br.prompt_smoke_error("x" * 500) is None
 
 
@@ -83,6 +85,8 @@ def test_iter_complete_objects_should_leave_partial_last_line_when_invoked(tmp_p
 
 def test_give_up_kind_should_detect_config_broken_when_invoked() -> None:
     br = _mod()
+
     assert br.give_up_kind([{"event": "round_end"}]) is None
     assert br.give_up_kind([{"event": "config_broken"}]) == "config_broken"
+
     assert "mem_loop" not in br.GIVE_UP_KINDS

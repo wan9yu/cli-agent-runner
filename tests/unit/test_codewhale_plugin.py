@@ -159,6 +159,7 @@ def test_classify_codewhale_error_should_map_only_known_buckets_when_invoked():
     # free-text auth error (the only real captured shape) does not map
     assert _classify_codewhale_error({"error": "Authentication failed: ..."}) is None
     assert _classify_codewhale_error({"code": 418}) is None
+
     # every non-None result must be a real classification bucket (SSOT)
     for ev in ({"code": 429}, {"status_code": 500}, {"code": 408}):
         cls = _classify_codewhale_error(ev)

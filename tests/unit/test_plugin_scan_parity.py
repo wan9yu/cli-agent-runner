@@ -27,9 +27,13 @@ def test_scanner_should_match_importlib_metadata_per_group_when_invoked():
     dist-info + in CI."""
     groups = ("agent_runner.plugins",)
 
-    for group in groups:
-        scanned = sorted(_plugin_scan.scan_entry_points(sys.path, group))
-        assert scanned == _md(group), f"parity drift in {group}: {scanned} != {_md(group)}"
+    drifted = [
+        f"{group}: {sorted(_plugin_scan.scan_entry_points(sys.path, group))} != {_md(group)}"
+        for group in groups
+        if sorted(_plugin_scan.scan_entry_points(sys.path, group)) != _md(group)
+    ]
+
+    assert drifted == []
 
 
 def test_scanner_should_fall_back_to_metadata_when_parse_fails(monkeypatch):

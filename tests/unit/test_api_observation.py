@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -46,7 +47,8 @@ def _drive_monitor_loop_once(
         except _StopLoopError:
             pass
         finally:
-            gen.close()
+            if isinstance(gen, types.GeneratorType):
+                gen.close()
 
 
 def _seed_logs(work_dir: Path) -> None:
@@ -104,6 +106,7 @@ def test_peek_should_raise_keyerror_when_select_invalid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
+
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
 
@@ -188,6 +191,7 @@ def test_peek_should_raise_keyerror_when_round_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_git_repo))
+
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
 
@@ -338,6 +342,7 @@ def test_monitor_loop_should_raise_before_first_poll_when_host_given(
 
 def test_project_name_should_raise_when_work_dir_has_shell_metachars(tmp_path: Path) -> None:
     bad_dir = tmp_path / "foo;rm -rf /"
+
     bad_dir.mkdir()
 
     with pytest.raises(ValueError, match="invalid project name"):
@@ -346,6 +351,7 @@ def test_project_name_should_raise_when_work_dir_has_shell_metachars(tmp_path: P
 
 def test_project_name_should_return_basename_when_work_dir_clean(tmp_path: Path) -> None:
     good_dir = tmp_path / "my-project_v1.2"
+
     good_dir.mkdir()
 
     assert api._project_name(good_dir) == "my-project_v1.2"
@@ -437,7 +443,8 @@ def test_narrate_events_should_yield_formatted_lines_when_events_seeded(
     # Drive the generator and collect 2 lines (poll_interval_s tiny to avoid wait)
     gen = narrate_events(log_dir, poll_interval_s=0.01)
     lines = [next(gen) for _ in range(2)]
-    gen.close()
+    if isinstance(gen, types.GeneratorType):
+        gen.close()
 
     assert "[12:00:00.123]" in lines[0]
     assert "round_start" in lines[0]

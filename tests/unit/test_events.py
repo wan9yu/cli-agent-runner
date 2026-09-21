@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -42,8 +43,12 @@ def test_emit_should_write_json_line_when_kind_is_known(tmp_log_dir: Path) -> No
 
 
 def test_emit_should_raise_value_error_when_kind_is_unknown(tmp_log_dir: Path) -> None:
-    with pytest.raises(ValueError, match="unknown event kind"):
-        emit(tmp_log_dir, "made_up_event_xyz", round_num=1)
+    kind = "made_up_event_xyz"
+
+    with pytest.raises(ValueError, match="unknown event kind") as caught:
+        emit(tmp_log_dir, kind, round_num=1)
+
+    assert re.search(r"unknown event kind", str(caught.value))
 
 
 def test_emit_should_append_to_one_file_when_two_emits_in_same_month(tmp_log_dir: Path) -> None:
@@ -72,6 +77,7 @@ def test_emit_should_write_separate_files_when_emits_span_different_months(
 
 
 def test_known_event_kinds_should_contain_all_lifecycle_events_when_invoked() -> None:
+
     expected = {
         "round_start",
         "agent_spawn",
@@ -88,35 +94,55 @@ def test_known_event_kinds_should_contain_all_lifecycle_events_when_invoked() ->
         "monitor_auto_stop_triggered",
     }
 
-    assert expected.issubset(KNOWN_EVENT_KINDS)
+    missing = expected - set(KNOWN_EVENT_KINDS)
+
+    assert not missing
 
 
 def test_known_event_kinds_should_yield_builtins_when_iterated() -> None:
+
     out = set(events.KNOWN_EVENT_KINDS)
 
-    assert "round_start" in out
+    actual = "round_start"
+
+    assert actual in out
 
 
 def test_known_event_kinds_should_support_contains_for_builtins_when_invoked() -> None:
+
     assert "round_start" in events.KNOWN_EVENT_KINDS
-    assert "nonexistent" not in events.KNOWN_EVENT_KINDS
+
+    actual = "nonexistent"
+
+    assert actual not in events.KNOWN_EVENT_KINDS
 
 
 def test_builtin_kinds_should_include_hook_failed_when_invoked() -> None:
     """Used by runner to surface plugin hook exceptions without crashing."""
-    assert "hook_failed" in events._BUILTIN_KINDS
+
+    actual = "hook_failed"
+
+    expected = events._BUILTIN_KINDS
+
+    assert actual in expected
 
 
 def test_builtin_kinds_should_include_monitor_started_when_invoked() -> None:
     from agent_runner.events import _BUILTIN_KINDS, KNOWN_EVENT_KINDS
 
     assert "monitor_started" in _BUILTIN_KINDS
+
     assert "monitor_started" in KNOWN_EVENT_KINDS
 
 
 def test_builtin_kinds_should_include_cgroup_growth_rate_warning_when_invoked() -> None:
     """The mid-round growth-rate detector's WARNING-crossing event."""
-    assert "cgroup_growth_rate_warning" in events._BUILTIN_KINDS
+
+    actual = "cgroup_growth_rate_warning"
+
+    expected = events._BUILTIN_KINDS
+
+    assert actual in expected
 
 
 def test_emit_cgroup_growth_rate_warning_should_write_structured_payload_when_invoked(tmp_path):
@@ -281,23 +307,41 @@ def test_register_plugin_kind_should_allow_emit_when_name_is_namespaced(
 def test_emit_should_still_raise_value_error_when_kind_is_unregistered(
     tmp_log_dir: Path,
 ) -> None:
-    with pytest.raises(ValueError, match="unknown event kind"):
+
+    with pytest.raises(ValueError, match="unknown event kind") as caught:
         emit(tmp_log_dir, "typo_unregistered")
+
+    assert caught.value is not None
 
 
 def test_register_plugin_kind_should_raise_when_name_collides_with_builtin() -> None:
-    with pytest.raises(ValueError):
-        register_plugin_kind("round_start")
+
+    subject = "round_start"
+
+    with pytest.raises(ValueError) as caught:
+        register_plugin_kind(subject)
+
+    assert str(caught.value)
 
 
 def test_register_plugin_kind_should_raise_when_first_segment_is_builtin_prefix() -> None:
-    with pytest.raises(ValueError):
-        register_plugin_kind("round_myplugin")
+
+    subject = "round_myplugin"
+
+    with pytest.raises(ValueError) as caught:
+        register_plugin_kind(subject)
+
+    assert str(caught.value)
 
 
 def test_register_plugin_kind_should_raise_when_name_has_no_underscore() -> None:
-    with pytest.raises(ValueError):
-        register_plugin_kind("plain")
+
+    subject = "plain"
+
+    with pytest.raises(ValueError) as caught:
+        register_plugin_kind(subject)
+
+    assert str(caught.value)
 
 
 def test_register_plugin_kind_should_grow_known_event_kinds_when_registered() -> None:

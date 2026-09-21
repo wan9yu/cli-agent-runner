@@ -24,6 +24,7 @@ REQUIRED_FIELDS: set[str] = {"disable"}
 
 def test_plugins_config_should_have_published_fields_present_when_inspected() -> None:
     actual = {f.name for f in fields(PluginsConfig)}
+
     missing = REQUIRED_FIELDS - actual
 
     assert not missing, (
@@ -33,6 +34,9 @@ def test_plugins_config_should_have_published_fields_present_when_inspected() ->
 
 
 def test_plugins_config_published_types_should_match_when_inspected() -> None:
+
     hints = get_type_hints(PluginsConfig)
 
-    assert hints["disable"] == list[str]
+    actual = hints["disable"]
+
+    assert actual == list[str]

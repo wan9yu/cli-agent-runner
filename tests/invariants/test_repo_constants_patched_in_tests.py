@@ -20,6 +20,7 @@ DANGEROUS_CALLS = {"run_one_round", "stash_orphan", "_run_one_round_inner"}
 
 def test_dangerous_calls_should_use_tmp_path_fixture_when_test_files_scanned() -> None:
     offenders: list[tuple[str, int, str]] = []
+
     scanned = 0
     for f in TESTS.rglob("test_*.py"):
         scanned += 1
@@ -46,6 +47,7 @@ def test_dangerous_calls_should_use_tmp_path_fixture_when_test_files_scanned() -
                     offenders.append((f.name, node.lineno, node.name))
 
     assert scanned > 0, "no tests/**/test_*.py files scanned"  # vacuity-guard
+
     assert offenders == [], (
         f"tests calling {DANGEROUS_CALLS} without tmp_path-style fixture: {offenders}"
     )

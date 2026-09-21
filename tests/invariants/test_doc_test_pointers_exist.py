@@ -14,6 +14,7 @@ _PTR = re.compile(r"`(tests/[A-Za-z0-9_./-]+\.py)(::[A-Za-z0-9_]+)?`")
 
 def test_doc_test_pointers_should_all_resolve_when_invoked():
     missing = []
+
     checked = 0
     for doc in doc_files():
         for m in _PTR.finditer(doc.read_text(encoding="utf-8")):
@@ -33,4 +34,5 @@ def test_doc_test_pointers_should_all_resolve_when_invoked():
                     )
 
     assert checked > 0, "no doc test pointers scanned — pattern or corpus broke"  # vacuity-guard
+
     assert not missing, "doc pointers to non-existent tests:\n" + "\n".join(missing)

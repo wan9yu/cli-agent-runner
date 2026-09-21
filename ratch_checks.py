@@ -30,7 +30,7 @@ CHECKS = [
     NoConflictMarkers(),
     BddTestConventions(  # type: ignore[call-arg]
         prefix="test_",
-        blank_blocks=0,
+        blank_blocks=3,
         forbid_comment_labels=("given", "when", "then", "arrange", "act", "assert"),
     ),
     NoHashNamedTest(),
@@ -47,7 +47,6 @@ CHECKS = [
             "monotonic_ns",
             "process_time",
         ),
-        extra_dt_attrs=(),  # type: ignore[call-arg]
     ),
     ConfinedImport(
         names=("asyncio", "select", "selectors"),

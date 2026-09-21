@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -14,14 +15,17 @@ def test_git_repo_should_create_three_files_when_scaffolded(tmp_git_repo: Path) 
     assert (tmp_git_repo / "agent-runner.toml").exists()
     assert (tmp_git_repo / "prompts" / "main.md").exists()
     assert (tmp_git_repo / ".gitignore").exists()
+
     assert {f.name for f in result.files_created} >= {"agent-runner.toml", "main.md", ".gitignore"}
 
 
 def test_existing_toml_should_raise_when_scaffolded_without_force(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "agent-runner.toml").write_text("# old\n")
 
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError) as caught:
         scaffold_project(tmp_git_repo, force=False, commit=False)
+
+    assert isinstance(caught.value, FileExistsError)
 
 
 def test_existing_toml_should_be_overwritten_when_scaffolded_with_force(tmp_git_repo: Path) -> None:
@@ -64,12 +68,17 @@ def test_scaffold_should_create_git_commit_when_commit_true(tmp_git_repo: Path) 
         text=True,
         check=True,
     ).stdout.strip()
+
     assert "agent-runner" in log
 
 
 def test_non_git_dir_should_raise_when_scaffolded(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="not a git"):
-        scaffold_project(tmp_path, force=False, commit=False)
+    dest = tmp_path
+
+    with pytest.raises(RuntimeError, match="not a git") as caught:
+        scaffold_project(dest, force=False, commit=False)
+
+    assert re.search(r"not a git", str(caught.value))
 
 
 def test_aider_preset_should_write_aider_toml_when_scaffolded(
@@ -84,12 +93,17 @@ def test_aider_preset_should_write_aider_toml_when_scaffolded(
     assert tmp_git_repo.name in toml_text  # {project} substituted
     assert "{project}" not in toml_text  # no unsubstituted placeholders
     assert result.work_dir == tmp_git_repo
+
     assert result.preset == "aider"
 
 
 def test_unknown_preset_should_raise_when_scaffolded(tmp_git_repo: Path) -> None:
-    with pytest.raises((FileNotFoundError, ValueError)):
-        scaffold_project(tmp_git_repo, preset="nonexistent", force=False, commit=False)
+    preset = "nonexistent"
+
+    with pytest.raises((FileNotFoundError, ValueError)) as caught:
+        scaffold_project(tmp_git_repo, preset=preset, force=False, commit=False)
+
+    assert isinstance(caught.value, (FileNotFoundError, ValueError))
 
 
 def test_dirty_repo_should_commit_only_scaffold_files_when_scaffolded_with_commit(
@@ -130,4 +144,5 @@ def test_claude_preset_should_include_agent_env_block_when_scaffolded(
     toml_text = (tmp_git_repo / "agent-runner.toml").read_text()
     assert "[agent.env]" in toml_text
     assert 'DISABLE_AUTOUPDATER = "1"' in toml_text
+
     assert 'CLAUDE_CODE_EFFORT_LEVEL = "xhigh"' in toml_text

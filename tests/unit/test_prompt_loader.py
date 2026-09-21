@@ -21,7 +21,9 @@ def test_text_with_yaml_frontmatter_should_have_frontmatter_removed_when_strippe
 def test_text_without_frontmatter_should_be_unchanged_when_stripped() -> None:
     result = strip_yaml_frontmatter("No frontmatter.")
 
-    assert result == "No frontmatter."
+    actual = result
+
+    assert actual == "No frontmatter."
 
 
 def test_text_with_only_opening_delim_should_be_unchanged_when_stripped() -> None:
@@ -87,6 +89,7 @@ def test_prepend_mode_should_prepend_context_when_assembled(prompt_file: Path) -
 
     assert out.startswith("```json round-context\n")
     assert '"round_num": 1' in out
+
     assert "Do the work." in out
 
 
@@ -99,6 +102,7 @@ def test_file_mode_should_not_prepend_context_when_assembled(prompt_file: Path) 
     )
 
     assert "round-context" not in out
+
     assert out.startswith("# Agent Prompt")
 
 
@@ -111,6 +115,7 @@ def test_none_mode_should_not_prepend_context_when_assembled(prompt_file: Path) 
     )
 
     assert "round-context" not in out
+
     assert out.startswith("# Agent Prompt")
 
 
@@ -122,15 +127,15 @@ def test_inject_context_false_should_not_prepend_context_when_assembled(prompt_f
         mode="prepend",
     )
 
-    assert "round-context" not in out
+    actual = "round-context"
+
+    assert actual not in out
 
 
 def test_default_mode_should_prepend_context_when_mode_kwarg_omitted(prompt_file: Path) -> None:
     """mode defaults to 'prepend' for backward compat — call without mode kwarg."""
-    out = assemble_prompt(
-        [prompt_file],
-        context={"round_num": 1},
-        inject_context=True,
-    )
+    context = {"round_num": 1}
+
+    out = assemble_prompt([prompt_file], context=context, inject_context=True)
 
     assert out.startswith("```json round-context\n")

@@ -612,14 +612,20 @@ def test_post_round_decision_should_route_to_stop_when_config_broken() -> None:
         consecutive=0,
         restart_delay_s=3,
     )
-    assert action == "config_broken"
+
+    actual = action
+
+    assert actual == "config_broken"
 
 
 def test_post_round_decision_should_reset_and_continue_when_round_is_clean() -> None:
     action, delay, n = post_round_decision(
         returncode=0, duration_s=0.1, throttle_active=False, consecutive=4, restart_delay_s=3
     )
-    assert (action, delay, n) == ("continue", 3, 0)
+
+    actual = (action, delay, n)
+
+    assert actual == ("continue", 3, 0)
 
 
 def test_post_round_decision_should_escalate_delay_when_short_crash_below_threshold() -> None:
@@ -627,7 +633,9 @@ def test_post_round_decision_should_escalate_delay_when_short_crash_below_thresh
         returncode=1, duration_s=0.1, throttle_active=False, consecutive=3, restart_delay_s=3
     )
 
-    assert (action, delay, n) == ("continue", 3 * 2**4, 4)
+    actual = (action, delay, n)
+
+    assert actual == ("continue", 3 * 2**4, 4)
 
 
 def test_post_round_decision_should_trip_crash_loop_when_short_crash_reaches_threshold() -> None:
@@ -635,18 +643,28 @@ def test_post_round_decision_should_trip_crash_loop_when_short_crash_reaches_thr
         returncode=1, duration_s=0.1, throttle_active=False, consecutive=4, restart_delay_s=3
     )
 
-    assert (action, n) == ("crash_loop", CRASH_LOOP_THRESHOLD)
+    actual = (action, n)
+
+    assert actual == ("crash_loop", CRASH_LOOP_THRESHOLD)
 
 
 def test_post_round_decision_should_reset_when_failure_is_transient() -> None:
     # classified transient (throttle active): not a crash → reset
-    assert post_round_decision(
+    actual = post_round_decision(
         returncode=1, duration_s=0.1, throttle_active=True, consecutive=2, restart_delay_s=3
-    ) == ("continue", 6, 0)
+    )
+
+    expected = ("continue", 6, 0)
+
+    assert actual == expected
 
 
 def test_post_round_decision_should_reset_when_failure_is_long_running() -> None:
     # long-running failure: not a tight crash loop → reset, 2x delay
-    assert post_round_decision(
+    actual = post_round_decision(
         returncode=1, duration_s=999.0, throttle_active=False, consecutive=2, restart_delay_s=3
-    ) == ("continue", 6, 0)
+    )
+
+    expected = ("continue", 6, 0)
+
+    assert actual == expected

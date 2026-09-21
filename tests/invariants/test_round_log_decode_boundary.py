@@ -20,6 +20,7 @@ def _call_names(fn: ast.AST) -> set[str]:
 
 def test_open_round_log_should_pin_errors_replace_when_invoked() -> None:
     src = (PKG / "round_log.py").read_text(encoding="utf-8")
+
     fn_src = ast.get_source_segment(src, _func(ast.parse(src), "open_round_log"))
     assert fn_src is not None
 
@@ -37,12 +38,27 @@ def _assert_reader_uses_helper(module_name: str, func_name: str) -> None:
 
 def test_monitor_state_tail_reader_should_use_helper_not_bare_open_when_invoked() -> None:
     # load_round_log_tails lives in _monitor_state.py (monitor.py pure-layer split).
-    _assert_reader_uses_helper("_monitor_state.py", "load_round_log_tails")
+    module_name = "_monitor_state.py"
+    func_name = "load_round_log_tails"
+
+    _assert_reader_uses_helper(module_name, func_name)
+
+    assert (PKG / module_name).is_file()
 
 
 def test_round_view_log_reader_should_use_helper_not_bare_read_text_when_invoked() -> None:
-    _assert_reader_uses_helper("round_view.py", "build_round_view")
+    module_name = "round_view.py"
+    func_name = "build_round_view"
+
+    _assert_reader_uses_helper(module_name, func_name)
+
+    assert (PKG / module_name).is_file()
 
 
 def test_runner_network_blip_scan_should_use_helper_not_bare_read_text_when_invoked() -> None:
-    _assert_reader_uses_helper("runner.py", "_scan_round_log_for_network_blip")
+    module_name = "runner.py"
+    func_name = "_scan_round_log_for_network_blip"
+
+    _assert_reader_uses_helper(module_name, func_name)
+
+    assert (PKG / module_name).is_file()

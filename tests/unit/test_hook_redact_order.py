@@ -34,4 +34,9 @@ def test_error_message_should_be_capped_when_huge() -> None:
 
 
 def test_cap_redacted_should_passthrough_short_text_when_invoked() -> None:
-    assert _cap_redacted("hello", 100) == "hello"
+
+    actual = _cap_redacted("hello", 100)
+
+    expected = "hello"
+
+    assert actual == expected

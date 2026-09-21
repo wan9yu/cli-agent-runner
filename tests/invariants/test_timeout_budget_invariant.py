@@ -22,9 +22,12 @@ from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
 
 
 def test_timeout_stop_sec_should_exceed_outer_ceiling_when_invoked():
+
     timeout_stop_sec, outer_ceiling_s = _serve_policy.timeout_budget(100)
 
-    assert timeout_stop_sec > outer_ceiling_s
+    actual = timeout_stop_sec
+
+    assert actual > outer_ceiling_s
 
 
 def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grace_when_invoked():
@@ -33,7 +36,9 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grac
     is draining normally."""
     timeout_stop_sec, outer_ceiling_s = _serve_policy.timeout_budget(100)
 
-    assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
+    actual = timeout_stop_sec - outer_ceiling_s
+
+    assert actual >= _ROUND_TERM_GRACE_S
 
 
 def test_outer_ceiling_should_bound_worst_case_coop_grace_not_just_default_when_invoked():
@@ -52,14 +57,17 @@ def test_outer_ceiling_should_bound_worst_case_coop_grace_not_just_default_when_
         + _serve_policy._GIT_COMMIT_TIMEOUT_S
         + _serve_policy._HOOK_ALLOWANCE_S
     )
+
     assert outer_ceiling_s == expected
 
 
 def test_budget_should_scale_linearly_with_round_timeout_when_invoked():
     a_stop, a_ceiling = _serve_policy.timeout_budget(100)
+
     b_stop, b_ceiling = _serve_policy.timeout_budget(200)
 
     assert b_stop - a_stop == 100
+
     assert b_ceiling - a_ceiling == 100
 
 
@@ -72,9 +80,11 @@ def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance_when_inv
     ``timeout_stop_sec`` (double-counting on top of the widened ceiling it's
     already derived from) would make its delta 2N instead of N."""
     stop_without, without = _serve_policy.timeout_budget(100)
+
     stop_with, with_allowance = _serve_policy.timeout_budget(100, goal_checks_allowance_s=33)
 
     assert with_allowance - without == 33
+
     assert stop_with - stop_without == 33
 
 
@@ -87,7 +97,9 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_with_goal_allowance_when_in
         100, goal_checks_allowance_s=33
     )
 
-    assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
+    actual = timeout_stop_sec - outer_ceiling_s
+
+    assert actual >= _ROUND_TERM_GRACE_S
 
 
 def test_leaf_margin_constants_should_mirror_their_source_of_truth_when_invoked():

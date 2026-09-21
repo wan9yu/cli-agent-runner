@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from agent_runner.config import ConfigError, load_config
@@ -25,6 +27,7 @@ def test_schedule_should_be_disabled_when_absent(tmp_path):
     cfg = load_config(_write(tmp_path, ""))
 
     assert cfg.schedule.enabled is False
+
     assert cfg.schedule.pause_windows == ()
 
 
@@ -43,29 +46,41 @@ def test_schedule_should_accept_run_windows_when_configured(tmp_path):
     cfg = load_config(_write(tmp_path, '[schedule]\nrun_windows = ["00:00-06:00"]\n'))
 
     assert [w.label for w in cfg.schedule.run_windows] == ["00:00-06:00"]
+
     assert cfg.schedule.enabled is True
 
 
 def test_schedule_should_reject_config_when_timezone_invalid(tmp_path):
-    with pytest.raises(ConfigError, match="timezone"):
-        load_config(
-            _write(
-                tmp_path, '[schedule]\ntimezone = "Mars/Olympus"\npause_windows = ["09:00-12:00"]\n'
-            )
-        )
+    block = '[schedule]\ntimezone = "Mars/Olympus"\npause_windows = ["09:00-12:00"]\n'
+
+    with pytest.raises(ConfigError, match="timezone") as caught:
+        load_config(_write(tmp_path, block))
+
+    assert re.search(r"timezone", str(caught.value))
 
 
 def test_schedule_should_reject_config_when_window_malformed(tmp_path):
-    with pytest.raises(ConfigError, match="pause_windows"):
-        load_config(_write(tmp_path, '[schedule]\npause_windows = ["9-12"]\n'))
+    block = '[schedule]\npause_windows = ["9-12"]\n'
+
+    with pytest.raises(ConfigError, match="pause_windows") as caught:
+        load_config(_write(tmp_path, block))
+
+    assert re.search(r"pause_windows", str(caught.value))
 
 
 def test_schedule_should_parse_weekday_windows_when_days_specified(tmp_path):
+
     cfg = load_config(_write(tmp_path, '[schedule]\npause_windows = ["Mon-Fri 09:00-12:00"]\n'))
 
-    assert cfg.schedule.pause_windows[0].days == frozenset({0, 1, 2, 3, 4})
+    actual = cfg.schedule.pause_windows[0].days
+
+    assert actual == frozenset({0, 1, 2, 3, 4})
 
 
 def test_schedule_should_reject_config_when_pause_windows_is_scalar(tmp_path):
-    with pytest.raises(ConfigError, match="must be a list"):
-        load_config(_write(tmp_path, '[schedule]\npause_windows = "09:00-12:00"\n'))
+    block = '[schedule]\npause_windows = "09:00-12:00"\n'
+
+    with pytest.raises(ConfigError, match="must be a list") as caught:
+        load_config(_write(tmp_path, block))
+
+    assert re.search(r"must be a list", str(caught.value))

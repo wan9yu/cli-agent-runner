@@ -40,21 +40,37 @@ def _run(monkeypatch, result: RoundResult) -> int:
 
 
 def test_cmd_should_return_1_when_agent_crashes(monkeypatch):
-    assert _run(monkeypatch, _rr(1)) == 1  # non-zero agent exit → breaker sees it
+    actual = _run(monkeypatch, _rr(1))
+
+    expected = 1
+
+    assert actual == expected
 
 
 def test_cmd_should_return_0_when_round_is_clean(monkeypatch):
-    assert _run(monkeypatch, _rr(0)) == 0
+    actual = _run(monkeypatch, _rr(0))
+
+    expected = 0
+
+    assert actual == expected
 
 
 def test_cmd_should_return_0_when_round_is_grace_killed(monkeypatch):
     # agent produced a result then lingered → grace-killed, not a crash
-    assert _run(monkeypatch, _rr(-15, killed_for_grace=True)) == 0
+    actual = _run(monkeypatch, _rr(-15, killed_for_grace=True))
+
+    expected = 0
+
+    assert actual == expected
 
 
 def test_cmd_should_return_0_when_round_times_out(monkeypatch):
     # a wall-clock timeout is not a crash-loop signal (it's long, not a short crash)
-    assert _run(monkeypatch, _rr(-15, timed_out=True)) == 0
+    actual = _run(monkeypatch, _rr(-15, timed_out=True))
+
+    expected = 0
+
+    assert actual == expected
 
 
 # --- Group A: classify_round_exit now governs any exception run_one_round raises ---
@@ -88,13 +104,17 @@ def test_cmd_should_return_78_when_run_one_round_raises_config_error(monkeypatch
 def test_cmd_should_return_76_when_run_one_round_raises_lock_held_error(monkeypatch):
     from agent_runner.runner import LockHeldError
 
-    assert _run_raising(monkeypatch, LockHeldError("another agent-runner is running")) == 76
+    actual = _run_raising(monkeypatch, LockHeldError("another agent-runner is running"))
+
+    assert actual == 76
 
 
 def test_cmd_should_return_76_when_run_one_round_raises_git_timeout(monkeypatch):
     from agent_runner.vcs_state import GitTimeout
 
-    assert _run_raising(monkeypatch, GitTimeout("git status exceeded 10s")) == 76
+    actual = _run_raising(monkeypatch, GitTimeout("git status exceeded 10s"))
+
+    assert actual == 76
 
 
 def test_cmd_should_return_1_and_print_traceback_when_exception_is_unclassified(
@@ -103,6 +123,7 @@ def test_cmd_should_return_1_and_print_traceback_when_exception_is_unclassified(
     rc = _run_raising(monkeypatch, RuntimeError("plugin import blew up"))
 
     assert rc == 1
+
     # A classified 78/76 verdict is no less worth diagnosing than a bare 1 --
     # serve captures this subprocess's stderr into round-<N>.log either way.
     assert "RuntimeError" in capsys.readouterr().err

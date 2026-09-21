@@ -81,6 +81,7 @@ def test_asyncio_kill_else_terminate_should_never_appear_in_agent_runner_when_in
 
 def test_scanner_should_flag_asyncio_process_kill_when_scanned(tmp_path: Path) -> None:
     kill_offender = tmp_path / "kill_offender.py"
+
     kill_offender.write_text(
         "import asyncio\n"
         "async def f():\n"
@@ -93,4 +94,5 @@ def test_scanner_should_flag_asyncio_process_kill_when_scanned(tmp_path: Path) -
 
     clean = tmp_path / "clean.py"
     clean.write_text("import subprocess\ndef f(proc: subprocess.Popen):\n    proc.terminate()\n")
+
     assert not _asyncio_process_kill_hits(clean)

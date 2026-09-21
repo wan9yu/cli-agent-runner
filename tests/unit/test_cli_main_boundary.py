@@ -23,9 +23,12 @@ def _broken_toml(tmp_path: Path) -> Path:
 
 
 def test_main_serve_should_exit_78_not_traceback_when_config_broken(tmp_path: Path) -> None:
+
     rc = main(["serve", "--config", str(_broken_toml(tmp_path))])
 
-    assert rc == PERMANENT_CONFIG_EXIT
+    actual = rc
+
+    assert actual == PERMANENT_CONFIG_EXIT
 
 
 def test_main_should_name_migrate_in_stderr_when_config_broken(tmp_path: Path, capsys) -> None:
@@ -37,12 +40,14 @@ def test_main_should_name_migrate_in_stderr_when_config_broken(tmp_path: Path, c
     # unrelated, earlier-firing config rejection (e.g. the schema_version
     # boot gate) that also happens to mention "agent-runner migrate".
     assert "missing required field: prompt.file or prompt.files" in err
+
     assert "agent-runner migrate" in err
 
 
 def test_main_serve_should_exit_78_not_traceback_when_config_missing(tmp_path: Path) -> None:
     # Group A: a single bad load (missing file, never even started the loop) is
     # PERMANENT -- fatal to serve immediately, not a 5-restart crash loop.
+
     rc = main(["serve", "--config", str(tmp_path / "nope.toml")])
 
     assert rc == PERMANENT_CONFIG_EXIT
@@ -112,6 +117,7 @@ def test_main_serve_should_exit_78_not_traceback_when_config_unreadable(
     # or TOMLDecodeError, so it used to escape cfg_from_args_or_config_error's
     # narrower catch as a raw traceback instead of PERMANENT_CONFIG_EXIT.
     toml = _broken_toml(tmp_path)
+
     toml.chmod(0o000)
     try:
         rc = main(["serve", "--config", str(toml)])

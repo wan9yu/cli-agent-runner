@@ -42,17 +42,23 @@ def test_listener_should_wake_on_ring_when_invoked(tmp_log_dir: Path):
 
 
 def test_listener_should_time_out_when_no_ring(tmp_log_dir: Path):
+    timeout_s = 0.15
+
     with Listener(tmp_log_dir) as listener:
         start = time.monotonic()
-        woken = listener.wait(0.15)
+        woken = listener.wait(timeout_s)
         elapsed = time.monotonic() - start
 
-        assert woken is False
-        assert elapsed < 1.0
+    assert woken is False
+    assert elapsed < 1.0
 
 
 def test_ring_should_swallow_when_no_listener(tmp_log_dir: Path):
+    notify_dir = tmp_log_dir / ".notify"
+
     ring(tmp_log_dir)
+
+    assert not notify_dir.exists() or not any(notify_dir.iterdir())
 
 
 def test_ring_should_unlink_stale_fifo_when_invoked(tmp_log_dir: Path):
@@ -116,6 +122,7 @@ def test_ring_should_not_raise_when_stale_fifo_unlink_fails(tmp_log_dir: Path):
 
 def test_listener_exit_should_not_raise_when_unlink_fails(tmp_log_dir: Path):
     notify_dir = tmp_log_dir / ".notify"
+
     listener = Listener(tmp_log_dir)
     listener.__enter__()
     os.chmod(notify_dir, 0o555)

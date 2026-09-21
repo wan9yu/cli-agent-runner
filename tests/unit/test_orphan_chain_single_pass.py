@@ -18,6 +18,7 @@ def test_three_consecutive_orphans_should_alert_when_invoked() -> None:
 
 
 def test_clean_round_should_break_the_streak_when_invoked() -> None:
+
     events = [
         _ev("orphan_stashed", 1),
         _ev("round_end", 1),
@@ -26,4 +27,6 @@ def test_clean_round_should_break_the_streak_when_invoked() -> None:
         _ev("round_end", 3),
     ]
 
-    assert detect_orphan_chain(events, threshold=3) is None
+    actual = detect_orphan_chain(events, threshold=3)
+
+    assert actual is None

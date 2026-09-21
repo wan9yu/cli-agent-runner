@@ -227,31 +227,47 @@ def _assert_imports_within_allowlist(
 
 
 def test_serve_cmd_should_stay_within_import_allowlist_when_scanned() -> None:
+    path = PKG / "cli/serve_cmd.py"
+
     _assert_imports_within_allowlist(
-        PKG / "cli/serve_cmd.py",
+        path,
         label="serve_cmd",
         allowed_plain=ALLOWED_SERVE_IMPORTS,
         allowed_from=ALLOWED_SERVE_FROM,
-        plain_exceptions={"agent_runner.cli", "agent_runner.cli.common", "agent_runner.lifecycle"},
+        plain_exceptions={
+            "agent_runner.cli",
+            "agent_runner.cli.common",
+            "agent_runner.lifecycle",
+        },
     )
+
+    assert path.is_file()
 
 
 def test_serve_round_should_stay_within_import_allowlist_when_scanned() -> None:
+    path = PKG / "cli/_serve_round.py"
+
     _assert_imports_within_allowlist(
-        PKG / "cli/_serve_round.py",
+        path,
         label="_serve_round",
         allowed_plain=ALLOWED_SERVE_ROUND_IMPORTS,
         allowed_from=ALLOWED_SERVE_ROUND_FROM,
     )
 
+    assert path.is_file()
+
 
 def test_serve_cgroup_should_stay_within_import_allowlist_when_scanned() -> None:
+    path = PKG / "cli/_serve_cgroup.py"
+
     _assert_imports_within_allowlist(
-        PKG / "cli/_serve_cgroup.py",
+        path,
         label="_serve_cgroup",
         allowed_plain=ALLOWED_SERVE_CGROUP_IMPORTS,
         allowed_from=ALLOWED_SERVE_CGROUP_FROM,
     )
+
+    assert path.is_file()
 
 
 _EMIT_SUBMODULE_RE = re.compile(r"agent_runner\._emit\.\w+")
@@ -335,6 +351,7 @@ def test_direct_emit_submodule_import_should_be_flagged_when_scanned(tmp_path: P
 def test_cli_cmd_files_should_call_api_not_runner_directly_when_scanned() -> None:
     """Each cli/*_cmd.py (except round_cmd, serve_cmd) should import from agent_runner.api."""
     offenders: list[str] = []
+
     scanned = 0
     for f in (PKG / "cli").glob("*_cmd.py"):
         # round/serve/events run the loop directly; migrate rewrites config file
@@ -362,6 +379,7 @@ def test_cli_cmd_files_should_call_api_not_runner_directly_when_scanned() -> Non
             offenders.append(f.name)
 
     assert scanned > 0, "no cli/*_cmd.py files scanned"  # vacuity-guard
+
     assert offenders == [], f"cli cmd files not calling api.X: {offenders}"
 
 
@@ -390,6 +408,7 @@ def test_known_alert_kinds_should_be_well_formed_when_inspected() -> None:
     from agent_runner.monitor import KNOWN_ALERT_KINDS
 
     assert len(KNOWN_ALERT_KINDS) == 14
+
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", k) for k in KNOWN_ALERT_KINDS)
 
 
@@ -399,4 +418,5 @@ def test_public_docs_should_say_price_agnostic_not_price_blind_when_read() -> No
     arch = (ROOT / "docs" / "architecture.md").read_text()
 
     assert "price-blind" not in arch.lower()
+
     assert "price-agnostic" in arch.lower()

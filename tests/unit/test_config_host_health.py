@@ -409,6 +409,7 @@ def test_host_health_pct_field_should_raise_when_value_invalid(
 def test_host_health_pct_field_should_accept_valid_values_when_invoked(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
+
     toml = _write_toml(tmp_path, _HOST_HEALTH_DISK_BASE + f"{field} = {literal}\n")
 
     assert getattr(load_config(toml).monitor.host_health.disk, field) == expected
@@ -430,6 +431,7 @@ def test_psi_thresholds_should_have_expected_defaults_when_invoked() -> None:
     from agent_runner.config import MonitorHostHealthConfig
 
     assert MonitorHostHealthConfig().pressure.full_avg10_critical == 60.0
+
     assert MonitorHostHealthConfig().pressure.some_avg10_warning == 5.0
 
 
@@ -453,8 +455,10 @@ def test_host_health_psi_threshold_should_reject_out_of_range_value_when_invoked
     to fix, at the opposite extreme. See _require_positive_pct."""
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {bad}\n")
 
-    with pytest.raises(ValueError, match=f"monitor.host_health.pressure.{field}"):
+    with pytest.raises(ValueError, match=f"monitor.host_health.pressure.{field}") as caught:
         load_config(toml)
+
+    assert isinstance(caught.value, ValueError)
 
 
 @pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
@@ -462,6 +466,7 @@ def test_host_health_psi_threshold_should_reject_out_of_range_value_when_invoked
 def test_host_health_psi_threshold_should_accept_in_range_value_when_invoked(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
+
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {literal}\n")
 
     assert getattr(load_config(toml).monitor.host_health.pressure, field) == expected
@@ -498,8 +503,10 @@ def test_critical_consecutive_samples_should_reject_invalid_values_when_invoked(
 
     with pytest.raises(
         ValueError, match="monitor.host_health.pressure.critical_consecutive_samples"
-    ):
+    ) as caught:
         load_config(toml)
+
+    assert "critical_consecutive_samples" in str(caught.value)
 
 
 @pytest.mark.parametrize(("literal", "expected"), [("true", True), ("false", False)])
@@ -517,6 +524,7 @@ def test_in_round_terminate_should_parse_bool_value_when_invoked(
 def test_in_round_terminate_should_reject_non_bool_value_when_invoked(
     tmp_path: Path, bad: str
 ) -> None:
+
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {bad}\n")
 
     with pytest.raises(ValueError, match="monitor.host_health.pressure.in_round_terminate"):
@@ -584,9 +592,12 @@ def test_quoted_inject_context_should_raise_when_loaded(tmp_path: Path) -> None:
 
 
 def test_real_bool_inject_context_should_be_accepted_when_loaded(tmp_path: Path) -> None:
+
     toml = _write_toml(tmp_path, _INJECT_CONTEXT_BASE + "inject_context = false\n")
 
-    assert load_config(toml).prompt.inject_context is False
+    actual = load_config(toml).prompt.inject_context
+
+    assert actual is False
 
 
 def test_invalid_auth_fail_pattern_should_raise_when_loaded(tmp_path: Path) -> None:

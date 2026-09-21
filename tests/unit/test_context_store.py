@@ -41,7 +41,12 @@ def test_status_should_round_trip_when_written_and_read(tmp_log_dir: Path) -> No
 
 
 def test_read_status_should_return_none_when_no_status_file(tmp_log_dir: Path) -> None:
-    assert read_status(tmp_log_dir) is None
+
+    actual = read_status(tmp_log_dir)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_read_status_should_return_none_when_status_corrupt(tmp_log_dir: Path) -> None:

@@ -33,20 +33,31 @@ def _cfg(tmp_path: Path, *, env: dict[str, str] | None = None) -> Config:
 
 def test_defense_should_be_frozen_dataclass_when_invoked() -> None:
     assert dataclasses.is_dataclass(Defense)
+
     params = getattr(Defense, "__dataclass_params__", None)
+
     assert params is not None and params.frozen
 
 
 def test_catalog_should_return_fifteen_entries_when_invoked(tmp_path: Path) -> None:
+
     cat = catalog(_cfg(tmp_path))
 
-    assert len(cat) == 15
+    actual = len(cat)
+
+    assert actual == 15
 
 
 def test_catalog_entries_should_have_required_fields_when_invoked(tmp_path: Path) -> None:
-    for d in catalog(_cfg(tmp_path)):
-        assert d.name
-        assert d.current_state in {"active", "degraded", "off"}
+    cfg = _cfg(tmp_path)
+
+    incomplete = [
+        d.name
+        for d in catalog(cfg)
+        if not d.name or d.current_state not in {"active", "degraded", "off"}
+    ]
+
+    assert incomplete == []
 
 
 def test_round_budget_defense_should_reflect_configured_value_when_invoked(
@@ -63,6 +74,7 @@ def test_round_budget_defense_should_reflect_configured_value_when_invoked(
 
 def test_catalog_should_include_codified_incident_references_when_invoked(tmp_path: Path) -> None:
     cat = catalog(_cfg(tmp_path))
+
     incident_codes = " ".join(d.codifies or "" for d in cat)
 
     for code in ("R1128", "R725", "R820", "§9", "R2110", "R721"):
@@ -70,12 +82,15 @@ def test_catalog_should_include_codified_incident_references_when_invoked(tmp_pa
 
 
 def test_catalog_guarded_by_paths_should_all_exist_when_invoked(tmp_path: Path) -> None:
-    repo_root = ROOT
+    cfg = _cfg(tmp_path)
 
-    for d in catalog(_cfg(tmp_path)):
-        assert d.guarded_by is not None, f"defense {d.name} names no test that guards it"
-        full = repo_root / d.guarded_by
-        assert full.exists(), f"defense {d.name} references missing test {d.guarded_by}"
+    missing = [
+        f"{d.name}: {d.guarded_by}"
+        for d in catalog(cfg)
+        if d.guarded_by is None or not (ROOT / d.guarded_by).exists()
+    ]
+
+    assert missing == []
 
 
 def test_defense_should_have_guarded_by_when_active(tmp_path: Path) -> None:
@@ -100,9 +115,12 @@ def test_defense_should_have_guarded_by_when_active(tmp_path: Path) -> None:
 
 
 def test_defense_names_should_be_unique_when_invoked(tmp_path: Path) -> None:
+
     names = [d.name for d in catalog(_cfg(tmp_path))]
 
-    assert len(names) == len(set(names)), "duplicate defense names in catalog"
+    actual = len(names)
+
+    assert actual == len(set(names)), "duplicate defense names in catalog"
 
 
 def test_critical_envs_injection_should_list_env_keys_when_agent_env_set(
@@ -136,6 +154,7 @@ def test_sigterm_reaper_defense_should_name_graceful_stop_guard_when_invoked(
     row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "sigterm_reaper")
 
     assert "install_sigterm_reaper" not in row.value
+
     assert row.guarded_by == Path("tests/integration/test_serve_loop.py")
 
 
@@ -146,15 +165,17 @@ def test_set_diff_defense_should_name_prohibition_guard_when_invoked(
     row = next(d for d in catalog(_cfg(tmp_path)) if d.name == "set_diff_classification")
 
     assert "set_diff_vs_head" not in row.value
+
     assert row.guarded_by == Path("tests/invariants/test_set_diff_for_auto_tool_classification.py")
 
 
 def test_catalog_docstring_should_state_no_count_when_invoked() -> None:
     """The catalog literal is the SSOT; a count restated in prose only drifts."""
-    assert catalog.__doc__ is not None
-    assert not re.search(r"\d", catalog.__doc__), (
-        f"catalog docstring hardcodes a number: {catalog.__doc__!r}"
-    )
+    doc = catalog.__doc__
+
+    digits = re.search(r"\d", doc or "")
+
+    assert doc is not None and digits is None, f"catalog docstring hardcodes a number: {doc!r}"
 
 
 def test_event_kind_registry_defense_value_should_track_builtin_kinds_when_registry_shrunk(

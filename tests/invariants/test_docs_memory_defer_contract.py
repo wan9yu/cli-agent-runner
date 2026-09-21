@@ -37,11 +37,13 @@ def _published_docs() -> list[Path]:
 
 def test_published_docs_should_not_repeat_defer_overclaims_when_invoked() -> None:
     hits: list[str] = []
+
     for path in _published_docs():
         text = path.read_text(encoding="utf-8")
         for phrase in _FORBIDDEN:
             if phrase in text:
                 hits.append(f"{path.relative_to(REPO).as_posix()}: {phrase!r}")
+
     assert not hits, "defer overclaim returned:\n" + "\n".join(hits)
 
 
@@ -52,23 +54,28 @@ def test_architecture_should_describe_effective_budget_and_three_names_when_invo
     assert "host_cgroup_memory_limit.defer" in text
     assert "`round_deferred`" in text
     assert "`mem_pressure_deferred_to_cgroup`" in text
+
     assert "bounding_cgroup_path" not in text
 
 
 def test_runbook_should_describe_effective_budget_for_cgroup_defer_when_invoked() -> None:
     text = (DOCS / "runbook.md").read_text(encoding="utf-8")
+
     assert "host_cgroup_memory_limit.defer" in text
     assert "leaf **and ancestors**" in text
     assert "bounding_cgroup_path" in text
+
     assert "own leaf cgroup" in text
 
 
 def test_config_digest_docs_should_hash_paths_and_bytes_when_invoked() -> None:
     cfg = (DOCS / "configuration.md").read_text(encoding="utf-8")
+
     recipe = (REPO / "examples" / "between_rounds" / "README.md").read_text(encoding="utf-8")
     events = (DOCS / "events.md").read_text(encoding="utf-8")
 
     assert "paths and bytes" in cfg
     assert "paths and bytes" in recipe
     assert "paths+bytes" in events
+
     assert "never a kill input" in events

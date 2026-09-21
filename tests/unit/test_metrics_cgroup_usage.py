@@ -33,13 +33,21 @@ def test_cgroup_memory_usage_should_return_bounding_ancestor_usage_when_leaf_unb
 
 
 def test_cgroup_memory_usage_should_be_empty_when_unbounded(tmp_path):
+
     (tmp_path / "cgroup.controllers").write_text("memory\n")
 
-    assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
+    actual = metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/")
+
+    assert actual == {}
 
 
 def test_cgroup_memory_usage_should_be_empty_when_no_cgroup_v2(tmp_path):
-    assert metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/") == {}
+
+    actual = metrics.cgroup_memory_usage(root=tmp_path, self_cgroup="/")
+
+    expected = {}
+
+    assert actual == expected
 
 
 def test_cgroup_memory_usage_should_read_cached_bounding_cgroup_path_when_provided(tmp_path):
@@ -67,6 +75,7 @@ def test_cgroup_memory_usage_should_be_empty_when_cached_bounding_cgroup_vanishe
     memory.current/memory.swap.current/memory.events, all of which report
     0/{} for a MISSING path, without ever checking the directory itself
     still exists)."""
+
     (tmp_path / "cgroup.controllers").write_text("memory\n")
 
     # Deliberately no "vanished.slice" dir under tmp_path.

@@ -54,7 +54,9 @@ def test_emit_kind_args_should_resolve_aliased_import_when_scanned() -> None:
         'events.emit(log_dir, "qualified_kind", x=1)\n'
     )
 
-    assert [a.value for a in emit_kind_args(tree)] == [
+    got = [lit.value for arg in emit_kind_args(tree) for lit in kind_literals(arg)]
+
+    assert got == [
         "aliased_kind",
         "bare_kind",
         "qualified_kind",
@@ -70,6 +72,7 @@ def test_package_modules_should_reach_subpackages_when_listed() -> None:
     # test_event_kind_registry.py shares this same corpus source.
     assert "cli/serve_cmd.py" in names
     assert "builtin_plugins/gemini.py" in names
+
     assert "events.py" not in names  # events.py defines the kinds; it is the source
 
 
@@ -137,11 +140,15 @@ def test_emit_calls_should_use_constants_not_literals_when_scanned() -> None:
     find-references and lets a declared kind go silently unemitted.
     """
     offenders: list[tuple[str, int, str]] = []
+
     for path in package_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         rel = path.relative_to(PKG.parent).as_posix()
         for arg in emit_kind_args(tree):
-            offenders.extend((rel, lit.lineno, lit.value) for lit in kind_literals(arg))
+            for lit in kind_literals(arg):
+                value = lit.value
+                if isinstance(value, str):
+                    offenders.append((rel, lit.lineno, value))
 
     assert sorted(offenders) == [], (
         f"events.emit() called with a raw kind literal: {sorted(offenders)}"

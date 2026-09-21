@@ -35,6 +35,7 @@ def _reads_cost_usd(node: ast.expr) -> bool:
 
 def test_core_should_be_price_agnostic_when_invoked():
     ident_hits, arith_hits = [], []
+
     scanned = 0
     for path in _core_modules():
         scanned += 1
@@ -50,4 +51,5 @@ def test_core_should_be_price_agnostic_when_invoked():
 
     assert scanned > 20, "core scan found too few modules — vacuous"  # vacuity-guard
     assert not ident_hits, f"price identifiers in core: {ident_hits}"
+
     assert not arith_hits, f"arithmetic/comparison on cost_usd in core: {arith_hits}"

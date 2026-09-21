@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,10 @@ def test_fresh_eyes_every_n_should_default_to_none_when_not_configured(tmp_path:
 
 @pytest.mark.parametrize("invalid", [0, -1, -100])
 def test_load_config_should_raise_when_fresh_eyes_every_n_is_invalid(tmp_path: Path, invalid: int):
+
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra=f"fresh_eyes_every_n = {invalid}\n")
 
-    with pytest.raises(ValueError, match=r"runtime\.fresh_eyes_every_n"):
+    with pytest.raises(ValueError, match=r"runtime\.fresh_eyes_every_n") as caught:
         load_config(cfg_path)
+
+    assert re.search(r"runtime\.fresh_eyes_every_n", str(caught.value))

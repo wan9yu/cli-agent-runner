@@ -76,13 +76,17 @@ def test_explicit_kinds_and_remote_config_should_pass_through_when_argv_built() 
 
     assert "round_end,oauth_fail" in argv
     assert argv[argv.index("--since") + 1] == "2026-07-27T10:00:00.000Z"
+
     assert argv[argv.index("--config") + 1] == "/srv/proj/agent-runner.toml"
 
 
 def test_host_starting_with_dash_should_raise_value_error_when_relayed(tmp_path: Path) -> None:
     """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
-    with pytest.raises(ValueError, match="starts with '-'"):
+
+    with pytest.raises(ValueError, match="starts with '-'") as caught:
         remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
+
+    assert caught.value is not None
 
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ def test_cli_install_should_call_api_install_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
+
     main(["init", "--no-commit"])
 
     with patch("agent_runner.api.install") as install:
@@ -42,6 +43,7 @@ def test_cli_install_should_pass_with_monitor_true_when_monitor_flag_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
+
     main(["init", "--no-commit"])
 
     with patch("agent_runner.api.install") as install:
@@ -63,6 +65,7 @@ def test_cli_uninstall_should_call_api_uninstall_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_git_repo)
+
     main(["init", "--no-commit"])
 
     with patch("agent_runner.api.uninstall", return_value=True) as un:
@@ -96,7 +99,10 @@ def test_cli_init_should_default_to_claude_preset_when_no_preset_flag_given(
 
 
 def test_cli_init_should_reject_invalid_preset_via_argparse_when_invoked() -> None:
+
     with pytest.raises(SystemExit) as exc:
         main(["init", "--preset", "nonexistent"])
 
-    assert exc.value.code != 0
+    actual = exc.value.code
+
+    assert actual != 0

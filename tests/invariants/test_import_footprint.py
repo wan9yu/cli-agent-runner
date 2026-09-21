@@ -217,6 +217,7 @@ def test_forbidden_modules_should_be_absent_from_startup_import_when_invoked() -
 
     present = sorted(loaded & FORBIDDEN_AT_STARTUP)
     assert FORBIDDEN_AT_STARTUP  # vacuity-guard
+
     assert not present, f"forbidden modules eagerly imported by `agent_runner.cli`: {present}"
 
 
@@ -227,6 +228,7 @@ def test_startup_pkg_modules_should_match_frozen_allowlist_when_invoked() -> Non
     missing = EXPECTED_STARTUP_PKG_MODULES - pkg_loaded
     extra = pkg_loaded - EXPECTED_STARTUP_PKG_MODULES
     assert EXPECTED_STARTUP_PKG_MODULES  # vacuity-guard
+
     assert not missing and not extra, (
         f"agent_runner.* startup import graph drifted from the frozen allowlist "
         f"(missing={sorted(missing)}, extra={sorted(extra)}). If this is an "
@@ -254,8 +256,10 @@ def _toplevel_forbidden_imports(path: Path) -> list[str]:
 
 def test_lazy_modules_should_have_no_toplevel_forbidden_import_when_invoked() -> None:
     offenders: list[str] = []
+
     for name in LAZY_MODULES:
         offenders += _toplevel_forbidden_imports(PKG / name)
 
     assert LAZY_MODULES  # vacuity-guard
+
     assert not offenders, f"forbidden top-level imports reintroduced: {offenders}"

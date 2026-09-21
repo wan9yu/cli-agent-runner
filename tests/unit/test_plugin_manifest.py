@@ -3,6 +3,8 @@ registration/unregistration helpers (agent_runner/_plugin_manifest.py)."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from agent_runner import _plugin_manifest, hooks
@@ -98,8 +100,10 @@ def test_manifest_should_reject_non_cooperative_signal_when_invoked():
     construction, never reaching the kill path."""
     from agent_runner._plugin_manifest import PluginManifest
 
-    with pytest.raises(ValueError, match="cooperative_stop"):
-        PluginManifest(name="x", cooperative_stop="SIGKILL")
+    with pytest.raises(ValueError, match="cooperative_stop") as caught:
+        PluginManifest(name="x", cooperative_stop="SIGKILL")  # type: ignore[arg-type]
+
+    assert re.search(r"cooperative_stop", str(caught.value))
 
 
 def test_manifest_should_accept_the_two_cooperative_signals_and_none_when_invoked():
@@ -107,6 +111,7 @@ def test_manifest_should_accept_the_two_cooperative_signals_and_none_when_invoke
 
     assert PluginManifest(name="a", cooperative_stop="SIGTERM").cooperative_stop == "SIGTERM"
     assert PluginManifest(name="b", cooperative_stop="SIGINT").cooperative_stop == "SIGINT"
+
     assert PluginManifest(name="c", cooperative_stop=None).cooperative_stop is None
 
 
@@ -137,6 +142,7 @@ def test_builtin_presets_should_declare_the_researched_cooperative_stop_signals_
     assert pi.PLUGIN.cooperative_stop == "SIGTERM"
     assert claude_rate_limit.PLUGIN.cooperative_stop == "SIGINT"
     assert kimi.PLUGIN.cooperative_stop is None
+
     assert codewhale.PLUGIN.cooperative_stop is None
 
 
@@ -181,7 +187,9 @@ def test_is_cooperative_agent_should_return_true_when_binary_names_a_cooperative
 def test_is_cooperative_agent_should_return_false_when_binary_is_none():
     from agent_runner._plugin_manifest import is_cooperative_agent
 
-    assert is_cooperative_agent(None) is False
+    actual = is_cooperative_agent(None)
+
+    assert actual is False
 
 
 def test_resolve_cooperative_signal_should_map_the_declared_name_to_a_signal_when_invoked():
@@ -256,7 +264,9 @@ def test_resolve_sigterm_grace_s_should_return_default_when_agent_binary_is_none
     from agent_runner._plugin_manifest import resolve_sigterm_grace_s
     from agent_runner.agent_runtime import REAP_GRACE_S
 
-    assert resolve_sigterm_grace_s(None, 9) == REAP_GRACE_S
+    actual = resolve_sigterm_grace_s(None, 9)
+
+    assert actual == REAP_GRACE_S
 
 
 def test_resolve_resume_flag_should_return_the_declared_flag_when_binary_matches():
@@ -270,14 +280,18 @@ def test_resolve_resume_flag_should_return_the_declared_flag_when_binary_matches
 def test_resolve_resume_flag_should_return_none_when_binary_has_no_manifest():
     from agent_runner._plugin_manifest import resolve_resume_flag
 
-    assert resolve_resume_flag("nope") is None
+    actual = resolve_resume_flag("nope")
+
+    assert actual is None
 
 
 def test_manifest_should_reject_an_empty_resume_flag_when_invoked():
     from agent_runner._plugin_manifest import PluginManifest
 
-    with pytest.raises(ValueError, match="resume_flag"):
+    with pytest.raises(ValueError, match="resume_flag") as caught:
         PluginManifest(name="x", resume_flag="")
+
+    assert re.search(r"resume_flag", str(caught.value))
 
 
 def test_pi_preset_should_declare_the_session_id_resume_flag_when_invoked():
@@ -285,4 +299,5 @@ def test_pi_preset_should_declare_the_session_id_resume_flag_when_invoked():
 
     assert pi.PLUGIN.resume_flag == "--session-id"
     assert gemini.PLUGIN.resume_flag is None
+
     assert claude_rate_limit.PLUGIN.resume_flag is None

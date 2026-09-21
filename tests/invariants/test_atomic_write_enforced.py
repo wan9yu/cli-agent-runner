@@ -11,6 +11,7 @@ PKG = ROOT / "agent_runner"
 
 def test_context_store_writers_should_use_atomic_helper_when_scanned() -> None:
     text = (PKG / "context_store.py").read_text()
+
     tree = ast.parse(text)
 
     scanned = 0
@@ -27,4 +28,5 @@ def test_context_store_writers_should_use_atomic_helper_when_scanned() -> None:
             assert "atomic_write_json" in call_names, (
                 f"{node.name} must call atomic_write_json — found calls: {call_names}"
             )
+
     assert scanned > 0, "no write_* functions scanned in context_store.py"  # vacuity-guard

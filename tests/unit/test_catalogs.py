@@ -7,4 +7,5 @@ def test_dirty_auto_committed_should_be_builtin_kind_when_invoked() -> None:
     from agent_runner import events
 
     assert events.DIRTY_AUTO_COMMITTED == "dirty_auto_committed"
+
     assert "dirty_auto_committed" in events._BUILTIN_KINDS

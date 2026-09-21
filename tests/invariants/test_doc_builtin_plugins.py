@@ -37,6 +37,7 @@ def _builtin_post_round_hook_plugin_names() -> set[str]:
 
 def test_plugins_doc_should_list_every_builtin_post_round_hook_when_scanned() -> None:
     names = _builtin_post_round_hook_plugin_names()
+
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
     section = text.split("## Built-in post_round_hooks", 1)[-1].split("\n## ", 1)[0]
     m = re.search(r"ships (\d+) built-in", section)
@@ -50,6 +51,7 @@ def test_plugins_doc_should_list_every_builtin_post_round_hook_when_scanned() ->
     )
 
     missing = {n for n in names if f"`{n}`" not in section}
+
     assert not missing, (
         f"docs/plugins.md's built-in post_round_hooks section never names "
         f"{sorted(missing)} — a plugin author cannot discover it"

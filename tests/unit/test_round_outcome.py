@@ -46,6 +46,7 @@ def test_round_was_mem_terminated_should_return_true_when_terminated_after_newes
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
@@ -62,6 +63,7 @@ def test_round_was_mem_terminated_should_return_false_when_terminated_before_new
     round_substrate_before for the round that just ran clean -- must not be
     misread as THIS round having been mem-terminated."""
     log_dir = tmp_path / "logs"
+
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_mem_terminated", "round_num": 1},
@@ -75,6 +77,7 @@ def test_round_was_mem_terminated_should_return_false_when_no_terminated_event_p
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
@@ -90,6 +93,7 @@ def test_round_was_mem_terminated_should_return_true_when_timestamps_tie_exactly
     both events in the same millisecond -- erring toward "this round's" only
     risks over-excusing, never mistaking a genuine crash for a rescue."""
     log_dir = tmp_path / "logs"
+
     _write(
         log_dir,
         {"ts": "2026-01-01T00:00:00.000Z", "event": "round_substrate_before", "round_num": 1},
@@ -331,6 +335,7 @@ def test_ran_agent_throttled_should_match_fresh_scan_when_given_precomputed_acti
     `_ran_agent_throttled` (via its new `active=` kwarg) instead of letting it
     scan again -- must agree with the from-scratch (`active=None`) call."""
     log_dir = tmp_path / "logs"
+
     _write(
         log_dir,
         {
@@ -346,6 +351,7 @@ def test_ran_agent_throttled_should_match_fresh_scan_when_given_precomputed_acti
     active = _throttle._active_throttles(log_dir)
 
     assert serve_cmd._ran_agent_throttled(cfg, None, log_dir, active=active) is True
+
     assert serve_cmd._ran_agent_throttled(cfg, None, log_dir, active=active) == (
         serve_cmd._ran_agent_throttled(cfg, None, log_dir)
     )
@@ -364,6 +370,7 @@ def test_round_was_mem_terminated_should_count_nudged_round_like_a_hard_terminat
     round exactly like a hard-terminated one, else a persistently-pressured
     host nudges every round forever with no give-up."""
     log_dir = tmp_path / "logs"
+
     log_dir.mkdir()
     emit_round_substrate_before(log_dir, round_num=1, git_head=None, paths_hash=None)
     emit_round_mem_terminated(
@@ -386,9 +393,11 @@ def test_mem_loop_breaker_should_trip_after_threshold_nudged_rounds_when_invoked
     _mem_loop_decision converges to `mem_loop` exactly like that many
     hard-terminated rounds would."""
     consecutive = 0
+
     verdict = "continue"
     for _ in range(MEM_LOOP_THRESHOLD):
         verdict, consecutive = _mem_loop_decision(mem_terminated=True, consecutive=consecutive)
 
     assert verdict == "mem_loop"
+
     assert consecutive == MEM_LOOP_THRESHOLD

@@ -16,8 +16,10 @@ from agent_runner import events, monitor
 
 def test_staleness_baseline_should_exclude_every_monitor_authored_kind_when_invoked() -> None:
     monitor_kinds = {k for k in events._BUILTIN_KINDS if k.startswith("monitor_")}
+
     # vacuity-guard
     assert monitor_kinds, "no monitor_* kinds found in _BUILTIN_KINDS -- scan is vacuous"
 
     assert monitor_kinds <= monitor._MONITOR_SELF_KINDS
+
     assert events.DETECTOR_ERROR in monitor._MONITOR_SELF_KINDS  # monitor-authored, not monitor_*

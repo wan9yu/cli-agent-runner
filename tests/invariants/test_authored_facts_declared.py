@@ -74,6 +74,7 @@ def test_docs_should_have_no_undeclared_config_default_in_prose_when_invoked():
             if any(f in line for f in fields) and _DEFAULT_CUE.search(line):
                 offenders.append(f"{doc.relative_to(ROOT)}:{lineno}: {line.strip()[:100]}")
     assert checked > 0, "no docs scanned for undeclared config defaults"  # vacuity-guard
+
     assert not offenders, (
         "Undeclared config-default fact(s) in prose — move to code (gen:config-schema), "
         "delete the duplicate, or declare with `<!-- authored: reason -->`:\n"

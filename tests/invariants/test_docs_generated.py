@@ -12,6 +12,7 @@ DOCS = ROOT / "docs"
 
 def test_docs_should_match_on_disk_when_rendered_in_memory() -> None:
     rendered = render(docs_dir=DOCS, write=False)
+
     # vacuity-guard
     assert rendered and (DOCS / "architecture.md") in rendered, "docgen rendered nothing"
 
@@ -20,5 +21,6 @@ def test_docs_should_match_on_disk_when_rendered_in_memory() -> None:
         got = path.read_text(encoding="utf-8")
         if got != want:
             diffs.append(path.name)
+
     if diffs:
         pytest.fail(f"docs out of date: {diffs}. Run `./build.sh docs` and commit.")

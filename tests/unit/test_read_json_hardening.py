@@ -20,6 +20,7 @@ from agent_runner.context_store import (
 
 def test_read_json_should_return_none_when_bytes_are_not_utf8(tmp_path: Path) -> None:
     p = tmp_path / "x.json"
+
     p.write_bytes(b"\xff\xfe not valid utf-8 { ")
 
     assert read_json(p) is None
@@ -27,6 +28,7 @@ def test_read_json_should_return_none_when_bytes_are_not_utf8(tmp_path: Path) ->
 
 def test_read_json_should_return_none_when_path_is_a_directory(tmp_path: Path) -> None:
     p = tmp_path / "x.json"
+
     p.mkdir()
 
     assert read_json(p) is None
@@ -35,7 +37,9 @@ def test_read_json_should_return_none_when_path_is_a_directory(tmp_path: Path) -
 def test_read_status_should_return_none_when_status_file_is_not_utf8(tmp_log_dir: Path) -> None:
     (tmp_log_dir / STATUS_FILE).write_bytes(b"\xff\xfe\x00")
 
-    assert read_status(tmp_log_dir) is None
+    actual = read_status(tmp_log_dir)
+
+    assert actual is None
 
 
 def test_read_status_should_return_none_when_status_file_is_a_directory(
@@ -43,7 +47,9 @@ def test_read_status_should_return_none_when_status_file_is_a_directory(
 ) -> None:
     (tmp_log_dir / STATUS_FILE).mkdir()
 
-    assert read_status(tmp_log_dir) is None
+    actual = read_status(tmp_log_dir)
+
+    assert actual is None
 
 
 def test_read_status_should_return_none_when_round_num_is_a_string(tmp_log_dir: Path) -> None:
@@ -54,13 +60,17 @@ def test_read_status_should_return_none_when_round_num_is_a_string(tmp_log_dir: 
         json.dumps({"round_num": "not-a-number", "running": False}), encoding="utf-8"
     )
 
-    assert read_status(tmp_log_dir) is None
+    actual = read_status(tmp_log_dir)
+
+    assert actual is None
 
 
 def test_read_orphan_state_should_return_none_when_file_is_not_utf8(tmp_log_dir: Path) -> None:
     (tmp_log_dir / ORPHAN_FILE).write_bytes(b"\xff\xfe\x00")
 
-    assert read_orphan_state(tmp_log_dir) is None
+    actual = read_orphan_state(tmp_log_dir)
+
+    assert actual is None
 
 
 def test_read_orphan_state_should_return_none_when_path_is_a_directory(
@@ -68,7 +78,9 @@ def test_read_orphan_state_should_return_none_when_path_is_a_directory(
 ) -> None:
     (tmp_log_dir / ORPHAN_FILE).mkdir()
 
-    assert read_orphan_state(tmp_log_dir) is None
+    actual = read_orphan_state(tmp_log_dir)
+
+    assert actual is None
 
 
 def test_read_orphan_state_should_keep_known_fields_when_unknown_key_present(

@@ -4,6 +4,7 @@ threshold<=window. Per-phase prompt.files = [] stays a valid distinct state."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -37,24 +38,32 @@ def test_bare_string_command_should_be_rejected_when_invoked(tmp_path: Path) -> 
 
     with pytest.raises(ConfigError, match="must be a list") as e:
         load_config(p)
+
     assert "agent-runner migrate" in str(e.value)
 
 
 def test_empty_command_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     p = _write(tmp_path, _base(tmp_path, command="[]"))
 
-    with pytest.raises(ConfigError, match="non-empty"):
+    with pytest.raises(ConfigError, match="non-empty") as caught:
         load_config(p)
+
+    assert re.search(r"non-empty", str(caught.value))
 
 
 def test_bare_string_phases_list_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     p = _write(tmp_path, _base(tmp_path, '[phases]\nlist = "dev"\n'))
 
-    with pytest.raises(ConfigError, match="must be a list"):
+    with pytest.raises(ConfigError, match="must be a list") as caught:
         load_config(p)
+
+    assert re.search(r"must be a list", str(caught.value))
 
 
 def test_empty_top_level_prompt_files_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     body = (
         "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
@@ -62,8 +71,10 @@ def test_empty_top_level_prompt_files_should_be_rejected_when_invoked(tmp_path: 
         "[prompt]\nfiles = []\n"
     )
 
-    with pytest.raises(ConfigError, match="non-empty"):
+    with pytest.raises(ConfigError, match="non-empty") as caught:
         load_config(_write(tmp_path, body))
+
+    assert re.search(r"non-empty", str(caught.value))
 
 
 def test_per_phase_prompt_files_empty_should_be_preserved_when_invoked(tmp_path: Path) -> None:
@@ -75,13 +86,17 @@ def test_per_phase_prompt_files_empty_should_be_preserved_when_invoked(tmp_path:
 
 
 def test_unknown_schedule_key_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     p = _write(tmp_path, _base(tmp_path, "[schedule]\nbogus = 1\n"))
 
-    with pytest.raises(ConfigError, match=r"unknown \[schedule\]"):
+    with pytest.raises(ConfigError, match=r"unknown \[schedule\]") as caught:
         load_config(p)
+
+    assert re.search(r"unknown \[schedule\]", str(caught.value))
 
 
 def test_unknown_prompt_key_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     body = (
         "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
@@ -89,15 +104,20 @@ def test_unknown_prompt_key_should_be_rejected_when_invoked(tmp_path: Path) -> N
         f'[prompt]\nfile = "{tmp_path}/p.md"\nbogus = 1\n'
     )
 
-    with pytest.raises(ConfigError, match=r"unknown \[prompt\]"):
+    with pytest.raises(ConfigError, match=r"unknown \[prompt\]") as caught:
         load_config(_write(tmp_path, body))
+
+    assert re.search(r"unknown \[prompt\]", str(caught.value))
 
 
 def test_threshold_greater_than_window_should_be_rejected_when_invoked(tmp_path: Path) -> None:
+
     extra = "[monitor]\nanomaly_repetitive_window = 3\nanomaly_repetitive_threshold = 5\n"
 
-    with pytest.raises(ConfigError, match="anomaly_repetitive_threshold"):
+    with pytest.raises(ConfigError, match="anomaly_repetitive_threshold") as caught:
         load_config(_write(tmp_path, _base(tmp_path, extra)))
+
+    assert re.search(r"anomaly_repetitive_threshold", str(caught.value))
 
 
 @pytest.mark.parametrize("preset", PRESET_NAMES)

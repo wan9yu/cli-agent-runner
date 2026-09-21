@@ -13,6 +13,7 @@ def test_coerce_int_should_accept_numeric_variants_and_default_on_invalid_input_
     None
 ):
     assert _coerce_int(5, 0) == 5
+
     assert _coerce_int(5.9, 0) == 5
     assert _coerce_int("7", 0) == 7
 
@@ -20,6 +21,7 @@ def test_coerce_int_should_accept_numeric_variants_and_default_on_invalid_input_
         warnings.simplefilter("always")
         assert _coerce_int(None, 0) == 0
         assert _coerce_int("abc", 3) == 3
+
     assert len(w) == 2  # None and non-numeric both warn
 
 
@@ -34,9 +36,11 @@ def test_coerce_int_and_float_should_reject_nan_and_infinity_when_invoked() -> N
         assert _coerce_int(-math.inf, 0) == 0
         assert _coerce_float(math.nan, 0.0) == 0.0
         assert _coerce_float(math.inf, 0.0) == 0.0
-        assert _coerce_float("Infinity", 0.0) == 0.0  # string-parsed path too
+        assert _coerce_float("Infinity", 0.0) == 0.0
 
-    assert len(w) == 6
+    actual = len(w)
+
+    assert actual == 6
 
 
 def test_check_throttle_state_should_leave_serve_unthrottled_and_warn_when_reset_at_epoch_is_null(

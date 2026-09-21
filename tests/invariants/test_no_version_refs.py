@@ -154,6 +154,7 @@ def test_scanner_should_not_flag_ipv4_literal_when_scanned(tmp_path: Path) -> No
     """The dotted-quad guard: an IPv4 literal like 127.0.0.1 (it contains
     "0.0.1") must not be mistaken for a release version."""
     ip_only = tmp_path / "ip_module.py"
+
     ip_only.write_text('SERVER_ADDR = ("127.0.0.1", 0)\n')
 
     assert not _scan([ip_only]), "scanner false-positived on an IPv4 literal"
@@ -169,6 +170,7 @@ def test_scanner_should_not_flag_ordinary_english_group_task_seam_when_scanned(
     digit, and "component" used as an ordinary noun (e.g. "a component of
     the system") with no following digit."""
     english = tmp_path / "english_module.py"
+
     english.write_text(
         "\n".join(
             [

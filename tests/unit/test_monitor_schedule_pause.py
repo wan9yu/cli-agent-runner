@@ -9,6 +9,7 @@ def _ts(dt):
 
 def test_detect_supervisor_stale_should_be_suppressed_when_pause_is_live():
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
     old = now - timedelta(hours=2)
     events = [
         {"ts": _ts(old), "event": "round_end", "round_num": 5},
@@ -62,6 +63,7 @@ def test_detect_supervisor_stale_should_fire_when_stale_after_resume():
 def test_detect_supervisor_stale_should_be_suppressed_when_resume_at_empty_within_horizon():
     # Always-paused config emits resume_at="" — suppress while within paused_ts+8d.
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
     old = now - timedelta(hours=2)
     events = [
         {
@@ -95,6 +97,7 @@ def test_detect_supervisor_stale_should_fire_when_resume_at_empty_past_8day_hori
 
 def test_detect_supervisor_stale_should_fire_when_no_schedule_events():
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
     old = now - timedelta(hours=2)
     events = [{"ts": _ts(old), "event": "round_end", "round_num": 5}]
 
@@ -105,6 +108,7 @@ def test_detect_supervisor_stale_should_fall_back_to_ts_bound_when_resume_at_is_
     # A foreign/corrupted event file may carry "resume_at": null. It must not raise;
     # suppression falls back to the paused ts + 8d bound (recent pause → suppressed).
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
     old = now - timedelta(hours=2)
     events = [
         {"ts": _ts(old), "event": "schedule_paused", "resume_at": None, "active_window": "x"},

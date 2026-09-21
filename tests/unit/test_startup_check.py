@@ -26,7 +26,6 @@ def _cfg(tmp_git_repo: Path, prompt_text: str = "Long prompt body for testing." 
         runtime=RuntimeConfig(work_dir=tmp_git_repo, log_dir=log_dir),
         prompt=PromptConfig(file=prompt_file, inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
     )
 
 
@@ -57,7 +56,9 @@ def _config_with_agent_and_prompt_override_phases(tmp_path: Path) -> Config:
 
 
 def test_run_battery_should_pass_all_checks_when_config_valid(tmp_git_repo: Path) -> None:
-    results = run_battery(_cfg(tmp_git_repo))
+    subject = _cfg(tmp_git_repo)
+
+    results = run_battery(subject)
 
     assert all(r.ok for r in results), [r for r in results if not r.ok]
 
@@ -66,7 +67,9 @@ def test_run_battery_should_fail_prompt_check_when_prompt_file_missing(
     tmp_git_repo: Path,
 ) -> None:
     cfg = _cfg(tmp_git_repo)
-    cfg.prompt.file.unlink()
+    prompt_file = cfg.prompt.file
+    assert prompt_file is not None
+    prompt_file.unlink()
 
     results = run_battery(cfg)
 
@@ -159,7 +162,9 @@ def test_run_battery_should_return_empty_when_escape_hatch_env_set(
 ) -> None:
     monkeypatch.setenv("AGENT_RUNNER_SKIP_STARTUP_CHECK", "1")
     cfg = _cfg(tmp_git_repo)
-    cfg.prompt.file.unlink()  # would normally fail
+    prompt_file = cfg.prompt.file
+    assert prompt_file is not None
+    prompt_file.unlink()  # would normally fail
 
     results = run_battery(cfg)
 
@@ -210,11 +215,14 @@ def test_all_check_kinds_should_match_battery_kinds_when_config_is_valid(
     results = run_battery(_cfg(tmp_git_repo))
 
     battery_kinds = {r.name.split(":", 1)[0] for r in results}
+
     assert battery_kinds == set(startup_check.all_check_kinds())
 
 
 def test_all_check_kinds_should_equal_unique_spec_kinds_in_order_when_invoked() -> None:
-    assert startup_check.all_check_kinds() == (
+    actual = startup_check.all_check_kinds()
+
+    expected = (
         "config_loaded",
         "log_dir_writable",
         "work_dir_is_git_repo",
@@ -225,6 +233,8 @@ def test_all_check_kinds_should_equal_unique_spec_kinds_in_order_when_invoked() 
         "stdin_container_interactive",
         "control_plane_outside_container",
     )
+
+    assert actual == expected
 
 
 def test_run_battery_should_preserve_base_then_profile_then_phase_when_config_has_phase_overrides(  # noqa: E501 — full name states the exact condition; BDD naming wins over line-length here
@@ -252,7 +262,11 @@ def test_run_battery_should_preserve_base_then_profile_then_phase_when_config_ha
 
 def test_checkresult_permanent_should_default_to_false_when_invoked(tmp_git_repo: Path) -> None:
     # Unclassified checks are environmental by default (locked decision).
-    assert CheckResult("x", ok=False, reason="r").permanent is False
+    actual = CheckResult("x", ok=False, reason="r").permanent
+
+    expected = False
+
+    assert actual is expected
 
 
 def test_run_battery_should_mark_log_dir_check_environmental_when_write_fails(
@@ -295,7 +309,9 @@ def test_stdin_container_check_should_pass_when_interactive_present() -> None:
         exec_prefix=["docker", "run", "--rm", "-i", "img"],
     )
 
-    assert startup_check._check_stdin_container_interactive(agent, Path("/srv"), "n").ok
+    result = startup_check._check_stdin_container_interactive(agent, Path("/srv"), "n")
+
+    assert result.ok
 
 
 def test_stdin_container_check_should_fail_permanent_when_only_command_has_interactive_flag() -> (
@@ -360,9 +376,11 @@ def test_control_plane_check_should_pass_when_log_dir_is_outside_work_dir():
         exec_prefix=["docker", "run", "--rm", "-i", "img"],
     )
 
-    assert startup_check._check_control_plane_outside_container(
+    result = startup_check._check_control_plane_outside_container(
         agent, Path("/srv/proj"), Path("/home/u/.agent-runner/proj/logs"), "n"
-    ).ok
+    )
+
+    assert result.ok
 
 
 def test_control_plane_check_should_pass_when_not_containerized_even_if_log_dir_is_inside():
@@ -370,6 +388,8 @@ def test_control_plane_check_should_pass_when_not_containerized_even_if_log_dir_
         command=["pi", "--mode", "json"], prompt_arg_template=[], exec_prefix=["nice", "-n", "10"]
     )
 
-    assert startup_check._check_control_plane_outside_container(
+    result = startup_check._check_control_plane_outside_container(
         agent, Path("/srv/proj"), Path("/srv/proj/logs"), "n"
-    ).ok
+    )
+
+    assert result.ok

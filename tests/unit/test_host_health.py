@@ -38,6 +38,7 @@ def test_memory_pressure_should_detect_pressure_from_sout_delta_when_mem_availab
     (the cache-poor host's own defect — this is the signal that should NOT be
     fooled by it)."""
     prev = {"swap_sout": 0, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": None}
+
     cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
 
     assert host_health.memory_pressure(cur, prev, _cfg()) is not None
@@ -84,6 +85,7 @@ def test_memory_pressure_should_report_no_pressure_when_swap_delta_below_noise_f
     """A trivial sout delta is a benign one-time idle-page swap, not active
     paging — must NOT be reported as pressure."""
     prev = {"swap_sout": 1000, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
+
     cur = {"swap_sout": 1500, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
 
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
@@ -97,6 +99,7 @@ def test_memory_pressure_should_report_no_pressure_when_swap_churn_below_raised_
     raised from one page to tens of MB precisely so a PSI-off host does not
     spuriously defer/resume every round on benign churn like this."""
     prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": None}
+
     cur = {
         "swap_sout": 5 * 1024 * 1024,
         "mem_free_mb": 200,
@@ -111,6 +114,7 @@ def test_memory_pressure_should_report_no_pressure_when_psi_quiet_even_if_swap_c
     """PSI is the strongest signal — when it's readable and quiet, trust it and
     do not fall through to the swap tier."""
     prev = {"swap_sout": 1000, "mem_free_mb": 8, "mem_available_mb": 150, "psi_some_avg10": 0.0}
+
     cur = {"swap_sout": 9000, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": 0.0}
 
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
@@ -154,25 +158,33 @@ def test_memory_pressure_should_fall_through_to_combined_low_when_swap_delta_is_
 def test_memory_pressure_should_not_fire_combined_low_when_only_memfree_is_low() -> None:
     """A cache-heavy healthy host's MemFree is always low -- never gate on it alone."""
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 6000, "psi_some_avg10": None}
+
     prev = {"swap_sout": None}
 
     assert host_health.memory_pressure(cur, prev, _cfg(40)) is None
 
 
 def test_memory_pressure_should_return_none_when_no_signal_available() -> None:
+
     s = {"swap_sout": None, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
 
-    assert host_health.memory_pressure(s, s, _cfg()) is None
+    actual = host_health.memory_pressure(s, s, _cfg())
+
+    assert actual is None
 
 
 def test_signal_available_should_be_false_when_no_tier_has_data() -> None:
+
     s = {"swap_sout": None, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
 
-    assert host_health.signal_available(s, s) is False
+    actual = host_health.signal_available(s, s)
+
+    assert actual is False
 
 
 def test_signal_available_should_be_true_when_any_tier_has_data() -> None:
     cur = {"swap_sout": 100, "mem_free_mb": None, "mem_available_mb": 150, "psi_some_avg10": None}
+
     prev = {"swap_sout": 90}
 
     assert host_health.signal_available(cur, prev) is True
@@ -181,6 +193,7 @@ def test_signal_available_should_be_true_when_any_tier_has_data() -> None:
 def test_configured_gate_inert_should_be_true_when_pressure_present_but_avail_above_threshold() -> (
     None
 ):
+
     cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
 
     assert host_health.configured_gate_inert(cur, {"swap_sout": 0}, _cfg(40)) is True
@@ -189,6 +202,7 @@ def test_configured_gate_inert_should_be_true_when_pressure_present_but_avail_ab
 def test_configured_gate_inert_should_be_false_on_healthy_warm_cache_host_when_invoked() -> None:
     """MemAvailable >> MemFree alone is true on every healthy warm-cache host --
     must NOT be flagged as inert."""
+
     cur = {"swap_sout": 100, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": 0.0}
 
     assert host_health.configured_gate_inert(cur, {"swap_sout": 100}, _cfg(40)) is False
@@ -197,6 +211,7 @@ def test_configured_gate_inert_should_be_false_on_healthy_warm_cache_host_when_i
 def test_configured_gate_inert_should_be_false_when_gate_would_actually_fire() -> None:
     """combined_low pressure always coincides with mem_available < threshold --
     the gate is reachable, not inert."""
+
     cur = {"swap_sout": None, "mem_free_mb": 5, "mem_available_mb": 30, "psi_some_avg10": None}
 
     assert host_health.configured_gate_inert(cur, {"swap_sout": None}, _cfg(40)) is False
@@ -338,6 +353,7 @@ def test_memory_pressure_should_be_healthy_when_memfree_and_memavail_clear_defau
     comfortably clear their default floors -- the healthy-verdict rung, the
     baseline every other rung above is calibrated against."""
     cfg = MonitorHostHealthConfig()
+
     prev = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 4000, "psi_some_avg10": None}
     cur = {"swap_sout": 0, "mem_free_mb": 200, "mem_available_mb": 4000, "psi_some_avg10": None}
 
@@ -368,9 +384,11 @@ def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys_when_i
 
 def test_cgroup_growth_rate_pressure_should_return_none_when_rate_is_none() -> None:
 
-    result = host_health.cgroup_growth_rate_pressure(None, MonitorHostHealthConfig())
+    result = host_health.cgroup_growth_rate_pressure(None, _cfg())
 
-    assert result is None
+    actual = result
+
+    assert actual is None
 
 
 def test_cgroup_growth_rate_pressure_should_return_none_when_rate_below_threshold() -> None:
@@ -390,7 +408,8 @@ def test_cgroup_growth_rate_pressure_should_warn_when_rate_at_else_above_thresho
 
     result = host_health.cgroup_growth_rate_pressure(512.0, cfg)
 
-    assert result is not None
+    if result is None:
+        raise AssertionError("expected warning")
     assert result.severity == "warning"
     assert result.signal == "cgroup_growth_rate"
     assert result.context == {"rate_mb_per_min": 512.0, "threshold_mb_per_min": 512.0}
@@ -403,7 +422,8 @@ def test_cgroup_growth_rate_pressure_should_carry_unrounded_rate_in_context_when
 
     result = host_health.cgroup_growth_rate_pressure(623.456789, cfg)
 
-    assert result is not None
+    if result is None:
+        raise AssertionError("expected warning")
     assert result.context["rate_mb_per_min"] == 623.456789
 
 

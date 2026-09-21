@@ -23,4 +23,9 @@ def test_emit_config_migrated_should_write_config_migrated_event_when_invoked(tm
 
 
 def test_config_migrated_kind_should_be_registered_as_builtin_when_invoked():
-    assert events.CONFIG_MIGRATED in events._BUILTIN_KINDS
+
+    actual = events.CONFIG_MIGRATED
+
+    expected = events._BUILTIN_KINDS
+
+    assert actual in expected

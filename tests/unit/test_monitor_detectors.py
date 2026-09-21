@@ -26,6 +26,7 @@ def _ev(event: str, **fields) -> dict:
 
 
 def test_known_alert_kinds_should_contain_all_fourteen_when_invoked() -> None:
+
     expected = {
         "timeout_rate",
         "hung",
@@ -43,7 +44,9 @@ def test_known_alert_kinds_should_contain_all_fourteen_when_invoked() -> None:
         "supervisor_stale",
     }
 
-    assert expected == KNOWN_ALERT_KINDS
+    actual = expected
+
+    assert actual == KNOWN_ALERT_KINDS
 
 
 def test_detect_timeout_rate_should_return_warning_alert_when_three_of_ten_timed_out() -> None:
@@ -72,6 +75,7 @@ def test_detect_timeout_rate_should_exclude_grace_kills_from_the_rate_when_invok
     """A grace-kill sets timed_out but is not a hung round — it must not inflate
     the timeout rate (0.2.11)."""
     events = []
+
     for i in range(10):
         events.append(_ev("round_start", round_num=i))
         events.append(
@@ -90,6 +94,7 @@ def test_detect_timeout_rate_should_exclude_grace_kills_from_the_rate_when_invok
 
 def test_detect_timeout_rate_should_return_none_when_below_threshold() -> None:
     events = []
+
     for i in range(10):
         events.append(_ev("round_start", round_num=i))
         events.append(
@@ -130,6 +135,7 @@ def test_disk_detectors_should_return_none_when_used_pct_below_warning() -> None
     metrics = [{"event": "round_end", "disk_used_pct": 80.0}]
 
     assert detect_disk_warning(metrics, threshold_pct=90.0) is None
+
     assert detect_disk_critical(metrics, threshold_pct=95.0) is None
 
 
@@ -193,9 +199,12 @@ def test_detect_disk_growth_should_return_none_when_rate_below_threshold() -> No
 
 
 def test_detect_disk_growth_should_return_none_when_no_baseline_sample_in_window() -> None:
+
     metrics = [{"ts": "2026-05-12T10:00:00.000Z", "disk_used_pct": 50.0}]
 
-    assert detect_disk_growth(metrics) is None
+    actual = detect_disk_growth(metrics)
+
+    assert actual is None
 
 
 def test_detect_disk_growth_should_carry_null_inode_dim_when_inode_signal_absent() -> None:
@@ -246,6 +255,7 @@ def test_detect_mem_pressure_should_return_none_when_metrics_entry_predates_new_
     # is "not yet sampled" by the new sampler, so detect_mem_pressure must grace
     # it (return None) rather than fire a spurious mem_signal_unavailable before
     # the first 0.2.14-shaped sample lands.
+
     metrics = [{"event": "round_end", "mem_available_mb": 150}]
 
     assert detect_mem_pressure(metrics) is None
@@ -355,6 +365,7 @@ def test_detect_oauth_fail_should_return_none_when_auth_text_on_exit_zero_rounds
     """The text path keeps its nonzero-exit gate: prose mentioning 401 in a
     round that exited cleanly is not evidence of an auth loop."""
     events = _exit_zero_rounds()
+
     log_tails = dict.fromkeys(range(10), "Error: 401 Unauthorized — invalid API key")
 
     assert detect_oauth_fail(events, log_tails, window=10, threshold=0.2) is None
@@ -410,9 +421,12 @@ def test_detect_network_fail_should_return_warning_when_short_exits_match_networ
 
 
 def test_alert_severity_should_be_one_of_three_values_when_invoked() -> None:
+
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
 
-    assert a.severity in {"info", "warning", "critical"}
+    actual = a.severity
+
+    assert actual in {"info", "warning", "critical"}
 
 
 def test_detect_oauth_fail_should_use_custom_patterns_when_provided():

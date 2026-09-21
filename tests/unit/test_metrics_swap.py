@@ -17,6 +17,9 @@ def test_swap_total_bytes_should_return_psutil_swap_total_value_when_invoked(mon
 
 
 def test_swap_total_bytes_should_match_real_psutil_swap_total_when_invoked():
+
     import psutil
 
-    assert metrics.swap_total_bytes() == psutil.swap_memory().total
+    actual = metrics.swap_total_bytes()
+
+    assert actual == psutil.swap_memory().total

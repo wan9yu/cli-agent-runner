@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -38,16 +39,22 @@ def test_replace_block_should_replace_content_between_markers_when_markers_exist
 
 
 def test_replace_block_should_return_text_unchanged_when_markers_missing() -> None:
+
     text = "some markdown without markers\n"
 
-    assert replace_block(text, "missing", "X") == text
+    actual = replace_block(text, "missing", "X")
+
+    assert actual == text
 
 
 def test_replace_block_should_raise_valueerror_when_block_unclosed() -> None:
+
     text = "<!-- gen:foo -->\nstuff\n(never closes)\n"
 
-    with pytest.raises(ValueError, match="foo"):
+    with pytest.raises(ValueError, match="foo") as caught:
         replace_block(text, "foo", "X")
+
+    assert re.search(r"foo", str(caught.value))
 
 
 def test_render_defenses_table_should_list_one_row_per_catalog_entry_when_invoked() -> None:
@@ -63,6 +70,7 @@ def test_render_defenses_table_should_list_one_row_per_catalog_entry_when_invoke
         if line.startswith("| ") and "Defense" not in line and "---" not in line[:5]
     ]
     assert len(rows) == len(defenses.catalog(_default_cfg()))
+
     # Spot-check one well-known defense
     assert "round_budget_s" in md
 
@@ -72,6 +80,7 @@ def test_render_defenses_table_should_render_paths_as_repo_relative_when_invoked
 
     # No absolute paths should leak — guarded_by is rendered as repo-relative.
     assert "/Users/" not in md
+
     assert "tests/unit/test_agent_runtime.py" in md  # one known guarded_by
 
 

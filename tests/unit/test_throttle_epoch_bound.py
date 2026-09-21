@@ -14,37 +14,48 @@ from tests._clock import FakeClock
 
 def test_coerce_epoch_int_should_clamp_to_default_when_far_future():
     now = 1_700_000_000.0
+    poisoned = now + 100 * 366 * 86400
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        # a poisoned reset 100 years out → clamped to the default, not passed through
-        assert _throttle._coerce_epoch_int(now + 100 * 366 * 86400, 0, now_epoch=now) == 0
+        actual = _throttle._coerce_epoch_int(poisoned, 0, now_epoch=now)
+
+    assert actual == 0
 
 
 def test_coerce_epoch_int_should_clamp_to_default_when_negative():
     now = 1_700_000_000.0
+    poisoned = -5
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert _throttle._coerce_epoch_int(-5, 0, now_epoch=now) == 0
+        actual = _throttle._coerce_epoch_int(poisoned, 0, now_epoch=now)
+
+    assert actual == 0
 
 
 def test_coerce_epoch_int_should_pass_through_when_within_valid_range():
     now = 1_700_000_000.0
+    reset_at = now + 3600
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert _throttle._coerce_epoch_int(now + 3600, 0, now_epoch=now) == int(now + 3600)
+        actual = _throttle._coerce_epoch_int(reset_at, 0, now_epoch=now)
+
+    assert actual == int(reset_at)
 
 
 def test_coerce_epoch_int_should_clamp_to_default_when_digit_string_is_huge():
     """A 20-digit string (e.g. a plugin that serialized a corrupted counter into the
     epoch field) coerces to an int fine, then must still fail the range check."""
     now = 1_700_000_000.0
+    poisoned = "99999999999999999999"
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert _throttle._coerce_epoch_int("99999999999999999999", 0, now_epoch=now) == 0
+        actual = _throttle._coerce_epoch_int(poisoned, 0, now_epoch=now)
+
+    assert actual == 0
 
 
 def test_active_throttles_should_exclude_agent_when_reset_epoch_poisoned(tmp_path: Path) -> None:

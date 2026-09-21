@@ -131,6 +131,7 @@ def test_goal_checks_allowance_s_should_be_zero_when_no_checks(
 
 def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -144,6 +145,7 @@ def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path
 
 def test_goal_check_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -163,6 +165,7 @@ def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -204,6 +207,7 @@ def test_goal_check_timeout_one_over_cap_should_raise_config_error_when_invoked(
     """Cap boundary: timeout_s == 31 is rejected -- and with ConfigError, the
     config-load error type, not a bare ValueError."""
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -229,6 +233,7 @@ def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected_when_inv
     (Mutation check: dropping the guard makes this load succeed and the test
     fail.)"""
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -328,6 +333,7 @@ def test_goal_scalar_checks_should_be_rejected_when_not_a_list(tmp_path: Path) -
     """goal.checks must be a list of tables, not a scalar -- the bare-scalar
     footgun _require_str_list guards elsewhere."""
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -343,6 +349,7 @@ def test_goal_ledger_missing_from_prompt_files_should_raise_config_error_when_lo
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -358,6 +365,7 @@ def test_goal_ledger_at_index_zero_should_raise_config_error_when_loaded(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -373,6 +381,7 @@ def test_goal_with_single_prompt_file_form_should_raise_config_error_when_loaded
     tmp_path: Path,
 ) -> None:
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)
@@ -405,6 +414,7 @@ def test_goal_with_phase_empty_prompt_files_should_raise_config_error_when_loade
     """A phase whose own prompt.files = [] sends no prompt at all -- under
     [goal] that's still an error, since the ledger can never ride along."""
     (tmp_path / "prompt.md").write_text("p")
+
     toml = _write_toml(
         tmp_path,
         _MIN_AGENT_RUNTIME.format(tmp_path=tmp_path)

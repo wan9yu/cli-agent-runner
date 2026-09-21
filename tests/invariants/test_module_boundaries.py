@@ -48,9 +48,11 @@ def _pkg_modules() -> list[Path]:
 
 def test_boundary_scans_should_reach_subpackages_when_invoked() -> None:
     scanned = {f.relative_to(PKG).as_posix() for f in _pkg_modules()}
+
     top_level = {f.name for f in PKG.glob("*.py")}
 
     assert len(scanned) > len(top_level), "scan is not recursing into subpackages"
+
     for rel in ("cli/upgrade_cmd.py", "builtin_plugins/__init__.py", "presets/__init__.py"):
         assert rel in scanned, f"{rel} not scanned"
 
@@ -76,6 +78,7 @@ def test_subprocess_imports_should_be_limited_to_sanctioned_modules_when_invoked
         "scaffold.py",
         "vcs_state.py",
     }
+
     offenders: list[str] = []
     for f in _pkg_modules():
         rel = f.relative_to(PKG).as_posix()

@@ -21,7 +21,9 @@ def test_auto_stop_defaults_should_match_when_compared() -> None:
     from agent_runner.config import _DEFAULT_AUTO_STOP_ON
     from agent_runner.monitor import AUTO_STOP_ALERTS
 
-    assert set(AUTO_STOP_ALERTS) == set(_DEFAULT_AUTO_STOP_ON), (
+    documented, runtime = set(AUTO_STOP_ALERTS), set(_DEFAULT_AUTO_STOP_ON)
+
+    assert documented == runtime, (
         "_docgen documents AUTO_STOP_ALERTS as the default auto-stop policy in "
         "docs/architecture.md, but config._DEFAULT_AUTO_STOP_ON is what "
         "MonitorConfig.auto_stop_on actually defaults to — they must not diverge"

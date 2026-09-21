@@ -24,6 +24,7 @@ def test_collect_should_return_dict_with_mem_and_disk_fields_when_invoked(
     assert "disk_used_pct" in m
     assert "load_1m" in m
     assert m["mem_total_mb"] > 0
+
     assert m["disk_total_gb"] > 0
 
 
@@ -42,6 +43,7 @@ def test_sample_should_return_lean_pressure_signal_keys_when_invoked() -> None:
     }
     assert s["mem_available_mb"] > 0
     assert s["mem_free_mb"] >= 0
+
     assert s["swap_sout"] >= 0
 
 
@@ -57,11 +59,17 @@ def test_sample_should_never_shell_out_when_invoked(monkeypatch: pytest.MonkeyPa
 
 
 def test_read_psi_should_return_none_when_no_psi_file(tmp_path: Path) -> None:
-    assert _read_psi(tmp_path / "nonexistent") is None
+
+    actual = _read_psi(tmp_path / "nonexistent")
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_read_psi_should_parse_avg10_when_psi_file_present(tmp_path: Path) -> None:
     psi_path = tmp_path / "memory"
+
     psi_path.write_text(
         "some avg10=12.34 avg60=5.00 avg300=1.00 total=999\n"
         "full avg10=1.50 avg60=0.50 avg300=0.10 total=111\n"
@@ -74,6 +82,7 @@ def test_read_psi_should_default_full_to_zero_when_full_line_missing(
     tmp_path: Path,
 ) -> None:
     psi_path = tmp_path / "memory"
+
     psi_path.write_text("some avg10=3.00 avg60=1.00 avg300=0.00 total=5\n")
 
     assert _read_psi(psi_path) == (3.00, 0.0, None)
@@ -84,6 +93,7 @@ def test_collect_should_merge_sample_fields_when_invoked(tmp_path: Path) -> None
 
     assert "swap_sout" in m
     assert "psi_some_avg10" in m
+
     assert "mem_free_mb" in m
 
 
@@ -91,6 +101,7 @@ def test_collect_should_include_inode_used_pct_within_bounds_when_invoked(tmp_pa
     m = collect(tmp_path)
 
     assert "inode_used_pct" in m
+
     assert m["inode_used_pct"] is None or 0.0 <= m["inode_used_pct"] <= 100.0
 
 
@@ -128,6 +139,7 @@ def test_log_metrics_should_append_jsonl_with_event_field_when_invoked(
     assert rows[0]["event"] == "periodic"
     assert rows[0]["round_num"] == 5
     assert "mem_available_mb" in rows[0]
+
     assert "disk_free_gb" in rows[0]
 
 

@@ -431,7 +431,12 @@ def test_agent_runner_should_let_cgroup_oom_kill_the_capped_child_when_swap_is_b
     pi_pre_oom_control_unit: dict,
     pi_workdir: str,
 ) -> None:
-    _run_control_arm(run=_ssh, unit_info=pi_pre_oom_control_unit, workdir=pi_workdir)
+    unit_info = pi_pre_oom_control_unit
+    workdir = pi_workdir
+
+    _run_control_arm(run=_ssh, unit_info=unit_info, workdir=workdir)
+
+    assert "cgroup_path" in unit_info
 
 
 @pytest.mark.timeout(_CONTROL_WAIT_TIMEOUT_S + 120)
@@ -439,4 +444,9 @@ def test_agent_runner_should_let_cgroup_oom_kill_the_capped_child_when_swap_is_b
     cgroup_pre_oom_control_unit: dict,
     cgroup_workdir: str,
 ) -> None:
-    _run_control_arm(run=_local_sh, unit_info=cgroup_pre_oom_control_unit, workdir=cgroup_workdir)
+    unit_info = cgroup_pre_oom_control_unit
+    workdir = cgroup_workdir
+
+    _run_control_arm(run=_local_sh, unit_info=unit_info, workdir=workdir)
+
+    assert "cgroup_path" in unit_info

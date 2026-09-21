@@ -32,5 +32,9 @@ def test_schedule_paused_then_resumed_should_write_ordered_events_with_fields_wh
 
 
 def test_schedule_event_kinds_should_be_registered_as_builtin_when_invoked():
+
     assert events.SCHEDULE_PAUSED in events._BUILTIN_KINDS
-    assert events.SCHEDULE_RESUMED in events._BUILTIN_KINDS
+
+    actual = events.SCHEDULE_RESUMED
+
+    assert actual in events._BUILTIN_KINDS

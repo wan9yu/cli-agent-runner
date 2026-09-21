@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 import pytest
@@ -28,13 +29,19 @@ def test_api_types_should_be_frozen_dataclasses_when_invoked() -> None:
     ]
 
     assert len(classes) >= 8, "dynamic scan should find every dataclass declared in api_types"
+
     for cls in classes:
         params = getattr(cls, "__dataclass_params__", None)
         assert params is not None and params.frozen, f"{getattr(cls, '__name__', cls)} not frozen"
 
 
 def test_service_mode_enum_should_have_three_values_when_invoked() -> None:
-    assert {m.value for m in ServiceMode} == {"systemd_user", "pid_file", "none"}
+
+    actual = {m.value for m in ServiceMode}
+
+    expected = {"systemd_user", "pid_file", "none"}
+
+    assert actual == expected
 
 
 def test_alert_should_have_required_fields_when_constructed() -> None:
@@ -48,13 +55,17 @@ def test_alert_should_have_required_fields_when_constructed() -> None:
     )
 
     assert a.severity == "warning"
+
     assert a.auto_action == "none"
 
 
 def test_select_path_should_return_value_when_path_is_simple_key() -> None:
+
     state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
 
-    assert select_path(state, "mem_available_mb") == 4000
+    actual = select_path(state, "mem_available_mb")
+
+    assert actual == 4000
 
 
 def test_select_path_should_return_item_when_path_has_list_index() -> None:
@@ -72,25 +83,33 @@ def test_select_path_should_return_item_when_path_has_list_index() -> None:
     )
 
     assert select_path(rv, "recent_events.0.event") == "round_start"
+
     assert select_path(rv, "recent_events.1.event") == "round_end"
 
 
 def test_select_path_should_raise_keyerror_when_segment_missing() -> None:
+
     state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
 
-    with pytest.raises(KeyError, match="nonexistent"):
+    with pytest.raises(KeyError, match="nonexistent") as caught:
         select_path(state, "nonexistent")
+
+    assert re.search(r"nonexistent", str(caught.value))
 
 
 def test_alert_auto_action_should_be_none_string_when_default() -> None:
+
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
 
-    assert a.auto_action == "none"
+    actual = a.auto_action
+
+    assert actual == "none"
 
 
 def test_select_path_should_return_hook_failures_list_when_present_on_state() -> None:
     """0.1.8: peek --select recent_hook_failures resolves through select_path."""
     failures = [{"event": "hook_failed", "hook_name": "X"}]
+
     state = ProjectState(
         project="t",
         status={},
@@ -120,7 +139,9 @@ def test_project_state_recent_hook_failures_should_default_to_empty_list_when_in
         service=ServiceStatus(mode=ServiceMode.NONE, active=False),
     )
 
-    assert state.recent_hook_failures == []
+    actual = state.recent_hook_failures
+
+    assert actual == []
 
 
 def test_throttle_state_import_should_raise_importerror_when_invoked() -> None:
@@ -128,8 +149,11 @@ def test_throttle_state_import_should_raise_importerror_when_invoked() -> None:
 
     Consumers should switch to TransientErrorState.
     """
-    with pytest.raises(ImportError):
-        from agent_runner.api_types import ThrottleState  # noqa: F401
+
+    with pytest.raises(ImportError) as caught:
+        exec("from agent_runner.api_types import ThrottleState")
+
+    assert caught.value is not None
 
 
 def test_metrics_collect_should_return_pgrep_count_when_agent_binary_given(tmp_path, monkeypatch):
@@ -179,10 +203,12 @@ def test_dirty_outcome_should_hold_kind_and_ref_when_invoked():
     o = DirtyOutcome(kind="committed", ref="abc123")
 
     assert o.kind == "committed"
+
     assert o.ref == "abc123"
 
 
 def test_round_result_dirty_outcome_should_default_to_none_when_invoked():
+
     base = {
         "round_num": 1,
         "phase": None,
@@ -196,7 +222,9 @@ def test_round_result_dirty_outcome_should_default_to_none_when_invoked():
         "stashed": False,
     }
 
-    assert RoundResult(**base).dirty_outcome is None
+    actual = RoundResult(**base).dirty_outcome
+
+    assert actual is None
 
 
 def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_flag_when_invoked():
@@ -215,6 +243,7 @@ def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_fl
 
     r = RoundResult(**base, dirty_outcome=DirtyOutcome(kind="stashed", ref="sha"))
 
+    assert r.dirty_outcome is not None
     assert r.dirty_outcome.kind == "stashed" and r.stashed is False
 
 

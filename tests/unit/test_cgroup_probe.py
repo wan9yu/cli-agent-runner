@@ -305,9 +305,12 @@ def test_cgroup_memory_high_should_return_none_when_cgroup_v1_else_missing(
 
 
 def test_mem_total_bytes_should_match_psutil_virtual_memory_total_when_invoked() -> None:
+
     import psutil
 
-    assert metrics.mem_total_bytes() == psutil.virtual_memory().total
+    actual = metrics.mem_total_bytes()
+
+    assert actual == psutil.virtual_memory().total
 
 
 # --- 0.2.16 fix-wave IMPORTANT #1: the cgroup auto-defer plausibility guard ---
@@ -434,6 +437,7 @@ def test_probe_and_emit_cgroup_defer_should_carry_defer_matching_return_when_inv
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     assert _probe_and_emit_cgroup_defer(log_dir) is expected
+
     assert _only_event(tmp_path)["defer"] is expected
 
 
@@ -772,6 +776,7 @@ def test_cgroup_delegated_should_return_none_when_leaf_stat_fails(
 def test_probe_and_emit_cgroup_defer_should_carry_cgroup_delegated_on_every_branch_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+
     _run_probe(
         monkeypatch,
         tmp_path,
@@ -790,6 +795,7 @@ def test_probe_and_emit_cgroup_defer_should_carry_cgroup_delegated_on_every_bran
 def test_probe_and_emit_cgroup_defer_should_report_delegated_false_when_leaf_not_delegated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+
     _run_probe(
         monkeypatch,
         tmp_path,
@@ -844,6 +850,7 @@ def test_advisory_should_omit_undelegated_hint_when_already_delegated(
     )
 
     ev = _only_event(tmp_path)
+
     assert ev["advisory"] is None
 
 
@@ -863,6 +870,7 @@ def test_advisory_should_omit_undelegated_hint_when_cgroup_v2_unavailable(
     )
 
     ev = _only_event(tmp_path)
+
     assert ev["advisory"] is None
 
 

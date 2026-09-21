@@ -32,6 +32,7 @@ _RETIRED_COUNT_PATTERNS = (
 
 def test_readme_zh_should_stay_a_thin_pointer_when_measured() -> None:
     text = ZH.read_text(encoding="utf-8")
+
     lines = len(text.splitlines())
 
     assert lines <= MAX_LINES, (
@@ -39,6 +40,7 @@ def test_readme_zh_should_stay_a_thin_pointer_when_measured() -> None:
         f"pointer to the English docs, not a fork of README.md"
     )
     assert "](README.md)" in text, "README.zh.md must link the English README"
+
     assert "](docs/architecture.md)" in text, "README.zh.md must link docs/architecture.md"
 
 
@@ -50,6 +52,7 @@ def test_readme_zh_should_carry_no_unguarded_counts_when_scanned() -> None:
         f"README.zh.md reintroduced unguarded count claims {failures} — state "
         f"counts in README.md (guarded) and link to it instead"
     )
+
     # docs/internal/ is gitignored (.gitignore:2): a link there is dead for
     # every reader who did not write it.
     assert "docs/internal/" not in text, (

@@ -41,9 +41,12 @@ def test_scalar_should_fall_back_to_last_active_agent_when_latest_agent_recovers
 
 
 def test_view_should_return_none_and_empty_when_no_throttle_events(tmp_path: Path) -> None:
+
     (tmp_path / "events-2026-08.jsonl").write_text("")
 
-    assert effective_throttle_view(tmp_path, clock=FakeClock()) == (None, {})
+    actual = effective_throttle_view(tmp_path, clock=FakeClock())
+
+    assert actual == (None, {})
 
 
 def test_scalar_should_reconcile_to_active_map_escalated_reset_when_same_agent(

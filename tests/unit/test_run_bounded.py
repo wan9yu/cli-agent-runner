@@ -41,6 +41,7 @@ def test_run_bounded_should_return_output_when_command_succeeds(tmp_path: Path) 
 
     assert result.rc == 0
     assert result.stdout.strip() == "hello"
+
     assert result.timed_out is False
 
 

@@ -41,9 +41,12 @@ def test_wedged_round_should_terminate_and_emit_wedged_event_when_ceiling_exceed
 
 
 def test_round_term_grace_should_be_at_least_reap_grace_when_invoked():
+
     from agent_runner.agent_runtime import REAP_GRACE_S
 
-    assert _serve_round._ROUND_TERM_GRACE_S >= REAP_GRACE_S
+    actual = _serve_round._ROUND_TERM_GRACE_S
+
+    assert actual >= REAP_GRACE_S
 
 
 def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace_when_invoked():
@@ -57,7 +60,9 @@ def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace_when
     the out-of-process `agent-runner kill` path."""
     from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
 
-    assert _serve_round._ROUND_TERM_GRACE_S > _MAX_SIGTERM_GRACE_S
+    actual = _serve_round._ROUND_TERM_GRACE_S
+
+    assert actual > _MAX_SIGTERM_GRACE_S
 
 
 def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, monkeypatch):

@@ -26,6 +26,7 @@ def test_discover_should_register_no_manifest_when_called():
     agent_runner._discover_plugin_manifests()
 
     assert "task1_probe" not in loaded_manifest_names()
+
     assert "pi" not in loaded_manifest_names()
 
 

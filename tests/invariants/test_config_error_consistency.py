@@ -71,6 +71,7 @@ def test_config_module_raises_should_all_be_config_error_when_scanned() -> None:
         for fname, lineno, name in sorted(raised)
         if name not in _ALLOWED_OTHER and name != "ConfigError"
     ]
+
     assert not offenders, (
         "config.py raises a non-ConfigError for a config problem — "
         "ConfigError's docstring and docs/configuration.md:181 promise "
@@ -84,7 +85,9 @@ def test_config_error_should_subclass_value_error_when_invoked() -> None:
     `pytest.raises(ValueError)` caller silently breaks."""
     from agent_runner.config import ConfigError
 
-    assert issubclass(ConfigError, ValueError)
+    actual = issubclass(ConfigError, ValueError)
+
+    assert actual
 
 
 def test_load_config_should_raise_config_error_when_stdin_delivery_has_prompt_token(

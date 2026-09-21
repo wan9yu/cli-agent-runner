@@ -27,7 +27,6 @@ def _cfg(
     tmp_path: Path,
     *,
     round_budget_s: int = 600,
-    phases: list[str] | None = None,
 ) -> Config:
     return Config(
         agent=AgentConfig(command=["my-agent"], prompt_arg_template=["-p", "{prompt}"]),
@@ -38,7 +37,6 @@ def _cfg(
         ),
         prompt=PromptConfig(file=tmp_path / "p.md", inject_context=True),
         vcs=VcsConfig(),
-        phases=phases,
     )
 
 
@@ -51,6 +49,7 @@ def _toml(tmp_path: Path) -> Path:
 
 def test_serve_unit_filename_should_contain_project_name_when_built(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
+
     project = cfg.runtime.work_dir.name
 
     assert serve_unit_filename(project) == f"agent-runner@{project}.service"
@@ -60,9 +59,11 @@ def test_monitor_unit_filename_should_return_project_scoped_unit_name_when_built
     tmp_path: Path,
 ) -> None:
     cfg = _cfg(tmp_path)
+
     project = cfg.runtime.work_dir.name
 
     assert monitor_unit_filename(project) == f"agent-runner-monitor@{project}.service"
+
     assert monitor_unit_filename(project) != serve_unit_filename(project)
 
 
@@ -295,7 +296,9 @@ def test_render_serve_unit_should_set_killmode_mixed_when_rendered(tmp_path: Pat
         _cfg(tmp_path), script_path=Path("/usr/bin/agent-runner"), config_path=_toml(tmp_path)
     )
 
-    assert "KillMode=mixed" in body
+    actual = "KillMode=mixed"
+
+    assert actual in body
 
 
 def test_render_serve_unit_should_bound_restart_with_startlimit_when_rendered(
@@ -309,5 +312,6 @@ def test_render_serve_unit_should_bound_restart_with_startlimit_when_rendered(
 
     assert "StartLimitIntervalSec=300" in body
     assert "StartLimitBurst=5" in body
+
     # StartLimit* are [Unit] directives — must precede [Service].
     assert body.index("StartLimitBurst") < body.index("[Service]")

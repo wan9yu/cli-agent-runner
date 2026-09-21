@@ -115,6 +115,7 @@ def test_doc_entry_point_groups_should_be_loaded_by_loader_when_scanned() -> Non
     """An entry-point group a doc tells a plugin author to register under must be
     one the loader actually scans — otherwise the plugin silently never loads."""
     real = _real_entry_point_groups()
+
     text = (REPO / "docs/plugins.md").read_text(encoding="utf-8")
     documented = set(re.findall(r'\[project\.entry-points\."(agent_runner\.[\w.]+)"\]', text))
     unknown = documented - real

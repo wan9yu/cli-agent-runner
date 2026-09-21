@@ -17,17 +17,18 @@ def test_emit_calls_in_core_should_use_builtin_kinds_when_scanned() -> None:
     private copy of this scan is what let both blind spots survive.
     """
     bad_calls: list[tuple[str, int, str]] = []
+
     scanned = 0
     for path in package_modules():
         scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"))
         rel = path.relative_to(PKG.parent).as_posix()
         for arg in emit_kind_args(tree):
-            bad_calls.extend(
-                (rel, lit.lineno, lit.value)
-                for lit in kind_literals(arg)
-                if lit.value not in events._BUILTIN_KINDS
-            )
+            for lit in kind_literals(arg):
+                value = lit.value
+                if isinstance(value, str) and value not in events._BUILTIN_KINDS:
+                    bad_calls.append((rel, lit.lineno, value))
 
     assert scanned > 0, "no agent_runner modules scanned"  # vacuity-guard
+
     assert bad_calls == [], f"events.emit() with non-builtin kinds: {bad_calls}"

@@ -27,16 +27,25 @@ def test_detect_supervisor_stale_should_alert_when_last_event_older_than_thresho
 
 def test_detect_supervisor_stale_should_return_none_when_last_event_within_threshold() -> None:
     # Last event 100s before NOW, threshold 2700s -> healthy.
+
     events = [_ev("2026-05-21T11:58:20.000Z", round_num=5)]
 
     assert detect_supervisor_stale(events, now=NOW, stale_threshold_s=2700) is None
 
 
 def test_detect_supervisor_stale_should_return_none_when_events_empty() -> None:
-    assert detect_supervisor_stale([], now=NOW, stale_threshold_s=2700) is None
+
+    actual = detect_supervisor_stale([], now=NOW, stale_threshold_s=2700)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_detect_supervisor_stale_should_return_none_when_threshold_zero() -> None:
-    events = [_ev("2026-05-21T00:00:00.000Z", round_num=1)]  # very old
 
-    assert detect_supervisor_stale(events, now=NOW, stale_threshold_s=0) is None
+    events = [_ev("2026-05-21T00:00:00.000Z", round_num=1)]
+
+    actual = detect_supervisor_stale(events, now=NOW, stale_threshold_s=0)
+
+    assert actual is None

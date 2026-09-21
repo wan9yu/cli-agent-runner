@@ -77,8 +77,7 @@ def test_select_phase_should_pause_when_wait_policy_and_rotation_phase_closed(tm
     assert sel.phase is None
     assert sel.paused is True
     assert sel.skipped == []
-    assert sel.resume_at is not None
-    assert sel.resume_at.hour == 12  # phase a's next_resume_at
+    assert getattr(sel.resume_at, "hour", None) == 12  # phase a's next_resume_at
 
 
 def test_select_phase_should_return_next_open_phase_when_skip_policy_and_rotation_phase_closed(
@@ -115,8 +114,7 @@ def test_select_phase_should_pause_with_earliest_resume_when_skip_policy_and_all
     assert sel.phase is None
     assert sel.paused is True
     assert sel.skipped == []
-    assert sel.resume_at is not None
-    assert sel.resume_at.hour == 12  # min(14:00, 12:00)
+    assert getattr(sel.resume_at, "hour", None) == 12  # min(14:00, 12:00)
 
 
 def test_select_phase_should_drop_never_opening_phase_when_computing_min_resume(tmp_path):
@@ -133,8 +131,7 @@ def test_select_phase_should_drop_never_opening_phase_when_computing_min_resume(
     sel = phase_select.select_phase(cfg, 1, now_fn=_clock(10))
 
     assert sel.paused is True
-    assert sel.resume_at is not None
-    assert sel.resume_at.hour == 12  # b's; a's None dropped
+    assert getattr(sel.resume_at, "hour", None) == 12  # b's; a's None dropped
 
 
 def test_select_phase_should_return_same_result_when_called_twice_with_same_inputs(tmp_path):
@@ -162,6 +159,7 @@ def test_select_phase_should_rotate_starting_phase_when_round_num_increases(tmp_
     assert phase_select.select_phase(cfg, 1, now_fn=_clock(10)).phase == "a"
     assert phase_select.select_phase(cfg, 2, now_fn=_clock(10)).phase == "b"
     assert phase_select.select_phase(cfg, 3, now_fn=_clock(10)).phase == "c"
+
     assert phase_select.select_phase(cfg, 4, now_fn=_clock(10)).phase == "a"
 
 
@@ -202,7 +200,7 @@ def test_select_phase_should_resume_at_open_window_when_one_phase_throttled_and_
 
     assert sel.phase is None
     assert sel.paused is True
-    assert sel.resume_at is not None and sel.resume_at.hour == 12
+    assert getattr(sel.resume_at, "hour", None) == 12
 
 
 def test_select_phase_should_match_pre_throttle_behavior_when_throttled_set_is_empty(tmp_path):
@@ -225,7 +223,12 @@ def test_select_phase_should_return_same_result_when_same_throttled_set_used_twi
 
 
 def test_rotation_index_should_be_zero_based_round_minus_one_mod_n_when_invoked() -> None:
-    assert [phase_select.rotation_index(r, 3) for r in (1, 2, 3, 4)] == [0, 1, 2, 0]
+
+    actual = [phase_select.rotation_index(r, 3) for r in (1, 2, 3, 4)]
+
+    expected = [0, 1, 2, 0]
+
+    assert actual == expected
 
 
 def test_phase_select_should_agree_with_runner_rotation_index_across_rounds_when_invoked(
@@ -309,20 +312,27 @@ def test_overlap_should_flag_pair_when_both_windowed_agent_phases_intersect_in_s
 
 
 def test_overlap_should_ignore_pair_when_one_phase_has_no_own_run_windows(tmp_path):
+
     cfg = _cfg_two_agent_phases(tmp_path, windows_a=["09:00-12:00"], windows_b=[], tz="UTC")
 
-    assert phase_select.find_phase_window_overlaps(cfg) == []
+    actual = phase_select.find_phase_window_overlaps(cfg)
+
+    assert actual == []
 
 
 def test_overlap_should_ignore_pair_when_agents_not_both_overridden(tmp_path):
+
     cfg = _cfg_one_agent_one_plain_phase(
         tmp_path, windows_a=["09:00-12:00"], windows_b=["10:00-11:00"]
     )
 
-    assert phase_select.find_phase_window_overlaps(cfg) == []
+    actual = phase_select.find_phase_window_overlaps(cfg)
+
+    assert actual == []
 
 
 def test_overlap_should_skip_pair_when_effective_timezones_differ(tmp_path):
+
     cfg = _cfg_two_agent_phases(
         tmp_path,
         windows_a=["09:00-12:00"],
@@ -331,15 +341,20 @@ def test_overlap_should_skip_pair_when_effective_timezones_differ(tmp_path):
         tz_b="Asia/Tokyo",
     )
 
-    assert phase_select.find_phase_window_overlaps(cfg) == []
+    actual = phase_select.find_phase_window_overlaps(cfg)
+
+    assert actual == []
 
 
 def test_overlap_should_ignore_pair_when_windows_do_not_intersect(tmp_path):
+
     cfg = _cfg_two_agent_phases(
         tmp_path, windows_a=["09:00-10:00"], windows_b=["11:00-12:00"], tz="UTC"
     )
 
-    assert phase_select.find_phase_window_overlaps(cfg) == []
+    actual = phase_select.find_phase_window_overlaps(cfg)
+
+    assert actual == []
 
 
 def test_overlap_should_not_flag_pair_when_mon_only_wrapping_windows_never_coincide(tmp_path):
@@ -348,6 +363,7 @@ def test_overlap_should_not_flag_pair_when_mon_only_wrapping_windows_never_coinc
     # two never share a real (weekday, minute) instant, even though a naive day-set
     # intersection + minute-of-day overlap (ignoring the wrap's day shift) would
     # wrongly say they do.
+
     cfg = _cfg_two_agent_phases(
         tmp_path, windows_a=["MON 22:00-01:00"], windows_b=["MON 00:00-02:00"], tz="UTC"
     )

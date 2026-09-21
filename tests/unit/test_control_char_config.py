@@ -67,6 +67,7 @@ def test_load_config_should_raise_config_error_when_work_dir_has_control_char(
     tmp_path: Path, escape: str
 ) -> None:
     injected = f"{tmp_path}{escape}User=root"
+
     p = _write(tmp_path, _base(tmp_path, work_dir_value=injected))
 
     with pytest.raises(ConfigError, match="work_dir"):
@@ -82,6 +83,7 @@ def test_load_config_should_raise_config_error_when_relative_log_dir_has_control
     calling it) -- this is the exact shape the NUL-byte ordering bug needs to
     reproduce."""
     injected = f"logs{escape}User=root"
+
     p = _write(tmp_path, _base(tmp_path, log_dir_value=injected))
 
     with pytest.raises(ConfigError, match="log_dir"):
@@ -91,6 +93,7 @@ def test_load_config_should_raise_config_error_when_relative_log_dir_has_control
 def test_load_config_should_raise_config_error_when_config_path_has_newline(
     tmp_path: Path,
 ) -> None:
+
     weird = _write(tmp_path, _base(tmp_path), name="agent-runner.toml\nUser=root")
 
     with pytest.raises(ConfigError, match="config path"):
@@ -112,6 +115,7 @@ def test_render_serve_unit_should_raise_config_error_when_work_dir_has_newline(
     tmp_path: Path,
 ) -> None:
     poisoned_work_dir = Path(f"{tmp_path}\nUser=root")
+
     cfg = _direct_cfg(poisoned_work_dir, tmp_path)
 
     with pytest.raises(ConfigError, match="work_dir"):
@@ -122,6 +126,7 @@ def test_render_serve_unit_should_raise_config_error_when_config_path_has_newlin
     tmp_path: Path,
 ) -> None:
     cfg = _direct_cfg(tmp_path, tmp_path)
+
     poisoned_config_path = Path(f"{tmp_path}/a.toml\nUser=root")
 
     with pytest.raises(ConfigError, match="config path"):
@@ -132,6 +137,7 @@ def test_render_monitor_unit_should_raise_config_error_when_config_path_has_newl
     tmp_path: Path,
 ) -> None:
     cfg = _direct_cfg(tmp_path, tmp_path)
+
     poisoned_config_path = Path(f"{tmp_path}/a.toml\nUser=root")
 
     with pytest.raises(ConfigError, match="config path"):

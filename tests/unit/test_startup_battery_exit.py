@@ -12,17 +12,25 @@ from agent_runner.startup_check import CheckResult, battery_exit_code
 def test_battery_exit_code_should_return_78_when_failure_is_permanent() -> None:
     fs = [CheckResult("a", ok=False, permanent=True), CheckResult("b", ok=False)]
 
-    assert battery_exit_code(fs) == PERMANENT_CONFIG_EXIT
+    actual = battery_exit_code(fs)
+
+    assert actual == PERMANENT_CONFIG_EXIT
 
 
 def test_battery_exit_code_should_return_76_when_only_environmental_failure() -> None:
-    assert battery_exit_code([CheckResult("b", ok=False)]) == ENV_BATTERY_EXIT
+    actual = battery_exit_code([CheckResult("b", ok=False)])
+
+    expected = ENV_BATTERY_EXIT
+
+    assert actual == expected
 
 
 def test_post_round_decision_should_continue_when_env_battery_exit_repeats() -> None:
     # 76 is treated like an active throttle: continue, breaker disarmed, even
     # across many fast rounds — a ~5-round environmental blip must not hit 75.
     consecutive = 0
+    delay = 0
+
     for _ in range(6):
         action, delay, consecutive = post_round_decision(
             returncode=ENV_BATTERY_EXIT,
@@ -47,7 +55,6 @@ def test_run_one_round_should_exit_76_when_battery_check_fails_environmentally(
         runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
         prompt=PromptConfig(file=tmp_path / "p.md"),
         vcs=VcsConfig(),
-        phases=None,
     )
     monkeypatch.setattr(
         startup_check,

@@ -98,19 +98,23 @@ def test_hard_wall_terminate_calls_should_pin_sigterm_first_when_invoked() -> No
 
 def test_no_kill_call_should_hard_code_a_forbidden_first_signal_when_invoked() -> None:
     tree = _load()
-    for callee in ("_terminate_agent", "_kill_pgroup"):
-        for call in _calls_to(tree, callee):
-            fs = _first_signal_kw(call)
-            for bad in _FORBIDDEN_FIRST_SIGNALS:
-                assert not _is_signal_attr(fs, bad), (
-                    f"{callee}(...) hard-codes first_signal=signal.{bad} -- forbidden"
-                )
+
+    forbidden = [
+        f"{callee}(...) hard-codes first_signal=signal.{bad}"
+        for callee in ("_terminate_agent", "_kill_pgroup")
+        for call in _calls_to(tree, callee)
+        for bad in _FORBIDDEN_FIRST_SIGNALS
+        if _is_signal_attr(_first_signal_kw(call), bad)
+    ]
+
+    assert forbidden == []
 
 
 def test_kill_pgroup_should_send_first_killpg_with_the_first_signal_parameter_when_invoked() -> (
     None
 ):
     kill_pgroup = _func(_load(), "_kill_pgroup")
+
     killpg_calls = [
         node
         for node in ast.walk(kill_pgroup)
@@ -122,6 +126,7 @@ def test_kill_pgroup_should_send_first_killpg_with_the_first_signal_parameter_wh
     # The FIRST killpg is the cooperative/hard-wall first signal; it must use the
     # parameter, never a hard-coded signal.SIGTERM.
     first = killpg_calls[0]
+
     assert (
         len(first.args) >= 2
         and isinstance(first.args[1], ast.Name)

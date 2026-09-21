@@ -82,20 +82,27 @@ def test_apply_cooperative_signal_env_should_fall_back_when_phase_not_precompute
 
 
 def test_runner_should_read_the_published_signal_from_env_when_invoked(monkeypatch):
+
     monkeypatch.setenv("AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL", "SIGINT")
 
-    assert runner._resolve_cooperative_signal() is signal.SIGINT
+    actual = runner._resolve_cooperative_signal()
+
+    assert actual is signal.SIGINT
 
 
 def test_runner_should_fall_back_to_sigterm_when_env_absent(monkeypatch):
+
     monkeypatch.delenv("AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL", raising=False)
 
-    assert runner._resolve_cooperative_signal() is signal.SIGTERM
+    actual = runner._resolve_cooperative_signal()
+
+    assert actual is signal.SIGTERM
 
 
 def test_runner_should_fall_back_to_sigterm_when_env_is_an_unknown_name(monkeypatch):
     # A leaked / hand-set standalone env value must never reach getattr(signal, ...)
     # and land on SIGKILL/SIGSTOP -- unknown names fall back to SIGTERM.
+
     monkeypatch.setenv("AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL", "SIGKILL")
 
     assert runner._resolve_cooperative_signal() is signal.SIGTERM

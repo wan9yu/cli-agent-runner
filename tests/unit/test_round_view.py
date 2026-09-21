@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -8,23 +9,40 @@ from agent_runner.round_view import build_round_view, resolve_round_arg
 
 
 def test_int_arg_should_return_same_when_resolved(tmp_path: Path) -> None:
-    assert resolve_round_arg(42, tmp_path) == 42
+    actual = resolve_round_arg(42, tmp_path)
+
+    expected = 42
+
+    assert actual == expected
 
 
 def test_int_string_arg_should_return_int_when_resolved(tmp_path: Path) -> None:
-    assert resolve_round_arg("7", tmp_path) == 7
+    actual = resolve_round_arg("7", tmp_path)
+
+    expected = 7
+
+    assert actual == expected
 
 
 def test_none_arg_should_return_none_when_resolved(tmp_path: Path) -> None:
-    assert resolve_round_arg(None, tmp_path) is None
+    actual = resolve_round_arg(None, tmp_path)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_latest_should_return_none_when_no_rounds_exist(tmp_path: Path) -> None:
-    assert resolve_round_arg("latest", tmp_path) is None
+    actual = resolve_round_arg("latest", tmp_path)
+
+    expected = None
+
+    assert actual is expected
 
 
 def test_latest_should_return_max_when_rounds_exist(tmp_path: Path) -> None:
     (tmp_path / "rounds").mkdir()
+
     (tmp_path / "rounds" / "R1-2026.log").write_text("x")
     (tmp_path / "rounds" / "R5-2026.log").write_text("x")
     (tmp_path / "rounds" / "R3-2026.log").write_text("x")
@@ -33,8 +51,13 @@ def test_latest_should_return_max_when_rounds_exist(tmp_path: Path) -> None:
 
 
 def test_garbage_arg_should_raise_when_resolved(tmp_path: Path) -> None:
-    with pytest.raises(KeyError, match="round"):
-        resolve_round_arg("not-a-number", tmp_path)
+
+    subject = "not-a-number"
+
+    with pytest.raises(KeyError, match="round") as caught:
+        resolve_round_arg(subject, tmp_path)
+
+    assert re.search(r"round", str(caught.value))
 
 
 def test_round_with_log_should_include_log_tail_when_built(tmp_path: Path) -> None:

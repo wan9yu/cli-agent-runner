@@ -19,6 +19,7 @@ def test_git_repo_should_return_init_result_when_api_init(tmp_git_repo: Path) ->
 
     assert isinstance(result, InitResult)
     assert result.work_dir == tmp_git_repo
+
     assert any(f.name == "agent-runner.toml" for f in result.files_created)
 
 
@@ -340,6 +341,7 @@ def test_system_unit_should_refuse_with_systemctl_command_when_restart(
     must refuse naming the exact `sudo systemctl restart ...` remedy instead of
     falling through to the PID_FILE/NONE "start it by hand" message."""
     api.init(tmp_git_repo, force=False, commit=False)
+
     monkeypatch.setattr("agent_runner._lifecycle._system_unit_exists", lambda project: True)
 
     with pytest.raises(RuntimeError, match="sudo systemctl restart"):
@@ -472,9 +474,12 @@ def test_pid_file_should_recheck_alive_after_sigkill_when_kill(
 
 
 def test_round_holder_pid_should_return_none_when_sidecar_missing(tmp_path: Path) -> None:
+
     result = api._round_holder_pid(tmp_path)
 
-    assert result is None
+    actual = result
+
+    assert actual is None
 
 
 def test_round_holder_pid_should_return_none_when_sidecar_corrupt(tmp_path: Path) -> None:
@@ -641,7 +646,9 @@ def test_round_kill_grace_should_match_serve_cmd_grace_when_invoked() -> None:
     escalate before the round even gets a chance to drain."""
     from agent_runner.cli import _serve_round
 
-    assert api._ROUND_TERM_GRACE_S == _serve_round._ROUND_TERM_GRACE_S
+    actual = api._ROUND_TERM_GRACE_S
+
+    assert actual == _serve_round._ROUND_TERM_GRACE_S
 
 
 def _draining_is_active(state: str):

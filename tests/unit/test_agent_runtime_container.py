@@ -67,7 +67,12 @@ def _alive(pid: int) -> bool:
 def test_detect_container_run_should_recognize_run_commands_when_invoked(
     command: list[str], expected: bool
 ) -> None:
-    assert (_detect_container_run(command) is not None) is expected
+
+    actual = _detect_container_run(command) is not None
+
+    expected = expected
+
+    assert actual is expected
 
 
 @pytest.mark.parametrize(
@@ -91,6 +96,7 @@ def test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_
 
     assert detected is not None
     assert detected[1] == run_idx
+
     assert (run_idx == 1) == (command[0] in ("docker", "podman") and command[1] == "run")
 
 

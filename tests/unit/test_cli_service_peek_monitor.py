@@ -95,6 +95,7 @@ def test_peek_should_pass_select_arg_when_invoked_with_select(
     capsys,
 ) -> None:
     _init(tmp_git_repo, monkeypatch)
+
     with patch("agent_runner.api.peek", return_value=42) as p:
         rc = main(["peek", "--select", "system.disk_used_pct"])
 

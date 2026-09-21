@@ -188,7 +188,9 @@ def test_config_host_health_should_be_monitor_host_health_config_type_when_invok
     host_health.memory_pressure expects (mem_avail_min_mb)."""
     cfg = _real_cfg(tmp_path)
 
-    assert isinstance(cfg.monitor.host_health, MonitorHostHealthConfig)
+    host_health = cfg.monitor.host_health
+
+    assert isinstance(host_health, MonitorHostHealthConfig)
 
 
 def test_cache_poor_psi_off_host_should_defer_when_pre_round_checked_twice(tmp_path):

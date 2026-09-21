@@ -23,6 +23,7 @@ def test_marker_should_be_detected_when_split_across_chunks(tmp_path):
         tmp_path,
         'printf \'{"type":"res\'\nsleep 1.5\nprintf \'ult","is_error":false}\\n\'\nexec sleep 30\n',
     )
+
     result = run(
         work_dir=tmp_path,
         command=[str(script)],

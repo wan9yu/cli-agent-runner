@@ -76,6 +76,7 @@ def test_api_types_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.api_types")
 
     missing = EXPECTED_API_TYPES - actual
+
     assert not missing, f"agent_runner.api_types: missing public names {missing}"
 
 
@@ -83,6 +84,7 @@ def test_events_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.events")
 
     missing = EXPECTED_EVENTS_API - actual
+
     assert not missing, f"agent_runner.events: missing public names {missing}"
 
 
@@ -90,6 +92,7 @@ def test_hooks_module_should_match_public_surface_when_imported() -> None:
     actual = _public_names("agent_runner.hooks")
 
     missing = EXPECTED_HOOKS_API - actual
+
     assert not missing, f"agent_runner.hooks: missing public names {missing}"
 
 
@@ -97,6 +100,7 @@ def test_monitor_module_should_match_plugin_surface_when_imported() -> None:
     actual = _public_names("agent_runner.monitor")
 
     missing = EXPECTED_MONITOR_API - actual
+
     assert not missing, f"agent_runner.monitor: missing public names {missing}"
 
 

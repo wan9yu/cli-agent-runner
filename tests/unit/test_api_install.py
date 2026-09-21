@@ -47,6 +47,7 @@ def test_agent_runner_script_path_should_raise_filenotfounderror_when_neither_so
     tmp_path,
 ):
     empty = tmp_path / "empty"
+
     empty.mkdir()
 
     with (
@@ -63,13 +64,18 @@ def test_agent_runner_script_path_should_raise_filenotfounderror_when_neither_so
 
 
 def test_check_user_systemd_available_should_raise_when_xdg_runtime_dir_missing():
-    with patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(RuntimeError, match=r"XDG_RUNTIME_DIR"):
+    env = {}
+
+    with patch.dict(os.environ, env, clear=True):
+        with pytest.raises(RuntimeError, match=r"XDG_RUNTIME_DIR") as caught:
             _check_user_systemd_available()
+
+    assert "XDG_RUNTIME_DIR" in str(caught.value)
 
 
 def test_check_user_systemd_available_should_raise_when_dbus_session_unreachable(tmp_path):
     fake_runtime = tmp_path / "runtime"
+
     fake_runtime.mkdir()
 
     with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(fake_runtime)}):
@@ -97,6 +103,7 @@ def test_check_user_systemd_available_should_return_none_when_systemd_is_ok(tmp_
 
 
 def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
@@ -104,11 +111,14 @@ def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
     )
 
     with patch("agent_runner._install.os.geteuid", return_value=1000):
-        with pytest.raises(RuntimeError, match=r"--system requires sudo"):
+        with pytest.raises(RuntimeError, match=r"--system requires sudo") as caught:
             api.install(tmp_path, system=True)
+
+    assert "--system requires sudo" in str(caught.value)
 
 
 def test_install_should_raise_when_system_mode_used_without_sudo_user_env(tmp_path):
+
     (tmp_path / "agent-runner.toml").write_text(
         "schema_version = 1\n"
         "[agent]\ncommand = ['echo']\nprompt_arg_template = ['{prompt}']\n"
@@ -119,8 +129,10 @@ def test_install_should_raise_when_system_mode_used_without_sudo_user_env(tmp_pa
         patch("agent_runner._install.os.geteuid", return_value=0),
         patch.dict(os.environ, {}, clear=True),
     ):
-        with pytest.raises(RuntimeError, match=r"SUDO_USER"):
+        with pytest.raises(RuntimeError, match=r"SUDO_USER") as caught:
             api.install(tmp_path, system=True)
+
+    assert "SUDO_USER" in str(caught.value)
 
 
 def test_install_should_write_unit_to_etc_and_not_start_when_system_mode_succeeds(
@@ -193,6 +205,7 @@ def test_install_should_raise_fileexistserror_when_sibling_unit_shares_basename_
     tmp_path, monkeypatch
 ):
     units_dir = tmp_path / "systemd"
+
     _patch_user_install(monkeypatch, units_dir)
     site_a = tmp_path / "site-a" / "myproj"
     site_b = tmp_path / "site-b" / "myproj"  # same basename, different location

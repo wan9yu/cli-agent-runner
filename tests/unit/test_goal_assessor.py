@@ -81,7 +81,12 @@ _GOAL_ASSESSMENT_MARKER = {
 
 
 def test_treadmill_window_rounds_should_be_three_when_invoked() -> None:
-    assert _TREADMILL_WINDOW_ROUNDS == 3
+
+    actual = _TREADMILL_WINDOW_ROUNDS
+
+    expected = 3
+
+    assert actual == expected
 
 
 def test_assess_treadmill_should_return_advisory_when_dirty_and_check_unchanged(
@@ -115,6 +120,7 @@ def test_assess_treadmill_should_ignore_in_progress_round_substrate_before_lande
     every single call -- the assessor would be dark on the real `serve` path
     even though every unit test using a round-N-omitted fixture kept passing."""
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=True))
     _write(log_dir, _pending_substrate_before(4))
@@ -126,6 +132,7 @@ def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too_
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, auto_committed=True))
     _write(log_dir, _pending_substrate_before(4))
@@ -137,6 +144,7 @@ def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_di
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, git_head_before=f"sha{n}", git_head_after=f"sha{n}moved"))
     _write(log_dir, _pending_substrate_before(4))
@@ -146,6 +154,7 @@ def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_di
 
 def test_assess_treadmill_should_return_none_when_no_activity(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=False))  # git_head before==after too
     _write(log_dir, _pending_substrate_before(4))
@@ -155,6 +164,7 @@ def test_assess_treadmill_should_return_none_when_no_activity(tmp_path: Path) ->
 
 def test_assess_treadmill_should_return_none_when_check_value_converges(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
+
     for n, value in zip((1, 2, 3), (5.0, 4.0, 3.0), strict=True):
         _write(log_dir, *_round(n, dirty=True, check_value=value))
     _write(log_dir, _pending_substrate_before(4))
@@ -164,6 +174,7 @@ def test_assess_treadmill_should_return_none_when_check_value_converges(tmp_path
 
 def test_assess_treadmill_should_return_none_when_check_satisfied_flips(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
+
     for n, satisfied in zip((1, 2, 3), (False, False, True), strict=True):
         _write(log_dir, *_round(n, dirty=True, check_satisfied=satisfied))
     _write(log_dir, _pending_substrate_before(4))
@@ -181,6 +192,7 @@ def test_assess_treadmill_should_return_none_when_every_check_is_satisfied_and_s
     gate 2 only checked for a CHANGED signature, never for an UNSATISFIED
     one."""
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=True, check_satisfied=True))
     _write(log_dir, _pending_substrate_before(4))
@@ -192,6 +204,7 @@ def test_assess_treadmill_should_return_none_when_already_fired_for_this_signatu
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=True))
     _write(log_dir, _GOAL_ASSESSMENT_MARKER)
@@ -204,6 +217,7 @@ def test_assess_treadmill_should_return_none_when_fewer_than_k_rounds_exist(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
+
     for n in (1, 2):
         _write(log_dir, *_round(n, dirty=True))
     _write(log_dir, _pending_substrate_before(3))
@@ -238,6 +252,7 @@ def test_assess_treadmill_should_not_refire_when_the_episode_outlasts_the_window
     the window [4,5,6] no longer contains round 1..3, but the whole 1..6
     stretch is still ONE unbroken episode, so this must NOT refire."""
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=True))
     _write(log_dir, _GOAL_ASSESSMENT_MARKER)
@@ -255,6 +270,7 @@ def test_assess_treadmill_should_rearm_after_a_check_value_moves_when_invoked(
     longer covers the NEW stuck signature that follows it, so this must
     re-fire once the new signature has held for a full window."""
     log_dir = tmp_path / "logs"
+
     for n in (1, 2, 3):
         _write(log_dir, *_round(n, dirty=True, check_value=5.0))
     _write(log_dir, _GOAL_ASSESSMENT_MARKER)

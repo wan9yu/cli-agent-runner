@@ -183,7 +183,9 @@ def test_pending_recovered_should_be_empty_when_recovered_already_emitted(tmp_pa
 def test_pending_recovered_should_be_empty_when_no_events(tmp_path):
     from agent_runner._throttle import pending_recovered
 
-    assert pending_recovered(tmp_path) == []
+    actual = pending_recovered(tmp_path)
+
+    assert actual == []
 
 
 def test_pending_recovered_should_report_only_cleared_agent_when_another_still_active(tmp_path):

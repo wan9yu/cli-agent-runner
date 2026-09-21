@@ -71,6 +71,7 @@ def _violations(tree: ast.AST) -> list[str]:
 
 def test_production_modules_should_have_no_unified_diff_marker_parsing_when_scanned() -> None:
     failures: list[str] = []
+
     paths = sorted(PKG.rglob("*.py"))
     assert paths, "no agent_runner/*.py modules found"  # vacuity-guard
     for path in paths:
@@ -84,22 +85,28 @@ def test_production_modules_should_have_no_unified_diff_marker_parsing_when_scan
 
 def test_scan_should_flag_known_diff_marker_shapes_when_invoked() -> None:
     """The scan's own teeth — each shape is a way R2110 has been reintroduced."""
-    for src in (
+    shapes = (
         'if line.startswith("+"): pass',
         'if line.startswith(("+", "-")): pass',
         'if line.startswith(("+++", "---")): pass',
         'if line[0] == "+": pass',
         'if line[0] in ("+", "-"): pass',
         'import re\nre.match(r"^[+-]", line)',
-    ):
-        assert _violations(ast.parse(src)), f"scan missed diff-marker parsing: {src!r}"
+    )
+
+    missed = [src for src in shapes if not _violations(ast.parse(src))]
+
+    assert missed == [], f"scan missed diff-marker parsing: {missed!r}"
 
 
 def test_scan_should_not_flag_look_alike_non_diff_shapes_when_invoked() -> None:
     """The scan's own teeth — each shape looks like diff-marker parsing but is not."""
-    for src in (
+    shapes = (
         'if host.startswith("-"): pass',
         'if text.startswith("---\\n"): pass',
         'if status[0] == "R": pass',
-    ):
-        assert not _violations(ast.parse(src)), f"scan false-positives on: {src!r}"
+    )
+
+    false_positives = [src for src in shapes if _violations(ast.parse(src))]
+
+    assert false_positives == [], f"scan false-positives on: {false_positives!r}"

@@ -85,6 +85,7 @@ def test_try_load_cfg_should_return_none_when_config_has_unmigratable_manual_key
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
         + 'round_timeout_per_phase = { dev = 900 }\n[prompt]\nfile = "p.md"\n'
     )
+
     cfg = _cfg(tmp_path, body)
     args = argparse.Namespace(config=cfg)
 
@@ -94,6 +95,7 @@ def test_try_load_cfg_should_return_none_when_config_has_unmigratable_manual_key
 def test_try_load_cfg_should_return_none_when_toml_is_syntactically_broken(tmp_path):
     """Must degrade to None, not raise a raw TOMLDecodeError."""
     cfg = _cfg(tmp_path, "[runtime\n not toml")
+
     args = argparse.Namespace(config=cfg)
 
     assert upgrade_cmd._try_load_cfg(args) is None

@@ -105,6 +105,7 @@ def test_main_should_print_version_and_exit_zero_when_version_flag_given(
 
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
+
     assert f"agent-runner {__version__}" in captured.out
 
 

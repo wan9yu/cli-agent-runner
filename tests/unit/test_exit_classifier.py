@@ -12,48 +12,87 @@ from agent_runner.config import ConfigError
 
 
 def test_config_error_should_classify_as_permanent_78_when_invoked():
-    assert classify_round_exit(ConfigError("bad")) == 78
+
+    actual = classify_round_exit(ConfigError("bad"))
+
+    expected = 78
+
+    assert actual == expected
 
 
 def test_environmental_error_should_classify_as_environmental_76_when_invoked():
-    assert classify_round_exit(EnvironmentalError("enospc")) == 76
+
+    actual = classify_round_exit(EnvironmentalError("enospc"))
+
+    expected = 76
+
+    assert actual == expected
 
 
 def test_keyboard_interrupt_should_classify_as_130_when_invoked():
-    assert classify_round_exit(KeyboardInterrupt()) == 130
+
+    actual = classify_round_exit(KeyboardInterrupt("interrupted"))
+
+    expected = 130
+
+    assert actual == expected
 
 
 def test_unclassified_exception_should_classify_as_1_not_76_when_invoked():
     # A supervisor bug must hit the crash-loop breaker, never loop forever as 76.
-    assert classify_round_exit(RuntimeError("plugin import blew up")) == 1
+
+    actual = classify_round_exit(RuntimeError("plugin import blew up"))
+
+    expected = 1
+
+    assert actual == expected
 
 
 def test_unicode_decode_error_should_not_classify_as_78_when_invoked():
     # UnicodeDecodeError subclasses ValueError; must NOT be swept to stay-stopped.
-    assert classify_round_exit(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")) != 78
+
+    actual = classify_round_exit(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"))
+
+    expected = 78
+
+    assert actual != expected
 
 
 def test_system_exit_should_pass_through_code_when_invoked():
-    assert classify_round_exit(SystemExit(76)) == 76
+
+    actual = classify_round_exit(SystemExit(76))
+
+    expected = 76
+
+    assert actual == expected
 
 
 def test_system_exit_with_non_int_code_should_classify_as_1_when_invoked():
-    assert classify_round_exit(SystemExit("some message")) == 1
+
+    actual = classify_round_exit(SystemExit("some message"))
+
+    expected = 1
+
+    assert actual == expected
 
 
 def test_lock_held_error_should_classify_as_environmental_76_when_invoked():
     # LockHeldError is one of the *named* environmental classes (Group A spec):
     # a concurrent agent-runner holding the round lock self-heals -- retry, don't
     # count it toward the crash-loop breaker.
+
     from agent_runner.runner import LockHeldError
 
     assert classify_round_exit(LockHeldError("another agent-runner is running")) == 76
 
 
 def test_git_timeout_should_classify_as_environmental_76_when_invoked():
+
     from agent_runner.vcs_state import GitTimeout
 
-    assert classify_round_exit(GitTimeout("git status exceeded 10s")) == 76
+    actual = classify_round_exit(GitTimeout("git status exceeded 10s"))
+
+    assert actual == 76
 
 
 def test_unclassified_exception_should_trip_crash_loop_after_5_consecutive_rounds_when_invoked():
@@ -87,4 +126,9 @@ def test_unclassified_exception_should_trip_crash_loop_after_5_consecutive_round
 def test_classify_round_exit_should_never_return_75_when_invoked(exc):
     # 75 (CRASH_LOOP_EXIT) is exclusively serve's own verdict from
     # post_round_decision -- a round child must never claim it directly.
-    assert classify_round_exit(exc) != 75
+
+    actual = classify_round_exit(exc)
+
+    expected = 75
+
+    assert actual != expected
