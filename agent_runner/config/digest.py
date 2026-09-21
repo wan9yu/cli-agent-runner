@@ -1,8 +1,9 @@
 """Compact round_start config digest — a label, never a kill input.
 
-Hashes the Config-reload hot surfaces (prompt files, check cmdlines, [vcs],
-prompt delivery, agent env). Omits host-health terminate inputs and give-up
-codes. Snapshot extras omit env values so secrets never land in JSONL.
+Hashes listed prompt-file paths **and bytes**, check cmdlines, [vcs],
+prompt delivery, and agent env. Omits host-health terminate inputs and
+give-up codes. Snapshot extras are paths/names only — no prompt text, no
+env values.
 """
 
 from __future__ import annotations
@@ -12,6 +13,20 @@ from pathlib import Path
 from typing import Any
 
 from agent_runner.config.models import Config
+
+
+def _resolve_prompt_path(cfg: Config, path: Path) -> Path:
+    return path if path.is_absolute() else cfg.runtime.work_dir / path
+
+
+def _file_sha256(path: Path) -> str | None:
+    import hashlib  # function-scoped: hashlib is forbidden on serve startup
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(data).hexdigest()
 
 
 def digest_payload(cfg: Config, phase: str | None) -> dict[str, Any]:
@@ -24,11 +39,13 @@ def digest_payload(cfg: Config, phase: str | None) -> dict[str, Any]:
         files = [cfg.prompt.file]
     else:
         files = []
+    resolved = [_resolve_prompt_path(cfg, p) for p in files]
     checks: list[dict[str, Any]] = []
     if cfg.goal is not None:
         checks = [{"name": c.name, "cmd": list(c.cmd)} for c in cfg.goal.checks]
     return {
         "prompt_files": [p.as_posix() for p in files],
+        "prompt_file_sha256": [_file_sha256(p) for p in resolved],
         "checks": checks,
         "vcs_dirty_action": cfg.vcs.dirty_action,
         "prompt_delivery": profile.agent.prompt_delivery,

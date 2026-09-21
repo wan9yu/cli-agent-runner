@@ -37,6 +37,20 @@ def test_config_digest_should_change_when_prompt_file_changes(tmp_path: Path) ->
     assert config_digest(a, None) != config_digest(b, None)
 
 
+def test_config_digest_should_change_when_prompt_contents_change_on_same_path(
+    tmp_path: Path,
+) -> None:
+    cfg = _cfg(tmp_path)
+    before = config_digest(cfg, None)
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("y" * 500)
+    after = config_digest(cfg, None)
+    assert before != after
+    snap = snapshot_fields(cfg, None)
+    assert "yyyy" not in str(snap)
+    assert snap["config_prompt_files"] == [prompt.as_posix()]
+
+
 def test_config_digest_should_ignore_host_health_floors(tmp_path: Path) -> None:
     a = _cfg(tmp_path)
     mem = dataclasses.replace(

@@ -53,4 +53,8 @@ and exits **without** restarting serve. Fix the config or host, then
 
 `peek --json` reloads TOML now; it can disagree with serve's boot copy.
 Between-round attribution is `round_start.config_digest` on
-`log_dir/events-YYYY-MM.jsonl` ([events.md](../events.md)).
+`log_dir/events-YYYY-MM.jsonl` ([events.md](../events.md)): it hashes listed
+prompt-file **paths and bytes**, so a same-path body swap moves it.
+`config_changed=true` is not proof an operator swap landed — a `[goal]`
+ledger listed in `[prompt] files` also moves the digest (treadmill advisory,
+or the agent editing it).
