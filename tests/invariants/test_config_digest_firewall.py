@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
@@ -16,3 +17,14 @@ def test_kill_and_give_up_modules_should_not_name_config_digest() -> None:
         if "config_digest" in path.read_text(encoding="utf-8"):
             offenders.append(rel)
     assert not offenders, f"config_digest leaked into kill/give-up surface: {offenders}"
+
+
+def test_runner_py_must_not_read_config_digest_identifier() -> None:
+    tree = ast.parse((PKG / "runner.py").read_text(encoding="utf-8"))
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "config_digest":
+            hits.append(node.lineno)
+        elif isinstance(node, ast.Attribute) and node.attr == "config_digest":
+            hits.append(node.lineno)
+    assert not hits, f"runner.py reads config_digest at lines {hits}"

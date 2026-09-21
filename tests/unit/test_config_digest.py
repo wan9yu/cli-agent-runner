@@ -82,3 +82,41 @@ def test_config_digest_should_change_when_check_cmd_changes(tmp_path: Path) -> N
         ),
     )
     assert config_digest(a, None) != config_digest(b, None)
+
+
+def test_config_digest_should_change_when_dirty_action_changes(tmp_path: Path) -> None:
+    a = _cfg(tmp_path)
+    b = dataclasses.replace(a, vcs=VcsConfig(dirty_action="ignore"))
+    assert config_digest(a, None) != config_digest(b, None)
+
+
+def test_config_digest_should_change_when_prompt_delivery_changes(tmp_path: Path) -> None:
+    a = _cfg(tmp_path)
+    b = _cfg(tmp_path, prompt_delivery="stdin")
+    assert config_digest(a, None) != config_digest(b, None)
+
+
+def test_config_digest_should_change_when_agent_env_changes(tmp_path: Path) -> None:
+    a = _cfg(tmp_path, env={"TOKEN": "a"})
+    b = _cfg(tmp_path, env={"TOKEN": "b"})
+    assert config_digest(a, None) != config_digest(b, None)
+    assert "TOKEN" not in str(snapshot_fields(a, None))
+
+
+def test_config_digest_should_change_when_listed_ledger_bytes_change(
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("x" * 500)
+    ledger = tmp_path / "lessons.md"
+    ledger.write_text("a" * 500)
+    cfg = Config(
+        agent=AgentConfig(command=["true"], prompt_arg_template=[]),
+        runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
+        prompt=PromptConfig(files=[prompt, ledger]),
+        vcs=VcsConfig(),
+        goal=GoalConfig(ledger=str(ledger), checks=()),
+    )
+    before = config_digest(cfg, None)
+    ledger.write_text("b" * 500)
+    assert before != config_digest(cfg, None)
