@@ -98,12 +98,19 @@ coma-preventer is a separate, serve-local admission gate
 (`agent_runner/host_health.py`, `metrics.py`, `cli/_serve_round.py` +
 `cli/_serve_cgroup.py`), independent of the
 monitor's `auto_action`: before starting a round the loop samples
-`host_health` and **defers** while it reports `critical` pressure only
-(`round_deferred` / `round_resumed`, mirroring `schedule_paused`/`resumed`);
+`host_health` and **pauses admission** while it reports `critical` pressure
+only (`round_deferred` / `round_resumed`, mirroring `schedule_paused`/`resumed`);
 while a round is in flight it resamples every ~10s and, once pressure reads
 `critical` for several consecutive ticks in a row, **terminates** the round
-(`round_mem_terminated`) — unless a bounded cgroup lets it defer to the
-kernel's own OOM instead (`mem_pressure_deferred_to_cgroup`).
+(`round_mem_terminated`) — unless a bounded cgroup lets it hand the child to
+the kernel's own OOM (`mem_pressure_deferred_to_cgroup`). Those two events
+are not `host_cgroup_memory_limit.defer`: that boot flag is `True` only when
+serve's **own leaf** has both `memory.max` and `memory.swap.max` finite and
+plausible (including `MemorySwapMax=0`). The `cgroup_path` on that event is
+the leaf, not a bounding ancestor. Two-arm pre-OOM proof is the gated e2e
+(`AGENT_RUNNER_E2E_PI` / `AGENT_RUNNER_E2E_CGROUP`) on a dedicated unit — not
+a foreground grok loop under Tailscale SSH (`defer=false` on
+`tailscaled.service`).
 
 Two further rungs are opt-in and default OFF (knobs + defaults in the
 `[monitor.host_health.brake]` and `[monitor.host_health.pressure]` field
