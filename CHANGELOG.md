@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-09-21
+
 ### Added
 - `round_start` carries `config_digest` (sha256 of listed prompt-file paths **and bytes**, check cmdlines, `[vcs]` dirty_action, prompt delivery, agent env). Snapshot extras (paths/names only, no env values) emit only when it changes. Host-health floors and give-up codes are not hashed. The kill path does not read these fields.
+- Recipe: `docs/recipes/between-rounds.md` + `examples/between_rounds.py` — swap a prompt between rounds of a running serve; do not auto-restart on 78/75/70.
 
 ### Docs
 - `docs/configuration.md` Config reload: cold / hot / mixed lifetimes; exit 78 is child `ConfigError` or prompt smoke, not every `[phases]` edit; default `wait` self-rotates. The round child re-reads the TOML; serve's boot copy stays the schedule / phase / ceiling / host-health set.
@@ -16,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/events.md`: JSONL is history; `peek --json` is live, not a past-config replay. Config reload points at `round_start.config_digest`.
 - `[goal]` ledger: truncated to 8192 bytes; extra notes go in another `[prompt] files` entry.
 - `round` is not a substitute for `serve`.
-- Recipe: `docs/recipes/between-rounds.md` + `examples/between_rounds.py` — swap a prompt between rounds of a running serve; do not auto-restart on 78/75/70.
+- `docs/architecture.md`: `round_deferred` (admission pause) vs `host_cgroup_memory_limit.defer` (leaf has both memory caps); two-arm pre-OOM proof is gated e2e, not a Tailscale-SSH grok loop.
+
+No config migration required. `peek --json` schema stays `2.6`.
 
 ## [0.3.13] - 2026-09-18
 
@@ -1330,7 +1335,8 @@ Initial public release on PyPI as `cli-agent-runner`.
 - Tag-triggered release publishing to PyPI via Trusted Publishing OIDC,
   gated by a manual approval on the `pypi` GitHub environment.
 
-[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/wan9yu/cli-agent-runner/compare/v0.3.14...HEAD
+[0.3.14]: https://github.com/wan9yu/cli-agent-runner/compare/v0.3.13...v0.3.14
 [0.2.6]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/wan9yu/cli-agent-runner/compare/v0.2.3...v0.2.4
