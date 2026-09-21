@@ -1,51 +1,73 @@
-# Outer loop — industry RSI, landed on serve
+# Outer loop — 2026 harness ideas, landed on serve
 
 `agent-runner serve` is the **online host**: one coding CLI per round, isolation,
-pre-OOM, give-up. It is not the dreamer, the curriculum, or the exam.
+pre-OOM, give-up. It is not the inner agent loop, the dreamer, the curriculum,
+or the exam.
 
-2026 papers and loops share a split that matches this repo: a **fixed discovery
-agent** plus a **lightweight orchestration layer** that only rewrites policy
-between expensive online steps. You own that layer. Copy this directory; do
-not put it in core.
+Copy this directory. Do **not** loop `agent-runner round`. Do **not** auto-restart
+on 78/75/70.
 
-Do **not** loop `agent-runner round`. Do **not** auto-restart on 78/75/70.
+## Inner loop vs this repo
+
+Most “harness” posts describe the **inner** loop: model → tool call → observe →
+compact → repeat *inside one session*. That is Claude Code / Codex / pi / OpenHands
+/ smolagents `CodeAgent`. agent-runner does **not** reimplement it.
+
+This repo is the **outer** loop around a process that already exits:
+
+1. Spawn the CLI once (`round` child).
+2. Wall-clock + cgroup + give-up.
+3. Between rounds, *you* may rewrite hot files; the next child re-reads.
+
+| Layer | Who | Examples |
+|---|---|---|
+| Inner | the CLI | [Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/), smolagents ReAct, OpenHands tools |
+| Outer (this) | `serve` | schedule, `round_budget_s`, JSONL, breakers |
+| Meta (yours) | scripts in `examples/` | Dream-RSI policy, ACE curator, Ralph queue |
+
+JSONL is append-only history ([events.md](../../docs/events.md)). `peek --json`
+is live TOML, not which config produced a past round.
 
 ## Map
 
 | Idea | What they change | What you use here |
 |---|---|---|
-| [Dream-RSI](https://www.dream-rsi.com/) (Zheng et al., 2026, [arXiv:2609.14858](https://arxiv.org/abs/2609.14858)) **O1 online explore** | Policy guides a frozen coding agent; evaluator scores artifacts | `serve` + `[agent] command`. Child LLM stays the discovery agent. |
-| Dream-RSI **O2 history as simulator** | Completed discovery trees are an *exact* replay of realized search — not a learned world model | `log_dir/events-YYYY-MM.jsonl` is that history for *rounds* (linear, not a branch tree). `history_index.py` dumps it. Dreaming over the dump is yours. |
-| Dream-RSI **O3 policy improve, then redeploy** | Only exploration-policy *code* changes; models/evaluator stay fixed | Atomic swap of prompt / policy markdown with [between_rounds](../between_rounds/). Next child re-reads. `config_digest` (paths **and bytes**) is the receipt — [digest_watch](../digest_watch/). |
-| [Karpathy autoresearch](https://github.com/karpathy/autoresearch) | One file, one metric, fixed budget, keep or discard | One prompt file; `[[goal.checks]]` as the metric; `round_budget_s` as the wall; `[vcs] dirty_action` keep/stash. Human edits the prompt (their `program.md`); the agent edits the repo. |
-| [RSIAgent](https://arxiv.org/abs/2609.15364) curriculum / actor / verifier | Curriculum proposes tasks; actor acts; verifier grounds in the environment | Curriculum = this outer process (queue a new prompt). Actor = the round child. Verifier = `[[goal.checks]]` / tests — **not** an LLM judge in core. |
-| [RSI-Exam](https://rsi-exam.ai/) hidden split | Visible iterate, score once on sealed data | Keep the hidden grader *off* `[prompt] files`. Outer holds the exam; the child never hashes those bytes. |
+| [Dream-RSI](https://www.dream-rsi.com/) O1–O3 (Zheng et al., 2026, [arXiv:2609.14858](https://arxiv.org/abs/2609.14858)) | Frozen coding agent; history as *exact* replay; only policy code changes | `serve` + CLI; `history_index.py` dumps realized **rounds** (linear, not a branch tree); swap policy via [between_rounds](../between_rounds/); receipt = `config_digest` ([digest_watch](../digest_watch/)) |
+| [Karpathy autoresearch](https://github.com/karpathy/autoresearch) | One file, one metric, fixed budget, keep/discard | One prompt; `[[goal.checks]]`; `round_budget_s`; `[vcs] dirty_action`. Human edits the prompt (`program.md`); the agent edits the repo |
+| [RSIAgent](https://arxiv.org/abs/2609.15364) curriculum / actor / verifier | Curriculum proposes; actor acts; verifier grounds | Curriculum = outer queue. Actor = round child. Verifier = `[[goal.checks]]` — **not** an LLM judge in core |
+| [RSI-Exam](https://rsi-exam.ai/) hidden split | Visible iterate; score once on sealed data | Keep the hidden grader **off** `[prompt] files`. Outer holds the exam |
+| [Ralph Wiggum / harness engineering](https://openai.com/index/harness-engineering/) | Same prompt until mechanical reviewers pass; repo is the system of record | Unattended `serve`; `AGENTS.md` / prompt as hot files; linters as `[[goal.checks]]`; encode taste in tests, not in core |
+| [ACE](https://arxiv.org/abs/2510.04618) (ICLR 2026) | Playbook of *itemized* bullets; Generator / Reflector / Curator; **delta** updates, not full rewrites (avoid context collapse) | Generator = child. Reflector+Curator = outer. Playbook = extra `[prompt] files` entries (not `[goal] ledger` — that truncates at 8192). Append bullets; do not rewrite the whole prompt |
+| [Codex inner harness](https://openai.com/index/unrolling-the-codex-agent-loop/) | Compact, cache prefix, tool loop *inside* one thread | Leave it in Codex. Outer wall is `round_budget_s`. Do not add compact to serve |
+| [OpenHands workspace](https://docs.openhands.dev/sdk) | Isolated workspace per agent | `[agent] exec_prefix` / [container-pi](../../docs/recipes/container-pi.md). Isolation of the *supervisor* is systemd + cgroup, not a second SDK |
+| [Letta / MemGPT](https://github.com/letta-ai/letta-code) memory OS | Core / archival / recall; agent rewrites its own memory | Not in core (kill path stays blind). Durable notes = extra prompt files. Ledger is a treadmill cap, not RAM |
+| Subagent fan-out (Codex workers, etc.) | Parallel children, own context | **One round, one process.** Parallel = more `serve` units or the *inner* CLI. Do not teach serve to spawn workers |
 
-Paper claim that matches us: *leave the underlying coding agent unchanged;
-orchestration is a thin layer*. Serve is that host. JSONL is append-only
-history ([docs/events.md](../../docs/events.md)); `peek --json` is live TOML,
-not a replay of which config produced a past round.
+## Recipes you can run without new core
+
+**Ralph.** Leave serve up. Same prompt until `[[goal.checks]]` go green. When they
+stay red, queue a tighter prompt with between_rounds — still one serve.
+
+**ACE playbook.** `prompts/playbook.md` listed in `[prompt] files`. Outer appends
+a bullet after `goal_check` fails (delta, not a full rewrite). Confirm the next
+`config_digest` moved. Generator (the child) only *reads* the playbook.
+
+**Dream lap.** `history_index.py --log-dir logs` → your policy rewriter →
+between_rounds `--queue`. Stop on give-up kinds; do not auto-restart.
+
+**Autoresearch.** One editable file in the repo, one check command, `max_rounds`
+or `stop_file` when you want the lineage to end.
+
+Cold keys (schedule, host-health, `[agent] command`, check *count*) still need
+`agent-runner restart`. Hot keys (prompt bytes, check *cmdlines*) do not.
+See [configuration.md](../../docs/configuration.md) § Config reload.
 
 ## What this repo will not become
 
-- A replay engine, discovery-tree store, or policy-development agent
+- Inner tool loop, compact, or prompt cache
+- Replay engine / discovery-tree store / policy-development agent
 - Explore / exam *modes* inside `serve`
-- An LLM-as-judge or query engine (see [thesis.md](../../docs/thesis.md))
+- LLM-as-judge or query engine ([thesis.md](../../docs/thesis.md))
+- Memory OS or automatic playbook curator
 
-`history_index.py` only **reads** complete JSONL lines. It does not score
-policies and does not spawn rounds.
-
-## Minimal lap
-
-1. Run `agent-runner serve` (systemd or a long-lived process).
-2. Online: the child expands the repo; events land in JSONL.
-3. Between rounds: `python examples/outer_loop/history_index.py --log-dir logs`
-   (your dreamer reads that list).
-4. Redeploy: write the next policy onto [between_rounds](../between_rounds/)
-   `--queue`. Confirm with [digest_watch](../digest_watch/).
-5. If JSONL shows `config_broken` / `crash_loop` / `stalled_no_progress` /
-   `mem_loop_persistent`, stop. Fix by hand; do not auto-restart.
-
-Cold keys (schedule, host-health, `[agent] command`, check *count*) still
-need `agent-runner restart`. Hot keys (prompt bytes, check *cmdlines*) do not.
-See [configuration.md](../../docs/configuration.md) § Config reload.
+`history_index.py` only **reads** complete JSONL lines.
