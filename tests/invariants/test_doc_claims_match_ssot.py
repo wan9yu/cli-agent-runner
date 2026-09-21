@@ -214,3 +214,4 @@ def test_configuration_md_config_reload_should_describe_serve_boot_vs_round_rere
     assert "config_broken" in section
     round_cmd = (REPO / "agent_runner/cli/round_cmd.py").read_text(encoding="utf-8")
     assert "cfg_from_args_or_config_error" in round_cmd
+    assert "paths and bytes" in section
