@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples. BDD still pytest (`_when_` debt).
+- ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD still pytest (`_when_` debt).
 
 ### Docs
 - `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names (`docs/architecture.md`, `docs/runbook.md`).
@@ -874,7 +874,7 @@ release where a second per-phase field surfaces. Other items in the report
 
 ### Acknowledgements
 
-Thanks to our downstream integrators — this release answers their imminent
+Thanks to downstream integrators — this release answers their imminent
 production-deployment requirement for upgrade-without-disruption. After
 confirming round duration (10-40 min) fits within graceful-stop tolerance,
 this release scopes to round-boundary upgrade UX (Level 1). Mid-round
@@ -899,7 +899,7 @@ real production need.
 
 ### Acknowledgements
 
-Thanks to our downstream integrators for the deep v0.1.10 audit-session feedback
+Thanks to downstream integrators for the deep v0.1.10 audit-session feedback
 (6 items, 3-round real-run testing on ARMv8 Pi). This release reframes those
 items into a coherent "Plugin & Operator Transparency" theme across three
 layers: transparency (see what plugins do), operator override (escape hatches
@@ -930,7 +930,7 @@ for audit/debug), and diagnostic quality (errors point at the next debug step).
 
 ### Acknowledgements
 
-Thanks again to our downstream integrators — this release closes the
+Thanks again to downstream integrators — this release closes the
 network-resilience gap that 0.1.10's `MonitorRemoteError` propagation
 exposed, plus adds per-occurrence agent network blip observability requested
 during 0.1.10 handover review.
@@ -959,7 +959,7 @@ For network-related failures, the events index points at the diagnostic body:
 
 ### Acknowledgements
 
-Thanks to our downstream integrators for the Phase 4 second-pass production feedback that drove every change in this release. Six audit memos across 50 minutes of validated runtime surfaced four specific gaps; this release closes them.
+Thanks to downstream integrators for the Phase 4 second-pass production feedback that drove every change in this release. Six audit memos across 50 minutes of validated runtime surfaced four specific gaps; this release closes them.
 
 ### Added
 
@@ -987,7 +987,7 @@ Thanks to our downstream integrators for the Phase 4 second-pass production feed
 
 ### Acknowledgements
 
-Thanks to our downstream integrators for the dev/qa/product wall-time data
+Thanks to downstream integrators for the dev/qa/product wall-time data
 (Phase 4 feedback §3.1) that drove this API shape. Their three-role
 distribution made the case for per-phase overrides concrete.
 
@@ -1013,7 +1013,7 @@ documented plugin-author public surface.
 
 ### Acknowledgements
 
-Thanks to our downstream integrators for Phase 4 dogfooding feedback that drove
+Thanks to downstream integrators for Phase 4 dogfooding feedback that drove
 every item in this release. 3 audit memos (~90KB) silently swept into an
 orphan stash is a real-world failure mode; this release closes that loop.
 

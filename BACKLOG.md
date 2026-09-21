@@ -136,7 +136,7 @@ interpreter or install step) suits constrained / edge hosts better than a Python
 runtime plus a dependency. Footprint and speed are *not* reasons — the
 supervisor's ~24 MB RSS is negligible against a GB-scale agent, and all internal
 scheduling is already event-based (run time is model-latency-bound, not
-CPU-bound in our code).
+CPU-bound in this codebase).
 
 Held for an explicit decision, gated on two triggers: (a) the host-health /
 pre-OOM edge (item 1) is proven and stable — you do not rewrite a moving,

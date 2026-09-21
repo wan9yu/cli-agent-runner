@@ -315,7 +315,7 @@ The knob governs both round-log families:
 - the agent transcripts in `{log_dir}/rounds/R<N>-<timestamp>.log`, pruned by
   round number at the start of every round.
 
-**We are not ignoring disk.** Unbounded growth is watched, and loudly: the
+**Disk is not ignored.** Unbounded growth is watched, and loudly: the
 `disk_warning` detector alerts at 90% used and `disk_critical` — in the default
 `[monitor] auto_stop_on` — stops the service at 95%. Deleting history has no
 equivalent defense; it is discovered on the day you need the file and it is not

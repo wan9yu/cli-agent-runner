@@ -83,7 +83,7 @@ iteration), use the three between-rounds stop triggers:
 
 | Trigger | Use case |
 |---|---|
-| `.agent-done` sentinel | Agent self-determines "I'm done" (research / refactor / bug-fix sweeps) |
+| `.agent-done` sentinel | Agent self-determines "done" (research / refactor / bug-fix sweeps) |
 | `[runtime] stop_file` | Operator graceful pause for maintenance |
 | `[runtime] max_rounds` + `--max-rounds N` | Config or CLI-driven N-round bound |
 

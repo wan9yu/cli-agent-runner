@@ -13,7 +13,7 @@ JSONL 是只追加的历史（[events.md](../../docs/events.md)）。`peek --jso
 
 ## 对照
 
-| 思路 | 他们在改什么 | 用我们怎么搭 |
+| 思路 | 对方在改什么 | 怎么落地 |
 |---|---|---|
 | [Dream-RSI](https://www.dream-rsi.com/) O1–O3（Zheng et al., 2026, [arXiv:2609.14858](https://arxiv.org/abs/2609.14858)） | 冻结的编码 agent；历史当作*精确* replay；只改策略代码 | `serve` + CLI；`history_index.py` 倒出已发生的 **round**（线性，不是分叉树）；策略用 [between_rounds](../between_rounds/README.zh.md) 换；回执是 `config_digest`（[digest_watch](../digest_watch/README.zh.md)） |
 | [Karpathy autoresearch](https://github.com/karpathy/autoresearch) | 一个文件、一个指标、固定预算、留下或丢掉 | 一份 prompt；`[[goal.checks]]`；`round_budget_s`；`[vcs] dirty_action`。人改 prompt（他们的 `program.md`）；agent 改仓库 |

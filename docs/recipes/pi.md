@@ -32,7 +32,7 @@ agent-runner init --preset pi
 
 This writes an `agent-runner.toml` whose agent command is
 `pi -p -na --mode json --model PROVIDER/MODEL`. **Replace `PROVIDER/MODEL`**
-with a provider/model you have configured — our setup is Kimi K3 via Moonshot:
+with a provider/model already configured — the documented example is Kimi K3 via Moonshot:
 
 ```toml
 command = ["pi", "-p", "-na", "--mode", "json", "--model", "moonshot/kimi-k3"]
@@ -79,7 +79,7 @@ Notes:
 
 ## Provider auth
 
-### Primary path — Kimi K3 via Moonshot (what we run)
+### Primary path — Kimi K3 via Moonshot
 
 Pi speaks OpenAI-compatible endpoints, so define a custom provider in
 `~/.pi/agent/models.json`:

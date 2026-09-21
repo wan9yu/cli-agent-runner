@@ -10,13 +10,13 @@ pre-OOM, and give-up. Semantics:
 Do **not** loop `agent-runner round`. Do **not** auto-restart serve on
 exit 78/75/70.
 
-## How we think about this
+## How this is layered
 
 2026 “harness” write-ups are usually an **outer** loop: leave the coding
 CLI unchanged, change what the next round reads. `serve` is the process
 layer in the middle. These examples are not a second supervisor.
 
-| Layer | Job | Not our job |
+| Layer | Job | Out of scope |
 |---|---|---|
 | Inner | tool → observe → compact inside one CLI session | reimplement Codex / pi / OpenHands |
 | Outer (`serve`) | one round, one process; wall, cgroup, give-up, JSONL | curriculum, replay, or exam mode |
@@ -36,7 +36,7 @@ are readable. The kill path does not read `config_digest` or goal notes.
 |---|---|
 | [between_rounds/](between_rounds/) | Atomic prompt swap after `round_end` |
 | [digest_watch/](digest_watch/) | Print `config_digest` / `config_changed` |
-| [outer_loop/](outer_loop/) | 2026 harness map (Dream-RSI, ACE, Ralph, Codex inner vs our outer) |
+| [outer_loop/](outer_loop/) | 2026 harness map (Dream-RSI, ACE, Ralph, Codex inner vs the outer loop) |
 
 Per-CLI setup (pi, aider, containers) stays in
 [docs/recipes/](../docs/recipes/).

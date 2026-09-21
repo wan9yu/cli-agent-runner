@@ -17,7 +17,7 @@ watches; a client elsewhere relays its event stream (see "Remote observation"
 below).
 
 **Provider-agnostic by design.** 6 presets ship (`claude` — the default —
-plus `aider`, `gemini`, `codewhale`, `kimi` and `pi`) because those are what we run in
+plus `aider`, `gemini`, `codewhale`, `kimi` and `pi`) because those are the CLIs used in
 production, but the supervisor's defenses, observability, and lifecycle make
 no CLI-specific assumptions in core. Set `[agent].command` to any prompt-arg
 CLI and the same Round / Loop / Witness layers apply.

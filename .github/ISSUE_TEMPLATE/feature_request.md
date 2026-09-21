@@ -16,5 +16,5 @@ What problem does this solve? Who hits it?
 
 **Are you willing to send a PR?**
 
-- [ ] Yes — I'll open a PR.
-- [ ] No — I'm proposing only.
+- [ ] Yes — a PR will follow.
+- [ ] No — proposal only.

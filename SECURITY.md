@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The latest tagged release. We do not back-port security fixes to older versions.
+The latest tagged release. Security fixes are not back-ported to older versions.
 
 ## Reporting a vulnerability
 

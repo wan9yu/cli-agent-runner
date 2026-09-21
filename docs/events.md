@@ -24,7 +24,7 @@ process state, not a replay of which config produced a past round.
 ## Why no explicit `schema_version: int` field?
 
 The kind name already serves as the discriminator. Adding `schema_version: int`
-to every event would imply we maintain semantic versioning of payload schemas
+to every event would imply semantic versioning of payload schemas
 — but the append-only contract is simpler and sufficient. Consumers don't need
 to parse a version int; they just check the kind name.
 
@@ -36,7 +36,7 @@ for evt in stream_events_jsonl(log_dir):
         round_num = evt["round_num"]  # guaranteed stable
         phase = evt.get("phase")  # guaranteed stable
         digest = evt.get("config_digest")  # listed prompt paths+bytes; never a kill input
-        # any new fields → ignored unless we read them
+        # any new fields → ignored unless a consumer reads them
     elif evt["event"] == "agent_self_terminated":
         reason = evt.get("reason", "")  # guaranteed stable
     # unknown kinds: silently ignore
