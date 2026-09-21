@@ -11,6 +11,7 @@ from ratch.checks.bdd_conventions import BddTestConventions
 from ratch.checks.catalog_size import CatalogSize
 from ratch.checks.circular_import import NoCircularImport
 from ratch.checks.commit_heatmap import CommitHeatmap
+from ratch.checks.confined_import import ConfinedImport  # type: ignore[import-not-found]
 from ratch.checks.conflict_markers import NoConflictMarkers
 from ratch.checks.doc_cli import DocCliExamplesValid
 from ratch.checks.first_person import NoFirstPerson
@@ -27,13 +28,31 @@ from ratch.checks.vacuous_assert import NoVacuousAssert
 
 CHECKS = [
     NoConflictMarkers(),
-    BddTestConventions(prefix="test_", blank_blocks=0),
+    BddTestConventions(  # type: ignore[call-arg]
+        prefix="test_",
+        blank_blocks=0,
+        forbid_comment_labels=("given", "when", "then", "arrange", "act", "assert"),
+    ),
     NoHashNamedTest(),
     NoPytestSkip(paths=("tests/invariants/**/*.py",)),
     LocCap(),
-    InjectedClock(
+    InjectedClock(  # type: ignore[call-arg]
         clock_paths=("agent_runner/clock.py",),
         paths=("agent_runner/**/*.py",),
+        extra_time_attrs=(
+            "strftime",
+            "localtime",
+            "gmtime",
+            "time_ns",
+            "monotonic_ns",
+            "process_time",
+        ),
+        extra_dt_attrs=(),  # type: ignore[call-arg]
+    ),
+    ConfinedImport(
+        names=("asyncio", "select", "selectors"),
+        attrs=("os.pidfd_open",),
+        allow_paths=("agent_runner/_procwait.py", "agent_runner/_notify.py"),
     ),
     RepoRootSSot(ssot="tests/_test_helpers.py"),
     NoVacuousAssert(),

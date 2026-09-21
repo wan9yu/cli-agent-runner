@@ -8,8 +8,7 @@ pin time by patching ``SYSTEM_CLOCK`` itself). Either way, raw ``time.time()`` /
 ``time.monotonic()`` / ``time.sleep()`` / ``datetime.now()`` must NOT appear
 anywhere else. Tests pass a ``FakeClock`` (``tests/_clock.py``) with advanceable
 virtual time to pin an exact instant instead of racing the wall clock. The
-"no raw time outside this file" rule is pinned by
-``tests/invariants/test_no_raw_time.py``.
+"no raw time outside this file" rule is pinned by ratch ``InjectedClock``.
 
 Why an object, not scattered ``time.time()``: five distinct time kinds
 (epoch / monotonic / sleep / UTC-now / tz-now) collapse to one seam, so a test

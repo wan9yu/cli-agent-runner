@@ -199,10 +199,12 @@ def select_phase(
             )
             if i == 0:
                 rotation_window = decision.active_window
-            if decision.resume_at is not None and (best is None or decision.resume_at < best[0]):
+            resume_at = decision.resume_at
+            if resume_at is not None and (best is None or resume_at < best[0]):
                 # (B2) never-opening candidates return None and are dropped from the min.
-                best = (decision.resume_at, phase, decision.active_window, sched.timezone)
-        skipped.append(phase)
+                best = (resume_at, phase, decision.active_window, sched.timezone)
+        if phase is not None:
+            skipped.append(phase)
     if best is None:
         return Selection(None, True, None, None, None, [], rotation_window)
     return Selection(

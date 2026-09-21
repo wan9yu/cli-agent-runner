@@ -110,7 +110,8 @@ def resolve_cooperative_signal(agent_binary: str | None) -> signal.Signals | Non
     the SIGNAL half of the same anti-skew single-source: serve resolves it once
     per phase from its own registry and publishes the result via env, so the
     round child never re-derives (and skews) it."""
-    return _COOPERATIVE_SIGNALS.get(_cooperative_stop_for_name(agent_binary))
+    name = _cooperative_stop_for_name(agent_binary)
+    return _COOPERATIVE_SIGNALS.get(name) if name is not None else None
 
 
 def resolve_resume_flag(agent_binary: str | None) -> str | None:

@@ -40,7 +40,6 @@ CORPUS_SCANNING_INVARIANTS = (
     "test_no_asyncio_select.py",
     "test_no_internal_refs.py",
     "test_no_price_logic.py",
-    "test_no_raw_time.py",
     "test_procwait_shield.py",
     "test_repo_constants_patched_in_tests.py",
     "test_set_diff_for_auto_tool_classification.py",

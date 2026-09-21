@@ -1,16 +1,13 @@
 """BDD body shape that ratch ``blank_blocks=0`` does not cover.
 
-Names (``_should_``, ``_when_``, no ``or`` snake segment) are ratch
-``BddTestConventions(prefix="test_", blank_blocks=0)``. This file keeps:
-
-- no standalone ``# given`` / ``# when`` / ``# then`` labels (ratch ignores labels);
-- bodies with >=6 statements grouped by a blank line (ratch skips body shape).
+Names, ``or`` segments, and standalone ``# given`` / ``# when`` labels are
+ratch ``BddTestConventions``. This file keeps bodies with >=6 statements
+grouped by a blank line.
 """
 
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
 from tests._test_helpers import ROOT
@@ -30,33 +27,6 @@ def _test_functions() -> list[tuple[Path, ast.FunctionDef, str]]:
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
                 out.append((f, node, src))
     return out
-
-
-# A STANDALONE section-label comment only: the label word optionally with a
-# trailing colon, and nothing else on the comment. This catches `# given`,
-# `# Then:`, `result = x  # act` -- but NOT ordinary rationale prose that merely
-# starts with one of these words (`# given the file is large, we...`), which is a
-# legitimate comment, not a section marker.
-_SECTION_LABEL = re.compile(r"#\s*(given|when|then|arrange|act|assert)\s*:?\s*$", re.IGNORECASE)
-
-
-def test_test_bodies_should_omit_section_label_comments_when_invoked() -> None:
-    # Scan the whole function span (node.lineno..end_lineno), not from the first
-    # BODY statement -- a `# given` sitting between the signature and the first
-    # statement (or before a docstring) must not slip through.
-    offenders: list[str] = []
-    for f, node, src in _test_functions():
-        lines = src.splitlines()
-        end = node.end_lineno or len(lines)
-        for i in range(node.lineno - 1, end):
-            if _SECTION_LABEL.search(lines[i]):
-                offenders.append(f"{f.relative_to(TESTS.parent)}:{i + 1}: {lines[i].strip()}")
-
-    assert not offenders, (
-        "test bodies must use blank-line grouping, not section-label comments "
-        "(no standalone `# given` / `# when` / `# then` / `# arrange` / `# act` / `# assert`):\n"
-        + "\n".join(offenders)
-    )
 
 
 def _body_statements(node: ast.FunctionDef) -> list[ast.stmt]:

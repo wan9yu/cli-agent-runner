@@ -214,7 +214,8 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
         print(f"Error: events file unreadable: {e}", file=sys.stderr)
         return 1
 
-    for line in matches[-window:]:
+    shown = matches[-window:] if window > 0 else []
+    for line in shown:
         print(line)
     return 0
 
@@ -259,3 +260,4 @@ def _tail_events(log_dir: Path, kind_set: set[str], since: datetime | None = Non
                     print(line, flush=True)
         except KeyboardInterrupt:
             return 0
+    return 0

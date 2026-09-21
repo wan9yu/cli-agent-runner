@@ -258,6 +258,7 @@ def _monitor_loop_iter(
     event_tail = monitor._EventTail()
     while True:
         poll_guard = _FailOpenGuard("monitor poll failed")
+        alerts: list[monitor.Alert] = []
         with poll_guard:
             alerts = _poll_once(work_dir, event_tail=event_tail)
         if poll_guard.failed:  # a poll crash must not kill supervision

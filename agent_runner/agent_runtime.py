@@ -148,7 +148,7 @@ def _snapshot_stray_descendants(proc: subprocess.Popen) -> list[dict]:
 
 def _wait_exit_shielded(
     proc: subprocess.Popen, *, deadline: float, clock: Clock
-) -> Literal["exited", "timeout"]:
+) -> Literal["exited", "timeout", "woken"]:
     """``wait_exit`` retried against the SAME absolute ``deadline`` on a
     re-entrant ``KeyboardInterrupt`` (round_cmd's process-wide SIGTERM handler
     raises one through the blocking wait) -- so an impatient double-kill can
@@ -219,7 +219,7 @@ def _live_children(
     *,
     ignore_patterns: list[re.Pattern[str]] | None = None,
     max_n: int | None = 5,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Live (non-zombie) descendants of ``proc``, split into ``(live, ignored)``.
 
     Each entry is ``{"name": <process name>, "pid": <int>}``; an ignored entry
