@@ -4,6 +4,10 @@
 pre-OOM, give-up. It is not the inner agent loop, the dreamer, the curriculum,
 or the exam.
 
+**Philosophy** ([examples/README.md](../README.md)): 2026 harness papers are
+*meta* loops. We host the expensive online step; you rewrite policy between
+rounds. Do not freeze explore/exam inside `serve`.
+
 Copy this directory. Do **not** loop `agent-runner round`. Do **not** auto-restart
 on 78/75/70.
 
