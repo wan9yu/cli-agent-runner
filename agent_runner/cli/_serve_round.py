@@ -22,7 +22,7 @@ import os
 import signal
 import subprocess  # noqa: TID251
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeGuard
 
 from agent_runner import host_health, metrics
 from agent_runner._notify import NULL_LISTENER, Listener, NullListener
@@ -112,7 +112,9 @@ def _memory_pressure_now(cfg, log_dir, sample_fn) -> host_health.Pressure | None
     return pressure
 
 
-def _pressure_is_critical(pressure: host_health.Pressure | None) -> bool:
+def _pressure_is_critical(
+    pressure: host_health.Pressure | None,
+) -> TypeGuard[host_health.Pressure]:
     return pressure is not None and pressure.severity == "critical"
 
 
@@ -478,12 +480,15 @@ def _spawn_round(
                     return returncode
                 if clock.monotonic() >= deadline:
                     break
-                if next_mem_check is not None and clock.monotonic() >= next_mem_check:
+                if (
+                    next_mem_check is not None
+                    and host_health_cfg is not None
+                    and clock.monotonic() >= next_mem_check
+                ):
                     cur_sample = sample_fn()
-                    if prev_tick_sample is None:
-                        prev_tick_sample = cur_sample
+                    baseline = prev_tick_sample if prev_tick_sample is not None else cur_sample
                     pressure = host_health.memory_pressure(
-                        cur_sample, prev_tick_sample, host_health_cfg
+                        cur_sample, baseline, host_health_cfg
                     )
                     prev_tick_sample = cur_sample
                     rate_mb_per_min: float | None = None
@@ -514,7 +519,7 @@ def _spawn_round(
                         growth_pressure = host_health.cgroup_growth_rate_pressure(
                             rate_mb_per_min, host_health_cfg
                         )
-                        if growth_pressure is not None:
+                        if growth_pressure is not None and rate_mb_per_min is not None:
                             if not growth_warned:
                                 growth_warned = True
                                 emit_cgroup_growth_rate_warning(
