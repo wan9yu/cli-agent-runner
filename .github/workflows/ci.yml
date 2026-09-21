@@ -74,7 +74,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: install ratch
-        run: pip install ratch==0.1.2
+        run: pip install ratch==0.1.3
       - name: ratch check
         run: python -m ratch check
 

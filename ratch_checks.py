@@ -1,10 +1,10 @@
-"""ratch gates for facts this repo does not keep in pytest.
+"""ratch gates. One executor per fact; pytest keeps dialects ratch cannot match.
 
-BDD, AI-signatures (tags + CHANGELOG), and injected-clock stay in pytest
-until ratch dialects match. Whole-repo loc-cap waits on four test files
-over 1000 lines.
+BDD waits on ~495 names missing ``_when_`` (and 16 with an ``or`` segment).
+Whole-repo loc-cap waits on four test files over 1000 lines.
 """
 
+from ratch.checks.ai_signatures import NoAiSignatures
 from ratch.checks.catalog_size import CatalogSize
 from ratch.checks.commit_heatmap import CommitHeatmap
 from ratch.checks.conflict_markers import NoConflictMarkers
@@ -19,6 +19,17 @@ CHECKS = [
     NoPytestSkip(paths=("tests/invariants/**/*.py",)),
     LocCap(paths=("agent_runner/**/*.py",), max_lines=1000),
     NoVacuousAssert(),
+    NoAiSignatures(
+        sources=("log", "tags", "files"),
+        files=("CHANGELOG.md",),
+        patterns=(
+            r"Co-Authored-By:",
+            r"Generated with Claude",
+            r"Generated with \[Cursor\]",
+            "\N{ROBOT FACE}",
+            r"noreply@anthropic\.com",
+        ),
+    ),
     CatalogSize(),
     CommitHeatmap(),
 ]

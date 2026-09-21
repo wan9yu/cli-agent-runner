@@ -27,9 +27,9 @@ every push and PR.
 5. Run `./build.sh check` locally before pushing.
 6. Conventional Commits: `feat:` / `fix:` / `docs:` / `refactor:` / `test:` /
    `chore:` / `ci:` / `build:` / `perf:`. Subjects in English, imperative mood.
-   CI (`lint-commits` job) and `tests/invariants/test_no_ai_signatures.py`
-   reject auto-generated trailers and robot signatures — keep messages
-   human-authored.
+   CI (`lint-commits` job) and ratch `no-ai-signatures` (log + tags +
+   CHANGELOG) reject auto-generated trailers and robot signatures — keep
+   messages human-authored.
 
 ## Where does this fact go?
 
