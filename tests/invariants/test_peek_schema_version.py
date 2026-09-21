@@ -8,6 +8,7 @@ to emit the wrapper silently breaks them — this test fails loud instead.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +49,12 @@ def test_peek_json_should_include_schema_version_when_emitted(tmp_path: Path) ->
         check=True,
     )
     bin_dir = Path(sys.executable).parent
-    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    git_dir = Path(shutil.which("git") or "/usr/bin").parent
+    env = {
+        "PATH": f"{bin_dir}:{git_dir}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+    }
+
     subprocess.run(
         ["agent-runner", "init", "--no-commit"],
         cwd=work_dir,
