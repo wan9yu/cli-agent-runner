@@ -25,7 +25,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 # Heavy modules with no consumer on `agent-runner serve`'s default config path.
 # The first group (hashlib/zoneinfo + importlib.metadata's tail) are modules

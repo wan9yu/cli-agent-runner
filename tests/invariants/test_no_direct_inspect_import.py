@@ -19,9 +19,10 @@ moment the function runs, and this is a footprint guard, not a startup-only one.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+_PKG = ROOT / "agent_runner"
 
 
 def _direct_inspect_import_hits() -> list[str]:

@@ -7,9 +7,10 @@ references — were orphans: reachable only by knowing the filename.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+REPO = ROOT
 DOCS = REPO / "docs"
 
 # Not reader-facing: internal/ is gitignored, migrations/ is history reached

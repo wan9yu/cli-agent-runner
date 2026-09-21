@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 
-_EX = Path(__file__).resolve().parents[2] / "examples" / "digest_watch" / "digest_watch.py"
+from tests._test_helpers import ROOT
+
+_EX = ROOT / "examples" / "digest_watch" / "digest_watch.py"
 
 
 def _mod():

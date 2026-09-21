@@ -29,7 +29,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+_PKG = ROOT / "agent_runner"
 
 # The only two modules allowed to touch select/selectors/os.pidfd_open -- the
 # fd-driven fast path this whole scan protects.

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- ratch `0.1.5`: `RepoRootSSot` (`tests/_test_helpers.py` is the walker). `NoForbiddenLiteral` / `NoInternalRefs` stay off (empty needle is VACUOUS; `docs/internal/` is a public-doc fence).
 - ratch `0.1.4`: `InjectedClock` on `agent_runner/**` (stdlib `time.sleep` / `datetime.now`, not `Clock.sleep`). pytest keeps `strftime` / `localtime` / `gmtime` / `*_ns` / `date.today`.
 - ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD names (`prefix="test_"`, `blank_blocks=0`); pytest keeps label-comment and 6-stmt grouping only. Loc-cap covers every tracked `*.py` (default 1000).
 

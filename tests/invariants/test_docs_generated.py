@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from agent_runner._docgen import render
+from tests._test_helpers import ROOT
 
-DOCS = Path(__file__).resolve().parent.parent.parent / "docs"
+DOCS = ROOT / "docs"
 
 
 def test_docs_should_match_on_disk_when_rendered_in_memory() -> None:

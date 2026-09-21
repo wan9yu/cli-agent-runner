@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import importlib
 import tomllib
-from pathlib import Path
 
 from agent_runner._plugin_manifest import PluginManifest
+from tests._test_helpers import ROOT
 
 
 def _read_plugin_entries() -> dict[str, str]:
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    pyproject = ROOT / "pyproject.toml"
     with pyproject.open("rb") as f:
         data = tomllib.load(f)
     return data["project"]["entry-points"]["agent_runner.plugins"]

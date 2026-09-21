@@ -20,9 +20,10 @@ silently make the hard wall send a cooperative signal:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_RUNTIME = Path(__file__).resolve().parents[2] / "agent_runner" / "agent_runtime.py"
+from tests._test_helpers import ROOT
+
+_RUNTIME = ROOT / "agent_runner" / "agent_runtime.py"
 
 # Never a valid FIRST signal for any kill call -- these skip the cooperative
 # grace (SIGKILL), freeze (SIGSTOP), or would masquerade as the hard wall.

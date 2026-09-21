@@ -12,7 +12,9 @@ import ast
 import re
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 ALLOWED_SERVE_IMPORTS = {
     "fcntl",
     "os",
@@ -394,7 +396,7 @@ def test_known_alert_kinds_should_be_well_formed_when_inspected() -> None:
 def test_public_docs_should_say_price_agnostic_not_price_blind_when_read() -> None:
     """Tenet-3 wording check: public docs must say 'price-agnostic' not
     the deprecated 'price-blind'."""
-    arch = (Path(__file__).resolve().parents[2] / "docs" / "architecture.md").read_text()
+    arch = (ROOT / "docs" / "architecture.md").read_text()
 
     assert "price-blind" not in arch.lower()
     assert "price-agnostic" in arch.lower()

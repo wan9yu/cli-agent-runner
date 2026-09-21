@@ -12,7 +12,9 @@ import importlib
 import re
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+REPO = ROOT
 
 # Docs that hand an operator a copy-pasteable command line. The recipes/ dir is
 # globbed in so every `agent-runner …` example in a per-agent recipe is pinned

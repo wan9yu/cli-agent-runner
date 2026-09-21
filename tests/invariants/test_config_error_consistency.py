@@ -23,9 +23,9 @@ from pathlib import Path
 
 import pytest
 
-from tests._test_helpers import write_min_config
+from tests._test_helpers import ROOT, write_min_config
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 # The 0.2.14 package split turned config.py into a config/ package — every
 # module in it can raise, so the scan rglobs the whole package rather than
 # naming one file.

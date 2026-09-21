@@ -27,7 +27,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_PROCWAIT = Path(__file__).resolve().parent.parent.parent / "agent_runner" / "_procwait.py"
+from tests._test_helpers import ROOT
+
+_PROCWAIT = ROOT / "agent_runner" / "_procwait.py"
 
 _FORBIDDEN_HANDLER_NAMES = {"BaseException", "KeyboardInterrupt"}
 

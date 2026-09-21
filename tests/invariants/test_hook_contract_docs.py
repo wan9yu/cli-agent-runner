@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+REPO = ROOT
 
 
 def _protocol_names() -> set[str]:

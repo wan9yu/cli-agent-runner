@@ -44,7 +44,9 @@ import re
 import subprocess
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+_REPO = ROOT
 
 # A version-shaped number NOT preceded by another digit/dot -- excludes false
 # positives inside a literal dotted-quad IPv4 address (e.g. "127.0.0.1"

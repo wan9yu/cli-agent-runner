@@ -13,7 +13,9 @@ import ast
 import re
 from pathlib import Path
 
-TESTS = Path(__file__).resolve().parent.parent
+from tests._test_helpers import ROOT
+
+TESTS = ROOT / "tests"
 _SELF = Path(__file__).name
 
 

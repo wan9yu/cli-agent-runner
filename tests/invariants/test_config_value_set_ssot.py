@@ -12,7 +12,6 @@ transient_error_action) had no guard of any kind.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import get_args, get_type_hints
 
 from agent_runner.config import (
@@ -25,8 +24,9 @@ from agent_runner.config import (
     RuntimeConfig,
     VcsConfig,
 )
+from tests._test_helpers import ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 # (dataclass, field name, frozenset SSOT the loader validates against)
 _PAIRS = [

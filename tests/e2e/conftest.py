@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._test_helpers import ROOT
+
 PI_HOST = "pi"
 E2E_FLAG = "AGENT_RUNNER_E2E_PI"
 CGROUP_FLAG = "AGENT_RUNNER_E2E_CGROUP"
@@ -42,7 +44,7 @@ def _scp(src: str, dst: str) -> None:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return ROOT
 
 
 def _local_sh(cmd: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
 
 
 def doc_files() -> list[Path]:

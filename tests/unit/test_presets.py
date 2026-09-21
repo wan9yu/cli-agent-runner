@@ -5,13 +5,12 @@ from __future__ import annotations
 import importlib.resources
 import re
 import tomllib
-from pathlib import Path
 
 import pytest
 
-from tests._test_helpers import PRESET_NAMES
+from tests._test_helpers import PRESET_NAMES, ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 
 def test_preset_names_should_match_shipped_dir_when_compared() -> None:

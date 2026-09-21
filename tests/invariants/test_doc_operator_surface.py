@@ -7,9 +7,9 @@ right-sizing. The two below are real properties with real SSOTs.
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests._test_helpers import ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 
 def test_configuration_doc_should_match_runner_phase_formula_when_read() -> None:

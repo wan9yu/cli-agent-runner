@@ -11,9 +11,10 @@ config at a tmp_path-based work_dir.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-TESTS = Path(__file__).resolve().parent.parent
+from tests._test_helpers import ROOT
+
+TESTS = ROOT / "tests"
 DANGEROUS_CALLS = {"run_one_round", "stash_orphan", "_run_one_round_inner"}
 
 

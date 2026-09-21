@@ -17,7 +17,9 @@ import ast
 import re
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 # Modules permitted to know the goal-steering surface exists: the
 # assessor/ledger/executor itself, its sole caller, the event-kind SSOT

@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._test_helpers import ROOT
+
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_registries():
@@ -115,7 +117,7 @@ def e2e_pi_enabled() -> bool:
 @pytest.fixture
 def in_repo_root() -> Iterator[Path]:
     """For invariant tests that must scan the real codebase."""
-    yield Path(__file__).resolve().parent.parent
+    yield ROOT
 
 
 @pytest.fixture
@@ -141,5 +143,4 @@ def minimal_config(tmp_path: Path):
         runtime=RuntimeConfig(work_dir=tmp_path, log_dir=tmp_path / "logs"),
         prompt=PromptConfig(file=prompt_file, inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
     )

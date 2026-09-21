@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+REPO = ROOT
 EX = REPO / "examples"
 
 

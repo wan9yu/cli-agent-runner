@@ -26,8 +26,9 @@ import dataclasses
 from pathlib import Path
 
 from agent_runner import api_types, context_store
+from tests._test_helpers import ROOT
 
-_PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+_PKG = ROOT / "agent_runner"
 
 _TARGET_CLASSES: dict[str, type] = {
     "ProjectState": api_types.ProjectState,

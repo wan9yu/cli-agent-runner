@@ -13,7 +13,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+_PKG = ROOT / "agent_runner"
 
 # ratch injected-clock already covers time/sleep/monotonic/perf_counter and
 # datetime.now/utcnow/today. These extras are still this twin's fact.

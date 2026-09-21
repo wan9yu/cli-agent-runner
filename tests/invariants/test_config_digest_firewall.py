@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 
 def test_kill_and_give_up_modules_should_not_name_config_digest_when_invoked() -> None:

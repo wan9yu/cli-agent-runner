@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 REPO = PKG.parent
 
 

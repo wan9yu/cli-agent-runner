@@ -8,7 +8,6 @@ when you reword a guarded claim, update the registry in the same change.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from agent_runner import defenses
 from agent_runner.builtin_plugins._constants import _5XX_STATUSES, _TAIL_LINES
@@ -23,9 +22,9 @@ from agent_runner.config import (
     load_config,
 )
 from agent_runner.monitor import KNOWN_ALERT_KINDS
-from tests._test_helpers import make_toml
+from tests._test_helpers import ROOT, make_toml
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 
 def _verb_count() -> int:

@@ -21,8 +21,9 @@ import pytest
 from agent_runner import remote_relay
 from agent_runner.api_types import Alert
 from agent_runner.monitor import on_alert
+from tests._test_helpers import ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = ROOT
 
 _LINE_1 = '{"event":"round_start","ts":"2026-07-27T10:00:00.000Z","round_num":1}'
 _LINE_2 = '{"event":"round_end","ts":"2026-07-27T10:00:01.000Z","round_num":1}'

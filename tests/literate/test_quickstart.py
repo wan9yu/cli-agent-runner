@@ -14,9 +14,10 @@ from pathlib import Path
 
 import pytest
 
+from tests._test_helpers import ROOT
 from tests.literate.parser import parse_literate_blocks
 
-QUICKSTART = Path(__file__).resolve().parent.parent.parent / "docs" / "quickstart.md"
+QUICKSTART = ROOT / "docs" / "quickstart.md"
 
 
 def test_quickstart_should_pass_when_each_bash_block_run(

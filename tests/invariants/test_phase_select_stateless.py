@@ -12,9 +12,10 @@ makes serve and ``round --phase`` agree), so this guards the source structurally
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_SRC = Path(__file__).resolve().parent.parent.parent / "agent_runner" / "phase_select.py"
+from tests._test_helpers import ROOT
+
+_SRC = ROOT / "agent_runner" / "phase_select.py"
 
 # Names that would signal reading supervisor run-state inside the module.
 _FORBIDDEN_STATE = {

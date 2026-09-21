@@ -14,7 +14,9 @@ import re
 import subprocess
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+_REPO = ROOT
 _THIS = Path(__file__).relative_to(_REPO).as_posix()
 # "inception" is an ordinary English word but is a deliberate internal codename here — forbid it.
 # uspi / eye.service / claude-helped are 0-hit today: a gap to close, not a leak.

@@ -5,7 +5,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-_EX = Path(__file__).resolve().parents[2] / "examples" / "outer_loop" / "history_index.py"
+from tests._test_helpers import ROOT
+
+_EX = ROOT / "examples" / "outer_loop" / "history_index.py"
 
 
 def _mod():

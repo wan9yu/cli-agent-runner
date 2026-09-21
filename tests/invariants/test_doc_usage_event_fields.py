@@ -10,11 +10,11 @@ Pin it to the source of truth — the keyword-only parameters of
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 
 from agent_runner._emit import emit_agent_usage_recorded
+from tests._test_helpers import ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 PLUGINS_DOC = REPO / "docs/plugins.md"
 
 

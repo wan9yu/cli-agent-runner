@@ -12,9 +12,9 @@ Failing test = either regression OR intentional upgrade; committer decides.
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests._test_helpers import ROOT
 
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "cli-real-output"
+FIXTURES = ROOT / "tests" / "fixtures" / "cli-real-output"
 
 
 def test_claude_result_event_should_parse_to_expected_usage_payload_when_invoked(tmp_path):

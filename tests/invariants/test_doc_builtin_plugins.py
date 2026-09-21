@@ -12,11 +12,11 @@ from __future__ import annotations
 import importlib
 import re
 import tomllib
-from pathlib import Path
 
 from agent_runner._plugin_manifest import PluginManifest
+from tests._test_helpers import ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 
 def _builtin_post_round_hook_plugin_names() -> set[str]:

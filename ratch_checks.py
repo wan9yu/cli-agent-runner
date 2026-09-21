@@ -1,7 +1,8 @@
 """ratch gates. One executor per fact; pytest keeps unmatched dialects.
 
-Not yet: forbidden-literal, ratch internal-refs (different forbidden set),
-tests-repo-root-ssot.
+Not yet: forbidden-literal (author-tool tokens already on NoAiSignatures +
+CI; empty patterns are VACUOUS), no-internal-refs (docs/internal/ is a public
+doc fence, not a notes prefix).
 """
 
 from ratch.checks.ai_signatures import NoAiSignatures
@@ -20,6 +21,7 @@ from ratch.checks.loc_cap import LocCap
 from ratch.checks.manifest_purity import ManifestPurity
 from ratch.checks.pytest_skip import NoPytestSkip
 from ratch.checks.reassurance import NoReassuranceWords
+from ratch.checks.repo_root_ssot import RepoRootSSot
 from ratch.checks.todo_issue import TodoHasIssueRef
 from ratch.checks.vacuous_assert import NoVacuousAssert
 
@@ -33,6 +35,7 @@ CHECKS = [
         clock_paths=("agent_runner/clock.py",),
         paths=("agent_runner/**/*.py",),
     ),
+    RepoRootSSot(ssot="tests/_test_helpers.py"),
     NoVacuousAssert(),
     NoAiSignatures(
         sources=("log", "tags", "files"),

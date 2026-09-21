@@ -15,9 +15,10 @@ it, and no +/- classifier works without also inspecting "+".
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 _RE_MODULES = {"re", "regex"}
 _PREFIX_METHODS = {"startswith", "removeprefix"}

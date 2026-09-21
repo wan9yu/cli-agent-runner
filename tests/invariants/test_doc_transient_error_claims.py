@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from tests._test_helpers import make_toml_with_sections
+from tests._test_helpers import ROOT, make_toml_with_sections
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = ROOT
 
 # The operator + plugin-author reference pages. docs/migrations/ are excluded:
 # they describe the removal, which is correct.

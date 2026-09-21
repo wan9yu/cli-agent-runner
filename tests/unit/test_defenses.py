@@ -15,6 +15,7 @@ from agent_runner.config import (
     VcsConfig,
 )
 from agent_runner.defenses import Defense, catalog
+from tests._test_helpers import ROOT
 
 
 def _cfg(tmp_path: Path, *, env: dict[str, str] | None = None) -> Config:
@@ -69,7 +70,7 @@ def test_catalog_should_include_codified_incident_references_when_invoked(tmp_pa
 
 
 def test_catalog_guarded_by_paths_should_all_exist_when_invoked(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
+    repo_root = ROOT
 
     for d in catalog(_cfg(tmp_path)):
         assert d.guarded_by is not None, f"defense {d.name} names no test that guards it"

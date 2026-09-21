@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 # A stash named by index, in either source form:
 #   literal    "stash@{0}"        → stash@{ then a digit

@@ -11,7 +11,9 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 
 
 def package_modules() -> Iterator[Path]:
@@ -74,7 +76,7 @@ def _local_emit_wrappers(tree: ast.Module, aliases: set[str]) -> dict[str, int]:
         if not param_names:
             continue
         for inner in ast.walk(node):
-            if not _is_direct_emit_call(inner, aliases):
+            if not isinstance(inner, ast.Call) or not _is_direct_emit_call(inner, aliases):
                 continue
             kind_arg = inner.args[1]
             if isinstance(kind_arg, ast.Name) and kind_arg.id in param_names:

@@ -6,9 +6,10 @@ form (AST), NOT a cost|price|window token grep (which false-hits run_windows).""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
+from tests._test_helpers import ROOT
+
+PKG = ROOT / "agent_runner"
 _FORBIDDEN_IDENTS = {"pricing", "per_token", "usd_rate", "price_table", "price_per"}
 
 

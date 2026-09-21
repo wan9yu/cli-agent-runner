@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-_EX = Path(__file__).resolve().parents[2] / "examples" / "between_rounds" / "between_rounds.py"
+from tests._test_helpers import ROOT
+
+_EX = ROOT / "examples" / "between_rounds" / "between_rounds.py"
 
 
 def _mod():

@@ -15,6 +15,10 @@ from typing import Any
 
 import pytest
 
+# Repository root. This module is the ratch RepoRootSSot walker; other tests
+# import ROOT from here and must not walk Path(__file__).parent.
+ROOT = Path(__file__).resolve().parent.parent
+
 # A prompt that passes the startup smoke check (>= 500 bytes); a 1-byte stub
 # would fail prompt_smoke_passes and (post-0.1.42) stop serve via config_broken.
 _VALID_PROMPT = "placeholder agent task prompt line. " * 20

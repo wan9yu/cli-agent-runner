@@ -11,9 +11,10 @@ so reintroducing a count here would be unguarded by construction.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+from tests._test_helpers import ROOT
+
+REPO = ROOT
 ZH = REPO / "README.zh.md"
 
 # Line budget, not a target: a pointer plus install prose plus a link list.

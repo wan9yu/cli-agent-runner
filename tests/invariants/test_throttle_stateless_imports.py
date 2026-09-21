@@ -11,9 +11,10 @@ not just from-imports -- else it would pass vacuously and guard nothing.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_THROTTLE = Path(__file__).resolve().parents[2] / "agent_runner" / "_throttle.py"
+from tests._test_helpers import ROOT
+
+_THROTTLE = ROOT / "agent_runner" / "_throttle.py"
 _FORBIDDEN = {"follow", "read_new", "read_new_raw"}
 
 
