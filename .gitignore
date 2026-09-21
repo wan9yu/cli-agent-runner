@@ -35,3 +35,4 @@ ONBOARDING.md
 # Defense in depth only: releases build from a fresh CI checkout, and every
 # sdist 0.1.1–0.2.1 was checked clean. This only guards a local `python -m build`.
 .superpowers/
+.ralph/
