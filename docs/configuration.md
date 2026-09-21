@@ -56,8 +56,9 @@ restart.
 
 `peek --json` reloads the TOML live; it can show a cold set `serve` is not
 using. Past rounds: [events.md](events.md). Each `round_start` carries
-`config_digest` for the hot surface the child actually loaded (label only;
-the kill path does not read it).
+`config_digest` of listed prompt-file **paths and bytes** (plus check
+cmdlines, `[vcs]`, prompt delivery, agent env) — a label only; the kill path
+does not read it. It is not the assembled prompt and not every hot TOML key.
 
 This split is for per-round prompt and check updates. It is not a general
 hot-reload. Changing config *mid-round* would still tear semantics (e.g.
