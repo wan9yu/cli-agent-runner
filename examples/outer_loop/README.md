@@ -1,33 +1,11 @@
 # Outer loop — 2026 harness ideas, landed on serve
 
 `agent-runner serve` is the **online host**: one coding CLI per round, isolation,
-pre-OOM, give-up. It is not the inner agent loop, the dreamer, the curriculum,
-or the exam.
-
-**Philosophy** ([examples/README.md](../README.md)): 2026 harness papers are
-*meta* loops. We host the expensive online step; you rewrite policy between
-rounds. Do not freeze explore/exam inside `serve`.
+pre-OOM, give-up. Layers and constraints:
+[examples/README.md](../README.md).
 
 Copy this directory. Do **not** loop `agent-runner round`. Do **not** auto-restart
 on 78/75/70.
-
-## Inner loop vs this repo
-
-Most “harness” posts describe the **inner** loop: model → tool call → observe →
-compact → repeat *inside one session*. That is Claude Code / Codex / pi / OpenHands
-/ smolagents `CodeAgent`. agent-runner does **not** reimplement it.
-
-This repo is the **outer** loop around a process that already exits:
-
-1. Spawn the CLI once (`round` child).
-2. Wall-clock + cgroup + give-up.
-3. Between rounds, *you* may rewrite hot files; the next child re-reads.
-
-| Layer | Who | Examples |
-|---|---|---|
-| Inner | the CLI | [Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/), smolagents ReAct, OpenHands tools |
-| Outer (this) | `serve` | schedule, `round_budget_s`, JSONL, breakers |
-| Meta (yours) | scripts in `examples/` | Dream-RSI policy, ACE curator, Ralph queue |
 
 JSONL is append-only history ([events.md](../../docs/events.md)). `peek --json`
 is live TOML, not which config produced a past round.

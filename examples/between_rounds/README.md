@@ -3,9 +3,8 @@
 Copy `between_rounds.py` next to a project that already runs
 `agent-runner serve`. It is not a second supervisor.
 
-**Philosophy** ([examples/README.md](../README.md)): fill the seat between
-rounds — atomic replace of *hot* files — without taking scheduling,
-isolation, or give-up. Serve stays load-bearing. Semantics:
+Serve stays load-bearing (schedule, isolation, pre-OOM, give-up). This
+process only replaces **hot** files between rounds. Semantics:
 [configuration.md](../../docs/configuration.md) § Config reload.
 
 ## When to use it
