@@ -28,7 +28,7 @@ def test_next_round_num_should_skip_past_max_when_existing_round_files(
     assert next_round_num(tmp_path) == 8
 
 
-def test_atomic_relink_should_replace_existing_symlink(tmp_path: Path) -> None:
+def test_atomic_relink_should_replace_existing_symlink_when_invoked(tmp_path: Path) -> None:
     target1 = tmp_path / "a.log"
     target1.write_text("a")
     target2 = tmp_path / "b.log"
@@ -149,7 +149,7 @@ def test_prune_old_round_logs_should_skip_file_when_it_vanishes_between_glob_and
     assert not (tmp_path / "round-1.log").exists()
 
 
-def test_prune_old_round_logs_should_skip_dangling_symlink_without_crash(
+def test_prune_old_round_logs_should_skip_dangling_symlink_without_crash_when_invoked(
     tmp_path: Path,
 ) -> None:
     """A round-*.log symlink whose target is gone must not raise during the
@@ -166,7 +166,7 @@ def test_prune_old_round_logs_should_skip_dangling_symlink_without_crash(
     assert outcome.deleted == 1
 
 
-def test_prune_old_round_logs_should_leave_dangling_round_current_link_alone_without_crash(
+def test_prune_old_round_logs_should_leave_dangling_round_current_link_alone_without_crash_when_run(
     tmp_path: Path,
 ) -> None:
     """Finding #13, literally: round-current.log itself (not a stand-in name)
@@ -294,7 +294,7 @@ def test_prune_rounds_dir_should_sort_numerically_when_two_digit_round_numbers(
     assert (tmp_path / "R11-20260101T000000.log").exists()
 
 
-def test_prune_rounds_dir_should_leave_unrelated_files_alone(tmp_path: Path) -> None:
+def test_prune_rounds_dir_should_leave_unrelated_files_alone_when_invoked(tmp_path: Path) -> None:
     _write_agent_round_logs(tmp_path, 3)
     (tmp_path / "notes.txt").write_text("keep me")
     (tmp_path / "Rx-20260101T000000.log").write_text("keep me")

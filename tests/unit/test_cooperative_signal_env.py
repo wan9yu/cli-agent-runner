@@ -18,7 +18,7 @@ from tests._test_helpers import isolating, make_cfg
 _reset = isolating(_LOADED_MANIFESTS)
 
 
-def test_resolve_cooperative_signal_by_phase_should_resolve_each_phase_against_its_own_agent(
+def test_resolve_cooperative_signal_by_phase_should_resolve_phase_against_its_own_agent_when_run(
     tmp_path,
 ):
     register_manifest(PluginManifest(name="int_agent", cooperative_stop="SIGINT"))
@@ -81,7 +81,7 @@ def test_apply_cooperative_signal_env_should_fall_back_when_phase_not_precompute
     assert round_env["AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL"] == "SIGINT"
 
 
-def test_runner_should_read_the_published_signal_from_env(monkeypatch):
+def test_runner_should_read_the_published_signal_from_env_when_invoked(monkeypatch):
     monkeypatch.setenv("AGENT_RUNNER_COOPERATIVE_STOP_SIGNAL", "SIGINT")
 
     assert runner._resolve_cooperative_signal() is signal.SIGINT

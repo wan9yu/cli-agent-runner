@@ -41,7 +41,7 @@ def _bare_int_or_float_on_get(tree: ast.Module) -> list[int]:
     return offenders
 
 
-def test_bare_int_or_float_scanner_should_detect_planted_offender() -> None:
+def test_bare_int_else_float_scanner_should_detect_planted_offender_when_invoked() -> None:
     """Positive control: prove the AST match actually fires on the exact anti-pattern
     it's meant to catch, so a scanner bug (e.g. a typo'd attr name) can't make the
     real test below pass vacuously forever."""
@@ -54,7 +54,7 @@ def test_bare_int_or_float_scanner_should_detect_planted_offender() -> None:
     )
 
 
-def test_scanned_modules_should_have_no_bare_int_or_float_on_event_get() -> None:
+def test_scanned_modules_should_have_no_bare_int_else_float_on_event_get_when_invoked() -> None:
     offenders: list[tuple[str, int]] = []
     for name in _SCANNED:
         path = PKG / name

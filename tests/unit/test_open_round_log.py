@@ -5,7 +5,7 @@ from pathlib import Path
 from agent_runner.monitor import load_round_log_tails
 
 
-def test_non_utf8_byte_in_round_log_should_not_raise(tmp_path: Path) -> None:
+def test_non_utf8_byte_in_round_log_should_not_raise_when_invoked(tmp_path: Path) -> None:
     rounds = tmp_path / "rounds"
     rounds.mkdir()
     # 0x80 is an invalid UTF-8 start byte; a strict decoder raises here.
@@ -17,7 +17,7 @@ def test_non_utf8_byte_in_round_log_should_not_raise(tmp_path: Path) -> None:
     assert "line three" in tails[1]  # decoded with errors="replace", not crashed
 
 
-def test_open_round_log_should_pin_errors_replace(tmp_path: Path) -> None:
+def test_open_round_log_should_pin_errors_replace_when_invoked(tmp_path: Path) -> None:
     from agent_runner.round_log import open_round_log
 
     p = tmp_path / "R2-x.log"

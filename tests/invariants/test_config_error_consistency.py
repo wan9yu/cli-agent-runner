@@ -78,7 +78,7 @@ def test_config_module_raises_should_all_be_config_error_when_scanned() -> None:
     )
 
 
-def test_config_error_should_subclass_value_error() -> None:
+def test_config_error_should_subclass_value_error_when_invoked() -> None:
     """The promotion is a widening only because of this relationship. Pin it:
     if ConfigError ever stops subclassing ValueError, every existing
     `pytest.raises(ValueError)` caller silently breaks."""

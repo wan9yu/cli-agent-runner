@@ -14,7 +14,9 @@ from agent_runner.context_store import Status, write_status
 from agent_runner.round_log import next_round_num
 
 
-def test_child_without_env_should_match_serve_derivation(tmp_path: Path, monkeypatch) -> None:
+def test_child_without_env_should_match_serve_derivation_when_invoked(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.delenv("AGENT_RUNNER_ROUND_NUM", raising=False)
 
     assert runner._resolve_round_num(tmp_path) == next_round_num(tmp_path) == 1
@@ -25,14 +27,16 @@ def test_child_without_env_should_match_serve_derivation(tmp_path: Path, monkeyp
     assert runner._resolve_round_num(tmp_path) == next_round_num(tmp_path) == 8
 
 
-def test_child_should_honor_serve_supplied_env(tmp_path: Path, monkeypatch) -> None:
+def test_child_should_honor_serve_supplied_env_when_invoked(tmp_path: Path, monkeypatch) -> None:
     write_status(tmp_path, Status(round_num=5, running=False))
     monkeypatch.setenv("AGENT_RUNNER_ROUND_NUM", "42")
 
     assert runner._resolve_round_num(tmp_path) == 42
 
 
-def test_crashed_child_should_not_reuse_existing_log_number(tmp_path: Path, monkeypatch) -> None:
+def test_crashed_child_should_not_reuse_existing_log_number_when_invoked(
+    tmp_path: Path, monkeypatch
+) -> None:
     # status stuck at 4 (child crashed before write) but its R5 serve-log exists.
     write_status(tmp_path, Status(round_num=4, running=False))
     (tmp_path / "round-5.log").write_text("crashed", encoding="utf-8")
@@ -44,7 +48,9 @@ def test_crashed_child_should_not_reuse_existing_log_number(tmp_path: Path, monk
     assert runner._resolve_round_num(tmp_path) == 6
 
 
-def test_garbage_env_should_fall_back_to_file_counter(tmp_path: Path, monkeypatch) -> None:
+def test_garbage_env_should_fall_back_to_file_counter_when_invoked(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("AGENT_RUNNER_ROUND_NUM", "not-an-int")
 
     assert runner._resolve_round_num(tmp_path) == next_round_num(tmp_path) == 1

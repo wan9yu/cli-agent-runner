@@ -183,7 +183,7 @@ def _write_multi_leader_script(path: Path, grandchild_py: Path, pid_files: list[
 
 @pytest.mark.serial
 @pytest.mark.timeout(120)
-def test_terminate_round_pid_should_reap_all_of_more_than_five_setsid_grandchildren(
+def test_terminate_round_pid_should_reap_all_of_more_than_five_setsid_grandchildren_when_invoked(
     tmp_path, monkeypatch
 ):
     if not hasattr(os, "killpg") or not hasattr(os, "setsid"):

@@ -153,7 +153,7 @@ def _asyncio_process_kill_hits(path: Path) -> list[str]:
     return hits
 
 
-def test_select_and_pidfd_should_stay_confined_to_the_fast_path_modules() -> None:
+def test_select_and_pidfd_should_stay_confined_to_the_fast_path_modules_when_invoked() -> None:
     offenders: dict[str, list[str]] = {}
     scanned = 0
 
@@ -174,7 +174,7 @@ def test_select_and_pidfd_should_stay_confined_to_the_fast_path_modules() -> Non
     )
 
 
-def test_asyncio_should_never_be_imported_in_agent_runner() -> None:
+def test_asyncio_should_never_be_imported_in_agent_runner_when_invoked() -> None:
     offenders: dict[str, list[str]] = {}
     scanned = 0
 
@@ -193,7 +193,7 @@ def test_asyncio_should_never_be_imported_in_agent_runner() -> None:
     )
 
 
-def test_asyncio_subprocess_kill_or_terminate_should_never_appear_in_agent_runner() -> None:
+def test_asyncio_kill_else_terminate_should_never_appear_in_agent_runner_when_invoked() -> None:
     offenders: dict[str, list[str]] = {}
     scanned = 0
 
@@ -215,7 +215,7 @@ def test_asyncio_subprocess_kill_or_terminate_should_never_appear_in_agent_runne
     )
 
 
-def test_scanner_should_flag_reintroduced_select_or_asyncio_when_scanned(tmp_path: Path) -> None:
+def test_scanner_should_flag_reintroduced_select_else_asyncio_when_scanned(tmp_path: Path) -> None:
     """Non-vacuity proof: plant the three offending shapes and confirm each
     scanner actually catches them, plus a clean file passes all three."""
     select_offender = tmp_path / "select_offender.py"

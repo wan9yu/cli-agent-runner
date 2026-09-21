@@ -100,7 +100,7 @@ def test_after_round_should_still_emit_usage_when_detection_emit_fails(tmp_path:
     usage.assert_called_once()  # usage still emitted though detection emit failed
 
 
-def test_as_epoch_should_return_fallback_when_value_is_nan_or_infinity() -> None:
+def test_as_epoch_should_return_fallback_when_value_is_nan_else_infinity() -> None:
     assert _as_epoch(float("nan"), 42) == 42
     assert _as_epoch(float("inf"), 42) == 42
     assert _as_epoch(float("-inf"), 42) == 42

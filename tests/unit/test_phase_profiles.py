@@ -15,7 +15,7 @@ def _cfg(tmp_path, phases_block):
     return load_config(p)
 
 
-def test_phase_agent_override_should_merge_onto_base(tmp_path):
+def test_phase_agent_override_should_merge_onto_base_when_invoked(tmp_path):
     cfg = _cfg(
         tmp_path,
         '[phases]\nlist = ["a","b"]\n[phases.b.agent]\ncommand = ["glm-cli"]\n',
@@ -52,13 +52,13 @@ def test_phase_schedule_should_inherit_global_timezone_when_phase_omits_it(tmp_p
     assert cfg.profile_for("a").schedule.timezone == "Asia/Shanghai"  # tz falls back to global
 
 
-def test_flat_runtime_alias_should_set_round_budget_s_on_profile(tmp_path):
+def test_flat_runtime_alias_should_set_round_budget_s_on_profile_when_invoked(tmp_path):
     cfg = _cfg(tmp_path, '[phases]\nlist = ["a"]\n[phases.a]\nround_budget_s = 3600\n')
 
     assert cfg.profile_for("a").runtime.round_budget_s == 3600
 
 
-def test_nested_runtime_sub_table_should_set_round_budget_s_on_profile(tmp_path):
+def test_nested_runtime_sub_table_should_set_round_budget_s_on_profile_when_invoked(tmp_path):
     cfg = _cfg(
         tmp_path,
         '[phases]\nlist = ["a"]\n[phases.a.runtime]\nround_budget_s = 900\n',
@@ -67,7 +67,7 @@ def test_nested_runtime_sub_table_should_set_round_budget_s_on_profile(tmp_path)
     assert cfg.profile_for("a").runtime.round_budget_s == 900
 
 
-def test_flat_and_nested_runtime_twin_should_error(tmp_path):
+def test_flat_and_nested_runtime_twin_should_error_when_invoked(tmp_path):
     with pytest.raises(ConfigError, match="both"):
         _cfg(
             tmp_path,
@@ -77,7 +77,7 @@ def test_flat_and_nested_runtime_twin_should_error(tmp_path):
         )
 
 
-def test_bad_phase_agent_should_fail_at_load(tmp_path):
+def test_bad_phase_agent_should_fail_at_load_when_invoked(tmp_path):
     # stdin + {prompt} in argv template is the cross-check that must run on the MERGED agent
     with pytest.raises(ConfigError):
         _cfg(
@@ -87,7 +87,7 @@ def test_bad_phase_agent_should_fail_at_load(tmp_path):
         )
 
 
-def test_unknown_phase_agent_field_should_error(tmp_path):
+def test_unknown_phase_agent_field_should_error_when_invoked(tmp_path):
     with pytest.raises(ConfigError, match="made_up"):
         _cfg(
             tmp_path,
@@ -95,13 +95,13 @@ def test_unknown_phase_agent_field_should_error(tmp_path):
         )
 
 
-def test_phase_policy_should_default_to_wait(tmp_path):
+def test_phase_policy_should_default_to_wait_when_invoked(tmp_path):
     cfg = _cfg(tmp_path, '[phases]\nlist = ["a"]\n')
 
     assert cfg.phases.phase_policy == "wait"
 
 
-def test_phase_policy_should_parse_skip_value(tmp_path):
+def test_phase_policy_should_parse_skip_value_when_invoked(tmp_path):
     cfg = _cfg(tmp_path, '[phases]\nlist = ["a"]\nphase_policy = "skip"\n')
 
     assert cfg.phases.phase_policy == "skip"

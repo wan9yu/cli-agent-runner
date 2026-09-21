@@ -7,8 +7,10 @@ import pytest
 from tests._test_helpers import make_toml
 
 
-def _is_pip_call(cmd) -> bool:
+def _is_pip_call(cmd: object) -> bool:
     """Return True when *cmd* is a ``sys.executable -m pip …`` invocation."""
+    if not isinstance(cmd, (list, tuple)):
+        return False
     return len(cmd) >= 3 and cmd[1] == "-m" and cmd[2] == "pip"
 
 
@@ -741,11 +743,17 @@ def test_run_upgrade_should_rollback_without_start_when_package_only_smoke_fails
     assert any("--force-reinstall" in c for c in pip_calls)  # pip-level rollback happened
 
 
-def _config_arg(cmd) -> str | None:
+def _config_arg(cmd: list[str]) -> str | None:
     """The --config path in a `-m agent_runner.cli --config <p> <sub>` invocation."""
     if "--config" in cmd:
         return cmd[cmd.index("--config") + 1]
     return None
+
+
+def _config_path(cmd: list[str]) -> Path:
+    arg = _config_arg(cmd)
+    assert arg is not None
+    return Path(arg)
 
 
 def test_run_upgrade_should_restore_config_when_rollback_follows_manual_migrate_remainder(
@@ -773,7 +781,7 @@ def test_run_upgrade_should_restore_config_when_rollback_follows_manual_migrate_
         if _is_pip_call(cmd):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "migrate" in cmd:
-            Path(_config_arg(cmd)).write_text(original + "\nmutated_by_migrate = true\n")
+            _config_path(cmd).write_text(original + "\nmutated_by_migrate = true\n")
             return subprocess.CompletedProcess(
                 args=cmd, returncode=1, stdout="  MANUAL:  fix command by hand", stderr=""
             )
@@ -828,7 +836,7 @@ def test_run_upgrade_should_restore_config_when_rollback_follows_migrate_success
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "migrate" in cmd:
             # migrate SUCCEEDS but rewrites the file to the new schema
-            Path(_config_arg(cmd)).write_text(original + "\nmigrated_field = true\n")
+            _config_path(cmd).write_text(original + "\nmigrated_field = true\n")
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "--version" in cmd:
             version_calls[0] += 1
@@ -863,7 +871,7 @@ def test_run_upgrade_should_restore_config_when_rollback_follows_migrate_success
     assert any(p["event"] == "service_upgrade_rolled_back" for p in payloads)
 
 
-def test_run_upgrade_should_call_migrate_before_peek_smoke(
+def test_run_upgrade_should_call_migrate_before_peek_smoke_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     import subprocess

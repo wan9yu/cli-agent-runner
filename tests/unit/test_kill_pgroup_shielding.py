@@ -51,7 +51,7 @@ def _clock_raising_on_call(raise_on: set[int]) -> tuple[FakeClock, dict]:
     return clock, calls
 
 
-def test_kill_pgroup_should_not_inflate_grace_on_reentrant_sigterm(monkeypatch):
+def test_kill_pgroup_should_not_inflate_grace_on_reentrant_sigterm_when_invoked(monkeypatch):
     """A re-entrant SIGTERM landing PARTWAY through the grace window (after 2
     of its virtual seconds have already elapsed, not at the very start) must
     not push the total grace past REAP_GRACE_S -- a buggy retry that
@@ -84,7 +84,7 @@ def test_kill_pgroup_should_not_inflate_grace_on_reentrant_sigterm(monkeypatch):
     )
 
 
-def test_kill_pgroup_should_propagate_keyboardinterrupt_through_wait_exit(monkeypatch):
+def test_kill_pgroup_should_propagate_keyboardinterrupt_through_wait_exit_when_invoked(monkeypatch):
     """`wait_exit` must not swallow KeyboardInterrupt -- if it did, the shield's
     `except KeyboardInterrupt: continue` would never fire and this would
     silently degrade to a single, unshielded wait. Two re-entrant interrupts
@@ -110,7 +110,7 @@ def test_kill_pgroup_should_propagate_keyboardinterrupt_through_wait_exit(monkey
     )
 
 
-def test_kill_pgroup_should_use_the_given_reap_grace_s_for_its_deadline_not_the_module_default(
+def test_kill_pgroup_should_use_given_reap_grace_s_for_its_deadline_the_module_default_when_invoked(
     monkeypatch,
 ):
     """The v0.3.3 dark-code fix: the SIGTERM->SIGKILL deadline must come from

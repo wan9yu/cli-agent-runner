@@ -343,8 +343,10 @@ def test_stop_signal_should_kill_ssh_process_group_when_relaying(
             line = proc.stdout.readline()
         payload = json.loads(line)
         stub_pid, sleep_pid = payload["stub_pid"], payload["sleep_pid"]
+        assert isinstance(stub_pid, int) and isinstance(sleep_pid, int)
         assert _alive(sleep_pid), "stub's child should be running before the interrupt"
 
+        assert proc.pid is not None
         os.kill(proc.pid, sig)
         # The driver's own teardown (relay_remote_events's finally -> _kill_pgroup)
         # has an intrinsic real-wall-clock floor of REAP_GRACE_S(5) + the
@@ -388,7 +390,7 @@ def test_stop_signal_should_kill_ssh_process_group_when_relaying(
 # ---------------------------------------------------------------------------
 
 
-def test_cmd_events_should_install_term_handler_before_relaying(
+def test_cmd_events_should_install_term_handler_before_relaying_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``relay_remote_events`` no longer installs its own SIGTERM handler (it

@@ -51,7 +51,7 @@ def _monitor_interval_default() -> int:
     return inspect.signature(monitor_loop).parameters["interval_s"].default
 
 
-def test_doc_counts_should_match_ssot(tmp_path) -> None:
+def test_doc_counts_should_match_ssot_when_invoked(tmp_path) -> None:
     from agent_runner.config.models import MonitorHostHealthConfig
 
     cfg = load_config(make_toml(tmp_path))
@@ -105,7 +105,7 @@ def test_doc_counts_should_match_ssot(tmp_path) -> None:
     assert not failures, "doc count drift:\n" + "\n".join(failures)
 
 
-def test_plugins_md_schema_version_should_match_ssot() -> None:
+def test_plugins_md_schema_version_should_match_ssot_when_invoked() -> None:
     """`docs/plugins.md` hand-copies the `peek --json` `schema_version` field into an
     illustrative JSON snippet (too abbreviated — it uses `...` placeholders — to host
     a gen-block). Pin it to the real constant so a version bump doesn't leave a
@@ -129,7 +129,7 @@ def _backtick_quoted_tokens(line: str) -> set[str]:
     return set(re.findall(r"`\"?(\w+)\"?`", line))
 
 
-def test_doc_value_sets_should_match_ssot() -> None:
+def test_doc_value_sets_should_match_ssot_when_invoked() -> None:
     failures: list[str] = []
 
     # dirty_action: configuration.md line "... one of `"stash"`, `"ignore"`, `"auto_commit"`"
@@ -200,7 +200,7 @@ def _classification_ssot() -> set[str]:
     return set(_BACK_OFF_DEFAULTS) | {"rate_limit_account"}
 
 
-def test_configuration_md_config_reload_should_describe_serve_boot_vs_round_reread() -> None:
+def test_configuration_md_should_describe_serve_boot_vs_round_reread_when_invoked() -> None:
     """configuration.md once claimed serve reuses one Config for every round.
     The round child re-reads the TOML (round_cmd.cmd → cfg_from_args); serve's
     boot copy is the schedule/phase/ceiling set. Guard the section so the lie

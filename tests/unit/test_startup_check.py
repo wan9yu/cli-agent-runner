@@ -213,7 +213,7 @@ def test_all_check_kinds_should_match_battery_kinds_when_config_is_valid(
     assert battery_kinds == set(startup_check.all_check_kinds())
 
 
-def test_all_check_kinds_should_equal_unique_spec_kinds_in_order() -> None:
+def test_all_check_kinds_should_equal_unique_spec_kinds_in_order_when_invoked() -> None:
     assert startup_check.all_check_kinds() == (
         "config_loaded",
         "log_dir_writable",
@@ -227,7 +227,7 @@ def test_all_check_kinds_should_equal_unique_spec_kinds_in_order() -> None:
     )
 
 
-def test_run_battery_should_preserve_base_then_profile_then_phase_order_when_config_has_phase_overrides(  # noqa: E501 — full name states the exact condition; BDD naming wins over line-length here
+def test_run_battery_should_preserve_base_then_profile_then_phase_when_config_has_phase_overrides(  # noqa: E501 — full name states the exact condition; BDD naming wins over line-length here
     tmp_path: Path,
 ) -> None:
     cfg = _config_with_agent_and_prompt_override_phases(tmp_path)
@@ -250,7 +250,7 @@ def test_run_battery_should_preserve_base_then_profile_then_phase_order_when_con
     assert any(n.startswith("prompt_smoke_passes:") for n in names[9:])
 
 
-def test_checkresult_permanent_should_default_to_false(tmp_git_repo: Path) -> None:
+def test_checkresult_permanent_should_default_to_false_when_invoked(tmp_git_repo: Path) -> None:
     # Unclassified checks are environmental by default (locked decision).
     assert CheckResult("x", ok=False, reason="r").permanent is False
 

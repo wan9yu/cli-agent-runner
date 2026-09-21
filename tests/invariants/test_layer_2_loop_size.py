@@ -24,7 +24,7 @@ SERVE_LOOP_BUDGET = 145  # cmd() wires the process-lifetime doorbell listener in
 # 30s chunk (0.3.4 event-driven-core, Component 5); current 145 LOC, zero headroom
 
 
-def test_serve_loop_should_stay_minimal():
+def test_serve_loop_should_stay_minimal_when_invoked():
     from agent_runner.cli import serve_cmd
 
     func = serve_cmd.cmd

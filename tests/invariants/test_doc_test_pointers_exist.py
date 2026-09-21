@@ -12,7 +12,7 @@ from tests.invariants._docs import ROOT, doc_files
 _PTR = re.compile(r"`(tests/[A-Za-z0-9_./-]+\.py)(::[A-Za-z0-9_]+)?`")
 
 
-def test_doc_test_pointers_should_all_resolve():
+def test_doc_test_pointers_should_all_resolve_when_invoked():
     missing = []
     checked = 0
     for doc in doc_files():

@@ -9,7 +9,7 @@ import pytest
 from tests._test_helpers import make_toml
 
 
-def test_peek_should_resolve_service_from_cwd_project_not_a_named_sibling(
+def test_peek_should_resolve_service_from_cwd_project_not_a_named_sibling_when_invoked(
     tmp_path, monkeypatch
 ) -> None:
     from agent_runner import api

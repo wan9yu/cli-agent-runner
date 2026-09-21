@@ -245,7 +245,9 @@ def test_goal_steering_should_never_advise_when_the_goal_converges(tmp_path: Pat
 
 
 @pytest.mark.timeout(160)
-def test_goal_steering_ledger_should_survive_the_default_stash_and_persist(tmp_path: Path) -> None:
+def test_goal_steering_ledger_should_survive_the_default_stash_and_persist_when_invoked(
+    tmp_path: Path,
+) -> None:
     """Ledger-survives-the-stash regression: under the DEFAULT [vcs]
     dirty_action="stash", the
     supervisor-owned ledger must PERSIST across rounds, not be swept into the
@@ -304,7 +306,9 @@ def test_goal_steering_ledger_should_survive_the_default_stash_and_persist(tmp_p
 
 
 @pytest.mark.timeout(260)
-def test_goal_steering_should_not_disarm_the_crash_loop_breaker(tmp_path: Path) -> None:
+def test_goal_steering_should_not_disarm_the_crash_loop_breaker_when_invoked(
+    tmp_path: Path,
+) -> None:
     """P2 armed-breaker differential -- the BEHAVIORAL complement to the AST
     firewall (no kill-path module even references a goal_* kind string) and
     tests/unit/test_goal_firewall_behavioral.py's events-derived P2 unit golden

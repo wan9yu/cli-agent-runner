@@ -18,7 +18,7 @@ def _mod():
     return mod
 
 
-def test_atomic_replace_should_overwrite_complete_file(tmp_path: Path) -> None:
+def test_atomic_replace_should_overwrite_complete_file_when_invoked(tmp_path: Path) -> None:
     br = _mod()
     target = tmp_path / "prompt.md"
     target.write_text("old")
@@ -29,7 +29,7 @@ def test_atomic_replace_should_overwrite_complete_file(tmp_path: Path) -> None:
     assert not list(tmp_path.glob(".swap-*"))
 
 
-def test_prompt_smoke_error_should_reject_short_or_dash(tmp_path: Path) -> None:
+def test_prompt_smoke_error_should_reject_short_else_dash_when_invoked(tmp_path: Path) -> None:
     br = _mod()
     assert br.prompt_smoke_error("") == "empty"
     assert br.prompt_smoke_error("-flag") == "bad first character"
@@ -37,7 +37,7 @@ def test_prompt_smoke_error_should_reject_short_or_dash(tmp_path: Path) -> None:
     assert br.prompt_smoke_error("x" * 500) is None
 
 
-def test_apply_queued_prompt_should_refuse_smoke_failure(tmp_path: Path) -> None:
+def test_apply_queued_prompt_should_refuse_smoke_failure_when_invoked(tmp_path: Path) -> None:
     br = _mod()
     prompt = tmp_path / "prompt.md"
     prompt.write_text("x" * 500)
@@ -51,7 +51,7 @@ def test_apply_queued_prompt_should_refuse_smoke_failure(tmp_path: Path) -> None
     assert queued.is_file()
 
 
-def test_apply_queued_prompt_should_swap_and_unlink(tmp_path: Path) -> None:
+def test_apply_queued_prompt_should_swap_and_unlink_when_invoked(tmp_path: Path) -> None:
     br = _mod()
     prompt = tmp_path / "prompt.md"
     prompt.write_text("x" * 500)
@@ -65,7 +65,7 @@ def test_apply_queued_prompt_should_swap_and_unlink(tmp_path: Path) -> None:
     assert not queued.exists()
 
 
-def test_iter_complete_objects_should_leave_partial_last_line(tmp_path: Path) -> None:
+def test_iter_complete_objects_should_leave_partial_last_line_when_invoked(tmp_path: Path) -> None:
     br = _mod()
     path = tmp_path / "events-2026-09.jsonl"
     path.write_bytes(b'{"event":"round_end"}\n{"event":"round_start"')
@@ -79,7 +79,7 @@ def test_iter_complete_objects_should_leave_partial_last_line(tmp_path: Path) ->
     assert batch2 == [{"event": "round_start", "config_digest": "abc"}]
 
 
-def test_give_up_kind_should_detect_config_broken() -> None:
+def test_give_up_kind_should_detect_config_broken_when_invoked() -> None:
     br = _mod()
     assert br.give_up_kind([{"event": "round_end"}]) is None
     assert br.give_up_kind([{"event": "config_broken"}]) == "config_broken"

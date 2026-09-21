@@ -12,7 +12,7 @@ from agent_runner.cli.common import cfg_from_args
 from tests._test_helpers import make_toml
 
 
-def test_sidecar_should_be_unlinked_before_lock_fd_closed(monkeypatch, tmp_path):
+def test_sidecar_should_be_unlinked_before_lock_fd_closed_when_invoked(monkeypatch, tmp_path):
     cfg_path = make_toml(tmp_path)  # agent command = ["true"]
     # make_toml does NOT git-init; without a repo run_one_round's startup battery
     # sys.exit(78)s before the sidecar code ever runs.

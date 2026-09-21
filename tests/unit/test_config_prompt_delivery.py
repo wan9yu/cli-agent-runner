@@ -8,7 +8,7 @@ def _cfg(tmp_path, agent_extra):
     return write_min_config(tmp_path, agent_extra=agent_extra)
 
 
-def test_prompt_delivery_should_default_to_argv(tmp_path):
+def test_prompt_delivery_should_default_to_argv_when_invoked(tmp_path):
     cfg = load_config(_cfg(tmp_path, agent_extra=""))
 
     assert cfg.agent.prompt_delivery == "argv"
@@ -30,6 +30,6 @@ def test_prompt_delivery_should_reject_stdin_when_template_has_prompt_token(tmp_
         )
 
 
-def test_prompt_delivery_should_reject_invalid_value(tmp_path):
+def test_prompt_delivery_should_reject_invalid_value_when_invoked(tmp_path):
     with pytest.raises(ValueError):
         load_config(_cfg(tmp_path, 'prompt_delivery = "file"\n'))

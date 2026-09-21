@@ -17,7 +17,7 @@ from agent_runner._procwait import exit_fd, wait_exit
 from agent_runner.clock import SYSTEM_CLOCK
 
 
-def test_exit_fd_should_return_a_readable_fd_for_a_live_process():
+def test_exit_fd_should_return_a_readable_fd_for_a_live_process_when_invoked():
     proc = subprocess.Popen(["sleep", "5"])
 
     try:
@@ -42,7 +42,9 @@ def test_wait_exit_should_return_exited_when_proc_exits():
     assert rc is not None
 
 
-def test_wait_exit_should_short_circuit_to_exited_without_reopening_a_reaped_pid(monkeypatch):
+def test_wait_exit_should_short_circuit_to_exited_without_reopening_a_reaped_pid_when_invoked(
+    monkeypatch,
+):
     proc = subprocess.Popen(["true"])
     proc.wait()  # this owner reaps (as Popen.terminate()'s poll does) -> pid freed, maybe reused
 
@@ -99,7 +101,9 @@ def test_wait_exit_should_fall_back_to_poll_when_exit_fd_none(monkeypatch):
     assert proc.returncode == 0  # the poll fallback reaps synchronously, unlike the fast path
 
 
-def test_wait_exit_should_return_timeout_during_poll_fallback_with_no_extra_fds(monkeypatch):
+def test_wait_exit_should_return_timeout_during_poll_fallback_with_no_extra_fds_when_invoked(
+    monkeypatch,
+):
     monkeypatch.setattr(_procwait, "exit_fd", lambda proc: None)
     monkeypatch.setattr(_procwait, "_POLL_TICK_S", 0.05)
     proc = subprocess.Popen(["sleep", "5"])

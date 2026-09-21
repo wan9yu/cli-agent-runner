@@ -68,7 +68,7 @@ def _load() -> ast.Module:
     return ast.parse(_RUNTIME.read_text())
 
 
-def test_hard_wall_terminate_calls_should_pin_sigterm_first() -> None:
+def test_hard_wall_terminate_calls_should_pin_sigterm_first_when_invoked() -> None:
     run = _func(_load(), "run")
     except_calls: list[ast.Call] = []
     for node in ast.walk(run):
@@ -95,7 +95,7 @@ def test_hard_wall_terminate_calls_should_pin_sigterm_first() -> None:
         )
 
 
-def test_no_kill_call_should_hard_code_a_forbidden_first_signal() -> None:
+def test_no_kill_call_should_hard_code_a_forbidden_first_signal_when_invoked() -> None:
     tree = _load()
     for callee in ("_terminate_agent", "_kill_pgroup"):
         for call in _calls_to(tree, callee):
@@ -106,7 +106,9 @@ def test_no_kill_call_should_hard_code_a_forbidden_first_signal() -> None:
                 )
 
 
-def test_kill_pgroup_should_send_first_killpg_with_the_first_signal_parameter() -> None:
+def test_kill_pgroup_should_send_first_killpg_with_the_first_signal_parameter_when_invoked() -> (
+    None
+):
     kill_pgroup = _func(_load(), "_kill_pgroup")
     killpg_calls = [
         node

@@ -20,7 +20,9 @@ from tests._test_helpers import isolating, write_min_config
 _reset = isolating(_plugin_manifest._LOADED_MANIFESTS)
 
 
-def test_load_config_should_reject_a_resume_preset_whose_command_already_has_the_flag(tmp_path):
+def test_load_config_should_reject_a_resume_preset_whose_command_already_has_the_flag_when_invoked(
+    tmp_path,
+):
     register_manifest(PluginManifest(name="pi", resume_flag="--session-id"))
     write_min_config(
         tmp_path, agent_extra='command = ["pi", "--session-id", "x", "--mode", "json"]\n'
@@ -30,14 +32,16 @@ def test_load_config_should_reject_a_resume_preset_whose_command_already_has_the
         load_config(tmp_path / "agent-runner.toml")
 
 
-def test_load_config_should_accept_a_resume_preset_without_the_flag_in_command(tmp_path):
+def test_load_config_should_accept_a_resume_preset_without_the_flag_in_command_when_invoked(
+    tmp_path,
+):
     register_manifest(PluginManifest(name="pi", resume_flag="--session-id"))
     write_min_config(tmp_path, agent_extra='command = ["pi", "--mode", "json"]\n')
 
     load_config(tmp_path / "agent-runner.toml")
 
 
-def test_default_round_budget_should_survive_a_60s_pi_auto_retry():
+def test_default_round_budget_should_survive_a_60s_pi_auto_retry_when_invoked():
     """pi's own ``auto_retry`` backs off up to ~60s mid-round; the round-budget
     hang detector must not false-kill a retrying round, so the shipped default
     needs comfortable headroom above that ceiling."""

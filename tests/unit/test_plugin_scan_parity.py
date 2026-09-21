@@ -21,7 +21,7 @@ def _md(group: str) -> list[tuple[str, str]]:
     return sorted((ep.name, ep.value) for ep in entry_points(group=group))
 
 
-def test_scanner_should_match_importlib_metadata_per_group():
+def test_scanner_should_match_importlib_metadata_per_group_when_invoked():
     """scanner(sys.path, group) == entry_points(group) for the one plugin
     group agent_runner loads -- run on the dev venv's real (possibly stale)
     dist-info + in CI."""
@@ -121,7 +121,7 @@ def test_scanner_should_warn_when_dropping_a_duplicate_entry_point_name(tmp_path
     )
 
 
-def test_scanner_should_discover_third_party_dist_info_entry_points(tmp_path):
+def test_scanner_should_discover_third_party_dist_info_entry_points_when_invoked(tmp_path):
     """A plugin registered via [project.entry-points] in an installed dist
     (simulated here as a bare dist-info dir on a synthetic sys.path entry)
     must still be discovered."""
@@ -136,7 +136,7 @@ def test_scanner_should_discover_third_party_dist_info_entry_points(tmp_path):
     assert ("third_party_detector", "thirdparty_plugin.mod:Detector") in out
 
 
-def test_scanner_should_discover_legacy_egg_info_entry_points(tmp_path):
+def test_scanner_should_discover_legacy_egg_info_entry_points_when_invoked(tmp_path):
     """A legacy setuptools egg-info install (pre-dist-info layout, same
     entry_points.txt format) must be found by the fast path too — not only
     via the importlib.metadata fallback."""
@@ -151,7 +151,9 @@ def test_scanner_should_discover_legacy_egg_info_entry_points(tmp_path):
     assert ("legacy_detector", "thirdparty_plugin.mod:Detector") in out
 
 
-def test_scanner_should_prefer_dist_info_over_egg_info_on_same_sys_path_entry(tmp_path):
+def test_scanner_should_prefer_dist_info_over_egg_info_on_same_sys_path_entry_when_invoked(
+    tmp_path,
+):
     """When a single sys.path entry has BOTH a dist-info and an egg-info
     declaring the same name (e.g. a stale egg-info left behind by an
     upgrade), the dist-info entry wins — dist-info is scanned first."""
@@ -170,7 +172,7 @@ def test_scanner_should_prefer_dist_info_over_egg_info_on_same_sys_path_entry(tm
     assert [pair for pair in out if pair[0] == "same_name"] == [("same_name", "pkg.mod:New")]
 
 
-def test_scanner_should_preserve_mixed_case_entry_point_names(tmp_path):
+def test_scanner_should_preserve_mixed_case_entry_point_names_when_invoked(tmp_path):
     """configparser's default optionxform lowercases option keys -- an
     entry-point NAME like 'MyPlugin' would silently come back as 'myplugin',
     diverging from importlib.metadata (which preserves case). The scanner

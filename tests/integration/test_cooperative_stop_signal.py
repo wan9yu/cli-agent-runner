@@ -97,7 +97,7 @@ def test_agent_should_receive_declared_cooperative_signal_when_stopped(tmp_path)
 
 @pytest.mark.serial
 @pytest.mark.timeout(30)
-def test_hard_wall_should_send_sigterm_first_regardless_of_cooperative_stop(tmp_path):
+def test_hard_wall_should_send_sigterm_first_regardless_of_cooperative_stop_when_invoked(tmp_path):
     """PROPERTY B (the mechanism-vs-property guard): a round hitting the R1128
     wall gets SIGTERM FIRST even though ``cooperative_first_signal`` is SIGINT --
     the hard wall must send SIGTERM literally, never the cooperative signal."""

@@ -116,7 +116,9 @@ def test_memory_pressure_should_report_no_pressure_when_psi_quiet_even_if_swap_c
     assert host_health.memory_pressure(cur, prev, _cfg()) is None
 
 
-def test_memory_pressure_should_detect_psi_pressure_regardless_of_mem_available() -> None:
+def test_memory_pressure_should_detect_psi_pressure_regardless_of_mem_available_when_invoked() -> (
+    None
+):
     cur = {"swap_sout": 100, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": 12.0}
     prev = {"swap_sout": 100}
 
@@ -184,7 +186,7 @@ def test_configured_gate_inert_should_be_true_when_pressure_present_but_avail_ab
     assert host_health.configured_gate_inert(cur, {"swap_sout": 0}, _cfg(40)) is True
 
 
-def test_configured_gate_inert_should_be_false_on_healthy_warm_cache_host() -> None:
+def test_configured_gate_inert_should_be_false_on_healthy_warm_cache_host_when_invoked() -> None:
     """MemAvailable >> MemFree alone is true on every healthy warm-cache host --
     must NOT be flagged as inert."""
     cur = {"swap_sout": 100, "mem_free_mb": 200, "mem_available_mb": 6000, "psi_some_avg10": 0.0}
@@ -200,7 +202,9 @@ def test_configured_gate_inert_should_be_false_when_gate_would_actually_fire() -
     assert host_health.configured_gate_inert(cur, {"swap_sout": None}, _cfg(40)) is False
 
 
-def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant() -> None:
+def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant_when_invoked() -> (
+    None
+):
     """swap_sout_noise_floor_mb must be read from cfg, not the deleted module
     constant -- a 9 MiB delta clears an 8 MiB floor but not a 32 MiB one.
     PSI is unreadable (None) here so the ladder falls through to tier 2 --
@@ -234,7 +238,7 @@ def test_memory_pressure_should_use_swap_floor_from_cfg_not_hardcoded_constant()
     assert host_health.memory_pressure(cur, prev, cfg2) is None  # 9 MiB < 32 MiB floor: no warning
 
 
-def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg() -> None:
+def test_memory_pressure_should_use_psi_full_critical_threshold_from_cfg_when_invoked() -> None:
     """psi_full_avg10_critical must be read from cfg, not the deleted module
     constant (0.2.15's hardcoded 1.0 killed every round on a 1% hiccup)."""
     cfg = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(full_avg10_critical=60.0))
@@ -340,7 +344,7 @@ def test_memory_pressure_should_be_healthy_when_memfree_and_memavail_clear_defau
     assert host_health.memory_pressure(cur, prev, cfg) is None
 
 
-def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys() -> None:
+def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys_when_invoked() -> None:
     cfg = MonitorHostHealthConfig()
     base = {
         "psi_some_avg10": 1.0,
@@ -379,7 +383,7 @@ def test_cgroup_growth_rate_pressure_should_return_none_when_rate_below_threshol
     assert result is None
 
 
-def test_cgroup_growth_rate_pressure_should_warn_when_rate_at_or_above_threshold() -> None:
+def test_cgroup_growth_rate_pressure_should_warn_when_rate_at_else_above_threshold() -> None:
     cfg = MonitorHostHealthConfig(
         pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=512.0)
     )
@@ -403,9 +407,7 @@ def test_cgroup_growth_rate_pressure_should_carry_unrounded_rate_in_context_when
     assert result.context["rate_mb_per_min"] == 623.456789
 
 
-def test_cgroup_growth_rate_pressure_should_read_threshold_from_cfg_not_hardcoded_constant() -> (
-    None
-):
+def test_cgroup_growth_rate_pressure_should_read_threshold_from_cfg_when_invoked() -> None:
     cfg = MonitorHostHealthConfig(
         pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=100.0)
     )

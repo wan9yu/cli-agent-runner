@@ -9,7 +9,9 @@ from agent_runner._throttle import _check_throttle_state, _coerce_float, _coerce
 from tests._clock import FakeClock
 
 
-def test_coerce_int_should_accept_numeric_variants_and_default_on_invalid_input() -> None:
+def test_coerce_int_should_accept_numeric_variants_and_default_on_invalid_input_when_invoked() -> (
+    None
+):
     assert _coerce_int(5, 0) == 5
     assert _coerce_int(5.9, 0) == 5
     assert _coerce_int("7", 0) == 7
@@ -21,7 +23,7 @@ def test_coerce_int_should_accept_numeric_variants_and_default_on_invalid_input(
     assert len(w) == 2  # None and non-numeric both warn
 
 
-def test_coerce_int_and_float_should_reject_nan_and_infinity() -> None:
+def test_coerce_int_and_float_should_reject_nan_and_infinity_when_invoked() -> None:
     """json.loads accepts bare NaN/Infinity/-Infinity tokens by default; both
     coercers must treat them as non-numeric (warn + default), never let
     int()/float() raise (ValueError on NaN, OverflowError on +-Infinity for int())."""

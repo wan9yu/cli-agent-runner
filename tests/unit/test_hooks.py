@@ -43,7 +43,7 @@ def test_post_round_hook_should_be_visible_in_listing_when_registered() -> None:
     assert len(listing) == 1
 
 
-def test_summarize_error_should_truncate_long_traceback() -> None:
+def test_summarize_error_should_truncate_long_traceback_when_invoked() -> None:
     """Tracebacks > 2KB are truncated head 1KB + tail 1KB with separator."""
     long_tb = "x" * 5000
 
@@ -56,7 +56,7 @@ def test_summarize_error_should_truncate_long_traceback() -> None:
     assert "[truncated]" in out["traceback"]
 
 
-def test_summarize_error_should_keep_short_traceback_intact() -> None:
+def test_summarize_error_should_keep_short_traceback_intact_when_invoked() -> None:
     short_tb = "short trace"
 
     out = hooks._summarize_error(ValueError("x"), tb=short_tb)
@@ -114,7 +114,7 @@ def test_hook_context_should_receive_dry_run_when_runtime_config_sets_it(tmp_pat
     assert captured[0].dry_run is True
 
 
-def test_summarize_error_should_redact_message_and_traceback():
+def test_summarize_error_should_redact_message_and_traceback_when_invoked():
     exc = RuntimeError("connect failed: postgresql://svc:S3cr3tPw0rd@db:5432/app")
 
     out = hooks._summarize_error(exc, tb="trace https://x-token:ghp_aaaaaaaaaaaaaaaaaaaa@h line 1")

@@ -17,7 +17,7 @@ from pathlib import Path
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "cli-real-output"
 
 
-def test_claude_result_event_should_parse_to_expected_usage_payload(tmp_path):
+def test_claude_result_event_should_parse_to_expected_usage_payload_when_invoked(tmp_path):
     from agent_runner.builtin_plugins.claude_rate_limit import _parse_claude_log
 
     src = FIXTURES / "claude-2.1.143-result-event.jsonl"
@@ -71,7 +71,7 @@ def test_claude_tool_call_count_should_equal_two_when_two_assistant_tool_use_eve
     assert parsed["usage"]["tool_call_count"] == 2
 
 
-def test_gemini_result_event_should_parse_to_expected_usage_payload(tmp_path):
+def test_gemini_result_event_should_parse_to_expected_usage_payload_when_invoked(tmp_path):
     from agent_runner.builtin_plugins.gemini import _parse_gemini_log
 
     src = FIXTURES / "gemini-0.42.0-result-event.jsonl"

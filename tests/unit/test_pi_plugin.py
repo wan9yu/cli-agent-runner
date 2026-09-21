@@ -18,6 +18,7 @@ passes ``exit_code=0`` — the round-failed signal has to come from the stream.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -405,10 +406,11 @@ def test_non_pi_binary_should_emit_nothing_when_after_round(tmp_path):
     auth_emit.assert_not_called()
 
 
-def test_missing_round_log_should_not_crash_when_after_round(tmp_path):
+def test_missing_round_log_should_not_crash_when_after_round(tmp_path: Path):
     from agent_runner.builtin_plugins.pi import PiErrorDetector
 
     ctx = make_hook_context(tmp_path, agent_name="pi")
+    assert ctx.agent_log_path is not None
     assert not ctx.agent_log_path.exists()
 
     with patch(f"{_MOD}.emit_agent_usage_recorded") as usage_emit:
@@ -450,7 +452,7 @@ def test_plain_text_chatter_should_not_block_usage_parsing_when_after_round(tmp_
     assert kw["duration_ms"] == 12607  # session header found past the chatter
 
 
-def test_classify_pi_error_should_map_only_observed_error_shapes():
+def test_classify_pi_error_should_map_only_observed_error_shapes_when_invoked():
     """Lock the errorMessage → bucket mapping to shapes captured from pi 0.80.10."""
     from agent_runner.builtin_plugins.pi import _classify_pi_error
 

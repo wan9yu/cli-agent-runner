@@ -8,7 +8,7 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 
 
-def test_kill_and_give_up_modules_should_not_name_config_digest() -> None:
+def test_kill_and_give_up_modules_should_not_name_config_digest_when_invoked() -> None:
     offenders: list[str] = []
     for path in PKG.rglob("*.py"):
         rel = path.relative_to(PKG).as_posix()
@@ -19,7 +19,7 @@ def test_kill_and_give_up_modules_should_not_name_config_digest() -> None:
     assert not offenders, f"config_digest leaked into kill/give-up surface: {offenders}"
 
 
-def test_runner_py_should_not_read_config_digest_identifier() -> None:
+def test_runner_py_should_not_read_config_digest_identifier_when_invoked() -> None:
     tree = ast.parse((PKG / "runner.py").read_text(encoding="utf-8"))
     hits: list[int] = []
     for node in ast.walk(tree):

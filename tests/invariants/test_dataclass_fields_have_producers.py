@@ -116,7 +116,9 @@ def _class_docstring(src: str, class_name: str) -> str:
     return ""
 
 
-def test_projectstate_and_status_fields_should_have_a_producer_or_be_reserved() -> None:
+def test_projectstate_and_status_fields_should_have_a_producer_else_be_reserved_when_invoked() -> (
+    None
+):
     offenders: list[str] = []
     checked = 0
     for class_name, cls in _TARGET_CLASSES.items():
@@ -133,14 +135,14 @@ def test_projectstate_and_status_fields_should_have_a_producer_or_be_reserved() 
     )
 
 
-def test_reserved_allowlist_should_name_real_fields() -> None:
+def test_reserved_allowlist_should_name_real_fields_when_invoked() -> None:
     """Keep `_RESERVED` honest: no stale entries for renamed/removed fields."""
     for class_name, field_name in _RESERVED:
         names = {f.name for f in dataclasses.fields(_TARGET_CLASSES[class_name])}
         assert field_name in names, f"_RESERVED names {class_name}.{field_name}, no such field"
 
 
-def test_reserved_fields_should_be_documented_in_owning_docstring() -> None:
+def test_reserved_fields_should_be_documented_in_owning_docstring_when_invoked() -> None:
     """Every `_RESERVED` field must be named "reserved" + "0.3" in its owning
     dataclass's OWN docstring — not just in this test file's allow-list."""
     sources = {
@@ -156,7 +158,9 @@ def test_reserved_fields_should_be_documented_in_owning_docstring() -> None:
         )
 
 
-def test_offending_fields_should_flag_unlisted_always_default_field(tmp_path: Path) -> None:
+def test_offending_fields_should_flag_unlisted_always_default_field_when_invoked(
+    tmp_path: Path,
+) -> None:
     """Non-vacuousness proof: a synthetic dataclass with a field that is ALWAYS
     given its trivial default (``hollow=[]``) must be flagged when it has no
     allow-list entry. If this ever passed with an empty `unlisted`, the real
@@ -185,7 +189,9 @@ def test_offending_fields_should_flag_unlisted_always_default_field(tmp_path: Pa
     )
 
 
-def test_offending_fields_should_ignore_allowlisted_hollow_field(tmp_path: Path) -> None:
+def test_offending_fields_should_ignore_allowlisted_hollow_field_when_invoked(
+    tmp_path: Path,
+) -> None:
     """Counterpart of the un-allow-listed self-check above: allow-listing the
     same always-``[]`` field must quiet the guard."""
     pkg = tmp_path / "pkg"
@@ -214,7 +220,9 @@ def test_offending_fields_should_ignore_allowlisted_hollow_field(tmp_path: Path)
     )
 
 
-def test_producers_should_ignore_same_named_attribute_pass_through(tmp_path: Path) -> None:
+def test_producers_should_ignore_same_named_attribute_pass_through_when_invoked(
+    tmp_path: Path,
+) -> None:
     """A same-named attribute relay (`recent_rounds=base_state.recent_rounds`)
     forwards whatever the upstream field already holds — it must NOT count as
     a producer, or the real invariant would silently pass for exactly the bug

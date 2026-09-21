@@ -99,7 +99,7 @@ def test_try_load_cfg_should_return_none_when_toml_is_syntactically_broken(tmp_p
     assert upgrade_cmd._try_load_cfg(args) is None
 
 
-def test_flat_phase_alias_should_not_be_treated_as_manual_remainder(tmp_path):
+def test_flat_phase_alias_should_not_be_treated_as_manual_remainder_when_invoked(tmp_path):
     """The flat [phases.<name>] alias is a permanent, still-valid form."""
     body = (
         _VALID.format(wd=tmp_path, ld=tmp_path / "logs")
@@ -128,7 +128,9 @@ def test_cmd_should_mention_no_migrate_flag_when_manual_transform_required(tmp_p
     assert "--no-migrate" in capsys.readouterr().err
 
 
-def test_a_full_0_2_x_config_should_migrate_and_load_cleanly_under_schema_version_one(tmp_path):
+def test_a_full_0_2_x_config_should_migrate_and_load_cleanly_under_schema_version_one_when_invoked(
+    tmp_path,
+):
     from agent_runner import migrations
     from agent_runner.config import load_config
 

@@ -25,7 +25,7 @@ def _ev(event: str, **fields) -> dict:
     return {"event": event, "ts": "2026-05-12T10:00:00.000Z", **fields}
 
 
-def test_known_alert_kinds_should_contain_all_fourteen() -> None:
+def test_known_alert_kinds_should_contain_all_fourteen_when_invoked() -> None:
     expected = {
         "timeout_rate",
         "hung",
@@ -68,7 +68,7 @@ def test_detect_timeout_rate_should_return_warning_alert_when_three_of_ten_timed
     assert a.context["rate"] >= 0.2
 
 
-def test_detect_timeout_rate_should_exclude_grace_kills_from_the_rate() -> None:
+def test_detect_timeout_rate_should_exclude_grace_kills_from_the_rate_when_invoked() -> None:
     """A grace-kill sets timed_out but is not a hung round — it must not inflate
     the timeout rate (0.2.11)."""
     events = []
@@ -360,7 +360,7 @@ def test_detect_oauth_fail_should_return_none_when_auth_text_on_exit_zero_rounds
     assert detect_oauth_fail(events, log_tails, window=10, threshold=0.2) is None
 
 
-def test_detect_oauth_fail_should_count_text_and_structured_matches_together() -> None:
+def test_detect_oauth_fail_should_count_text_and_structured_matches_together_when_invoked() -> None:
     from agent_runner.events import AGENT_AUTH_ERROR_DETECTED
 
     events = _exit_zero_rounds()
@@ -409,7 +409,7 @@ def test_detect_network_fail_should_return_warning_when_short_exits_match_networ
     assert a.auto_action == "none"
 
 
-def test_alert_severity_should_be_one_of_three_values() -> None:
+def test_alert_severity_should_be_one_of_three_values_when_invoked() -> None:
     a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
 
     assert a.severity in {"info", "warning", "critical"}
@@ -528,7 +528,7 @@ def test_detect_hung_should_use_global_timeout_when_phase_not_in_overrides() -> 
     assert out is None
 
 
-def test_run_all_detectors_should_derive_stale_threshold_from_round_timeout() -> None:
+def test_run_all_detectors_should_derive_stale_threshold_from_round_timeout_when_invoked() -> None:
     # round_budget_s=1000 -> derived 1500s. Last event 1800s ago -> stale.
     from agent_runner.monitor import run_all_detectors
 
@@ -560,7 +560,9 @@ def test_run_all_detectors_should_accept_grouped_host_health_config_when_called(
     assert any(a.detector == "disk_critical" for a in alerts)
 
 
-def test_run_all_detectors_should_prefer_explicit_stale_threshold_over_derived() -> None:
+def test_run_all_detectors_should_prefer_explicit_stale_threshold_over_derived_when_invoked() -> (
+    None
+):
     # Explicit 3600s threshold; last event 1800s ago -> NOT stale even though
     # derived (round_timeout 1000 * 1.5 = 1500) would have fired.
     from agent_runner.monitor import run_all_detectors

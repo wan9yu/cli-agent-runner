@@ -50,7 +50,7 @@ def _shield_violations(path: Path) -> list[str]:
     return hits
 
 
-def test_procwait_should_never_catch_keyboardinterrupt_or_baseexception() -> None:
+def test_procwait_should_never_catch_keyboardinterrupt_else_baseexception_when_invoked() -> None:
     assert _PROCWAIT.is_file(), "agent_runner/_procwait.py not found"  # vacuity-guard
 
     hits = _shield_violations(_PROCWAIT)

@@ -95,7 +95,7 @@ def test_cli_init_should_default_to_claude_preset_when_no_preset_flag_given(
     assert 'command = ["claude"' in toml_text
 
 
-def test_cli_init_should_reject_invalid_preset_via_argparse() -> None:
+def test_cli_init_should_reject_invalid_preset_via_argparse_when_invoked() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["init", "--preset", "nonexistent"])
 

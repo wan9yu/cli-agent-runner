@@ -113,7 +113,7 @@ def test_serve_should_leave_cgroup_defer_governed_by_probe_when_exec_prefix_is_n
     assert captured["defer_to_cgroup"] is True
 
 
-def test_serve_should_compute_defer_to_cgroup_per_round_from_the_phase_actually_selected(
+def test_serve_should_compute_defer_to_cgroup_per_round_from_phase_actually_selected_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """exec_prefix is base-only, but a phase CAN override command to a bare

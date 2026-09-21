@@ -33,7 +33,7 @@ def test_select_path_should_raise_key_error_when_selecting_removed_events_kind()
         select_path(tree, "events.agent_usage_recorded")
 
 
-def test_peek_should_reject_window_flag_via_argparse():
+def test_peek_should_reject_window_flag_via_argparse_when_invoked():
     """0.1.34+: --window was only consumed by the removed events.* selector.
     Verify argparse rejects --window on peek so it stays removed.
     """

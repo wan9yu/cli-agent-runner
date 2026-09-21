@@ -102,7 +102,9 @@ def test_round_was_mem_terminated_should_return_true_when_timestamps_tie_exactly
 # --- (b) round_outcome + wrappers give the same verdicts, fresh or precomputed --
 
 
-def test_round_outcome_should_fold_usage_transient_and_substrate_fields(tmp_path: Path) -> None:
+def test_round_outcome_should_fold_usage_transient_and_substrate_fields_when_invoked(
+    tmp_path: Path,
+) -> None:
     log_dir = tmp_path / "logs"
     _write(
         log_dir,
@@ -352,7 +354,7 @@ def test_ran_agent_throttled_should_match_fresh_scan_when_given_precomputed_acti
 # --- 0.3.7 Task 5: the early-SIGTERM nudge's round_mem_terminated{tier} breaker ---
 
 
-def test_round_was_mem_terminated_should_count_a_nudged_round_like_a_hard_terminated_one(
+def test_round_was_mem_terminated_should_count_nudged_round_like_a_hard_terminated_one_when_invoked(
     tmp_path: Path,
 ) -> None:
     """The nudge (a bare `proc.terminate()` two samples before the hard floor)
@@ -378,7 +380,7 @@ def test_round_was_mem_terminated_should_count_a_nudged_round_like_a_hard_termin
     assert round_was_mem_terminated(log_dir) is True
 
 
-def test_mem_loop_breaker_should_trip_after_threshold_nudged_rounds() -> None:
+def test_mem_loop_breaker_should_trip_after_threshold_nudged_rounds_when_invoked() -> None:
     """The PROPERTY, not a call-arg: feeding MEM_LOOP_THRESHOLD nudged rounds
     (mem_terminated=True, as round_was_mem_terminated reports above) through
     _mem_loop_decision converges to `mem_loop` exactly like that many

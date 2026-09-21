@@ -455,7 +455,7 @@ def test_spawn_round_should_not_terminate_when_in_round_terminate_is_disabled(
     assert "round_mem_terminated" not in kinds
 
 
-def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset(
+def test_spawn_round_should_cap_critical_sample_events_and_resume_after_streak_reset_when_invoked(
     tmp_path, monkeypatch
 ):
     """0.2.17: round_mem_critical_sample is capped at
@@ -723,7 +723,7 @@ def test_spawn_round_should_engage_and_restore_soft_brake_when_warning_sustained
     assert released and released[0]["reason"] == "round_end"
 
 
-def test_spawn_round_should_not_engage_or_crash_when_warning_threshold_is_zero_and_pressure_absent(
+def test_spawn_round_should_engage_else_crash_when_warning_threshold_is_zero_and_pressure_absent(
     tmp_path, monkeypatch
 ):
     """Review Minor 1 regression: warning_streak resets to 0 on a no-pressure
@@ -997,7 +997,7 @@ def test_spawn_round_should_carry_the_real_errno_when_engage_itself_fails(tmp_pa
     assert failed and failed[0]["errno"] == errno_mod.EACCES
 
 
-def test_spawn_round_should_latch_recovery_restore_failure_instead_of_flooding_each_healthy_tick(
+def test_spawn_round_should_latch_recovery_restore_failure_flooding_each_healthy_tick_when_invoked(
     tmp_path, monkeypatch
 ):
     """Fix-wave Minor 2: when the recovery-path restore keeps failing, the

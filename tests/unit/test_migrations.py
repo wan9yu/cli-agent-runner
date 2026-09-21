@@ -21,7 +21,7 @@ def _stamped(text: str) -> str:
     return f"schema_version = 1\n{text}"
 
 
-def test_rate_limit_action_rename_should_preserve_value_and_comment():
+def test_rate_limit_action_rename_should_preserve_value_and_comment_when_invoked():
     text = '[runtime]\nrate_limit_action = "stop"   # keep on quota\n'
 
     r = _run(text)
@@ -35,7 +35,7 @@ def test_rate_limit_action_rename_should_preserve_value_and_comment():
     assert r.manual == []
 
 
-def test_orphan_action_rename_should_replace_key_with_dirty_action():
+def test_orphan_action_rename_should_replace_key_with_dirty_action_when_invoked():
     text = '[vcs]\norphan_action = "ignore"\n'
 
     r = _run(text)
@@ -83,7 +83,7 @@ def test_orphan_action_rename_should_be_rejected_when_dirty_action_already_prese
     assert r.new_text == _stamped(text)  # invalid rewrite was not adopted
 
 
-def test_up_to_date_config_should_be_a_noop():
+def test_up_to_date_config_should_be_a_noop_when_invoked():
     text = '[runtime]\ntransient_error_action = "back_off"\n[vcs]\ndirty_action = "stash"\n'
 
     r = _run(text)
@@ -109,7 +109,7 @@ def test_flat_phase_override_should_be_advisory_when_set_directly():
     assert r.new_text == _stamped(text)  # advisory transforms never touch the text itself
 
 
-def test_nested_phase_runtime_table_should_not_be_flagged():
+def test_nested_phase_runtime_table_should_not_be_flagged_when_invoked():
     text = 'phases.list = ["a"]\n[phases.a.runtime]\nround_budget_s = 900\n'
 
     r = _run(text)
@@ -132,7 +132,7 @@ def test_rate_limit_action_rename_should_be_table_scoped_when_key_is_in_other_ta
     ]
 
 
-def test_bare_single_token_command_should_be_wrapped_into_argv_list():
+def test_bare_single_token_command_should_be_wrapped_into_argv_list_when_invoked():
     text = '[agent]\ncommand = "claude"   # main agent\n'
 
     r = _run(text)
@@ -142,7 +142,7 @@ def test_bare_single_token_command_should_be_wrapped_into_argv_list():
     assert any("command" in a for a in r.applied)
 
 
-def test_command_with_spaces_should_be_reported_manual_not_auto_split():
+def test_command_with_spaces_should_be_reported_manual_not_auto_split_when_invoked():
     text = '[agent]\ncommand = "claude -p"\n'
 
     r = _run(text)
@@ -181,7 +181,7 @@ def test_anomaly_repetitive_threshold_should_be_reported_manual_when_above_windo
     assert any("anomaly_repetitive_threshold" in m for m in r.manual)
 
 
-def test_empty_command_should_be_reported_manual():
+def test_empty_command_should_be_reported_manual_when_invoked():
     text = "[agent]\ncommand = []\n"
 
     r = _run(text)
@@ -190,7 +190,7 @@ def test_empty_command_should_be_reported_manual():
     assert any("command" in m and "empty" in m for m in r.manual)  # no auto-fix: real value needed
 
 
-def test_empty_top_level_prompt_files_should_be_reported_manual():
+def test_empty_top_level_prompt_files_should_be_reported_manual_when_invoked():
     text = "[prompt]\nfiles = []\n"
 
     r = _run(text)
@@ -199,7 +199,7 @@ def test_empty_top_level_prompt_files_should_be_reported_manual():
     assert any("[prompt] files" in m for m in r.manual)
 
 
-def test_bare_prompt_arg_template_should_reach_manual_in_a_single_migrate_pass():
+def test_bare_prompt_arg_template_should_reach_manual_in_a_single_migrate_pass_when_invoked():
     """Fixpoint: a bare-string prompt_arg_template is wrapped to a list on pass 1,
     which the re-parse then reveals has no {prompt} placeholder — a single pass
     would exit clean on a config that still won't load_config. ONE run_migrations
@@ -213,7 +213,9 @@ def test_bare_prompt_arg_template_should_reach_manual_in_a_single_migrate_pass()
     assert 'prompt_arg_template = ["-p"]' in r.new_text
 
 
-def test_bare_prompt_arg_template_with_placeholder_should_be_loadable_after_one_migrate(tmp_path):
+def test_bare_prompt_arg_template_with_placeholder_should_be_loadable_after_one_migrate_when_run(
+    tmp_path,
+):
     """The converging case: a bare template that DOES carry {prompt} wraps to a
     genuinely-loadable list in one invocation — no lingering manual blocker."""
     from agent_runner.config import load_config
@@ -235,7 +237,7 @@ def test_bare_prompt_arg_template_with_placeholder_should_be_loadable_after_one_
     load_config(cfg_path)  # must not raise — genuinely loadable after ONE migrate
 
 
-def test_bare_per_phase_command_and_prompt_files_should_be_wrapped_into_lists():
+def test_bare_per_phase_command_and_prompt_files_should_be_wrapped_into_lists_when_invoked():
     text = (
         '[phases]\nlist = ["dev"]\n'
         '[phases.dev.agent]\ncommand = "claude"\n'
@@ -249,7 +251,7 @@ def test_bare_per_phase_command_and_prompt_files_should_be_wrapped_into_lists():
     assert r.manual == []
 
 
-def test_empty_per_phase_command_should_be_reported_manual():
+def test_empty_per_phase_command_should_be_reported_manual_when_invoked():
     # A per-phase [phases.<name>.agent] command = [] merges onto the base
     # [agent] table and overrides it to empty, hitting the same "non-empty
     # list" rejection as a top-level empty command — needs its own entry since
@@ -263,7 +265,7 @@ def test_empty_per_phase_command_should_be_reported_manual():
     assert r.new_text == _stamped(text)
 
 
-def test_bare_per_phase_command_should_be_wrapped_without_touching_sibling_space_command():
+def test_bare_per_phase_command_should_be_wrapped_without_touching_sibling_space_command_when_run():
     # Regression: the per-phase [phases.<name>.agent] walker used to wrap EVERY
     # matching table unconditionally, so [phases.dev]'s safe bare command
     # tripping the auto-fix migration would ALSO silently auto-wrap
@@ -293,7 +295,7 @@ def test_bare_per_phase_command_should_be_wrapped_without_touching_sibling_space
 @pytest.mark.parametrize(
     "table", ["agent", "runtime", "prompt", "vcs", "monitor", "phases", "plugins", "schedule"]
 )
-def test_scalar_table_value_should_be_reported_manual_without_crashing(table: str):
+def test_scalar_table_value_should_be_reported_manual_without_crashing_when_invoked(table: str):
     # This is the registry-type-safety regression test: `monitor = 1` (and
     # every sibling top-level table given as a scalar) used to crash detect()
     # lambdas that assumed a dict (`p.get("monitor", {}).get(...)`). Detecting
@@ -308,7 +310,7 @@ def test_scalar_table_value_should_be_reported_manual_without_crashing(table: st
     assert r.new_text == _stamped(text)
 
 
-def test_monitor_scalar_value_should_not_crash_other_monitor_detectors():
+def test_monitor_scalar_value_should_not_crash_other_monitor_detectors_when_invoked():
     # A config with [monitor]-shaped content AND a scalar monitor= at once
     # can't happen in real TOML (one wins), but every OTHER detector that
     # reads "monitor" off the parsed dict must independently survive a scalar
@@ -381,7 +383,7 @@ def test_unknown_key_should_be_reported_manual_when_present(text, check, check_n
         assert r.new_text == _stamped(text)  # unknown-key rejections never rewrite the text itself
 
 
-def test_phases_scalar_key_should_be_reported_manual():
+def test_phases_scalar_key_should_be_reported_manual_when_invoked():
     text = '[phases]\nlist = ["dev"]\nbogus = 1\n[phases.dev]\n'
 
     r = _run(text)
@@ -389,7 +391,7 @@ def test_phases_scalar_key_should_be_reported_manual():
     assert any("bogus" in m for m in r.manual)
 
 
-def test_agent_missing_prompt_placeholder_should_be_reported_manual():
+def test_agent_missing_prompt_placeholder_should_be_reported_manual_when_invoked():
     text = '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p"]\n'
 
     r = _run(text)
@@ -397,7 +399,7 @@ def test_agent_missing_prompt_placeholder_should_be_reported_manual():
     assert any("{prompt}" in m for m in r.manual)
 
 
-def test_agent_stdin_delivery_should_not_be_flagged_for_missing_prompt_placeholder():
+def test_agent_stdin_delivery_should_not_be_flagged_for_missing_prompt_placeholder_when_invoked():
     # stdin delivery legitimately has no {prompt} token in argv — a different,
     # already-enforced rule (config.py rejects the opposite: {prompt} present
     # under stdin). The migrate-side detector must not conflate the two.
@@ -408,7 +410,7 @@ def test_agent_stdin_delivery_should_not_be_flagged_for_missing_prompt_placehold
     assert r.manual == []
 
 
-def test_phase_agent_missing_prompt_placeholder_should_be_reported_manual():
+def test_phase_agent_missing_prompt_placeholder_should_be_reported_manual_when_invoked():
     text = '[phases]\nlist = ["dev"]\n[phases.dev.agent]\nprompt_arg_template = ["-p"]\n'
 
     r = _run(text)
@@ -599,7 +601,7 @@ def test_removed_plugins_raw_leftover_key_should_be_flagged_manual_when_migrated
     assert any("my_plugin_setting" in m and "[plugins]" in m and "0.3.9" in m for m in r.manual)
 
 
-def test_removed_plugins_sandbox_key_should_not_double_report_via_generic_detector():
+def test_removed_plugins_sandbox_key_should_not_double_report_via_generic_detector_when_invoked():
     """sandbox/pin/spawn_override_allow are excluded from the generic [plugins]
     unknown-key check (_PLUGINS_LEGACY_FIELDS) so a config using only one of
     them is reported exactly once, by its own dedicated Migration."""

@@ -32,7 +32,7 @@ def _base(wd: Path, extra: str = "", *, command: str = '["true"]') -> str:
     ) + extra
 
 
-def test_bare_string_command_should_be_rejected(tmp_path: Path) -> None:
+def test_bare_string_command_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     p = _write(tmp_path, _base(tmp_path, command='"claude"'))
 
     with pytest.raises(ConfigError, match="must be a list") as e:
@@ -40,21 +40,21 @@ def test_bare_string_command_should_be_rejected(tmp_path: Path) -> None:
     assert "agent-runner migrate" in str(e.value)
 
 
-def test_empty_command_should_be_rejected(tmp_path: Path) -> None:
+def test_empty_command_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     p = _write(tmp_path, _base(tmp_path, command="[]"))
 
     with pytest.raises(ConfigError, match="non-empty"):
         load_config(p)
 
 
-def test_bare_string_phases_list_should_be_rejected(tmp_path: Path) -> None:
+def test_bare_string_phases_list_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     p = _write(tmp_path, _base(tmp_path, '[phases]\nlist = "dev"\n'))
 
     with pytest.raises(ConfigError, match="must be a list"):
         load_config(p)
 
 
-def test_empty_top_level_prompt_files_should_be_rejected(tmp_path: Path) -> None:
+def test_empty_top_level_prompt_files_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     body = (
         "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
@@ -66,7 +66,7 @@ def test_empty_top_level_prompt_files_should_be_rejected(tmp_path: Path) -> None
         load_config(_write(tmp_path, body))
 
 
-def test_per_phase_prompt_files_empty_should_be_preserved(tmp_path: Path) -> None:
+def test_per_phase_prompt_files_empty_should_be_preserved_when_invoked(tmp_path: Path) -> None:
     extra = '[phases]\nlist = ["dev"]\n[phases.dev.prompt]\nfiles = []\n'
 
     cfg = load_config(_write(tmp_path, _base(tmp_path, extra)))
@@ -74,14 +74,14 @@ def test_per_phase_prompt_files_empty_should_be_preserved(tmp_path: Path) -> Non
     assert cfg.profile_for("dev").prompt_files == []  # distinct from None
 
 
-def test_unknown_schedule_key_should_be_rejected(tmp_path: Path) -> None:
+def test_unknown_schedule_key_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     p = _write(tmp_path, _base(tmp_path, "[schedule]\nbogus = 1\n"))
 
     with pytest.raises(ConfigError, match=r"unknown \[schedule\]"):
         load_config(p)
 
 
-def test_unknown_prompt_key_should_be_rejected(tmp_path: Path) -> None:
+def test_unknown_prompt_key_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     body = (
         "schema_version = 1\n"
         '[agent]\ncommand = ["true"]\nprompt_arg_template = ["-p", "{prompt}"]\n'
@@ -93,7 +93,7 @@ def test_unknown_prompt_key_should_be_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_threshold_greater_than_window_should_be_rejected(tmp_path: Path) -> None:
+def test_threshold_greater_than_window_should_be_rejected_when_invoked(tmp_path: Path) -> None:
     extra = "[monitor]\nanomaly_repetitive_window = 3\nanomaly_repetitive_threshold = 5\n"
 
     with pytest.raises(ConfigError, match="anomaly_repetitive_threshold"):
@@ -101,7 +101,9 @@ def test_threshold_greater_than_window_should_be_rejected(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize("preset", PRESET_NAMES)
-def test_shipped_preset_should_load_under_strictness(tmp_git_repo: Path, preset: str) -> None:
+def test_shipped_preset_should_load_under_strictness_when_invoked(
+    tmp_git_repo: Path, preset: str
+) -> None:
     from agent_runner.api import init
 
     init(tmp_git_repo, preset=preset, commit=False)

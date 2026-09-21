@@ -16,7 +16,7 @@ def _mod():
     return mod
 
 
-def test_format_round_start_should_print_digest_prefix_and_changed() -> None:
+def test_format_round_start_should_print_digest_prefix_and_changed_when_invoked() -> None:
     dw = _mod()
     line = dw.format_round_start(
         {
@@ -30,7 +30,7 @@ def test_format_round_start_should_print_digest_prefix_and_changed() -> None:
     assert dw.format_round_start({"event": "round_end"}) is None
 
 
-def test_give_up_kind_should_not_include_mem_loop() -> None:
+def test_give_up_kind_should_not_include_mem_loop_when_invoked() -> None:
     dw = _mod()
     assert dw.give_up_kind([{"event": "config_broken"}]) == "config_broken"
     assert "mem_loop" not in dw.GIVE_UP_KINDS

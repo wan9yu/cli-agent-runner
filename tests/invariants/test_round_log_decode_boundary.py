@@ -18,9 +18,10 @@ def _call_names(fn: ast.AST) -> set[str]:
     return out
 
 
-def test_open_round_log_should_pin_errors_replace() -> None:
+def test_open_round_log_should_pin_errors_replace_when_invoked() -> None:
     src = (PKG / "round_log.py").read_text(encoding="utf-8")
     fn_src = ast.get_source_segment(src, _func(ast.parse(src), "open_round_log"))
+    assert fn_src is not None
 
     assert 'errors="replace"' in fn_src
 
@@ -30,18 +31,18 @@ def _assert_reader_uses_helper(module_name: str, func_name: str) -> None:
     fn = _func(ast.parse(src), func_name)
     names = _call_names(fn)
     assert "open_round_log" in names, f"{func_name} must decode round logs via open_round_log"
-    assert "open" not in names, f"{func_name} must not bare-open() a round log outside the helper"
-    assert "read_text" not in names, f"{func_name} must not read_text() a round log outside helper"
+    bare = {n for n in names if n in {"open", "read_text"}}
+    assert not bare, f"{func_name} must not {bare} a round log outside the helper"
 
 
-def test_monitor_state_tail_reader_should_use_helper_not_bare_open() -> None:
+def test_monitor_state_tail_reader_should_use_helper_not_bare_open_when_invoked() -> None:
     # load_round_log_tails lives in _monitor_state.py (monitor.py pure-layer split).
     _assert_reader_uses_helper("_monitor_state.py", "load_round_log_tails")
 
 
-def test_round_view_log_reader_should_use_helper_not_bare_read_text() -> None:
+def test_round_view_log_reader_should_use_helper_not_bare_read_text_when_invoked() -> None:
     _assert_reader_uses_helper("round_view.py", "build_round_view")
 
 
-def test_runner_network_blip_scan_should_use_helper_not_bare_read_text() -> None:
+def test_runner_network_blip_scan_should_use_helper_not_bare_read_text_when_invoked() -> None:
     _assert_reader_uses_helper("runner.py", "_scan_round_log_for_network_blip")

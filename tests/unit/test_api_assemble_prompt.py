@@ -72,7 +72,7 @@ def test_assemble_prompt_should_warn_and_skip_missing_file_when_not_first(
     assert "missing.md" in caplog.text
 
 
-def test_assemble_prompt_should_strip_frontmatter_from_first_file_by_default(
+def test_assemble_prompt_should_strip_frontmatter_from_first_file_by_default_when_invoked(
     tmp_path: Path,
 ) -> None:
     from agent_runner.api import assemble_prompt
@@ -106,7 +106,7 @@ def test_assemble_prompt_should_keep_frontmatter_when_strip_opted_out(
     assert result == "---\nyaml: stuff\n---\nbody"
 
 
-def test_assemble_prompt_should_apply_per_phase_prompt_files_override(
+def test_assemble_prompt_should_apply_per_phase_prompt_files_override_when_invoked(
     tmp_path: Path,
 ) -> None:
     """[phases.qa] prompt.files = [...] fully replaces global prompt.files."""

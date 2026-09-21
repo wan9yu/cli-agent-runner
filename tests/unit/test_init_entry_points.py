@@ -92,7 +92,7 @@ def test_load_and_register_should_strip_extras_marker_and_register_when_resolved
     assert any(h.name == "test_init_entry_points_fresh_hook" for h in _hooks.post_round_hooks())
 
 
-def test_apply_plugin_disable_should_remove_named_post_round_hook() -> None:
+def test_apply_plugin_disable_should_remove_named_post_round_hook_when_invoked() -> None:
     """Disable keys on the PluginManifest's own `name`, not the hook's `.name` —
     the hook must be registered via a manifest for disable to find it."""
     from agent_runner import apply_plugin_disable, hooks
@@ -128,7 +128,7 @@ def test_apply_plugin_disable_should_warn_when_name_not_installed(
     assert "definitely_not_installed_xyz_unique_123" in warnings_text
 
 
-def test_disabled_plugin_names_should_return_names_from_last_apply_plugin_disable_call() -> None:
+def test_disabled_plugin_names_should_return_last_apply_plugin_disable_names_when_invoked() -> None:
     from agent_runner import apply_plugin_disable, disabled_plugin_names
     from agent_runner._plugin_manifest import register_manifest
 

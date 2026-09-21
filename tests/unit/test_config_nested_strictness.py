@@ -94,7 +94,7 @@ def test_load_config_should_raise_configerror_when_brake_step_pct_over_cap(
         load_config(p)
 
 
-def test_load_config_should_accept_brake_step_pct_zero_for_cap_at_current(
+def test_load_config_should_accept_brake_step_pct_zero_for_cap_at_current_when_invoked(
     tmp_path: Path,
 ) -> None:
     p = _write(

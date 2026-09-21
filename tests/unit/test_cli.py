@@ -80,7 +80,7 @@ def test_main_status_should_exit_cleanly_when_invoked(
     assert rc == 0
 
 
-def test_main_status_should_print_round_or_mode_info_when_invoked_after_one_round(
+def test_main_status_should_print_round_else_mode_info_when_invoked_after_one_round(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     capsys,

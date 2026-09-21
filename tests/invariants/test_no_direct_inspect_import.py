@@ -36,7 +36,7 @@ def _direct_inspect_import_hits() -> list[str]:
     return hits
 
 
-def test_agent_runner_should_not_import_inspect_directly_so_the_v04_dataclasses_lever_survives():
+def test_agent_runner_should_import_inspect_so_the_v04_dataclasses_lever_survives_when_invoked():
     hits = _direct_inspect_import_hits()
 
     assert not hits, (

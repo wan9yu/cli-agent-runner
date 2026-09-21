@@ -27,7 +27,7 @@ TZ = ZoneInfo("Asia/Shanghai")
         (True, None, "inert(no cgroup v2)"),
     ],
 )
-def test_brake_report_state_should_map_config_and_delegation_to_a_label(
+def test_brake_report_state_should_map_config_and_delegation_to_a_label_when_invoked(
     enabled, delegated, expected
 ) -> None:
     assert brake_report_state(enabled, delegated) == expected
@@ -116,7 +116,7 @@ def test_doctor_should_report_each_battery_check_when_config_loaded(tmp_path, ca
     assert "agent_cli_in_path" in out
 
 
-def test_doctor_should_print_phase_plan_for_requested_rounds(tmp_path, capsys):
+def test_doctor_should_print_phase_plan_for_requested_rounds_when_invoked(tmp_path, capsys):
     args = _args(_write_phase_config(tmp_path), rounds=2)
 
     doctor_cmd.cmd_doctor(args)
@@ -192,7 +192,7 @@ def test_doctor_should_report_phase_window_overlap_as_a_failing_check_when_prese
     assert overlap_check.ok is False
 
 
-def test_doctor_should_report_cgroup_delegation_state_in_json(tmp_path, capsys):
+def test_doctor_should_report_cgroup_delegation_state_in_json_when_invoked(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path), json=True)
 
     doctor_cmd.cmd_doctor(args)
@@ -204,7 +204,7 @@ def test_doctor_should_report_cgroup_delegation_state_in_json(tmp_path, capsys):
     assert "memory_high" in payload["cgroup"]
 
 
-def test_doctor_should_report_brake_state_in_text_and_json(tmp_path, capsys):
+def test_doctor_should_report_brake_state_in_text_and_json_when_invoked(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path), json=True)
 
     doctor_cmd.cmd_doctor(args)
@@ -236,7 +236,7 @@ def test_doctor_should_never_emit_an_event_when_probing_cgroup(tmp_path, monkeyp
     doctor_cmd.cmd_doctor(args)
 
 
-def test_doctor_should_print_cooperative_preset_names(tmp_path, capsys):
+def test_doctor_should_print_cooperative_preset_names_when_invoked(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path))
 
     doctor_cmd.cmd_doctor(args)
@@ -290,7 +290,7 @@ def test_doctor_should_show_the_inert_hint_when_a_limit_is_bound_but_undelegated
     assert "soft-brake is inert" in out
 
 
-def test_doctor_should_print_resolved_sigterm_grace(tmp_path, capsys):
+def test_doctor_should_print_resolved_sigterm_grace_when_invoked(tmp_path, capsys):
     args = _args(_write_min_config(tmp_path))
 
     doctor_cmd.cmd_doctor(args)

@@ -73,7 +73,7 @@ def test_write_ledger_advisory_should_prepend_newest_advisory_when_ledger_exists
     )
 
 
-def test_write_ledger_advisory_should_stay_under_8192_bytes_and_keep_newest_after_200_writes(
+def test_write_ledger_advisory_should_stay_under_8192_bytes_and_keep_newest_after_200_when_run(
     tmp_path: Path, tmp_log_dir: Path
 ) -> None:
     ledger_path = tmp_path / "ledger.md"
@@ -88,7 +88,7 @@ def test_write_ledger_advisory_should_stay_under_8192_bytes_and_keep_newest_afte
     assert "marker-0" not in content, "the oldest advisory must be dropped first"
 
 
-def test_write_ledger_advisory_should_redact_secret_tokens_before_writing(
+def test_write_ledger_advisory_should_redact_secret_tokens_before_writing_when_invoked(
     tmp_path: Path, tmp_log_dir: Path
 ) -> None:
     ledger_path = tmp_path / "ledger.md"
@@ -105,7 +105,7 @@ def test_write_ledger_advisory_should_redact_secret_tokens_before_writing(
     assert "<redacted>" in content
 
 
-def test_write_ledger_advisory_should_leave_no_tmp_file_behind(
+def test_write_ledger_advisory_should_leave_no_tmp_file_behind_when_invoked(
     tmp_path: Path, tmp_log_dir: Path
 ) -> None:
     ledger_path = tmp_path / "ledger.md"
@@ -117,7 +117,7 @@ def test_write_ledger_advisory_should_leave_no_tmp_file_behind(
     assert leftovers == []
 
 
-def test_write_ledger_advisory_should_emit_goal_assessment_event(
+def test_write_ledger_advisory_should_emit_goal_assessment_event_when_invoked(
     tmp_path: Path, tmp_log_dir: Path
 ) -> None:
     ledger_path = tmp_path / "ledger.md"

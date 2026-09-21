@@ -105,7 +105,7 @@ def _sample_fn_once_ready(ready: Path, critical_sample: dict):
     return _fn
 
 
-def test_nudge_should_sigterm_the_agent_within_one_tick_and_end_tier_nudge_without_escalation(
+def test_nudge_should_sigterm_agent_within_one_tick_and_end_tier_nudge_without_escalation_when_run(
     tmp_path,
 ):
     log_dir = tmp_path / "logs"

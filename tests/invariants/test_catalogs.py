@@ -23,7 +23,6 @@ def test_defenses_catalog_should_have_required_fields_when_loaded() -> None:
         runtime=RuntimeConfig(work_dir=Path("/tmp"), log_dir=Path("/tmp/logs")),
         prompt=PromptConfig(file=Path("/tmp/p.md"), inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
     )
 
     cat = catalog(cfg)
@@ -48,7 +47,6 @@ def test_defenses_catalog_guarded_by_paths_should_exist_when_present() -> None:
         runtime=RuntimeConfig(work_dir=Path("/tmp"), log_dir=Path("/tmp/logs")),
         prompt=PromptConfig(file=Path("/tmp/p.md"), inject_context=True),
         vcs=VcsConfig(),
-        phases=None,
     )
 
     checked = 0
@@ -62,7 +60,7 @@ def test_defenses_catalog_guarded_by_paths_should_exist_when_present() -> None:
     assert checked > 0, "no catalog entry had guarded_by set"  # vacuity-guard
 
 
-def test_codebase_should_have_no_paramiko_or_fabric_runtime_deps_when_scanned() -> None:
+def test_codebase_should_have_no_paramiko_else_fabric_runtime_deps_when_scanned() -> None:
     """ssh stays subprocess-based; paramiko/fabric only allowed in tests/e2e."""
     offenders: list[tuple[str, str]] = []
     scanned = 0
@@ -78,7 +76,7 @@ def test_codebase_should_have_no_paramiko_or_fabric_runtime_deps_when_scanned() 
     assert offenders == [], f"runtime modules import paramiko/fabric: {offenders}"
 
 
-def test_pyproject_e2e_extra_should_not_declare_paramiko_or_fabric_when_read() -> None:
+def test_pyproject_e2e_extra_should_not_declare_paramiko_else_fabric_when_read() -> None:
     """The e2e suite is pure subprocess ssh (tests/e2e/conftest.py:21-27), and
     test_catalogs' sibling invariant forbids paramiko/fabric in source. A declared
     dep nothing imports still resolves invoke+paramiko+cryptography+bcrypt+pynacl

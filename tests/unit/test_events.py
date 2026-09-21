@@ -71,7 +71,7 @@ def test_emit_should_write_separate_files_when_emits_span_different_months(
     assert (tmp_log_dir / "events-2026-05.jsonl").exists()
 
 
-def test_known_event_kinds_should_contain_all_lifecycle_events() -> None:
+def test_known_event_kinds_should_contain_all_lifecycle_events_when_invoked() -> None:
     expected = {
         "round_start",
         "agent_spawn",
@@ -97,29 +97,29 @@ def test_known_event_kinds_should_yield_builtins_when_iterated() -> None:
     assert "round_start" in out
 
 
-def test_known_event_kinds_should_support_contains_for_builtins() -> None:
+def test_known_event_kinds_should_support_contains_for_builtins_when_invoked() -> None:
     assert "round_start" in events.KNOWN_EVENT_KINDS
     assert "nonexistent" not in events.KNOWN_EVENT_KINDS
 
 
-def test_builtin_kinds_should_include_hook_failed() -> None:
+def test_builtin_kinds_should_include_hook_failed_when_invoked() -> None:
     """Used by runner to surface plugin hook exceptions without crashing."""
     assert "hook_failed" in events._BUILTIN_KINDS
 
 
-def test_builtin_kinds_should_include_monitor_started() -> None:
+def test_builtin_kinds_should_include_monitor_started_when_invoked() -> None:
     from agent_runner.events import _BUILTIN_KINDS, KNOWN_EVENT_KINDS
 
     assert "monitor_started" in _BUILTIN_KINDS
     assert "monitor_started" in KNOWN_EVENT_KINDS
 
 
-def test_builtin_kinds_should_include_cgroup_growth_rate_warning() -> None:
+def test_builtin_kinds_should_include_cgroup_growth_rate_warning_when_invoked() -> None:
     """The mid-round growth-rate detector's WARNING-crossing event."""
     assert "cgroup_growth_rate_warning" in events._BUILTIN_KINDS
 
 
-def test_emit_cgroup_growth_rate_warning_should_write_structured_payload(tmp_path):
+def test_emit_cgroup_growth_rate_warning_should_write_structured_payload_when_invoked(tmp_path):
     from agent_runner._emit import emit_cgroup_growth_rate_warning
     from agent_runner.events import CGROUP_GROWTH_RATE_WARNING
 
@@ -141,7 +141,7 @@ def test_emit_cgroup_growth_rate_warning_should_write_structured_payload(tmp_pat
     assert payload["context"] == {"rate_mb_per_min": 900.0, "threshold_mb_per_min": 512.0}
 
 
-def test_emit_agent_auth_error_detected_should_write_structured_payload(tmp_path):
+def test_emit_agent_auth_error_detected_should_write_structured_payload_when_invoked(tmp_path):
     """The agent's own output reported an auth failure — certain evidence, so the
     monitor's oauth_fail detector counts the round without an exit-code shield.
     """
@@ -163,7 +163,7 @@ def test_emit_agent_auth_error_detected_should_write_structured_payload(tmp_path
     assert "401" in payload["raw"]
 
 
-def test_emit_agent_auth_error_detected_should_redact_secrets_in_raw(tmp_path):
+def test_emit_agent_auth_error_detected_should_redact_secrets_in_raw_when_invoked(tmp_path):
     """raw is a provider error body — the same redaction the transient sibling applies."""
     from agent_runner._emit import emit_agent_auth_error_detected
 
@@ -178,7 +178,7 @@ def test_emit_agent_auth_error_detected_should_redact_secrets_in_raw(tmp_path):
     assert "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789" not in json.loads(line)["raw"]
 
 
-def test_emit_round_logs_prune_deferred_should_write_actionable_payload(tmp_path):
+def test_emit_round_logs_prune_deferred_should_write_actionable_payload_when_invoked(tmp_path):
     """The deferral must be actionable from the event alone: which directory,
     how many files exist, what retention is set to, how many were spared, and
     the knob to turn.
@@ -205,7 +205,7 @@ def test_emit_round_logs_prune_deferred_should_write_actionable_payload(tmp_path
     assert "12293" in payload["hint"]
 
 
-def test_emit_transient_error_backoff_capped_should_include_extended_payload(tmp_path):
+def test_emit_transient_error_backoff_capped_should_include_extended_payload_when_invoked(tmp_path):
     """0.1.33+ payload includes original_reset_at_epoch, applied_reset_at_epoch,
     consecutive_count, capped_by_absolute_max for backoff-curve observability.
     """
@@ -238,7 +238,9 @@ def test_emit_transient_error_backoff_capped_should_include_extended_payload(tmp
     assert payload["capped_by_absolute_max"] is False
 
 
-def test_emit_transient_error_backoff_capped_should_omit_new_fields_with_old_signature(tmp_path):
+def test_emit_transient_error_backoff_capped_should_omit_new_fields_with_old_signature_when_invoked(
+    tmp_path,
+):
     """Old call sites (only 4 kwargs) still work; new fields absent in payload.
     Guards against breaking existing _throttle.py:_apply_back_off behavior.
     """

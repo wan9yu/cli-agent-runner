@@ -50,7 +50,7 @@ def test_replace_block_should_raise_valueerror_when_block_unclosed() -> None:
         replace_block(text, "foo", "X")
 
 
-def test_render_defenses_table_should_list_one_row_per_catalog_entry() -> None:
+def test_render_defenses_table_should_list_one_row_per_catalog_entry_when_invoked() -> None:
     md = render_defenses_table()
 
     # Header
@@ -67,7 +67,7 @@ def test_render_defenses_table_should_list_one_row_per_catalog_entry() -> None:
     assert "round_budget_s" in md
 
 
-def test_render_defenses_table_should_render_paths_as_repo_relative() -> None:
+def test_render_defenses_table_should_render_paths_as_repo_relative_when_invoked() -> None:
     md = render_defenses_table()
 
     # No absolute paths should leak — guarded_by is rendered as repo-relative.
@@ -132,7 +132,7 @@ def test_render_should_name_failing_file_in_error_when_marker_unclosed(
         render(docs_dir=tmp_path, write=False)
 
 
-def test_render_detector_list_should_mark_auto_stop_kinds() -> None:
+def test_render_detector_list_should_mark_auto_stop_kinds_when_invoked() -> None:
     from agent_runner._docgen import render_detector_list
 
     md = render_detector_list()
@@ -145,7 +145,7 @@ def test_render_detector_list_should_mark_auto_stop_kinds() -> None:
     assert "timeout_rate" in md
 
 
-def test_render_event_kinds_list_should_return_bullet_list_of_known_events() -> None:
+def test_render_event_kinds_list_should_return_bullet_list_of_known_events_when_invoked() -> None:
     from agent_runner._docgen import render_event_kinds_list
 
     md = render_event_kinds_list()
@@ -157,7 +157,7 @@ def test_render_event_kinds_list_should_return_bullet_list_of_known_events() -> 
     assert any("monitor_alert_emitted" in line for line in bullets)
 
 
-def test_render_verb_table_should_list_all_subcommands() -> None:
+def test_render_verb_table_should_list_all_subcommands_when_invoked() -> None:
     from agent_runner._docgen import render_verb_table
 
     md = render_verb_table()
@@ -182,7 +182,7 @@ def test_render_verb_table_should_list_all_subcommands() -> None:
     assert "| Verb | Description |" in md
 
 
-def test_render_config_schema_table_should_list_all_sections() -> None:
+def test_render_config_schema_table_should_list_all_sections_when_invoked() -> None:
     from agent_runner._docgen import render_config_schema_table
 
     md = render_config_schema_table()
@@ -219,7 +219,9 @@ def test_replace_block_should_insert_regex_special_chars_verbatim_when_body_cont
     assert got == f"intro\n<!-- gen:x -->\n{body}\n<!-- /gen:x -->\noutro\n"
 
 
-def test_render_config_schema_table_should_include_phases_and_plugins_sections() -> None:
+def test_render_config_schema_table_should_include_phases_and_plugins_sections_when_invoked() -> (
+    None
+):
     """_SECTIONS must cover all 9 Config fields — [plugins] disable was undocumented."""
     from agent_runner._docgen import render_config_schema_table
 
@@ -231,7 +233,9 @@ def test_render_config_schema_table_should_include_phases_and_plugins_sections()
     assert "| `disable` | `list[str]` | [] |" in md
 
 
-def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line() -> None:
+def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line_when_invoked() -> (
+    None
+):
     """Pins the row shape through the _cell/_field_table refactor.
 
     render_config_schema_table() already emits this as one line today — the
@@ -245,7 +249,9 @@ def test_render_config_schema_table_should_emit_concat_separator_row_as_one_line
     assert r"| `concat_separator` | `str` | '\n\n' |" in md.splitlines()
 
 
-def test_render_config_schema_table_should_list_host_health_subsection_fields() -> None:
+def test_render_config_schema_table_should_list_host_health_subsection_fields_when_invoked() -> (
+    None
+):
     """[monitor.host_health] is a real TOML sub-table, itself grouped into
     disk/memory/pressure sub-tables (0.3.0); each parent row is an opaque repr."""
     from agent_runner._docgen import render_config_schema_table
@@ -261,9 +267,7 @@ def test_render_config_schema_table_should_list_host_health_subsection_fields() 
     assert "| `avail_min_mb` | `int` | 200 |" in md
 
 
-def test_render_giveup_exit_codes_table_should_list_five_verdicts_with_four_distinct_codes() -> (
-    None
-):
+def test_render_giveup_exit_codes_table_should_list_five_verdicts_when_run() -> None:
     from agent_runner import _serve_policy
     from agent_runner._docgen import render_giveup_exit_codes_table
 
@@ -290,7 +294,7 @@ def test_render_giveup_exit_codes_table_should_list_five_verdicts_with_four_dist
     assert "(shares `crash_loop`'s exit code) | yes — stays stopped" in md
 
 
-def test_restart_prevent_exit_status_should_agree_across_unit_docs_and_table(
+def test_restart_prevent_exit_status_should_agree_across_unit_docs_and_table_when_invoked(
     tmp_path: Path,
 ) -> None:
     """``RestartPreventExitStatus`` membership is hand-mirrored in three
@@ -333,7 +337,7 @@ def test_restart_prevent_exit_status_should_agree_across_unit_docs_and_table(
     assert unit_codes == doc_example_codes == table_codes
 
 
-def test_render_giveup_systemd_example_should_match_serve_policy_exit_codes() -> None:
+def test_render_giveup_systemd_example_should_match_serve_policy_exit_codes_when_invoked() -> None:
     from agent_runner import _serve_policy
     from agent_runner._docgen import render_giveup_systemd_example
 
@@ -353,7 +357,7 @@ def test_render_giveup_systemd_example_should_match_serve_policy_exit_codes() ->
     assert str(_serve_policy.MEM_LOOP_EXIT) in md  # still mentioned, in the trailing comment
 
 
-def test_render_config_schema_table_should_escape_pipes_in_generated_rows() -> None:
+def test_render_config_schema_table_should_escape_pipes_in_generated_rows_when_invoked() -> None:
     """`X | None` types and the auth_fail_patterns default both contain `|`."""
     from agent_runner._docgen import render_config_schema_table
 

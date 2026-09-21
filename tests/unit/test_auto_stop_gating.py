@@ -10,11 +10,11 @@ from unittest.mock import patch
 import pytest
 
 from agent_runner import api
-from agent_runner.api_types import Alert
+from agent_runner.api_types import Alert, AutoAction
 from agent_runner.monitor import on_alert
 
 
-def _make_alert(detector: str, auto_action: str = "stop_service") -> Alert:
+def _make_alert(detector: str, auto_action: AutoAction = "stop_service") -> Alert:
     return Alert(
         severity="critical",
         detector=detector,
@@ -106,7 +106,7 @@ class _StopLoopError(Exception):
     """Sentinel to break the monitor generator's infinite loop after one alert."""
 
 
-def test_monitor_loop_should_pass_work_dir_path_not_bare_name_to_on_alert(
+def test_monitor_loop_should_pass_work_dir_path_not_bare_name_to_on_alert_when_invoked(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The loop must hand on_alert the work_dir Path, not the bare project name:

@@ -11,7 +11,9 @@ def _events(log_dir):
     return out
 
 
-def test_schedule_paused_then_resumed_should_write_ordered_events_with_fields(tmp_path):
+def test_schedule_paused_then_resumed_should_write_ordered_events_with_fields_when_invoked(
+    tmp_path,
+):
     api.emit_schedule_paused(
         tmp_path,
         active_window="09:00-12:00",
@@ -29,6 +31,6 @@ def test_schedule_paused_then_resumed_should_write_ordered_events_with_fields(tm
     assert evs[1]["paused_for_s"] == 7200
 
 
-def test_schedule_event_kinds_should_be_registered_as_builtin():
+def test_schedule_event_kinds_should_be_registered_as_builtin_when_invoked():
     assert events.SCHEDULE_PAUSED in events._BUILTIN_KINDS
     assert events.SCHEDULE_RESUMED in events._BUILTIN_KINDS

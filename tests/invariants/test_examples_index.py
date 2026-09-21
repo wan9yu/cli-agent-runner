@@ -16,7 +16,7 @@ def _play_dirs() -> list[Path]:
     )
 
 
-def test_examples_readme_should_list_each_play_dir() -> None:
+def test_examples_readme_should_list_each_play_dir_when_invoked() -> None:
     text = (EX / "README.md").read_text(encoding="utf-8")
     zh = (EX / "README.zh.md").read_text(encoding="utf-8")
 

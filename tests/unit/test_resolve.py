@@ -133,7 +133,7 @@ def test_config_path_should_anchor_to_symlink_dir_not_target_when_config_is_syml
 # unit_filename — thin wrap of the existing serve_unit_filename
 
 
-def test_unit_filename_should_equal_serve_unit_filename_output():
+def test_unit_filename_should_equal_serve_unit_filename_output_when_invoked():
     assert _resolve.unit_filename("myproj") == serve_unit_filename("myproj")
     assert _resolve.unit_filename("myproj") == "agent-runner@myproj.service"
 
@@ -167,7 +167,7 @@ def test_log_dir_should_fall_back_to_conventional_path_when_toml_missing(tmp_pat
 # bare-string branch (a project name, not a work_dir).
 
 
-def test_default_log_dir_should_build_conventional_path(tmp_path, monkeypatch):
+def test_default_log_dir_should_build_conventional_path_when_invoked(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
 
     assert _resolve.default_log_dir("myproj") == tmp_path / ".agent-runner" / "myproj" / "logs"

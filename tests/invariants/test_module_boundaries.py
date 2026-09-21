@@ -44,7 +44,7 @@ def _pkg_modules() -> list[Path]:
     return sorted(PKG.rglob("*.py"))
 
 
-def test_boundary_scans_should_reach_subpackages() -> None:
+def test_boundary_scans_should_reach_subpackages_when_invoked() -> None:
     scanned = {f.relative_to(PKG).as_posix() for f in _pkg_modules()}
     top_level = {f.name for f in PKG.glob("*.py")}
 
@@ -53,7 +53,7 @@ def test_boundary_scans_should_reach_subpackages() -> None:
         assert rel in scanned, f"{rel} not scanned"
 
 
-def test_subprocess_imports_should_be_limited_to_sanctioned_modules() -> None:
+def test_subprocess_imports_should_be_limited_to_sanctioned_modules_when_invoked() -> None:
     # Sanctioned by repo-relative path, not basename: rglob sees 4 __init__.py.
     # Mirrors pyproject.toml's "subprocess".msg and per-file-ignores.
     sanctioned = {
@@ -85,7 +85,7 @@ def test_subprocess_imports_should_be_limited_to_sanctioned_modules() -> None:
     assert offenders == [], f"subprocess imported in non-sanctioned modules: {offenders}"
 
 
-def test_git_cli_calls_should_be_limited_to_sanctioned_modules() -> None:
+def test_git_cli_calls_should_be_limited_to_sanctioned_modules_when_invoked() -> None:
     """Look for any list literal whose first element is the string 'git' outside sanctioned modules.
 
     vcs_state.py is the primary git CLI caller. scaffold.py is permitted a single `git add` +
@@ -106,7 +106,7 @@ def test_git_cli_calls_should_be_limited_to_sanctioned_modules() -> None:
     assert offenders == [], f"git CLI call outside sanctioned modules: {offenders}"
 
 
-def test_runner_module_should_not_read_events_jsonl() -> None:
+def test_runner_module_should_not_read_events_jsonl_when_invoked() -> None:
     """Ouroboros defense: runner writes events.jsonl but must never read it
     back DIRECTLY. Strict since 0.2.11 — runner imports ``_throttle`` in
     NEITHER form, never globs ``events-*.jsonl``, and never opens an events
@@ -164,7 +164,7 @@ def test_runner_module_should_not_read_events_jsonl() -> None:
     )
 
 
-def test_run_one_round_should_have_no_event_triggered_branches() -> None:
+def test_run_one_round_should_have_no_event_triggered_branches_when_invoked() -> None:
     """§7 IMMUTABLE — runner cannot branch on prior round state to choose work.
 
     No `if/elif` whose condition reads `last_exit_code` or `last_round_health` to

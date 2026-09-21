@@ -67,7 +67,9 @@ def _write_sigterm_trapping_script(path: Path, ready_file: Path) -> None:
 
 @pytest.mark.serial
 @pytest.mark.timeout(30)
-def test_cooperative_agent_should_survive_at_least_its_configured_grace_before_sigkill(tmp_path):
+def test_cooperative_agent_should_survive_at_least_its_configured_grace_before_sigkill_when_invoked(
+    tmp_path,
+):
     if not hasattr(os, "killpg"):
         pytest.skip("no killpg on this platform -- POSIX-only property")
 
@@ -105,7 +107,7 @@ def test_cooperative_agent_should_survive_at_least_its_configured_grace_before_s
 
 @pytest.mark.serial
 @pytest.mark.timeout(30)
-def test_non_cooperative_agent_should_get_the_default_five_second_grace(tmp_path):
+def test_non_cooperative_agent_should_get_the_default_five_second_grace_when_invoked(tmp_path):
     if not hasattr(os, "killpg"):
         pytest.skip("no killpg on this platform -- POSIX-only property")
 

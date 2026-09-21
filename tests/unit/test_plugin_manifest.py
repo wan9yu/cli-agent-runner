@@ -92,7 +92,7 @@ def test_plugin_manifest_should_default_cooperative_stop_to_none_when_omitted():
     assert manifest.cooperative_stop is None
 
 
-def test_manifest_should_reject_non_cooperative_signal():
+def test_manifest_should_reject_non_cooperative_signal_when_invoked():
     """Errors-unlikely-by-construction: a SIGKILL (zero grace) or any name
     outside {None, SIGTERM, SIGINT} is unrepresentable -- it raises at
     construction, never reaching the kill path."""
@@ -102,7 +102,7 @@ def test_manifest_should_reject_non_cooperative_signal():
         PluginManifest(name="x", cooperative_stop="SIGKILL")
 
 
-def test_manifest_should_accept_the_two_cooperative_signals_and_none():
+def test_manifest_should_accept_the_two_cooperative_signals_and_none_when_invoked():
     from agent_runner._plugin_manifest import PluginManifest
 
     assert PluginManifest(name="a", cooperative_stop="SIGTERM").cooperative_stop == "SIGTERM"
@@ -110,7 +110,7 @@ def test_manifest_should_accept_the_two_cooperative_signals_and_none():
     assert PluginManifest(name="c", cooperative_stop=None).cooperative_stop is None
 
 
-def test_cooperative_stop_by_name_should_map_each_cooperative_preset_to_its_signal():
+def test_cooperative_stop_by_name_should_map_each_cooperative_preset_to_its_signal_when_invoked():
     from agent_runner._plugin_manifest import (
         PluginManifest,
         cooperative_stop_by_name,
@@ -124,7 +124,7 @@ def test_cooperative_stop_by_name_should_map_each_cooperative_preset_to_its_sign
     assert cooperative_stop_by_name() == {"term_one": "SIGTERM", "int_one": "SIGINT"}
 
 
-def test_builtin_presets_should_declare_the_researched_cooperative_stop_signals():
+def test_builtin_presets_should_declare_the_researched_cooperative_stop_signals_when_invoked():
     from agent_runner.builtin_plugins import (
         claude_rate_limit,
         codewhale,
@@ -140,7 +140,7 @@ def test_builtin_presets_should_declare_the_researched_cooperative_stop_signals(
     assert codewhale.PLUGIN.cooperative_stop is None
 
 
-def test_builtin_manifest_names_should_equal_their_agent_binary_so_the_signal_join_works():
+def test_builtin_manifest_names_should_equal_agent_binary_for_signal_join_when_invoked():
     """The join is manifest.name == agent binary basename. claude's plugin is
     NAMED "claude" (not "claude_rate_limit") as of 0.3.9, so its declared SIGINT
     is NON-inert: resolve_cooperative_signal("claude") actually returns SIGINT.
@@ -184,7 +184,7 @@ def test_is_cooperative_agent_should_return_false_when_binary_is_none():
     assert is_cooperative_agent(None) is False
 
 
-def test_resolve_cooperative_signal_should_map_the_declared_name_to_a_signal():
+def test_resolve_cooperative_signal_should_map_the_declared_name_to_a_signal_when_invoked():
     import signal
 
     from agent_runner._plugin_manifest import (
@@ -200,7 +200,7 @@ def test_resolve_cooperative_signal_should_map_the_declared_name_to_a_signal():
     assert resolve_cooperative_signal("term_agent") is signal.SIGTERM
 
 
-def test_resolve_cooperative_signal_should_return_none_for_a_non_cooperative_or_unknown_agent():
+def test_resolve_cooperative_signal_should_return_none_for_non_cooperative_else_unknown_when_run():
     from agent_runner._plugin_manifest import (
         PluginManifest,
         register_manifest,
@@ -214,7 +214,7 @@ def test_resolve_cooperative_signal_should_return_none_for_a_non_cooperative_or_
     assert resolve_cooperative_signal(None) is None
 
 
-def test_cooperative_signal_from_name_should_map_only_the_two_pinned_names():
+def test_cooperative_signal_from_name_should_map_only_the_two_pinned_names_when_invoked():
     import signal
 
     from agent_runner._plugin_manifest import cooperative_signal_from_name
@@ -273,14 +273,14 @@ def test_resolve_resume_flag_should_return_none_when_binary_has_no_manifest():
     assert resolve_resume_flag("nope") is None
 
 
-def test_manifest_should_reject_an_empty_resume_flag():
+def test_manifest_should_reject_an_empty_resume_flag_when_invoked():
     from agent_runner._plugin_manifest import PluginManifest
 
     with pytest.raises(ValueError, match="resume_flag"):
         PluginManifest(name="x", resume_flag="")
 
 
-def test_pi_preset_should_declare_the_session_id_resume_flag():
+def test_pi_preset_should_declare_the_session_id_resume_flag_when_invoked():
     from agent_runner.builtin_plugins import claude_rate_limit, gemini, pi
 
     assert pi.PLUGIN.resume_flag == "--session-id"

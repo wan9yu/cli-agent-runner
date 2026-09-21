@@ -12,7 +12,7 @@ from agent_runner._serve_policy import _ROUND_TERM_GRACE_S
 from agent_runner.agent_runtime import _CONTAINER_STOP_TIMEOUT_S
 
 
-def test_container_stop_timeout_should_stay_within_round_terminate_grace():
+def test_container_stop_timeout_should_stay_within_round_terminate_grace_when_invoked():
     stop_timeout_s = _CONTAINER_STOP_TIMEOUT_S
 
     assert stop_timeout_s <= _ROUND_TERM_GRACE_S

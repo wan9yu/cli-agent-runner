@@ -33,7 +33,7 @@ def _published_docs() -> list[Path]:
     return out
 
 
-def test_published_docs_should_not_repeat_defer_overclaims() -> None:
+def test_published_docs_should_not_repeat_defer_overclaims_when_invoked() -> None:
     hits: list[str] = []
     for path in _published_docs():
         text = path.read_text(encoding="utf-8")
@@ -43,7 +43,7 @@ def test_published_docs_should_not_repeat_defer_overclaims() -> None:
     assert not hits, "defer overclaim returned:\n" + "\n".join(hits)
 
 
-def test_architecture_should_describe_effective_budget_and_three_names() -> None:
+def test_architecture_should_describe_effective_budget_and_three_names_when_invoked() -> None:
     text = (DOCS / "architecture.md").read_text(encoding="utf-8")
 
     assert "leaf **and ancestors**" in text
@@ -53,7 +53,7 @@ def test_architecture_should_describe_effective_budget_and_three_names() -> None
     assert "bounding_cgroup_path" not in text
 
 
-def test_runbook_should_describe_effective_budget_for_cgroup_defer() -> None:
+def test_runbook_should_describe_effective_budget_for_cgroup_defer_when_invoked() -> None:
     text = (DOCS / "runbook.md").read_text(encoding="utf-8")
     assert "host_cgroup_memory_limit.defer" in text
     assert "leaf **and ancestors**" in text
@@ -61,7 +61,7 @@ def test_runbook_should_describe_effective_budget_for_cgroup_defer() -> None:
     assert "own leaf cgroup" in text
 
 
-def test_config_digest_docs_should_hash_paths_and_bytes() -> None:
+def test_config_digest_docs_should_hash_paths_and_bytes_when_invoked() -> None:
     cfg = (DOCS / "configuration.md").read_text(encoding="utf-8")
     recipe = (REPO / "examples" / "between_rounds" / "README.md").read_text(encoding="utf-8")
     events = (DOCS / "events.md").read_text(encoding="utf-8")

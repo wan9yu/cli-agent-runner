@@ -6,7 +6,7 @@ from __future__ import annotations
 from agent_runner.hooks import _MAX_ERROR_MSG_BYTES, _cap_redacted, _summarize_error
 
 
-def test_secret_straddling_truncation_cut_should_never_be_emitted() -> None:
+def test_secret_straddling_truncation_cut_should_never_be_emitted_when_invoked() -> None:
     # sk-ant-<16+ chars> is one of the anchored patterns, but the anchor regex
     # requires >= 16 trailing chars to match. Position the secret so the 1024-byte
     # head cut lands just 12 chars into its payload: truncate-then-redact would
@@ -33,5 +33,5 @@ def test_error_message_should_be_capped_when_huge() -> None:
     assert len(out["error_message"]) <= _MAX_ERROR_MSG_BYTES + len("\n... [truncated] ...\n")
 
 
-def test_cap_redacted_should_passthrough_short_text() -> None:
+def test_cap_redacted_should_passthrough_short_text_when_invoked() -> None:
     assert _cap_redacted("hello", 100) == "hello"

@@ -64,7 +64,7 @@ def test_scan_should_yield_oldest_to_newest_across_months_when_scoped(tmp_path):
     assert got == ["old", "new"]
 
 
-def test_newest_month_files_should_be_an_ascending_suffix_of_all_month_files(tmp_path):
+def test_newest_month_files_should_be_an_ascending_suffix_of_all_month_files_when_invoked(tmp_path):
     for m in ("2026-07", "2026-08", "2026-09"):
         (tmp_path / f"events-{m}.jsonl").write_text("")
 

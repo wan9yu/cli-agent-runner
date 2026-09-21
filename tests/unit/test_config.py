@@ -578,7 +578,7 @@ def test_round_timeout_per_phase_dict_should_raise_config_error_with_migration_h
         load_config(tmp_path / "agent-runner.toml")
 
 
-def test_runtime_config_should_have_no_round_timeout_per_phase_field() -> None:
+def test_runtime_config_should_have_no_round_timeout_per_phase_field_when_invoked() -> None:
     import dataclasses
 
     from agent_runner.config import RuntimeConfig
@@ -1487,7 +1487,9 @@ def test_no_narrative_file_should_remain_none_when_loaded(tmp_path: Path) -> Non
     assert cfg.runtime.narrative_file is None
 
 
-def test_rate_limit_action_in_toml_should_raise_config_error_with_migration_hint(tmp_path):
+def test_rate_limit_action_in_toml_should_raise_config_error_with_migration_hint_when_invoked(
+    tmp_path,
+):
     """0.1.29: alias removed. TOML containing rate_limit_action must error."""
     from agent_runner.config import ConfigError
 
@@ -1516,7 +1518,7 @@ def test_rate_limit_action_in_toml_should_raise_config_error_with_migration_hint
     assert "0.1.29" in str(exc_info.value)
 
 
-def test_transient_error_action_should_still_be_accepted(tmp_path):
+def test_transient_error_action_should_still_be_accepted_when_invoked(tmp_path):
     """Sanity: canonical key still works post-alias-removal."""
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
@@ -1540,7 +1542,7 @@ def test_transient_error_action_should_still_be_accepted(tmp_path):
     assert cfg.runtime.transient_error_action == "stop"
 
 
-def test_runtime_dry_run_should_load_from_toml(tmp_path):
+def test_runtime_dry_run_should_load_from_toml_when_invoked(tmp_path):
     toml = tmp_path / "agent-runner.toml"
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("x" * 800, encoding="utf-8")
@@ -1564,7 +1566,7 @@ def test_runtime_dry_run_should_load_from_toml(tmp_path):
     assert cfg.runtime.dry_run is True
 
 
-def test_runtime_dry_run_should_default_to_false(tmp_path):
+def test_runtime_dry_run_should_default_to_false_when_invoked(tmp_path):
     toml = tmp_path / "agent-runner.toml"
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("x" * 800, encoding="utf-8")
@@ -1648,7 +1650,7 @@ def test_load_config_should_parse_grouped_host_health_tables_when_present(
     assert cfg.monitor.host_health.brake.warning_consecutive_samples == 2
 
 
-def test_monitor_host_health_defaults_should_match_detector_defaults(
+def test_monitor_host_health_defaults_should_match_detector_defaults_when_invoked(
     tmp_path: Path,
 ) -> None:
     """Regression: MonitorHostHealthConfig defaults must match detector hardcoded thresholds."""
@@ -1685,7 +1687,7 @@ def test_monitor_host_health_toml_section_should_apply_overrides_when_loaded(
     assert cfg.monitor.host_health.disk.critical_pct == 95.0  # still default
 
 
-def test_host_health_floor_defaults_should_match_hardcoded_constants() -> None:
+def test_host_health_floor_defaults_should_match_hardcoded_constants_when_invoked() -> None:
     """Defaults must stay byte-identical to the previous hardcoded constants
     (32 MiB swap-out noise floor, 16 MB MemFree floor) -- existing deployments
     are unaffected unless the operator explicitly sets these fields."""
@@ -1697,7 +1699,7 @@ def test_host_health_floor_defaults_should_match_hardcoded_constants() -> None:
     assert hh.memory.free_low_mb == 16
 
 
-def test_host_health_floors_should_parse_from_toml(tmp_path: Path) -> None:
+def test_host_health_floors_should_parse_from_toml_when_invoked(tmp_path: Path) -> None:
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("x" * 800, encoding="utf-8")
     toml = tmp_path / "agent-runner.toml"
@@ -1718,7 +1720,7 @@ def test_host_health_floors_should_parse_from_toml(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("field", ["swap_out_noise_floor_mb", "free_low_mb"])
-def test_host_health_floors_should_reject_zero_and_non_int_values(
+def test_host_health_floors_should_reject_zero_and_non_int_values_when_invoked(
     tmp_path: Path, field: str
 ) -> None:
     """0 would silently disable/invert the floor (delta > 0 is always true) --
@@ -1809,7 +1811,7 @@ def test_host_health_overrides_should_apply_thresholds_when_run_all_detectors_ru
     assert "disk_warning" in kinds_default  # 92 still > default 90
 
 
-def test_run_all_detectors_should_thread_custom_floors_into_config(
+def test_run_all_detectors_should_thread_custom_floors_into_config_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression: run_all_detectors must plumb swap_out_noise_floor_mb and
@@ -1887,7 +1889,7 @@ def test_supervisor_stale_threshold_should_be_loaded_when_set(tmp_path: Path) ->
     assert cfg.monitor.supervisor_stale_threshold_s == 600
 
 
-def test_grace_kill_ignore_patterns_should_default_to_empty(tmp_path: Path) -> None:
+def test_grace_kill_ignore_patterns_should_default_to_empty_when_invoked(tmp_path: Path) -> None:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
         "schema_version = 1\n"
@@ -1901,7 +1903,7 @@ def test_grace_kill_ignore_patterns_should_default_to_empty(tmp_path: Path) -> N
     assert cfg.runtime.grace_kill_ignore_patterns == []
 
 
-def test_grace_kill_ignore_patterns_should_be_parsed_from_toml(tmp_path: Path) -> None:
+def test_grace_kill_ignore_patterns_should_be_parsed_from_toml_when_invoked(tmp_path: Path) -> None:
     toml = tmp_path / "agent-runner.toml"
     toml.write_text(
         "schema_version = 1\n"
@@ -1985,7 +1987,7 @@ def test_host_health_pct_field_should_raise_when_value_invalid(
         ("100", 100.0),
     ],
 )
-def test_host_health_pct_field_should_accept_valid_values(
+def test_host_health_pct_field_should_accept_valid_values_when_invoked(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_DISK_BASE + f"{field} = {literal}\n")
@@ -2002,7 +2004,7 @@ def test_host_health_defaults_should_be_used_when_section_absent(tmp_path: Path)
     assert cfg.monitor.host_health.disk.critical_pct == 95.0
 
 
-def test_psi_thresholds_should_have_expected_defaults() -> None:
+def test_psi_thresholds_should_have_expected_defaults_when_invoked() -> None:
     """Default critical raised 1.0 -> 60.0 (0.2.15's 1% hiccup killed every
     round on a 462MB Pi; 60 matches systemd-oomd's DefaultMemoryPressureLimit,
     coma-onset rather than a swap hiccup)."""
@@ -2023,7 +2025,7 @@ def test_psi_thresholds_should_apply_custom_critical_override_when_set(tmp_path:
 
 @pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
 @pytest.mark.parametrize("bad", ["0", "101", '"x"'])
-def test_host_health_psi_threshold_should_reject_out_of_range_value(
+def test_host_health_psi_threshold_should_reject_out_of_range_value_when_invoked(
     tmp_path: Path, field: str, bad: str
 ) -> None:
     """0 is rejected (not just accepted-as-boundary like the disk pct fields):
@@ -2038,7 +2040,7 @@ def test_host_health_psi_threshold_should_reject_out_of_range_value(
 
 @pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
 @pytest.mark.parametrize(("literal", "expected"), [("100", 100.0), ("0.5", 0.5), ("60", 60.0)])
-def test_host_health_psi_threshold_should_accept_in_range_value(
+def test_host_health_psi_threshold_should_accept_in_range_value_when_invoked(
     tmp_path: Path, field: str, literal: str, expected: float
 ) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {literal}\n")
@@ -2046,7 +2048,7 @@ def test_host_health_psi_threshold_should_accept_in_range_value(
     assert getattr(load_config(toml).monitor.host_health.pressure, field) == expected
 
 
-def test_mid_round_hysteresis_should_default_to_three_samples_with_terminate_enabled() -> None:
+def test_mid_round_hysteresis_should_default_to_three_samples_terminate_on_when_invoked() -> None:
     """Defaults: 3 consecutive critical samples required, off switch defaults on
     (existing deployments keep terminating, just with hysteresis now applied)."""
     from agent_runner.config import MonitorHostHealthConfig
@@ -2057,7 +2059,7 @@ def test_mid_round_hysteresis_should_default_to_three_samples_with_terminate_ena
     assert cfg.pressure.in_round_terminate is True
 
 
-def test_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path) -> None:
+def test_critical_consecutive_samples_should_parse_from_toml_when_invoked(tmp_path: Path) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + "critical_consecutive_samples = 5\n")
 
     cfg = load_config(toml)
@@ -2066,7 +2068,7 @@ def test_critical_consecutive_samples_should_parse_from_toml(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
-def test_critical_consecutive_samples_should_reject_invalid_values(
+def test_critical_consecutive_samples_should_reject_invalid_values_when_invoked(
     tmp_path: Path, bad: str
 ) -> None:
     """Must be a positive int -- 0 or negative would terminate on the very
@@ -2082,7 +2084,7 @@ def test_critical_consecutive_samples_should_reject_invalid_values(
 
 
 @pytest.mark.parametrize(("literal", "expected"), [("true", True), ("false", False)])
-def test_in_round_terminate_should_parse_bool_value(
+def test_in_round_terminate_should_parse_bool_value_when_invoked(
     tmp_path: Path, literal: str, expected: bool
 ) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {literal}\n")
@@ -2093,7 +2095,9 @@ def test_in_round_terminate_should_parse_bool_value(
 
 
 @pytest.mark.parametrize("bad", ["1", '"true"'])
-def test_in_round_terminate_should_reject_non_bool_value(tmp_path: Path, bad: str) -> None:
+def test_in_round_terminate_should_reject_non_bool_value_when_invoked(
+    tmp_path: Path, bad: str
+) -> None:
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {bad}\n")
 
     with pytest.raises(ValueError, match="monitor.host_health.pressure.in_round_terminate"):
@@ -2101,7 +2105,7 @@ def test_in_round_terminate_should_reject_non_bool_value(tmp_path: Path, bad: st
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true", "nan"])
-def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_or_bool_values(
+def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_else_bool_values_when_run(
     tmp_path: Path, bad: str
 ) -> None:
 
@@ -2116,7 +2120,7 @@ def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_or_boo
 
 
 @pytest.mark.parametrize(("literal", "expected"), [("256", 256.0), ("128.5", 128.5)])
-def test_cgroup_growth_rate_warning_mb_per_min_should_accept_int_or_float_when_positive(
+def test_cgroup_growth_rate_warning_mb_per_min_should_accept_int_else_float_when_positive(
     tmp_path: Path, literal: str, expected: float
 ) -> None:
 
@@ -2130,7 +2134,7 @@ def test_cgroup_growth_rate_warning_mb_per_min_should_accept_int_or_float_when_p
     assert cfg.monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min == expected
 
 
-def test_cgroup_growth_rate_warning_mb_per_min_should_default_to_512() -> None:
+def test_cgroup_growth_rate_warning_mb_per_min_should_default_to_512_when_invoked() -> None:
     from agent_runner.config import MonitorHostHealthConfig
 
     cfg = MonitorHostHealthConfig()
@@ -2184,7 +2188,7 @@ def test_invalid_auth_fail_pattern_should_raise_when_loaded(tmp_path: Path) -> N
     assert "invalid regex" in str(exc.value)
 
 
-def test_removed_field_error_should_point_to_migrate_command(tmp_path):
+def test_removed_field_error_should_point_to_migrate_command_when_invoked(tmp_path):
     """Removed-field ConfigErrors must direct users to `agent-runner migrate`."""
     from agent_runner.config import ConfigError
 
@@ -2330,7 +2334,9 @@ def test_disabled_phase_agent_should_be_accepted_without_placeholder_when_loaded
 
     cfg = load_config(tmp_path / "agent-runner.toml")
 
-    assert cfg.phases.overrides["silent"].agent.prompt_arg_template == ["--silent-mode"]
+    silent_agent = cfg.phases.overrides["silent"].agent
+    assert silent_agent is not None
+    assert silent_agent.prompt_arg_template == ["--silent-mode"]
 
 
 def test_enabled_phase_agent_should_raise_config_error_without_placeholder_when_loaded(
@@ -2382,7 +2388,9 @@ def test_load_config_should_reject_exec_prefix_when_set_on_a_phase_agent(tmp_pat
         load_config(cfg_path)
 
 
-def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent(tmp_path: Path) -> None:
+def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent_when_invoked(
+    tmp_path: Path,
+) -> None:
     """exec_prefix must be a list like command -- a bare string (a single-token
     TOML mistake, e.g. `exec_prefix = "docker"`) is rejected via _require_str_list."""
     from agent_runner.config import ConfigError
@@ -2443,7 +2451,7 @@ def test_agent_config_should_accept_sigterm_grace_s_when_set_in_toml(tmp_path: P
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true"])
-def test_sigterm_grace_s_should_reject_non_positive_or_bool_values(
+def test_sigterm_grace_s_should_reject_non_positive_else_bool_values_when_invoked(
     tmp_path: Path, bad: str
 ) -> None:
     from tests._test_helpers import write_min_config
@@ -2454,7 +2462,9 @@ def test_sigterm_grace_s_should_reject_non_positive_or_bool_values(
         load_config(cfg_path)
 
 
-def test_sigterm_grace_s_should_reject_values_above_round_term_grace(tmp_path: Path) -> None:
+def test_sigterm_grace_s_should_reject_values_above_round_term_grace_when_invoked(
+    tmp_path: Path,
+) -> None:
     from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
     from tests._test_helpers import write_min_config
 
@@ -2701,7 +2711,7 @@ def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
         load_config(toml)
 
 
-def test_goal_check_timeout_at_cap_should_load_successfully(tmp_path: Path) -> None:
+def test_goal_check_timeout_at_cap_should_load_successfully_when_invoked(tmp_path: Path) -> None:
     """Cap boundary: timeout_s == _MAX_GOAL_CHECK_TIMEOUT_S (30) is accepted."""
     (tmp_path / "prompt.md").write_text("p")
     toml = _write_toml(
@@ -2721,7 +2731,9 @@ def test_goal_check_timeout_at_cap_should_load_successfully(tmp_path: Path) -> N
     assert cfg.goal.checks[0].timeout_s == 30
 
 
-def test_goal_check_timeout_one_over_cap_should_raise_config_error(tmp_path: Path) -> None:
+def test_goal_check_timeout_one_over_cap_should_raise_config_error_when_invoked(
+    tmp_path: Path,
+) -> None:
     """Cap boundary: timeout_s == 31 is rejected -- and with ConfigError, the
     config-load error type, not a bare ValueError."""
     (tmp_path / "prompt.md").write_text("p")
@@ -2740,7 +2752,9 @@ def test_goal_check_timeout_one_over_cap_should_raise_config_error(tmp_path: Pat
         load_config(toml)
 
 
-def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected(tmp_path: Path) -> None:
+def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected_when_invoked(
+    tmp_path: Path,
+) -> None:
     """Stash-swept-ledger boot guard: a ledger resolved inside work_dir but
     outside log_dir is
     swept by the default dirty_action="stash" `git stash push -u`, so the steer
@@ -2760,7 +2774,7 @@ def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected(tmp_path
         load_config(toml)
 
 
-def test_goal_ledger_at_absolute_path_outside_work_dir_should_load_successfully(
+def test_goal_ledger_at_absolute_path_outside_work_dir_should_load_successfully_when_invoked(
     tmp_path: Path,
 ) -> None:
     """The stash-swept-ledger boot guard must NOT false-reject a legitimate
@@ -2791,7 +2805,9 @@ def test_goal_ledger_at_absolute_path_outside_work_dir_should_load_successfully(
     assert cfg.goal.ledger == str(outside_ledger)
 
 
-def test_goal_checks_budget_at_or_above_fast_spin_window_should_warn(tmp_path: Path) -> None:
+def test_goal_checks_budget_at_else_above_fast_spin_window_should_warn_when_invoked(
+    tmp_path: Path,
+) -> None:
     """A goal-check budget >= the fast-spin give-up window emits a load-time
     WARNING (not a hard reject -- a legitimate pytest check may exceed it). One
     check at the 30s cap -> allowance 30 + 2*3 = 36 >= 30. (Mutation check:
@@ -2816,7 +2832,7 @@ def test_goal_checks_budget_at_or_above_fast_spin_window_should_warn(tmp_path: P
     assert cfg.goal.checks_allowance_s == 36
 
 
-def test_goal_checks_budget_below_fast_spin_window_should_not_warn(
+def test_goal_checks_budget_below_fast_spin_window_should_not_warn_when_invoked(
     tmp_path: Path, recwarn: pytest.WarningsRecorder
 ) -> None:
     """A modest goal-check budget below the fast-spin window emits no such
@@ -2901,7 +2917,7 @@ def test_goal_with_single_prompt_file_form_should_raise_config_error_when_loaded
         load_config(toml)
 
 
-def test_goal_ledger_at_index_one_should_load_successfully(tmp_path: Path) -> None:
+def test_goal_ledger_at_index_one_should_load_successfully_when_invoked(tmp_path: Path) -> None:
     (tmp_path / "prompt.md").write_text("p")
     toml = _write_toml(
         tmp_path,
@@ -2934,7 +2950,7 @@ def test_goal_with_phase_empty_prompt_files_should_raise_config_error_when_loade
         load_config(toml)
 
 
-def test_goal_with_phase_override_ledger_at_index_one_should_load_successfully(
+def test_goal_with_phase_override_ledger_at_index_one_should_load_successfully_when_invoked(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "a.md").write_text("a")

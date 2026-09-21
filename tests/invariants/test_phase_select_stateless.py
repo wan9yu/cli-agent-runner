@@ -30,7 +30,7 @@ _FORBIDDEN_STATE = {
 }
 
 
-def test_select_phase_should_read_no_supervisor_state() -> None:
+def test_select_phase_should_read_no_supervisor_state_when_invoked() -> None:
     tree = ast.parse(_SRC.read_text(encoding="utf-8"))
     hits: set[str] = set()
     for node in ast.walk(tree):
@@ -42,7 +42,7 @@ def test_select_phase_should_read_no_supervisor_state() -> None:
     assert not hits, f"phase_select must stay stateless; references state: {sorted(hits)}"
 
 
-def test_select_phase_should_take_cfg_round_num_throttled_phases_and_now_fn() -> None:
+def test_select_phase_should_take_cfg_round_num_throttled_phases_and_now_fn_when_invoked() -> None:
     """The public entry takes exactly (cfg, round_num, *, throttled_phases, now_fn)
     — no log_dir / status handle through which run-state could leak in. The
     throttled set is a value injected by the caller, not read from disk."""

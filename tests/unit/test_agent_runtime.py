@@ -110,7 +110,7 @@ def test_subprocess_emitting_constant_activity_should_be_killed_when_timeout_exc
     assert result.timed_out is True
 
 
-def test_prompt_arg_template_should_substitute_prompt_in_argv(
+def test_prompt_arg_template_should_substitute_prompt_in_argv_when_invoked(
     tmp_path: Path,
 ) -> None:
     script = _bash_script(tmp_path, 'echo "prompt-was=$2"; exit 0')
@@ -138,7 +138,7 @@ def test_prompt_arg_template_should_substitute_prompt_in_argv(
     assert "prompt-was=HELLO" in log.read_text()
 
 
-def test_env_extra_should_propagate_to_subprocess(tmp_path: Path) -> None:
+def test_env_extra_should_propagate_to_subprocess_when_invoked(tmp_path: Path) -> None:
     script = _bash_script(tmp_path, 'echo "EFFORT=$CLAUDE_CODE_EFFORT_LEVEL"; exit 0')
     log = tmp_path / "out.log"
 

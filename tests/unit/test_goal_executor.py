@@ -134,7 +134,7 @@ def test_run_goal_checks_should_emit_unsatisfied_when_command_missing(
     assert "error" in ev
 
 
-def test_run_goal_checks_should_resolve_relative_cwd_against_work_dir(
+def test_run_goal_checks_should_resolve_relative_cwd_against_work_dir_when_invoked(
     tmp_log_dir: Path, tmp_path: Path
 ) -> None:
     sub = tmp_path / "sub"
@@ -151,7 +151,7 @@ def test_run_goal_checks_should_resolve_relative_cwd_against_work_dir(
     assert ev["satisfied"] is True
 
 
-def test_resolve_check_cwd_should_keep_absolute_cwd_as_is(tmp_path: Path) -> None:
+def test_resolve_check_cwd_should_keep_absolute_cwd_as_is_when_invoked(tmp_path: Path) -> None:
     from agent_runner.goal import _resolve_check_cwd
 
     absolute = tmp_path / "elsewhere"
@@ -161,7 +161,7 @@ def test_resolve_check_cwd_should_keep_absolute_cwd_as_is(tmp_path: Path) -> Non
     assert resolved == absolute
 
 
-def test_run_goal_checks_should_treat_non_finite_value_as_unparsed(
+def test_run_goal_checks_should_treat_non_finite_value_as_unparsed_when_invoked(
     tmp_log_dir: Path, tmp_path: Path
 ) -> None:
     """nan isn't even equal to itself -- the treadmill assessor's "did the

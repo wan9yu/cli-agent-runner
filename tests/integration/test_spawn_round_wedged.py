@@ -40,13 +40,13 @@ def test_wedged_round_should_terminate_and_emit_wedged_event_when_ceiling_exceed
     assert (log_dir / "round-1.log").exists()
 
 
-def test_round_term_grace_should_be_at_least_reap_grace():
+def test_round_term_grace_should_be_at_least_reap_grace_when_invoked():
     from agent_runner.agent_runtime import REAP_GRACE_S
 
     assert _serve_round._ROUND_TERM_GRACE_S >= REAP_GRACE_S
 
 
-def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace():
+def test_round_term_grace_should_be_at_least_the_max_resolvable_agent_grace_when_invoked():
     """Generalizes test_round_term_grace_should_be_at_least_reap_grace: the
     supervisor's own wait for the round leader must never be shorter than the
     widest grace ANY configured agent can resolve to (a cooperative agent's

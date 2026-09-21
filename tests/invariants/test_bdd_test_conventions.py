@@ -34,7 +34,7 @@ def _test_functions() -> list[tuple[Path, ast.FunctionDef, str]]:
     return out
 
 
-def test_every_test_should_carry_should_in_its_name() -> None:
+def test_every_test_should_carry_should_in_its_name_when_invoked() -> None:
     functions = _test_functions()
 
     offenders = [
@@ -58,14 +58,15 @@ def test_every_test_should_carry_should_in_its_name() -> None:
 _SECTION_LABEL = re.compile(r"#\s*(given|when|then|arrange|act|assert)\s*:?\s*$", re.IGNORECASE)
 
 
-def test_test_bodies_should_omit_section_label_comments() -> None:
+def test_test_bodies_should_omit_section_label_comments_when_invoked() -> None:
     # Scan the whole function span (node.lineno..end_lineno), not from the first
     # BODY statement -- a `# given` sitting between the signature and the first
     # statement (or before a docstring) must not slip through.
     offenders: list[str] = []
     for f, node, src in _test_functions():
         lines = src.splitlines()
-        for i in range(node.lineno - 1, node.end_lineno):
+        end = node.end_lineno or len(lines)
+        for i in range(node.lineno - 1, end):
             if _SECTION_LABEL.search(lines[i]):
                 offenders.append(f"{f.relative_to(TESTS.parent)}:{i + 1}: {lines[i].strip()}")
 
@@ -91,7 +92,7 @@ def _body_statements(node: ast.FunctionDef) -> list[ast.stmt]:
     return stmts
 
 
-def test_nontrivial_test_bodies_should_be_grouped_with_blank_lines() -> None:
+def test_nontrivial_test_bodies_should_be_grouped_with_blank_lines_when_invoked() -> None:
     # Count top-level STATEMENTS, not source lines: a 12-line single literal is 1
     # statement (never a wall), while 6+ sequential statements with NO interior
     # blank line is a genuine ungrouped wall -- the given/when/then structure wants
@@ -104,7 +105,8 @@ def test_nontrivial_test_bodies_should_be_grouped_with_blank_lines() -> None:
             continue  # short/cohesive bodies need no grouping
 
         lines = src.splitlines()
-        interior = lines[stmts[0].lineno : stmts[-1].end_lineno - 1]
+        end_lineno = stmts[-1].end_lineno or stmts[-1].lineno
+        interior = lines[stmts[0].lineno : end_lineno - 1]
         if not any(not ln.strip() for ln in interior):
             offenders.append(
                 f"{f.relative_to(TESTS.parent)}::{node.name} ({len(stmts)} stmts, ungrouped)"

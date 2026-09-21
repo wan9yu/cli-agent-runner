@@ -574,7 +574,7 @@ def test_serve_mem_loop_should_stay_restartable_when_prior_mem_loop_events_aged_
     assert rc == MEM_LOOP_EXIT
 
 
-def test_mem_loop_events_in_window_should_count_recent_and_exclude_aged_out_events(
+def test_mem_loop_events_in_window_should_count_recent_and_exclude_aged_out_events_when_invoked(
     tmp_path: Path,
 ) -> None:
     """Direct unit test of the events-tail helper feeding the escalation

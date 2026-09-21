@@ -16,7 +16,9 @@ from tests._test_helpers import isolating, make_cfg
 _reset = isolating(_LOADED_MANIFESTS)
 
 
-def test_resolve_reap_grace_by_phase_should_resolve_each_phase_against_its_own_agent(tmp_path):
+def test_resolve_reap_grace_by_phase_should_resolve_each_phase_against_its_own_agent_when_invoked(
+    tmp_path,
+):
     """A phase override's own agent (cooperative or not) resolves
     independently of the base [agent] table and every other phase --
     the precomputed dict isn't just the base grace copied per key."""

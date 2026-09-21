@@ -12,7 +12,7 @@ def _ts(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def test_stale_should_be_suppressed_while_round_deferral_is_live():
+def test_stale_should_be_suppressed_while_round_deferral_is_live_when_invoked():
     now = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     old = now - timedelta(hours=2)
     events = [

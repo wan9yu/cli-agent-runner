@@ -203,7 +203,9 @@ def test_pending_recovered_should_report_only_cleared_agent_when_another_still_a
     assert pending == [("claude", "rate_limit_account", 200)]
 
 
-def test_pending_recovered_should_hold_for_estimated_class_until_extended_reset(tmp_path):
+def test_pending_recovered_should_hold_for_estimated_class_until_extended_reset_when_invoked(
+    tmp_path,
+):
     """Estimated-class ladder: once _backoff_exponent pushes the effective reset
     past the emitter's raw reset_at_epoch, pending_recovered must NOT report the
     agent cleared just because the RAW reset passed — it has to agree with
@@ -269,7 +271,7 @@ def test_active_throttles_should_clear_agent_when_latest_event_is_recovered(tmp_
     assert _active_throttles(tmp_path, clock=FakeClock(epoch=float(now))) == {}
 
 
-def test_active_throttles_should_merge_across_month_boundary_per_agent(tmp_path):
+def test_active_throttles_should_merge_across_month_boundary_per_agent_when_invoked(tmp_path):
     """Agent A's detected in the OLD monthly file + agent B's in the NEW file → both
     active (per-agent scan must not early-exit at the first file with any transient)."""
     from agent_runner._throttle import _active_throttles
@@ -394,19 +396,19 @@ def test_interruptible_sleep_should_terminate_when_sleep_is_noop():
         def __init__(self):
             self.calls = 0
 
-        def epoch(self):
+        def epoch(self) -> float:
             return 0.0
 
-        def monotonic(self):
+        def monotonic(self) -> float:
             return 0.0  # never advances — a monotonic-elapsed measurement would spin forever
 
-        def sleep(self, _s):
+        def sleep(self, seconds: float) -> None:
             self.calls += 1  # no-op: does not advance time
 
         def now_utc(self):
             raise NotImplementedError
 
-        def now_in_zone(self, _tz):
+        def now_in_zone(self, tz_name: str | None):
             raise NotImplementedError
 
     clock = _FrozenNoopClock()

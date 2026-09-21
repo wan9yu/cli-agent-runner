@@ -18,14 +18,14 @@ def _read_plugin_entries() -> dict[str, str]:
     return data["project"]["entry-points"]["agent_runner.plugins"]
 
 
-def test_plugin_entries_should_be_declared():
+def test_plugin_entries_should_be_declared_when_invoked():
     entries = _read_plugin_entries()
 
     assert entries, "pyproject.toml declares no agent_runner.plugins entries"
     assert len(entries) >= 2, f"expected >=2 entries, got {len(entries)}"
 
 
-def test_entry_points_should_resolve_to_live_plugin_manifests():
+def test_entry_points_should_resolve_to_live_plugin_manifests_when_invoked():
     entries = _read_plugin_entries()
 
     for name, target in entries.items():
@@ -38,7 +38,7 @@ def test_entry_points_should_resolve_to_live_plugin_manifests():
         )
 
 
-def test_entry_point_names_should_match_manifest_name():
+def test_entry_point_names_should_match_manifest_name_when_invoked():
     entries = _read_plugin_entries()
 
     for name, target in entries.items():
@@ -49,7 +49,7 @@ def test_entry_point_names_should_match_manifest_name():
         )
 
 
-def test_legacy_claude_rate_limit_detector_alias_should_stay_removed():
+def test_legacy_claude_rate_limit_detector_alias_should_stay_removed_when_invoked():
     """`claude_rate_limit_detector` alias (0.1.20-0.1.34) hard-removed in 0.1.35.
     Consumers using the old name in `[plugins] disable/enable` must migrate.
     Re-pinned for the `agent_runner.plugins` group after the 0.3.0 collapse

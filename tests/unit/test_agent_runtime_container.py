@@ -64,7 +64,7 @@ def _alive(pid: int) -> bool:
         (["docker", "-H", "unix:///var/run/docker.sock", "ps"], False),
     ],
 )
-def test_detect_container_run_should_recognize_run_commands(
+def test_detect_container_run_should_recognize_run_commands_when_invoked(
     command: list[str], expected: bool
 ) -> None:
     assert (_detect_container_run(command) is not None) is expected
@@ -80,7 +80,7 @@ def test_detect_container_run_should_recognize_run_commands(
         (["env", "X=1", "docker", "run", "image"], 3),
     ],
 )
-def test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_form(
+def test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_form_when_invoked(
     command: list[str], run_idx: int
 ) -> None:
     """run()'s --cidfile injection only fires when run_idx == 1 (the simple,
@@ -94,7 +94,7 @@ def test_detect_container_run_index_should_be_true_only_for_unwrapped_unflagged_
     assert (run_idx == 1) == (command[0] in ("docker", "podman") and command[1] == "run")
 
 
-def test_cidfile_flag_value_should_scan_only_the_options_block_not_container_args() -> None:
+def test_cidfile_flag_value_should_scan_options_block_not_container_args_when_invoked() -> None:
     """Review fix 3: the scan must stay inside docker's own OPTIONS block
     (between `run` and IMAGE) -- an operator-supplied --cidfile IS found
     there, but a `--cidfile`-looking token belonging to the CONTAINERIZED
@@ -108,7 +108,7 @@ def test_cidfile_flag_value_should_scan_only_the_options_block_not_container_arg
     assert _cidfile_flag_value(containers_own_arg, 1) is None
 
 
-def test_command_has_cidfile_flag_should_catch_operator_cidfile_past_untabled_flag() -> None:
+def test_command_has_cidfile_flag_should_catch_cidfile_past_untabled_flag_when_invoked() -> None:
     """The injection guard's blind spot + its fix. ``_cidfile_flag_value``'s
     walk stops one token early at a value-flag NOT in
     ``_DOCKER_RUN_FLAGS_WITH_VALUE`` (e.g. ``--cpu-quota``), mistaking its value
@@ -226,7 +226,9 @@ def test_container_stop_should_not_run_stop_when_cidfile_content_is_not_a_hex_id
 
 @pytest.mark.serial
 @pytest.mark.timeout(60)
-def test_container_stop_should_not_read_an_oversize_cidfile_whole(tmp_path, monkeypatch):
+def test_container_stop_should_not_read_an_oversize_cidfile_whole_when_invoked(
+    tmp_path, monkeypatch
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_fake_runtime(bin_dir, "docker")
@@ -464,7 +466,9 @@ def test_bypass_forms_should_warn_without_stop_attempt_when_terminated(
 
 @pytest.mark.serial
 @pytest.mark.timeout(60)
-def test_container_run_should_inject_cidfile_outside_log_dir_and_work_dir(tmp_path, monkeypatch):
+def test_container_run_should_inject_cidfile_outside_log_dir_and_work_dir_when_invoked(
+    tmp_path, monkeypatch
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_fake_runtime(bin_dir, "docker")
@@ -496,7 +500,9 @@ def test_container_run_should_inject_cidfile_outside_log_dir_and_work_dir(tmp_pa
     assert not cid_path.is_relative_to(tmp_path)  # outside work_dir/log_dir
 
 
-def test_non_container_command_should_leave_argv_and_callback_unchanged(tmp_path, monkeypatch):
+def test_non_container_command_should_leave_argv_and_callback_unchanged_when_invoked(
+    tmp_path, monkeypatch
+):
     """A normal (non-container) command's spawn path is byte-unchanged: no
     --cidfile is injected, no .cid file appears, and on_container_orphan_risk
     is never called even though the callback is wired up."""

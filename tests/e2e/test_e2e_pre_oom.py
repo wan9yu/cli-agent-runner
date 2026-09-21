@@ -122,7 +122,7 @@ def _parse_ts(ts: str) -> datetime:
 # real-hardware run needs the per-property wait ceiling plus the one-time pi
 # install + unit setup + teardown, so override it for this item.
 @pytest.mark.timeout(_WAIT_TIMEOUT_S + 600)
-def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup(
+def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup_when_invoked(
     pi_pre_oom_unit: dict,
     pi_workdir: str,
     pi_venv_python: str,

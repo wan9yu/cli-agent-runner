@@ -54,7 +54,7 @@ def _make_args(
     )
 
 
-def test_events_query_should_return_last_n_events_of_matching_kind(tmp_path, capsys):
+def test_events_query_should_return_last_n_events_of_matching_kind_when_invoked(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -122,7 +122,7 @@ def test_events_query_should_return_nothing_when_no_events_match(tmp_path, capsy
     assert capsys.readouterr().out == ""
 
 
-def test_events_query_should_skip_non_dict_json_lines(tmp_path, capsys):
+def test_events_query_should_skip_non_dict_json_lines_when_invoked(tmp_path, capsys):
     """A valid-JSON but non-dict line (bare list/number) must be skipped, not crash
     (0.2.13 Group D: every events-*.jsonl reader assumes .get(...) shape)."""
     from agent_runner.cli import events_cmd
@@ -147,7 +147,7 @@ def test_events_query_should_skip_non_dict_json_lines(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
-def test_events_since_should_skip_non_dict_json_lines(tmp_path, capsys):
+def test_events_since_should_skip_non_dict_json_lines_when_invoked(tmp_path, capsys):
     """Same as above but through the --since replay path (_matches_since)."""
     from agent_runner.cli import events_cmd
 
@@ -169,7 +169,7 @@ def test_events_since_should_skip_non_dict_json_lines(tmp_path, capsys):
     assert [json.loads(line)["round_num"] for line in out] == [1]
 
 
-def test_events_since_should_skip_blank_lines(tmp_path, capsys):
+def test_events_since_should_skip_blank_lines_when_invoked(tmp_path, capsys):
     """Blank lines through the --since replay path are skipped identically to
     the query path (0.2.14 Group 5: event_log.replay_since shares
     events._iter_parsed_lines)."""
@@ -211,7 +211,9 @@ def test_cmd_events_should_reject_when_window_and_tail_both_set(tmp_path, capsys
     assert "mutually exclusive" in err.lower() or "cannot combine" in err.lower()
 
 
-def test_events_since_should_replay_all_matches_ignoring_window_default(tmp_path, capsys):
+def test_events_since_should_replay_all_matches_ignoring_window_default_when_invoked(
+    tmp_path, capsys
+):
     from agent_runner.cli import events_cmd
 
     _write_events(
@@ -233,7 +235,7 @@ def test_events_since_should_replay_all_matches_ignoring_window_default(tmp_path
     assert [json.loads(line)["round_num"] for line in out] == list(range(1, 13))
 
 
-def test_events_since_should_include_event_at_exact_boundary(tmp_path, capsys):
+def test_events_since_should_include_event_at_exact_boundary_when_invoked(tmp_path, capsys):
     """An event whose ts equals --since exactly is emitted (at-least-once)."""
     from agent_runner.cli import events_cmd
 
@@ -300,7 +302,7 @@ def test_events_since_should_replay_across_month_files_when_since_spans_months(
     assert "events-2026-01.jsonl" not in opened
 
 
-def test_events_since_should_skip_malformed_and_ts_less_lines(tmp_path, capsys):
+def test_events_since_should_skip_malformed_and_ts_less_lines_when_invoked(tmp_path, capsys):
     from agent_runner.cli import events_cmd
 
     path = tmp_path / f"events-{_current_month()}.jsonl"
@@ -350,7 +352,9 @@ def test_cmd_events_since_should_exit_2_when_timestamp_invalid(tmp_path, capsys)
     assert "--since" in err[0]
 
 
-def test_events_tail_should_emit_new_events_as_they_arrive(tmp_path, capsys, monkeypatch):
+def test_events_tail_should_emit_new_events_as_they_arrive_when_invoked(
+    tmp_path, capsys, monkeypatch
+):
     """--tail mode wakes on the doorbell and emits new matching lines as they
     appear.
 

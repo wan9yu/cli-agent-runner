@@ -7,7 +7,7 @@ from __future__ import annotations
 from agent_runner import metrics
 
 
-def test_swap_total_bytes_should_return_psutil_swap_total_value(monkeypatch):
+def test_swap_total_bytes_should_return_psutil_swap_total_value_when_invoked(monkeypatch):
     class S:
         total = 1234
 
@@ -16,7 +16,7 @@ def test_swap_total_bytes_should_return_psutil_swap_total_value(monkeypatch):
     assert metrics.swap_total_bytes() == 1234
 
 
-def test_swap_total_bytes_should_match_real_psutil_swap_total():
+def test_swap_total_bytes_should_match_real_psutil_swap_total_when_invoked():
     import psutil
 
     assert metrics.swap_total_bytes() == psutil.swap_memory().total

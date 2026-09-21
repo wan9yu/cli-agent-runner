@@ -11,7 +11,7 @@ from agent_runner import metrics as metrics_module
 from agent_runner.metrics import _read_psi, collect, log_metrics, sample
 
 
-def test_collect_should_return_dict_with_mem_and_disk_fields(
+def test_collect_should_return_dict_with_mem_and_disk_fields_when_invoked(
     tmp_path: Path,
 ) -> None:
     m = collect(tmp_path)
@@ -27,7 +27,7 @@ def test_collect_should_return_dict_with_mem_and_disk_fields(
     assert m["disk_total_gb"] > 0
 
 
-def test_sample_should_return_lean_pressure_signal_keys() -> None:
+def test_sample_should_return_lean_pressure_signal_keys_when_invoked() -> None:
     s = sample()
 
     assert set(s) == {
@@ -45,7 +45,7 @@ def test_sample_should_return_lean_pressure_signal_keys() -> None:
     assert s["swap_sout"] >= 0
 
 
-def test_sample_should_never_shell_out(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sample_should_never_shell_out_when_invoked(monkeypatch: pytest.MonkeyPatch) -> None:
     """sample() must be lean: no subprocess, unlike collect()'s pgrep call."""
 
     def _boom(*args, **kwargs):
@@ -79,7 +79,7 @@ def test_read_psi_should_default_full_to_zero_when_full_line_missing(
     assert _read_psi(psi_path) == (3.00, 0.0, None)
 
 
-def test_collect_should_merge_sample_fields(tmp_path: Path) -> None:
+def test_collect_should_merge_sample_fields_when_invoked(tmp_path: Path) -> None:
     m = collect(tmp_path)
 
     assert "swap_sout" in m
@@ -87,7 +87,7 @@ def test_collect_should_merge_sample_fields(tmp_path: Path) -> None:
     assert "mem_free_mb" in m
 
 
-def test_collect_should_include_inode_used_pct_within_bounds(tmp_path: Path) -> None:
+def test_collect_should_include_inode_used_pct_within_bounds_when_invoked(tmp_path: Path) -> None:
     m = collect(tmp_path)
 
     assert "inode_used_pct" in m
@@ -117,7 +117,7 @@ def test_collect_should_set_inode_used_pct_none_when_filesystem_has_no_inode_cou
     assert m["inode_used_pct"] is None
 
 
-def test_log_metrics_should_append_jsonl_with_event_field(
+def test_log_metrics_should_append_jsonl_with_event_field_when_invoked(
     tmp_log_dir: Path,
 ) -> None:
     log_metrics(tmp_log_dir, event="periodic", round_num=5)

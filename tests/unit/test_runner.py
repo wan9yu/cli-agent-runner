@@ -69,7 +69,7 @@ def test_run_one_round_should_record_round_num_one_when_first_round(
     assert status["last_exit_code"] == 0
 
 
-def test_run_one_round_should_emit_config_digest_on_round_start(
+def test_run_one_round_should_emit_config_digest_on_round_start_when_invoked(
     tmp_git_repo: Path,
     fake_agent_script: Path,
 ) -> None:
@@ -148,7 +148,7 @@ def test_run_one_round_should_recover_and_emit_event_when_status_json_corrupt(
     assert any(e["event"] == "status_recovered" for e in events)
 
 
-def test_acquire_lock_or_raise_should_raise_lockheld_when_lock_already_held(
+def test_acquire_lock_else_raise_should_raise_lockheld_when_lock_already_held(
     tmp_path: Path,
 ) -> None:
     lock_path = tmp_path / "agent-runner.lock"
@@ -161,7 +161,7 @@ def test_acquire_lock_or_raise_should_raise_lockheld_when_lock_already_held(
         os.close(fd)
 
 
-def test_acquire_lock_or_raise_should_return_fd_when_no_existing_lock(tmp_path: Path) -> None:
+def test_acquire_lock_else_raise_should_return_fd_when_no_existing_lock(tmp_path: Path) -> None:
     fd = _acquire_lock_or_raise(tmp_path / "agent-runner.lock")
 
     try:
@@ -339,7 +339,7 @@ def test_scan_round_log_for_network_blip_should_skip_scan_when_round_is_ok(
         assert blips == []
 
 
-def test_acquire_lock_or_raise_should_include_pid_age_cmdline_when_holder_sidecar_present(
+def test_acquire_lock_else_raise_should_include_pid_age_cmdline_when_holder_sidecar_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -365,7 +365,7 @@ def test_acquire_lock_or_raise_should_include_pid_age_cmdline_when_holder_sideca
         sidecar.unlink(missing_ok=True)
 
 
-def test_acquire_lock_or_raise_should_note_stale_when_holder_sidecar_pid_stale(
+def test_acquire_lock_else_raise_should_note_stale_when_holder_sidecar_pid_stale(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -403,7 +403,7 @@ def test_acquire_lock_or_raise_should_note_stale_when_holder_sidecar_pid_stale(
         sidecar.unlink(missing_ok=True)
 
 
-def test_acquire_lock_or_raise_should_note_missing_when_holder_sidecar_absent(
+def test_acquire_lock_else_raise_should_note_missing_when_holder_sidecar_absent(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -505,7 +505,7 @@ def test_run_one_round_inner_should_call_stash_orphan_when_dirty_action_is_stash
     assert len(stash_calls) == 1, "stash_orphan should be called once for stash mode"
 
 
-def test_run_one_round_inner_should_run_goal_checks_before_stash_removes_the_edit(
+def test_run_one_round_inner_should_run_goal_checks_before_stash_removes_the_edit_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_git_repo: Path
 ) -> None:
     """Pins the call-site placement: a goal check must observe the round's own
@@ -677,7 +677,7 @@ def test_run_one_round_inner_should_emit_dirty_commit_failed_when_git_identity_u
     assert "reason" in failed[0]
 
 
-def test_run_one_round_inner_should_pass_round_num_in_env_to_agent_subprocess(
+def test_run_one_round_inner_should_pass_round_num_in_env_to_agent_subprocess_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from agent_runner import runner
@@ -772,7 +772,7 @@ def test_run_one_round_inner_should_set_env_phase_to_rotation_result_when_phases
     assert captured_env.get("AGENT_RUNNER_PHASE") == "diverge"
 
 
-def test_run_one_round_inner_should_fire_post_round_hook_after_round_end_event(
+def test_run_one_round_inner_should_fire_post_round_hook_after_round_end_event_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """PostRoundHook runs AFTER round_end is emitted, not before.
@@ -944,7 +944,7 @@ def test_run_one_round_should_preserve_orphan_state_when_dirty_check_times_out(
     assert context_store.read_orphan_state(cfg.runtime.log_dir) == orphan
 
 
-def test_resolve_reap_grace_s_should_read_the_published_env_value(monkeypatch):
+def test_resolve_reap_grace_s_should_read_the_published_env_value_when_invoked(monkeypatch):
     from agent_runner import runner
 
     monkeypatch.setenv("AGENT_RUNNER_REAP_GRACE_S", "13")

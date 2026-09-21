@@ -115,6 +115,7 @@ def test_select_phase_should_pause_with_earliest_resume_when_skip_policy_and_all
     assert sel.phase is None
     assert sel.paused is True
     assert sel.skipped == []
+    assert sel.resume_at is not None
     assert sel.resume_at.hour == 12  # min(14:00, 12:00)
 
 
@@ -132,6 +133,7 @@ def test_select_phase_should_drop_never_opening_phase_when_computing_min_resume(
     sel = phase_select.select_phase(cfg, 1, now_fn=_clock(10))
 
     assert sel.paused is True
+    assert sel.resume_at is not None
     assert sel.resume_at.hour == 12  # b's; a's None dropped
 
 
@@ -222,11 +224,13 @@ def test_select_phase_should_return_same_result_when_same_throttled_set_used_twi
     assert (a.phase, a.paused, a.skipped) == (b.phase, b.paused, b.skipped)
 
 
-def test_rotation_index_should_be_zero_based_round_minus_one_mod_n() -> None:
+def test_rotation_index_should_be_zero_based_round_minus_one_mod_n_when_invoked() -> None:
     assert [phase_select.rotation_index(r, 3) for r in (1, 2, 3, 4)] == [0, 1, 2, 0]
 
 
-def test_phase_select_should_agree_with_runner_rotation_index_across_rounds(tmp_path) -> None:
+def test_phase_select_should_agree_with_runner_rotation_index_across_rounds_when_invoked(
+    tmp_path,
+) -> None:
     from agent_runner.runner import _phase_for
 
     phases = ["a", "b", "c"]

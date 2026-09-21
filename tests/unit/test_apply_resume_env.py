@@ -58,7 +58,7 @@ def test_resolve_resume_args_should_return_empty_when_both_env_absent(monkeypatc
     assert runner._resolve_resume_args() == []  # cold-start by construction
 
 
-def test_run_should_append_resume_args_after_command_and_before_prompt_args(tmp_path):
+def test_run_should_append_resume_args_after_command_and_before_prompt_args_when_invoked(tmp_path):
     argv_dump = tmp_path / "argv.txt"
     script = tmp_path / "fake-agent.sh"
     script.write_text(
@@ -157,7 +157,9 @@ def test_apply_resume_env_should_pop_both_keys_when_phase_arg_is_none_and_phases
     assert "AGENT_RUNNER_RESUME_SESSION_ID" not in round_env
 
 
-def test_apply_resume_env_should_reuse_the_same_id_across_rounds_for_one_phase(tmp_path):
+def test_apply_resume_env_should_reuse_the_same_id_across_rounds_for_one_phase_when_invoked(
+    tmp_path,
+):
     cfg = _resume_capable_cfg(tmp_path)
     session_ids: dict = {}
 
@@ -171,7 +173,7 @@ def test_apply_resume_env_should_reuse_the_same_id_across_rounds_for_one_phase(t
     )
 
 
-def test_apply_resume_env_should_mint_a_new_id_on_a_fresh_eyes_round(tmp_path):
+def test_apply_resume_env_should_mint_a_new_id_on_a_fresh_eyes_round_when_invoked(tmp_path):
     cfg = _resume_capable_cfg(tmp_path)
     session_ids: dict = {}
 
@@ -185,7 +187,9 @@ def test_apply_resume_env_should_mint_a_new_id_on_a_fresh_eyes_round(tmp_path):
     )
 
 
-def test_apply_resume_env_should_key_ids_by_phase_so_two_phases_get_distinct_ids(tmp_path):
+def test_apply_resume_env_should_key_ids_by_phase_so_two_phases_get_distinct_ids_when_invoked(
+    tmp_path,
+):
     cfg = _resume_capable_cfg(tmp_path)
     cfg = dataclasses.replace(
         cfg,

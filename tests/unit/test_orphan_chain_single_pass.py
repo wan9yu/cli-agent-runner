@@ -7,7 +7,7 @@ def _ev(kind, rn):
     return {"event": kind, "round_num": rn}
 
 
-def test_three_consecutive_orphans_should_alert() -> None:
+def test_three_consecutive_orphans_should_alert_when_invoked() -> None:
     events = []
     for rn in (1, 2, 3):
         events += [_ev("orphan_stashed", rn), _ev("round_end", rn)]
@@ -17,7 +17,7 @@ def test_three_consecutive_orphans_should_alert() -> None:
     assert a is not None and a.context["streak"] == 3 and a.context["last_round"] == 3
 
 
-def test_clean_round_should_break_the_streak() -> None:
+def test_clean_round_should_break_the_streak_when_invoked() -> None:
     events = [
         _ev("orphan_stashed", 1),
         _ev("round_end", 1),

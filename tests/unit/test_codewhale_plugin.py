@@ -145,7 +145,7 @@ def test_after_round_should_tolerate_non_json_lines_when_parsing_stream(tmp_path
     assert usage_emit.call_args.kwargs["input_tokens"] == 5
 
 
-def test_classify_codewhale_error_should_map_only_known_buckets():
+def test_classify_codewhale_error_should_map_only_known_buckets_when_invoked():
     """Lock the dormant forward-path: numeric status codes map to existing
     buckets; everything else (incl. the captured free-text auth error) → None.
     Guards against silent regression when a real rate-limit sample is wired in.

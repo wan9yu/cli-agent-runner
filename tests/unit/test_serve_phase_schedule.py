@@ -140,7 +140,9 @@ def test_wait_policy_should_pause_and_resume_at_next_open_window_when_phase_clos
 # --- legacy path (no per-phase schedule, wait policy): byte-identical -----
 
 
-def test_phases_without_per_phase_schedule_should_omit_phase_arg(monkeypatch, tmp_path):
+def test_phases_without_per_phase_schedule_should_omit_phase_arg_when_invoked(
+    monkeypatch, tmp_path
+):
     """[phases] present but phase_policy=wait and NO per-phase schedule → not
     phase-aware → legacy pause path, no --phase appended (0.2.7 behavior)."""
     argvs = _capture_run(monkeypatch)
@@ -152,7 +154,7 @@ def test_phases_without_per_phase_schedule_should_omit_phase_arg(monkeypatch, tm
     assert _phase_of(argvs[0]) is None  # round self-resolves rotation
 
 
-def test_phase_aware_should_require_skip_policy_or_per_phase_schedule(tmp_path):
+def test_phase_aware_should_require_skip_policy_else_per_phase_schedule_when_invoked(tmp_path):
     """Only new 0.2.9 syntax (skip policy, or a per-phase schedule) is phase-aware;
     a plain wait rotation and a no-phases config take the legacy path."""
     from agent_runner.config import load_config
@@ -169,7 +171,7 @@ def test_phase_aware_should_require_skip_policy_or_per_phase_schedule(tmp_path):
     assert _pa("") is False  # no [phases]
 
 
-def test_legacy_schedule_pause_should_omit_phase_field(tmp_path):
+def test_legacy_schedule_pause_should_omit_phase_field_when_invoked(tmp_path):
     """The legacy helper (used by non-phase-aware configs) emits schedule_paused
     with NO phase field — byte-identical to 0.2.7."""
     import types
@@ -199,7 +201,9 @@ def test_legacy_schedule_pause_should_omit_phase_field(tmp_path):
 # --- --ignore-schedule bypass --------------------------------------------
 
 
-def test_ignore_schedule_should_bypass_phase_selection_and_pause(monkeypatch, tmp_path):
+def test_ignore_schedule_should_bypass_phase_selection_and_pause_when_invoked(
+    monkeypatch, tmp_path
+):
     """--ignore-schedule skips select_phase entirely: no --phase, no pause even
     with an always-closed per-phase window."""
     argvs = _capture_run(monkeypatch)
@@ -280,7 +284,9 @@ def test_skip_policy_should_not_apply_back_off_when_routing_around_throttle(monk
     assert called == []  # rotation handled it; no back-off
 
 
-def test_throttle_skip_context_should_skip_all_phases_sharing_throttled_agent(tmp_path):
+def test_throttle_skip_context_should_skip_all_phases_sharing_throttled_agent_when_invoked(
+    tmp_path,
+):
     """Two phases sharing ONE throttled agent are BOTH skipped — no hammering the
     rate-limited provider (the phase→agent re-key fix)."""
     from agent_runner.config import load_config
@@ -439,7 +445,9 @@ def test_legacy_skip_action_should_not_emit_recovered_event_when_throttle_clears
     assert rec == []  # legacy path stays silent
 
 
-def test_skip_policy_should_ignore_throttle_for_unconfigured_agent(monkeypatch, tmp_path):
+def test_skip_policy_should_ignore_throttle_for_unconfigured_agent_when_invoked(
+    monkeypatch, tmp_path
+):
     """Under skip, a throttle whose agent maps to no configured phase is ignored: the
     round runs normally — skip never applies the global back-off, and no phase is
     skipped. The join is by agent, so the detected event's phase field is irrelevant."""
@@ -498,7 +506,7 @@ def test_pause_until_selectable_should_sleep_when_only_open_window_is_throttled(
     assert clock.slept  # it slept — did NOT instant-resume on the throttled-but-open phase
 
 
-def test_pause_until_selectable_should_wake_at_wake_epoch_without_sleeping(tmp_path):
+def test_pause_until_selectable_should_wake_at_wake_epoch_without_sleeping_when_invoked(tmp_path):
     """The throttle's reset_at is an extra wake trigger even with no open window."""
     from agent_runner.config import load_config
 
@@ -552,7 +560,9 @@ def test_pause_until_selectable_should_wake_when_fakeclock_sleep_crosses_wake_ep
     assert any(e["event"] == "schedule_resumed" for e in _events(tmp_path / "logs"))
 
 
-def test_pause_until_selectable_should_wake_on_sibling_window_before_reset_epoch(tmp_path):
+def test_pause_until_selectable_should_wake_on_sibling_window_before_reset_epoch_when_invoked(
+    tmp_path,
+):
     """min(window, reset_at): a non-throttled sibling whose window is open resumes
     the loop before the far-future throttle reset."""
     from agent_runner.config import load_config

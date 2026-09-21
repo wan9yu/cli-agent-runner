@@ -116,7 +116,7 @@ def _write(log_dir: Path, *events: dict) -> None:
             f.write(json.dumps(e) + "\n")
 
 
-def test_round_outcome_should_be_byte_identical_with_and_without_goal_events(
+def test_round_outcome_should_be_byte_identical_with_and_without_goal_events_when_invoked(
     tmp_path: Path,
 ) -> None:
     with_dir = tmp_path / "with_goal" / "logs"

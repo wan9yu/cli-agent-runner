@@ -29,7 +29,7 @@ def _skip_unless_chmod_blocks_write(notify_dir: Path) -> None:
         pytest.skip("directory permissions do not block writes here (likely running as root)")
 
 
-def test_listener_should_wake_on_ring(tmp_log_dir: Path):
+def test_listener_should_wake_on_ring_when_invoked(tmp_log_dir: Path):
     with Listener(tmp_log_dir) as listener:
         ring(tmp_log_dir)
 
@@ -55,7 +55,7 @@ def test_ring_should_swallow_when_no_listener(tmp_log_dir: Path):
     ring(tmp_log_dir)
 
 
-def test_ring_should_unlink_stale_fifo(tmp_log_dir: Path):
+def test_ring_should_unlink_stale_fifo_when_invoked(tmp_log_dir: Path):
     notify_dir = tmp_log_dir / ".notify"
     notify_dir.mkdir()
     stale = notify_dir / "stale.fifo"
@@ -66,7 +66,7 @@ def test_ring_should_unlink_stale_fifo(tmp_log_dir: Path):
     assert not stale.exists()
 
 
-def test_null_listener_should_sleep_and_return_false():
+def test_null_listener_should_sleep_and_return_false_when_invoked():
     fake = FakeClock()
 
     woken = NullListener().wait(3.0, clock=fake)
@@ -75,7 +75,7 @@ def test_null_listener_should_sleep_and_return_false():
     assert fake.monotonic() == 3.0
 
 
-def test_wait_should_coalesce_burst(tmp_log_dir: Path):
+def test_wait_should_coalesce_burst_when_invoked(tmp_log_dir: Path):
     with Listener(tmp_log_dir) as listener:
         ring(tmp_log_dir)
         ring(tmp_log_dir)
@@ -88,7 +88,7 @@ def test_wait_should_coalesce_burst(tmp_log_dir: Path):
         assert second is False
 
 
-def test_events_tail_should_wake_on_new_event(tmp_log_dir: Path):
+def test_events_tail_should_wake_on_new_event_when_invoked(tmp_log_dir: Path):
     with Listener(tmp_log_dir) as listener:
         events.emit(tmp_log_dir, events.MONITOR_STARTED)
 

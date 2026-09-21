@@ -238,7 +238,7 @@ def test_since_seed_should_leave_prior_month_at_eof_when_since_is_in_current_mon
     assert seed[aug] == aug.stat().st_size
 
 
-def test_matches_since_should_exclude_same_month_events_before_the_since_timestamp():
+def test_matches_since_should_exclude_same_month_events_before_the_since_timestamp_when_invoked():
     from datetime import UTC, datetime
 
     from agent_runner.cli.events_cmd import _matches_since

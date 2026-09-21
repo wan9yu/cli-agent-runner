@@ -10,7 +10,7 @@ from agent_runner.cli._serve_round import _mid_round_action
 from agent_runner.config import MonitorHostHealthConfig, _HostHealthPressureConfig
 
 
-def test_mid_round_action_should_match_2x2_matrix_at_threshold() -> None:
+def test_mid_round_action_should_match_2x2_matrix_at_threshold_when_invoked() -> None:
     on = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(in_round_terminate=True))
     off = MonitorHostHealthConfig(pressure=_HostHealthPressureConfig(in_round_terminate=False))
     streak = on.pressure.critical_consecutive_samples  # at threshold
@@ -46,7 +46,7 @@ def test_mid_round_action_should_nudge_at_streak_one_when_nudge_on_and_hard_woul
     assert _mid_round_action(cfg, defer_to_cgroup=False, critical_streak=1, nudged=False) == "nudge"
 
 
-def test_mid_round_action_should_not_nudge_again_once_nudged() -> None:
+def test_mid_round_action_should_not_nudge_again_once_nudged_when_invoked() -> None:
     cfg = _cfg(in_round_nudge=True)
 
     assert (
@@ -64,7 +64,7 @@ def test_mid_round_action_should_not_nudge_when_cgroup_defer_disables_the_hard_v
     )
 
 
-def test_mid_round_action_should_still_terminate_at_the_hard_threshold() -> None:
+def test_mid_round_action_should_still_terminate_at_the_hard_threshold_when_invoked() -> None:
     cfg = _cfg(in_round_nudge=True)
 
     assert (

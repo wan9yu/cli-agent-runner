@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def test_serve_policy_should_export_stable_exit_code_constants() -> None:
+def test_serve_policy_should_export_stable_exit_code_constants_when_invoked() -> None:
     from agent_runner import _serve_policy as sp
 
     assert sp.PERMANENT_CONFIG_EXIT == 78
@@ -25,7 +25,7 @@ def test_post_round_decision_should_return_config_broken_when_permanent_config_e
     assert action == "config_broken"
 
 
-def test_api_should_re_export_same_policy_objects_as_serve_policy() -> None:
+def test_api_should_re_export_same_policy_objects_as_serve_policy_when_invoked() -> None:
     from agent_runner import _serve_policy as sp
     from agent_runner import api
 
@@ -62,7 +62,7 @@ def test_mem_loop_decision_should_reset_when_not_triggered() -> None:
     assert action == "continue" and c == 0
 
 
-def test_mem_loop_exit_should_equal_71() -> None:
+def test_mem_loop_exit_should_equal_71_when_invoked() -> None:
     from agent_runner._serve_policy import MEM_LOOP_EXIT
 
     assert MEM_LOOP_EXIT == 71
@@ -117,7 +117,7 @@ def test_no_progress_decision_should_reset_when_not_triggered() -> None:
     assert action == "continue" and c == 0
 
 
-def test_consecutive_streak_decision_should_increment_then_trip_then_reset() -> None:
+def test_consecutive_streak_decision_should_increment_then_trip_then_reset_when_invoked() -> None:
     """The generic (0.2.17 Task 2) both _mem_loop_decision and
     _no_progress_decision now delegate to: increments while triggered, trips
     at threshold, and a non-triggered call resets to 0 regardless of the
@@ -145,7 +145,7 @@ def test_consecutive_streak_decision_should_increment_then_trip_then_reset() -> 
     assert (action, c) == ("continue", 0)
 
 
-def test_mem_loop_persistent_exit_should_be_distinct_from_other_exit_codes() -> None:
+def test_mem_loop_persistent_exit_should_be_distinct_from_other_exit_codes_when_invoked() -> None:
     """0.2.16 Task 5: MEM_LOOP_PERSISTENT_EXIT is a distinct sysexits-band
     code from every other serve give-up/restart exit code in use."""
     from agent_runner._serve_policy import (

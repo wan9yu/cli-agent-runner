@@ -21,13 +21,13 @@ from agent_runner.config.models import _MAX_SIGTERM_GRACE_S
 from agent_runner.vcs_state import GIT_COMMIT_TIMEOUT_S
 
 
-def test_timeout_stop_sec_should_exceed_outer_ceiling():
+def test_timeout_stop_sec_should_exceed_outer_ceiling_when_invoked():
     timeout_stop_sec, outer_ceiling_s = _serve_policy.timeout_budget(100)
 
     assert timeout_stop_sec > outer_ceiling_s
 
 
-def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grace():
+def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grace_when_invoked():
     """TimeoutStopSec must not fire before serve's own SIGTERM-to-round-child
     grace has had a chance to work -- otherwise systemd SIGKILLs a round that
     is draining normally."""
@@ -36,7 +36,7 @@ def test_timeout_stop_sec_should_clear_outer_ceiling_by_at_least_round_term_grac
     assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
 
 
-def test_outer_ceiling_should_bound_the_worst_case_cooperative_grace_not_just_the_default():
+def test_outer_ceiling_should_bound_worst_case_coop_grace_not_just_default_when_invoked():
     """A cooperative agent's sigterm_grace_s is boot-capped strictly below
     _ROUND_TERM_GRACE_S (config/models.py's _MAX_SIGTERM_GRACE_S mirror-with-
     margin), so the outer ceiling's reap margin must be sized to that worst
@@ -55,7 +55,7 @@ def test_outer_ceiling_should_bound_the_worst_case_cooperative_grace_not_just_th
     assert outer_ceiling_s == expected
 
 
-def test_budget_should_scale_linearly_with_round_timeout():
+def test_budget_should_scale_linearly_with_round_timeout_when_invoked():
     a_stop, a_ceiling = _serve_policy.timeout_budget(100)
     b_stop, b_ceiling = _serve_policy.timeout_budget(200)
 
@@ -63,7 +63,7 @@ def test_budget_should_scale_linearly_with_round_timeout():
     assert b_ceiling - a_ceiling == 100
 
 
-def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance():
+def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance_when_invoked():
     """The goal-check executor's own time budget folds into the SAME single
     ceiling rather than a second one -- a slow check must never trip
     round_supervisor_wedged (the goal path causing a kill would be a firewall
@@ -78,7 +78,7 @@ def test_outer_ceiling_should_grow_by_exactly_the_goal_checks_allowance():
     assert stop_with - stop_without == 33
 
 
-def test_timeout_stop_sec_should_still_clear_outer_ceiling_with_a_nonzero_goal_allowance():
+def test_timeout_stop_sec_should_clear_outer_ceiling_with_goal_allowance_when_invoked():
     """service_unit.py's TimeoutStopSec margin (>= _ROUND_TERM_GRACE_S above
     the outer ceiling) must survive a widened ceiling too -- a `systemctl
     stop` must not SIGKILL a round that is draining normally just because a
@@ -90,7 +90,7 @@ def test_timeout_stop_sec_should_still_clear_outer_ceiling_with_a_nonzero_goal_a
     assert timeout_stop_sec - outer_ceiling_s >= _ROUND_TERM_GRACE_S
 
 
-def test_leaf_margin_constants_should_mirror_their_source_of_truth():
+def test_leaf_margin_constants_should_mirror_their_source_of_truth_when_invoked():
     """_serve_policy is a dependency-free leaf (service_unit.py must not import
     api.py -- cycle), so two of its margin constants (_REAP_GRACE_S,
     _GIT_COMMIT_TIMEOUT_S) are LITERAL mirrors of the real sources of truth

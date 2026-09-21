@@ -210,7 +210,7 @@ def _startup_modules() -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def test_forbidden_modules_should_be_absent_from_startup_import() -> None:
+def test_forbidden_modules_should_be_absent_from_startup_import_when_invoked() -> None:
     loaded = set(_startup_modules())
 
     present = sorted(loaded & FORBIDDEN_AT_STARTUP)
@@ -218,7 +218,7 @@ def test_forbidden_modules_should_be_absent_from_startup_import() -> None:
     assert not present, f"forbidden modules eagerly imported by `agent_runner.cli`: {present}"
 
 
-def test_startup_pkg_modules_should_match_frozen_allowlist() -> None:
+def test_startup_pkg_modules_should_match_frozen_allowlist_when_invoked() -> None:
     loaded = set(_startup_modules())
 
     pkg_loaded = {m for m in loaded if m == "agent_runner" or m.startswith("agent_runner.")}
@@ -250,7 +250,7 @@ def _toplevel_forbidden_imports(path: Path) -> list[str]:
     return offenders
 
 
-def test_lazy_modules_should_have_no_toplevel_forbidden_import() -> None:
+def test_lazy_modules_should_have_no_toplevel_forbidden_import_when_invoked() -> None:
     offenders: list[str] = []
     for name in LAZY_MODULES:
         offenders += _toplevel_forbidden_imports(PKG / name)

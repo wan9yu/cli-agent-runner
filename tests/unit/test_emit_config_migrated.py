@@ -3,7 +3,7 @@ import json
 from agent_runner import api, events
 
 
-def test_emit_config_migrated_should_write_config_migrated_event(tmp_path):
+def test_emit_config_migrated_should_write_config_migrated_event_when_invoked(tmp_path):
     api.emit_config_migrated(
         tmp_path,
         applied=["runtime.rate_limit_action → runtime.transient_error_action"],
@@ -22,5 +22,5 @@ def test_emit_config_migrated_should_write_config_migrated_event(tmp_path):
     assert ev[0]["manual"] == [] and ev[0]["path"] == "agent-runner.toml"
 
 
-def test_config_migrated_kind_should_be_registered_as_builtin():
+def test_config_migrated_kind_should_be_registered_as_builtin_when_invoked():
     assert events.CONFIG_MIGRATED in events._BUILTIN_KINDS

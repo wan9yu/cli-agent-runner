@@ -81,7 +81,7 @@ def test_production_modules_should_have_no_unified_diff_marker_parsing_when_scan
     )
 
 
-def test_scan_should_flag_known_diff_marker_shapes() -> None:
+def test_scan_should_flag_known_diff_marker_shapes_when_invoked() -> None:
     """The scan's own teeth — each shape is a way R2110 has been reintroduced."""
     for src in (
         'if line.startswith("+"): pass',
@@ -94,7 +94,7 @@ def test_scan_should_flag_known_diff_marker_shapes() -> None:
         assert _violations(ast.parse(src)), f"scan missed diff-marker parsing: {src!r}"
 
 
-def test_scan_should_not_flag_look_alike_non_diff_shapes() -> None:
+def test_scan_should_not_flag_look_alike_non_diff_shapes_when_invoked() -> None:
     """The scan's own teeth — each shape looks like diff-marker parsing but is not."""
     for src in (
         'if host.startswith("-"): pass',

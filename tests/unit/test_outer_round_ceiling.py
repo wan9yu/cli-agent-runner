@@ -27,7 +27,7 @@ def _cfg(tmp_path: Path, extra: str = "") -> api.Config:
     return load_config(toml)
 
 
-def test_outer_round_ceiling_should_add_derived_margin_for_base_timeout(tmp_path):
+def test_outer_round_ceiling_should_add_derived_margin_for_base_timeout_when_invoked(tmp_path):
     cfg = _cfg(tmp_path)
 
     _, expected_ceiling = _serve_policy.timeout_budget(100)
@@ -35,7 +35,9 @@ def test_outer_round_ceiling_should_add_derived_margin_for_base_timeout(tmp_path
     assert api.outer_round_ceiling_s(cfg, None) == expected_ceiling
 
 
-def test_outer_round_ceiling_should_use_phase_timeout_for_explicit_and_rotated_calls(tmp_path):
+def test_outer_round_ceiling_should_use_phase_timeout_for_explicit_and_rotated_calls_when_invoked(
+    tmp_path,
+):
     cfg = _cfg(
         tmp_path,
         "[phases]\nlist = ['fast', 'slow']\n[phases.slow.runtime]\nround_budget_s = 900\n",

@@ -551,7 +551,7 @@ def test_round_holder_pid_should_best_effort_return_pid_when_create_time_missing
     assert result == os.getpid()
 
 
-def test_kill_should_send_sigterm_to_serve_before_round_holder(
+def test_kill_should_send_sigterm_to_serve_before_round_holder_when_invoked(
     tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """api.kill's PID_FILE mode must reach the round via the .holder sidecar
@@ -632,7 +632,7 @@ def test_kill_should_escalate_round_holder_to_sigkill_when_term_ignored(
     assert (12345, signal.SIGKILL) in sent  # serve itself escalated too
 
 
-def test_round_kill_grace_should_match_serve_cmd_grace() -> None:
+def test_round_kill_grace_should_match_serve_cmd_grace_when_invoked() -> None:
     """api._terminate_round_pid's grace (driven from a separate CLI process,
     api.kill) must stay in lockstep with _serve_round._terminate_round's own
     grace (driven from serve's in-process Popen handle) -- both exist so the
@@ -822,7 +822,7 @@ def test_kill_systemd_should_not_escalate_when_sigterm_already_stopped_it(
     assert s.mode == ServiceMode.SYSTEMD_USER
 
 
-def test_poll_once_should_forward_supervisor_stale_threshold(
+def test_poll_once_should_forward_supervisor_stale_threshold_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -843,7 +843,7 @@ def test_poll_once_should_forward_supervisor_stale_threshold(
     assert "supervisor_stale_threshold_s" in call_kwargs
 
 
-def test_poll_once_should_thread_host_health_config(
+def test_poll_once_should_thread_host_health_config_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

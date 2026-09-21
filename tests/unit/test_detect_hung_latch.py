@@ -12,7 +12,7 @@ def _ev(kind: str, rn: int, ts: str, phase=None):
     return e
 
 
-def test_ancient_unclosed_round_should_not_latch_hung_after_later_rounds_complete() -> None:
+def test_ancient_unclosed_round_should_not_latch_hung_after_later_rounds_when_invoked() -> None:
     now = datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC)
     events = [
         _ev("round_start", 1, "2026-08-01T00:00:00Z"),  # round_end lost (crash) — stale
@@ -34,7 +34,7 @@ def test_newest_open_round_should_still_alert_when_past_threshold() -> None:
     assert a is not None and a.context["round_num"] == 7
 
 
-def test_crashed_round_should_stop_latching_once_next_round_closes() -> None:
+def test_crashed_round_should_stop_latching_once_next_round_closes_when_invoked() -> None:
     """monitor.py's comment says the check is against the "highest-numbered
     round", but the pre-fix code took ``max(open_rounds)`` — the max of only the
     STILL-OPEN round numbers. Once round 2 starts AND closes normally, it drops
@@ -54,7 +54,9 @@ def test_crashed_round_should_stop_latching_once_next_round_closes() -> None:
     assert detect_hung(events, now=now, round_budget_s=1800) is None
 
 
-def test_non_round_start_event_for_next_round_should_not_suppress_a_real_hang() -> None:
+def test_non_round_start_event_for_next_round_should_not_suppress_a_real_hang_when_invoked() -> (
+    None
+):
     """A non-round_start/round_end event can carry the NEXT round's round_num
     BEFORE that round's own round_start is ever written. "Highest-numbered
     round" must mean the highest-numbered STARTED round — deriving it from

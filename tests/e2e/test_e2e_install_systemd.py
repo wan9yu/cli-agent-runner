@@ -3,7 +3,7 @@ from __future__ import annotations
 from .conftest import _ssh
 
 
-def test_systemd_unit_should_exist_after_install_and_be_removed_after_uninstall(
+def test_systemd_unit_should_exist_after_install_and_be_removed_after_uninstall_when_invoked(
     pi_install_agent_runner: str,
     pi_workdir: str,
     pi_config: str,

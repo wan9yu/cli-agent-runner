@@ -23,7 +23,9 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def test_run_with_timeout_should_raise_and_kill_process_before_sleep_completes(tmp_path):
+def test_run_with_timeout_should_raise_and_kill_process_before_sleep_completes_when_invoked(
+    tmp_path,
+):
     started = time.monotonic()
 
     with pytest.raises(vcs_state.GitTimeout):
@@ -71,7 +73,9 @@ def test_run_with_timeout_should_escalate_to_killpg_when_term_ignored(tmp_path, 
     assert not _alive(pgid)  # SIGTERM was ignored; only killpg(SIGKILL) could end it
 
 
-def test_commit_timeout_should_clear_self_caused_lock_and_emit_event(tmp_path, monkeypatch):
+def test_commit_timeout_should_clear_self_caused_lock_and_emit_event_when_invoked(
+    tmp_path, monkeypatch
+):
     (tmp_path / ".git").mkdir()
     lock = tmp_path / ".git" / "index.lock"
     lock.write_text("")
@@ -142,7 +146,7 @@ def test_foreign_lock_should_stay_untouched_when_git_fails_without_timeout(tmp_p
     assert evs == []
 
 
-def test_stash_push_timeout_should_clear_self_caused_lock_and_raise_stash_error(
+def test_stash_push_timeout_should_clear_self_caused_lock_and_raise_stash_error_when_invoked(
     tmp_path, monkeypatch
 ):
     """Mirrors test_commit_timeout_should_clear_self_caused_lock_and_emit_event for
@@ -181,7 +185,7 @@ def test_stash_push_timeout_should_clear_self_caused_lock_and_raise_stash_error(
     assert len(evs) == 1 and evs[0]["round_num"] == 7
 
 
-def test_index_lock_removal_should_unblock_next_commit(tmp_path):
+def test_index_lock_removal_should_unblock_next_commit_when_invoked(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)

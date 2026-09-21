@@ -183,7 +183,7 @@ def test_select_and_gate_should_defer_on_memory_pressure_when_ignore_schedule_is
     assert [e["event"] for e in _events(tmp_path)] == ["round_deferred", "round_resumed"]
 
 
-def test_config_host_health_should_be_monitor_host_health_config_type(tmp_path):
+def test_config_host_health_should_be_monitor_host_health_config_type_when_invoked(tmp_path):
     """Sanity: the real Config's cfg.monitor.host_health is exactly the type
     host_health.memory_pressure expects (mem_avail_min_mb)."""
     cfg = _real_cfg(tmp_path)
@@ -243,7 +243,7 @@ def test_cache_poor_psi_off_host_should_defer_when_pre_round_checked_twice(tmp_p
     assert [e["event"] for e in evs] == ["round_deferred"]  # interrupted, not resumed
 
 
-def test_pre_round_gate_should_isolate_baseline_per_log_dir(tmp_path):
+def test_pre_round_gate_should_isolate_baseline_per_log_dir_when_invoked(tmp_path):
     """Two distinct log_dirs (as two different serve invocations, or two
     different tests, would have) never share a persisted previous sample --
     the isolation finding: a shared module-level dict would let one test's

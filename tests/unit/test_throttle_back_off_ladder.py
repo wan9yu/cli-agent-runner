@@ -83,7 +83,7 @@ def test_active_throttles_should_extend_reset_when_backoff_exponent_grows(tmp_pa
     assert st.reset_at_epoch > 10_000
 
 
-def test_active_throttles_should_be_idempotent_across_restarts(tmp_path: Path) -> None:
+def test_active_throttles_should_be_idempotent_across_restarts_when_invoked(tmp_path: Path) -> None:
     clock = FakeClock(epoch=1_000)
     _write(tmp_path, [_detected("claude", 10_000), _detected("claude", 10_000)])
 

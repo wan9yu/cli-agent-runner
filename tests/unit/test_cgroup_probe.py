@@ -175,7 +175,7 @@ def test_cgroup_memory_limits_should_report_bounding_path_as_the_ancestor_when_l
     assert lim["bounding_cgroup_path"] != lim["cgroup_path"]
 
 
-def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_or_missing(
+def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_else_missing(
     fake_cgroup: _FakeCgroup,
 ) -> None:
     """No `cgroup.controllers` (cgroup v1, or no unified hierarchy at all)
@@ -193,7 +193,9 @@ def test_cgroup_memory_limits_should_return_all_none_when_cgroup_v1_or_missing(
     }
 
 
-def test_cgroup_memory_limits_should_parse_self_cgroup_from_proc_file(tmp_path: Path) -> None:
+def test_cgroup_memory_limits_should_parse_self_cgroup_from_proc_file_when_invoked(
+    tmp_path: Path,
+) -> None:
     """`self_cgroup` is a test-only shortcut -- the real path is parsed from
     the cgroup v2 unified-hierarchy line (`0::<path>`) in `/proc/self/cgroup`."""
     root = tmp_path / "cgroup"
@@ -291,7 +293,7 @@ def test_cgroup_memory_high_should_use_tighter_ancestor_value_when_leaf_looser(
     assert high == 268435456
 
 
-def test_cgroup_memory_high_should_return_none_when_cgroup_v1_or_missing(
+def test_cgroup_memory_high_should_return_none_when_cgroup_v1_else_missing(
     fake_cgroup: _FakeCgroup,
 ) -> None:
     """No cgroup v2 at all -- None, same as the other probes."""
@@ -302,7 +304,7 @@ def test_cgroup_memory_high_should_return_none_when_cgroup_v1_or_missing(
     assert high is None
 
 
-def test_mem_total_bytes_should_match_psutil_virtual_memory_total() -> None:
+def test_mem_total_bytes_should_match_psutil_virtual_memory_total_when_invoked() -> None:
     import psutil
 
     assert metrics.mem_total_bytes() == psutil.virtual_memory().total
@@ -375,7 +377,7 @@ def _patch_probe(
         ),
     ],
 )
-def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
+def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     memory_max: int,
@@ -412,7 +414,7 @@ def test_probe_and_emit_cgroup_defer_should_gate_on_limit_plausibility(
         pytest.param(None, False, id="swap_max_missing"),
     ],
 )
-def test_probe_and_emit_cgroup_defer_should_carry_defer_matching_return(
+def test_probe_and_emit_cgroup_defer_should_carry_defer_matching_return_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     memory_swap_max: int | None,
@@ -458,7 +460,7 @@ def test_probe_and_emit_cgroup_defer_should_carry_defer_matching_return(
         ),
     ],
 )
-def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct(
+def test_probe_and_emit_cgroup_defer_should_gate_advisory_on_swap_cap_pct_when_invoked(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -767,7 +769,7 @@ def test_cgroup_delegated_should_return_none_when_leaf_stat_fails(
 # supervisor's OWN leaf when a memory bound already exists.
 
 
-def test_probe_and_emit_cgroup_defer_should_carry_cgroup_delegated_on_every_branch(
+def test_probe_and_emit_cgroup_defer_should_carry_cgroup_delegated_on_every_branch_when_invoked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _run_probe(
@@ -1027,7 +1029,7 @@ def test_engage_leaf_memory_high_should_lower_high_when_existing_high_is_looser_
     assert (leaf / "memory.high").read_text().strip() == str(result["written"])
 
 
-def test_engage_leaf_memory_high_should_brake_from_max_high(
+def test_engage_leaf_memory_high_should_brake_from_max_high_when_invoked(
     fake_cgroup: _FakeCgroup,
 ) -> None:
     """No pre-existing finite high (``"max"``, unset) -- the monotone-clamp
@@ -1045,7 +1047,7 @@ def test_engage_leaf_memory_high_should_brake_from_max_high(
     assert (leaf / "memory.high").read_text().strip() == str(result["written"])
 
 
-def test_restore_leaf_memory_high_should_write_back_stashed_max_token(
+def test_restore_leaf_memory_high_should_write_back_stashed_max_token_when_invoked(
     fake_cgroup: _FakeCgroup,
 ) -> None:
     fake_cgroup(memory_high="123456789")  # engage overwrote it; restore must put "max" back
@@ -1112,7 +1114,7 @@ def test_engage_leaf_memory_high_should_fail_open_and_close_fd_when_write_raises
     assert len(closed_fds) == 1  # the fd os.open() returned was closed, not leaked
 
 
-def test_engage_leaf_memory_high_should_only_ever_write_the_resolved_leaf_never_ancestor(
+def test_engage_leaf_memory_high_should_ever_write_the_resolved_leaf_never_ancestor_when_invoked(
     fake_cgroup: _FakeCgroup,
 ) -> None:
     """The ONE hard safety invariant: engage writes the resolved leaf, never

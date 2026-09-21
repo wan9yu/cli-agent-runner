@@ -6,7 +6,9 @@ from unittest.mock import patch
 from agent_runner import monitor
 
 
-def test_crashing_detector_should_emit_detector_error_and_let_others_run(tmp_path: Path) -> None:
+def test_crashing_detector_should_emit_detector_error_and_let_others_run_when_invoked(
+    tmp_path: Path,
+) -> None:
     boom = RuntimeError("detector blew up")
     with patch.object(monitor, "detect_timeout_rate", side_effect=boom):
         alerts = monitor.run_all_detectors(

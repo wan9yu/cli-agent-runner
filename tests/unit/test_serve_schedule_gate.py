@@ -145,7 +145,7 @@ def test_serve_cmd_should_run_round_when_ignore_schedule_flag_set(monkeypatch, t
     assert "schedule_paused" not in [e["event"] for e in _events(log_dir)]
 
 
-def test_ignore_schedule_arg_should_default_to_false():
+def test_ignore_schedule_arg_should_default_to_false_when_invoked():
     """Without the flag, args.ignore_schedule is False so the gate stays armed."""
     args = _build_parser().parse_args(["serve", "--config", "/tmp/x.toml"])
 

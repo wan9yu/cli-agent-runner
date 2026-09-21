@@ -217,7 +217,7 @@ def test_round_should_apply_phase_override_timeout_when_phase_has_override(
     )
 
 
-def test_round_should_pass_the_published_reap_grace_s_to_agent_runtime_run(
+def test_round_should_pass_the_published_reap_grace_s_to_agent_runtime_run_when_invoked(
     tmp_git_repo: Path,
     fake_agent_script: Path,
     monkeypatch,

@@ -53,7 +53,7 @@ def test_config_digest_should_change_when_prompt_contents_change_on_same_path(
     assert snap["config_prompt_files"] == [prompt.as_posix()]
 
 
-def test_config_digest_should_ignore_host_health_floors(tmp_path: Path) -> None:
+def test_config_digest_should_ignore_host_health_floors_when_invoked(tmp_path: Path) -> None:
     a = _cfg(tmp_path)
     mem = dataclasses.replace(
         a.monitor.host_health.memory, free_low_mb=a.monitor.host_health.memory.free_low_mb + 8
@@ -63,7 +63,7 @@ def test_config_digest_should_ignore_host_health_floors(tmp_path: Path) -> None:
     assert config_digest(a, None) == config_digest(b, None)
 
 
-def test_snapshot_fields_should_omit_agent_env_values(tmp_path: Path) -> None:
+def test_snapshot_fields_should_omit_agent_env_values_when_invoked(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path, env={"TOKEN": "secret"})
     snap = snapshot_fields(cfg, None)
     blob = str(snap)

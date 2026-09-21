@@ -44,7 +44,7 @@ def test_marker_should_be_detected_when_split_across_chunks(tmp_path):
     assert result.killed_for_grace is True
 
 
-def test_delta_scan_should_not_reread_already_scanned_bytes(tmp_path, monkeypatch):
+def test_delta_scan_should_not_reread_already_scanned_bytes_when_invoked(tmp_path, monkeypatch):
     """Every rb read the marker scan performs advances the byte offset; across
     the whole scan lifetime each byte of the log is read exactly once. The old
     eager scan re-opened and re-read the WHOLE (ever-growing) file on every

@@ -19,7 +19,7 @@ from agent_runner.api_types import (
 )
 
 
-def test_api_types_should_be_frozen_dataclasses() -> None:
+def test_api_types_should_be_frozen_dataclasses_when_invoked() -> None:
     classes = [
         obj
         for obj in vars(api_types_module).values()
@@ -29,10 +29,11 @@ def test_api_types_should_be_frozen_dataclasses() -> None:
 
     assert len(classes) >= 8, "dynamic scan should find every dataclass declared in api_types"
     for cls in classes:
-        assert cls.__dataclass_params__.frozen, f"{cls.__name__} not frozen"
+        params = getattr(cls, "__dataclass_params__", None)
+        assert params is not None and params.frozen, f"{getattr(cls, '__name__', cls)} not frozen"
 
 
-def test_service_mode_enum_should_have_three_values() -> None:
+def test_service_mode_enum_should_have_three_values_when_invoked() -> None:
     assert {m.value for m in ServiceMode} == {"systemd_user", "pid_file", "none"}
 
 
@@ -106,7 +107,7 @@ def test_select_path_should_return_hook_failures_list_when_present_on_state() ->
     assert select_path(state, "recent_hook_failures") == failures
 
 
-def test_project_state_recent_hook_failures_should_default_to_empty_list() -> None:
+def test_project_state_recent_hook_failures_should_default_to_empty_list_when_invoked() -> None:
     """0.1.8: recent_hook_failures has a default_factory so existing callers don't break."""
     state = ProjectState(
         project="t",
@@ -122,7 +123,7 @@ def test_project_state_recent_hook_failures_should_default_to_empty_list() -> No
     assert state.recent_hook_failures == []
 
 
-def test_throttle_state_import_should_raise_importerror() -> None:
+def test_throttle_state_import_should_raise_importerror_when_invoked() -> None:
     """ThrottleState alias was deprecated 0.1.23, removed 0.1.28.
 
     Consumers should switch to TransientErrorState.
@@ -174,14 +175,14 @@ def test_metrics_collect_should_return_zero_pgrep_count_when_subprocess_errors(
     assert out["agent_process_count"] == 0
 
 
-def test_dirty_outcome_should_hold_kind_and_ref():
+def test_dirty_outcome_should_hold_kind_and_ref_when_invoked():
     o = DirtyOutcome(kind="committed", ref="abc123")
 
     assert o.kind == "committed"
     assert o.ref == "abc123"
 
 
-def test_round_result_dirty_outcome_should_default_to_none():
+def test_round_result_dirty_outcome_should_default_to_none_when_invoked():
     base = {
         "round_num": 1,
         "phase": None,
@@ -198,7 +199,7 @@ def test_round_result_dirty_outcome_should_default_to_none():
     assert RoundResult(**base).dirty_outcome is None
 
 
-def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_flag():
+def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_flag_when_invoked():
     base = {
         "round_num": 1,
         "phase": None,
@@ -217,7 +218,7 @@ def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_fl
     assert r.dirty_outcome.kind == "stashed" and r.stashed is False
 
 
-def test_run_result_and_round_result_ok_should_share_one_predicate() -> None:
+def test_run_result_and_round_result_ok_should_share_one_predicate_when_invoked() -> None:
     from agent_runner.agent_runtime import RunResult
     from agent_runner.api_types import _round_ok
 

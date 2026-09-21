@@ -62,7 +62,7 @@ def test_poll_once_should_emit_mem_pressure_when_combined_low_signal_seeded(
     assert any(a.detector == "mem_pressure" for a in alerts)
 
 
-def test_poll_once_should_grace_pre_0214_metrics_entry_without_spurious_unavailable(
+def test_poll_once_should_grace_pre_0214_metrics_entry_without_spurious_unavailable_when_invoked(
     tmp_git_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

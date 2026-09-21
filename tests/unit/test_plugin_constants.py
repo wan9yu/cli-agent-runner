@@ -41,7 +41,9 @@ from agent_runner.builtin_plugins._constants import (
         ({"code": 429}, None),  # unhashable garbage must not raise
     ],
 )
-def test_classify_transient_status_should_map_to_expected_bucket(status, expected) -> None:
+def test_classify_transient_status_should_map_to_expected_bucket_when_invoked(
+    status, expected
+) -> None:
     assert classify_transient_status(status) == expected
     if expected is not None:
         # every non-None bucket must have a back-off duration to apply
@@ -85,7 +87,9 @@ def test_terminal_json_record_should_not_be_evicted_when_followed_by_blank_flood
     assert list(json_events(log)) == [{"type": "terminal", "n": 9}]
 
 
-def test_json_events_should_not_split_a_line_on_embedded_line_separator(tmp_path: Path) -> None:
+def test_json_events_should_not_split_a_line_on_embedded_line_separator_when_invoked(
+    tmp_path: Path,
+) -> None:
     """A JSON string may legally contain a raw U+2028 LINE SEPARATOR / U+2029
     PARAGRAPH SEPARATOR character unescaped -- unlike control chars, JSON's
     spec permits them literally inside a string. ``str.splitlines()``

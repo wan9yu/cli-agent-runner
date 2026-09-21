@@ -80,7 +80,7 @@ _GOAL_ASSESSMENT_MARKER = {
 }
 
 
-def test_treadmill_window_rounds_should_be_three() -> None:
+def test_treadmill_window_rounds_should_be_three_when_invoked() -> None:
     assert _TREADMILL_WINDOW_ROUNDS == 3
 
 
@@ -104,7 +104,7 @@ def test_assess_treadmill_should_return_advisory_when_dirty_and_check_unchanged(
     assert field_names == {"observation", "question", "confidence"}
 
 
-def test_assess_treadmill_should_ignore_the_in_progress_round_whose_substrate_before_already_landed(
+def test_assess_treadmill_should_ignore_in_progress_round_substrate_before_landed_when_invoked(
     tmp_path: Path,
 ) -> None:
     """CRITICAL regression pin: under `serve`, round_substrate_before(N) for
@@ -122,7 +122,7 @@ def test_assess_treadmill_should_ignore_the_in_progress_round_whose_substrate_be
     assert assess_treadmill(log_dir, current_round=4) is not None
 
 
-def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too(
+def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too_when_invoked(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -133,7 +133,7 @@ def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too(
     assert assess_treadmill(log_dir, current_round=4) is not None
 
 
-def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_dirty_event(
+def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_dirty_event_when_run(
     tmp_path: Path,
 ) -> None:
     log_dir = tmp_path / "logs"
@@ -211,7 +211,7 @@ def test_assess_treadmill_should_return_none_when_fewer_than_k_rounds_exist(
     assert assess_treadmill(log_dir, current_round=3) is None
 
 
-def test_assess_treadmill_should_fire_with_no_agent_usage_recorded_event_anywhere(
+def test_assess_treadmill_should_fire_with_no_agent_usage_recorded_event_anywhere_when_invoked(
     tmp_path: Path,
 ) -> None:
     """CLI-agnostic: a custom [agent] command whose plugin stack never emits
@@ -248,7 +248,9 @@ def test_assess_treadmill_should_not_refire_when_the_episode_outlasts_the_window
     assert assess_treadmill(log_dir, current_round=7) is None
 
 
-def test_assess_treadmill_should_rearm_after_a_check_value_moves(tmp_path: Path) -> None:
+def test_assess_treadmill_should_rearm_after_a_check_value_moves_when_invoked(
+    tmp_path: Path,
+) -> None:
     """A check's value moving breaks the episode -- the OLD fired-marker no
     longer covers the NEW stuck signature that follows it, so this must
     re-fire once the new signature has held for a full window."""

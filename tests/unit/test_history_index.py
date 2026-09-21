@@ -16,7 +16,7 @@ def _mod():
     return mod
 
 
-def test_index_events_should_keep_digest_and_drop_noise() -> None:
+def test_index_events_should_keep_digest_and_drop_noise_when_invoked() -> None:
     hi = _mod()
     rows = hi.index_events(
         [
@@ -36,7 +36,7 @@ def test_index_events_should_keep_digest_and_drop_noise() -> None:
     assert rows[1]["ok"] is False
 
 
-def test_iter_complete_objects_should_skip_partial_last_line(tmp_path: Path) -> None:
+def test_iter_complete_objects_should_skip_partial_last_line_when_invoked(tmp_path: Path) -> None:
     hi = _mod()
     path = tmp_path / "events-2026-09.jsonl"
     path.write_bytes(b'{"event":"round_end"}\n{"event":"round_start"')

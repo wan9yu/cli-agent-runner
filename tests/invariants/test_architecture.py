@@ -211,7 +211,7 @@ def _assert_imports_within_allowlist(
     label: str,
     allowed_plain: set[str],
     allowed_from: list[tuple[str, set[str]]],
-    plain_exceptions: set[str] = frozenset(),
+    plain_exceptions: set[str] | frozenset[str] = frozenset(),
 ) -> None:
     plain, froms = _imports_in(file)
     bad_plain = plain - allowed_plain - plain_exceptions
@@ -380,7 +380,8 @@ def test_api_types_should_all_be_frozen_dataclasses_when_inspected() -> None:
 
     assert len(classes) > 0, "no dataclasses discovered in agent_runner.api_types"
     for cls in classes:
-        assert cls.__dataclass_params__.frozen, f"{cls.__name__} not frozen"
+        params = getattr(cls, "__dataclass_params__", None)
+        assert params is not None and params.frozen, f"{getattr(cls, '__name__', cls)} not frozen"
 
 
 def test_known_alert_kinds_should_be_well_formed_when_inspected() -> None:

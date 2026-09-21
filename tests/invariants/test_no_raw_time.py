@@ -104,7 +104,7 @@ def _raw_time_calls(path: Path) -> list[str]:
     return hits
 
 
-def test_raw_time_calls_should_be_absent_outside_clock() -> None:
+def test_raw_time_calls_should_be_absent_outside_clock_when_invoked() -> None:
     offenders = {}
     scanned = 0
     for path in _PKG.rglob("*.py"):
@@ -123,14 +123,14 @@ def test_raw_time_calls_should_be_absent_outside_clock() -> None:
     )
 
 
-def test_allowlist_should_only_name_real_offenders() -> None:
+def test_allowlist_should_only_name_real_offenders_when_invoked() -> None:
     """Keep the allowlist honest: a clock-clean file must be REMOVED, not parked."""
     stale = {rel for rel in _ALLOWLIST if not _raw_time_calls(_PKG / rel)}
 
     assert not stale, f"allowlist names clock-clean files — remove them: {stale}"
 
 
-def test_raw_time_scan_should_catch_dodges_without_flagging_pure_conversions(
+def test_raw_time_scan_should_catch_dodges_without_flagging_pure_conversions_when_invoked(
     tmp_path: Path,
 ) -> None:
     """Self-test: the two forms a real review found slipping past the naive match

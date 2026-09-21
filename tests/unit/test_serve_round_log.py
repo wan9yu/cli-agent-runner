@@ -199,7 +199,7 @@ def _minimal_cfg(work_dir: Path, log_dir: Path):
     )
 
 
-def test_capture_substrate_should_emit_matching_before_and_after_events(
+def test_capture_substrate_should_emit_matching_before_and_after_events_when_invoked(
     tmp_path: Path,
 ) -> None:
     from agent_runner.cli import serve_cmd

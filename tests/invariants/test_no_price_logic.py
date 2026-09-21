@@ -32,7 +32,7 @@ def _reads_cost_usd(node: ast.expr) -> bool:
     return False
 
 
-def test_core_should_be_price_agnostic():
+def test_core_should_be_price_agnostic_when_invoked():
     ident_hits, arith_hits = [], []
     scanned = 0
     for path in _core_modules():

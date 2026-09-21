@@ -6,13 +6,13 @@ import pytest
 from agent_runner import schedule
 
 
-def test_parse_window_should_return_start_end_and_label():
+def test_parse_window_should_return_start_end_and_label_when_invoked():
     w = schedule.parse_window("09:00-12:00")
 
     assert (w.start_min, w.end_min, w.label) == (540, 720, "09:00-12:00")
 
 
-def test_contains_should_exclude_end_minute():
+def test_contains_should_exclude_end_minute_when_invoked():
     w = schedule.parse_window("09:00-12:00")
 
     assert w.contains(0, 540) is True  # 09:00 inclusive
@@ -30,7 +30,7 @@ def test_contains_should_wrap_past_midnight_when_window_spans_midnight():
     assert w.contains(0, 12 * 60) is False  # noon
 
 
-def test_contains_should_treat_2400_as_end_of_day():
+def test_contains_should_treat_2400_as_end_of_day_when_invoked():
     w = schedule.parse_window("18:00-24:00")
 
     assert w.contains(0, 23 * 60 + 59) is True
@@ -58,7 +58,7 @@ def _tz_now(tz, h, m):
     return datetime(2026, 8, 22, h, m, tzinfo=ZoneInfo(tz))
 
 
-def test_should_run_should_pause_only_within_pause_windows():
+def test_should_run_should_pause_only_within_pause_windows_when_invoked():
     pause = [schedule.parse_window("09:00-12:00"), schedule.parse_window("14:00-18:00")]
 
     assert (
@@ -79,7 +79,7 @@ def test_should_run_should_pause_only_within_pause_windows():
     )
 
 
-def test_should_run_should_run_only_within_run_windows():
+def test_should_run_should_run_only_within_run_windows_when_invoked():
     run = [schedule.parse_window("00:00-06:00")]
 
     assert (
@@ -92,7 +92,7 @@ def test_should_run_should_run_only_within_run_windows():
     )
 
 
-def test_should_run_should_exclude_pause_time_from_run_window():
+def test_should_run_should_exclude_pause_time_from_run_window_when_invoked():
     run = [schedule.parse_window("00:00-12:00")]
     pause = [schedule.parse_window("09:00-10:00")]
 
@@ -122,6 +122,7 @@ def test_evaluate_should_report_active_window_and_resume_time_when_paused():
 
     assert d.paused is True
     assert d.active_window == "09:00-12:00"
+    assert d.resume_at is not None
     assert d.resume_at.hour == 12 and d.resume_at.minute == 0
 
 
@@ -133,7 +134,7 @@ def test_evaluate_should_report_no_resume_time_when_currently_runnable():
     assert d.paused is False and d.resume_at is None
 
 
-def test_parse_window_should_parse_weekday_prefix_range():
+def test_parse_window_should_parse_weekday_prefix_range_when_invoked():
     w = schedule.parse_window("Mon-Fri 09:00-12:00")
 
     assert w.days == frozenset({0, 1, 2, 3, 4})
@@ -152,7 +153,7 @@ def test_parse_window_should_parse_weekday_combo_when_range_and_list_combined():
     assert w.days == frozenset({0, 1, 2, 3, 4, 6})
 
 
-def test_parse_window_should_be_case_insensitive_for_weekday_names():
+def test_parse_window_should_be_case_insensitive_for_weekday_names_when_invoked():
     w = schedule.parse_window("mon-fri 09:00-12:00")
 
     assert w.days == frozenset({0, 1, 2, 3, 4})
@@ -186,7 +187,7 @@ def test_contains_should_credit_wrapped_tail_to_start_day_when_window_spans_midn
     assert w.contains(5, 23 * 60) is False  # Sat 23:00 — Saturday not scoped
 
 
-def test_should_run_should_respect_weekday_scope_in_pause_windows():
+def test_should_run_should_respect_weekday_scope_in_pause_windows_when_invoked():
     pause = [
         schedule.parse_window("Mon-Fri 09:00-12:00"),
         schedule.parse_window("Mon-Fri 14:00-18:00"),
@@ -216,4 +217,5 @@ def test_evaluate_should_resume_monday_morning_when_paused_over_weekend_with_wee
     d = schedule.evaluate(run_windows=run, pause_windows=[], now_local=sat_12)
 
     assert d.paused is True
+    assert d.resume_at is not None
     assert d.resume_at.weekday() == 0 and d.resume_at.hour == 9  # Monday 09:00

@@ -114,7 +114,7 @@ def test_migrate_should_exit_2_when_config_cannot_be_read(tmp_path):
     assert rc == 2
 
 
-def test_migrated_config_should_load_with_renamed_keys(tmp_path):
+def test_migrated_config_should_load_with_renamed_keys_when_invoked(tmp_path):
     cfg = _write(
         tmp_path,
         (

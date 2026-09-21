@@ -1,12 +1,13 @@
 """ratch gates. One executor per fact; pytest keeps unmatched dialects.
 
-Not yet: BDD (~495 missing _when_, 16 ``or`` segments), whole-repo loc-cap
-(four test files >1000), forbidden-literal, ratch internal-refs
-(different forbidden set), injected-clock (sleep vs now), tests-repo-root-ssot.
+Not yet: whole-repo loc-cap (four test files >1000), forbidden-literal,
+ratch internal-refs (different forbidden set), injected-clock (sleep vs now),
+tests-repo-root-ssot.
 """
 
 from ratch.checks.ai_signatures import NoAiSignatures
 from ratch.checks.autoclose import NoAutocloseKeywords
+from ratch.checks.bdd_conventions import BddTestConventions
 from ratch.checks.catalog_size import CatalogSize
 from ratch.checks.circular_import import NoCircularImport
 from ratch.checks.commit_heatmap import CommitHeatmap
@@ -24,6 +25,7 @@ from ratch.checks.vacuous_assert import NoVacuousAssert
 
 CHECKS = [
     NoConflictMarkers(),
+    BddTestConventions(prefix="test_", blank_blocks=0),
     NoHashNamedTest(),
     NoPytestSkip(paths=("tests/invariants/**/*.py",)),
     LocCap(paths=("agent_runner/**/*.py",), max_lines=1000),
