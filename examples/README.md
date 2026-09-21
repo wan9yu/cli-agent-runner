@@ -12,6 +12,7 @@ exit 78/75/70.
 |---|---|
 | [between_rounds/](between_rounds/) | Atomic prompt swap after `round_end` |
 | [digest_watch/](digest_watch/) | Print `config_digest` / `config_changed` |
+| [outer_loop/](outer_loop/) | How 2026 RSI / Dream-RSI / autoresearch land on serve (core stays the host) |
 
 Per-CLI setup (pi, aider, containers) stays in
 [docs/recipes/](../docs/recipes/).
