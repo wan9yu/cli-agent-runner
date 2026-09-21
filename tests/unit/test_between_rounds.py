@@ -1,4 +1,4 @@
-"""examples/between_rounds.py — atomic replace, prompt smoke, give-up, JSONL."""
+"""examples/between_rounds/between_rounds.py — atomic replace, prompt smoke, give-up, JSONL."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-_EX = Path(__file__).resolve().parents[2] / "examples" / "between_rounds.py"
+_EX = Path(__file__).resolve().parents[2] / "examples" / "between_rounds" / "between_rounds.py"
 
 
 def _mod():

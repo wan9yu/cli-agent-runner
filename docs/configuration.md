@@ -63,7 +63,7 @@ does not read it. It is not the assembled prompt and not every hot TOML key.
 This split is for per-round prompt and check updates. It is not a general
 hot-reload. Changing config *mid-round* would still tear semantics (e.g.
 `dirty_action` flipping from `stash` to `auto_commit` while a round is
-running).
+running). Worked outer loops live under [`examples/`](../examples/README.md).
 
 ## TOML schema
 

@@ -62,7 +62,9 @@ def test_runbook_should_describe_effective_budget_for_cgroup_defer() -> None:
 
 def test_config_digest_docs_should_hash_paths_and_bytes() -> None:
     cfg = (DOCS / "configuration.md").read_text(encoding="utf-8")
-    recipe = (DOCS / "recipes" / "between-rounds.md").read_text(encoding="utf-8")
+    recipe = (REPO / "examples" / "between_rounds" / "README.md").read_text(
+        encoding="utf-8"
+    )
     events = (DOCS / "events.md").read_text(encoding="utf-8")
     assert "paths and bytes" in cfg
     assert "paths and bytes" in recipe

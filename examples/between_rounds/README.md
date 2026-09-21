@@ -1,11 +1,11 @@
-# Between-round file swap (outer loop)
+# Between-round file swap
 
-A **recipe** — copy `examples/between_rounds.py` next to a project that already
-runs `agent-runner serve`. It is not a second supervisor.
+Copy `between_rounds.py` next to a project that already runs
+`agent-runner serve`. It is not a second supervisor.
 
-Serve stays load-bearing (schedule, isolation, pre-OOM, give-up). This process
-only replaces **hot** files between rounds. Semantics:
-[configuration.md](../configuration.md) § Config reload.
+Serve stays load-bearing (schedule, isolation, pre-OOM, give-up). This
+process only replaces **hot** files between rounds. Semantics:
+[configuration.md](../../docs/configuration.md) § Config reload.
 
 ## When to use it
 
@@ -13,21 +13,13 @@ You want the next round's prompt or check command lines to change without
 restarting serve. Cold and mixed keys (`round_budget_s`, check *count*,
 `[agent]` command, schedule, host-health) still need `agent-runner restart`.
 
-Do **not** loop `agent-runner round` yourself — you would own scheduling,
-isolation, and give-up. Do **not** auto-restart serve on exit 78/75/70.
-
-## Files
-
-- `examples/between_rounds.py` — stdlib only: atomic `os.replace`, JSONL
-  complete-line reads, prompt-smoke guard, give-up detection.
+Do **not** loop `agent-runner round` yourself. Do **not** auto-restart serve
+on exit 78/75/70.
 
 ## Use it
 
-Keep serve running (systemd unit or a long-lived `agent-runner serve`). In
-another process:
-
 ```bash
-python examples/between_rounds.py \
+python examples/between_rounds/between_rounds.py \
   --log-dir logs \
   --prompt prompts/main.md \
   --queue /tmp/next-prompt.md
@@ -53,8 +45,8 @@ and exits **without** restarting serve. Fix the config or host, then
 
 `peek --json` reloads TOML now; it can disagree with serve's boot copy.
 Between-round attribution is `round_start.config_digest` on
-`log_dir/events-YYYY-MM.jsonl` ([events.md](../events.md)): it hashes listed
-prompt-file **paths and bytes**, so a same-path body swap moves it.
+`log_dir/events-YYYY-MM.jsonl` ([events.md](../../docs/events.md)): it hashes
+listed prompt-file **paths and bytes**, so a same-path body swap moves it.
 `config_changed=true` is not proof an operator swap landed — a `[goal]`
 ledger listed in `[prompt] files` also moves the digest (treadmill advisory,
 or the agent editing it).

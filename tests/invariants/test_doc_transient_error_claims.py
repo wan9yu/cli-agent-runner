@@ -14,8 +14,8 @@ from tests._test_helpers import make_toml_with_sections
 
 REPO = Path(__file__).resolve().parents[2]
 
-# The operator + plugin-author reference pages. docs/long-running-agents.md and
-# docs/migrations/ are excluded: they describe the removal, which is correct.
+# The operator + plugin-author reference pages. docs/migrations/ are excluded:
+# they describe the removal, which is correct.
 _REFERENCE_DOCS = ("docs/runbook.md", "docs/plugins.md")
 
 
