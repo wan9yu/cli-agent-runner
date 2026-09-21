@@ -1,3 +1,5 @@
+> English · **[中文](README.zh.md)**
+
 # Outer loop — 2026 harness ideas, landed on serve
 
 `agent-runner serve` is the **online host**: one coding CLI per round, isolation,

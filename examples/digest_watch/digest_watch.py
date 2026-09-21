@@ -68,9 +68,7 @@ def format_round_start(ev: dict) -> str | None:
     if ev.get("event") != "round_start":
         return None
     digest = str(ev.get("config_digest") or "")
-    return (
-        f"R{ev.get('round_num')} {digest[:12]} changed={ev.get('config_changed')}"
-    )
+    return f"R{ev.get('round_num')} {digest[:12]} changed={ev.get('config_changed')}"
 
 
 def follow_rounds(log_dir: Path, *, sleep_s: float = 0.5) -> Iterator[list[dict]]:

@@ -1,3 +1,5 @@
+> English · **[中文](README.zh.md)**
+
 # Digest lamp
 
 Print each `round_start.config_digest` from a running serve. Same-path

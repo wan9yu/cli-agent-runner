@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names (`docs/architecture.md`, `docs/runbook.md`).
 - Play patterns live under `examples/` (script + README). Dropped `docs/recipes/between-rounds.md`, `docs/memory-efficiency.md` (stale 0.2.19 lede; footprint stays in invariant tests), and `docs/long-running-agents.md` (duplicated runbook/plugins).
 - `examples/outer_loop/`: map Dream-RSI, ACE, Ralph, Codex inner-vs-outer, OpenHands, Letta onto serve + JSONL. Core does not dream.
-- `examples/README.zh.md`: Chinese index for the outer-loop examples.
+- `examples/README.zh.md` and per-directory `README.zh.md`: Chinese pages for the outer-loop examples.
 
 ## [0.3.14] - 2026-09-21
 

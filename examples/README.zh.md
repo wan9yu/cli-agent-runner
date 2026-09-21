@@ -31,9 +31,9 @@ serve。
 
 | 目录 | 做什么 |
 |---|---|
-| [between_rounds/](between_rounds/) | `round_end` 之后原子替换 prompt |
-| [digest_watch/](digest_watch/) | 打印 `config_digest` / `config_changed` |
-| [outer_loop/](outer_loop/) | 2026 harness 对照（Dream-RSI、ACE、Ralph、Codex 内环 vs 我们的外环） |
+| [between_rounds/](between_rounds/README.zh.md) | `round_end` 之后原子替换 prompt |
+| [digest_watch/](digest_watch/README.zh.md) | 打印 `config_digest` / `config_changed` |
+| [outer_loop/](outer_loop/README.zh.md) | 2026 harness 对照（Dream-RSI、ACE、Ralph、Codex 内环 vs 我们的外环） |
 
 各 CLI 的安装步骤仍在 [docs/recipes/](../docs/recipes/)。
 

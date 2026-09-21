@@ -30,4 +30,11 @@ def test_examples_readme_should_list_each_play_dir() -> None:
             missing.append(f"README.zh.md:{d.name}")
         if not (d / "README.md").is_file():
             missing.append(f"{d.name}/README.md")
+        zh_page = d / "README.zh.md"
+        if not zh_page.is_file():
+            missing.append(f"{d.name}/README.zh.md")
+        else:
+            zh_text = zh_page.read_text(encoding="utf-8")
+            if "](README.md)" not in zh_text:
+                missing.append(f"{d.name}/README.zh.md:no-en-link")
     assert not missing, f"examples README missing play dirs or READMEs: {missing}"
