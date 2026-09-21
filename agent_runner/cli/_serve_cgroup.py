@@ -375,9 +375,7 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
         and swap_max <= swap_total  # 4th guard: a >> host-swap cap can't bind -> stay armed
     )
     own_scope = (
-        memory_max is not None
-        and memory_high is None
-        and bounding_cgroup_path == cgroup_path
+        memory_max is not None and memory_high is None and bounding_cgroup_path == cgroup_path
     )
     if own_scope:
         hint = (

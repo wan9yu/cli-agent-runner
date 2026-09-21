@@ -487,9 +487,7 @@ def _spawn_round(
                 ):
                     cur_sample = sample_fn()
                     baseline = prev_tick_sample if prev_tick_sample is not None else cur_sample
-                    pressure = host_health.memory_pressure(
-                        cur_sample, baseline, host_health_cfg
-                    )
+                    pressure = host_health.memory_pressure(cur_sample, baseline, host_health_cfg)
                     prev_tick_sample = cur_sample
                     rate_mb_per_min: float | None = None
                     if cg_base:
