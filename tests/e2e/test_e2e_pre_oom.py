@@ -26,7 +26,7 @@ proven loop plus the D-1 calibration ladder -- inferred, not demonstrated here.
 Gated behind ``AGENT_RUNNER_E2E_PI`` (pi ssh) and/or ``AGENT_RUNNER_E2E_CGROUP``
 (local Linux cgroup v2). Skips cleanly when those flags are unset, and is
 never run in CI. The real run against a live constrained host is a release
-go/no-go step (local CGROUP first, ArgusPi second), not this task.
+release gate (local CGROUP first, the constrained Pi second), not this task.
 """
 
 from __future__ import annotations

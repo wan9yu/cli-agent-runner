@@ -22,7 +22,9 @@ def test_atomic_replace_should_overwrite_complete_file(tmp_path: Path) -> None:
     br = _mod()
     target = tmp_path / "prompt.md"
     target.write_text("old")
+
     br.atomic_replace(target, "new-body")
+
     assert target.read_text() == "new-body"
     assert not list(tmp_path.glob(".swap-*"))
 
@@ -41,8 +43,10 @@ def test_apply_queued_prompt_should_refuse_smoke_failure(tmp_path: Path) -> None
     prompt.write_text("x" * 500)
     queued = tmp_path / "next.md"
     queued.write_text("-oops")
+
     with pytest.raises(ValueError, match="78"):
         br.apply_queued_prompt(prompt, queued)
+
     assert prompt.read_text() == "x" * 500
     assert queued.is_file()
 
@@ -54,7 +58,9 @@ def test_apply_queued_prompt_should_swap_and_unlink(tmp_path: Path) -> None:
     queued = tmp_path / "next.md"
     body = "y" * 500
     queued.write_text(body)
+
     br.apply_queued_prompt(prompt, queued)
+
     assert prompt.read_text() == body
     assert not queued.exists()
 
@@ -65,9 +71,11 @@ def test_iter_complete_objects_should_leave_partial_last_line(tmp_path: Path) ->
     path.write_bytes(b'{"event":"round_end"}\n{"event":"round_start"')
     batch, offset = br.iter_complete_objects(path, 0)
     assert [e["event"] for e in batch] == ["round_end"]
+
     with path.open("ab") as fh:
         fh.write(b',"config_digest":"abc"}\n')
     batch2, _ = br.iter_complete_objects(path, offset)
+
     assert batch2 == [{"event": "round_start", "config_digest": "abc"}]
 
 

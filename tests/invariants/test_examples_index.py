@@ -19,9 +19,11 @@ def _play_dirs() -> list[Path]:
 def test_examples_readme_should_list_each_play_dir() -> None:
     text = (EX / "README.md").read_text(encoding="utf-8")
     zh = (EX / "README.zh.md").read_text(encoding="utf-8")
+
     assert "not" in text.lower() and "supervisor" in text.lower()
     assert "78/75/70" in text
     assert "](README.md)" in zh
+
     missing: list[str] = []
     for d in _play_dirs():
         if f"{d.name}/" not in text:

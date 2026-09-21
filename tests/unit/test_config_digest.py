@@ -44,7 +44,9 @@ def test_config_digest_should_change_when_prompt_contents_change_on_same_path(
     before = config_digest(cfg, None)
     prompt = tmp_path / "prompt.md"
     prompt.write_text("y" * 500)
+
     after = config_digest(cfg, None)
+
     assert before != after
     snap = snapshot_fields(cfg, None)
     assert "yyyy" not in str(snap)
@@ -65,6 +67,7 @@ def test_snapshot_fields_should_omit_agent_env_values(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path, env={"TOKEN": "secret"})
     snap = snapshot_fields(cfg, None)
     blob = str(snap)
+
     assert "secret" not in blob
     assert "TOKEN" not in blob
     assert "config_prompt_delivery" in snap
@@ -118,5 +121,7 @@ def test_config_digest_should_change_when_listed_ledger_bytes_change(
         goal=GoalConfig(ledger=str(ledger), checks=()),
     )
     before = config_digest(cfg, None)
+
     ledger.write_text("b" * 500)
+
     assert before != config_digest(cfg, None)

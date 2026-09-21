@@ -355,8 +355,10 @@ def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys() -> N
         "io_psi_full_avg10": 99.0,
         "psi_full_total": 10**12,
     }
+
     a = host_health.memory_pressure(base, {}, cfg)
     b = host_health.memory_pressure(poisoned, {}, cfg)
+
     assert a == b  # Pressure is a dataclass; verdict+context identical
 
 

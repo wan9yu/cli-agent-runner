@@ -76,12 +76,14 @@ def test_run_one_round_should_emit_config_digest_on_round_start(
     cfg = _make_config(tmp_git_repo, fake_agent_script)
     run_one_round(cfg)
     run_one_round(cfg)
+
     [events_file] = list(cfg.runtime.log_dir.glob("events-*.jsonl"))
     starts = []
     for line in events_file.read_text().splitlines():
         ev = json.loads(line)
         if ev.get("event") == "round_start":
             starts.append(ev)
+
     assert len(starts) == 2
     assert starts[0]["config_digest"]
     assert starts[0]["config_changed"] is True
@@ -173,7 +175,9 @@ def test_run_one_round_should_exit_without_spawning_agent_when_smoke_check_fails
     fake_agent_script: Path,
 ) -> None:
     cfg = _make_config(tmp_git_repo, fake_agent_script)
-    cfg.prompt.file.unlink()  # break prompt — startup smoke fails
+    prompt = cfg.prompt.file
+    assert prompt is not None
+    prompt.unlink()  # break prompt — startup smoke fails
 
     with pytest.raises(SystemExit) as exc:
         run_one_round(cfg)

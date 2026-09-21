@@ -45,6 +45,7 @@ def test_published_docs_should_not_repeat_defer_overclaims() -> None:
 
 def test_architecture_should_describe_effective_budget_and_three_names() -> None:
     text = (DOCS / "architecture.md").read_text(encoding="utf-8")
+
     assert "leaf **and ancestors**" in text
     assert "host_cgroup_memory_limit.defer" in text
     assert "`round_deferred`" in text
@@ -64,6 +65,7 @@ def test_config_digest_docs_should_hash_paths_and_bytes() -> None:
     cfg = (DOCS / "configuration.md").read_text(encoding="utf-8")
     recipe = (REPO / "examples" / "between_rounds" / "README.md").read_text(encoding="utf-8")
     events = (DOCS / "events.md").read_text(encoding="utf-8")
+
     assert "paths and bytes" in cfg
     assert "paths and bytes" in recipe
     assert "paths+bytes" in events

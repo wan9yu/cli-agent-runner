@@ -87,7 +87,7 @@ def last_round_start_digest(log_dir: Path) -> str | None:
 
     Fail-open: a missing or unreadable JSONL is treated as no prior digest.
     """
-    from agent_runner.events import iter_event_dicts
+    from agent_runner.events import ROUND_START, iter_event_dicts
 
     last: str | None = None
     try:
@@ -97,7 +97,7 @@ def last_round_start_digest(log_dir: Path) -> str | None:
     for path in paths:
         try:
             for ev in iter_event_dicts(path):
-                if ev.get("event") != "round_start":
+                if ev.get("event") != ROUND_START:
                     continue
                 digest = ev.get("config_digest")
                 if isinstance(digest, str) and digest:
