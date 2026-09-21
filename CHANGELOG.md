@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD names (`prefix="test_"`, `blank_blocks=0`).
+- ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD names (`prefix="test_"`, `blank_blocks=0`); pytest keeps label-comment and 6-stmt grouping only.
 
 ### Docs
 - `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names (`docs/architecture.md`, `docs/runbook.md`).

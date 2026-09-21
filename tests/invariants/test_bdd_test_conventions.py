@@ -1,14 +1,10 @@
-"""BDD test conventions, locked so the repo-wide carpet-verification convention
-cannot rot:
+"""BDD body shape that ratch ``blank_blocks=0`` does not cover.
 
-- every test is named ``subject_should_outcome_when_condition`` (``_should_`` is
-  the load-bearing marker; ``_when_`` is present only when the behavior is
-  conditional);
-- test bodies are grouped into blank-line-separated given/when/then sections
-  with NO section-label comments -- the blank lines alone carry the structure.
+Names (``_should_``, ``_when_``, no ``or`` snake segment) are ratch
+``BddTestConventions(prefix="test_", blank_blocks=0)``. This file keeps:
 
-Prevent > detect: without these gates a later test drifts back to a bare
-``test_thing`` name or a wall-of-code body, and the convention erodes silently.
+- no standalone ``# given`` / ``# when`` / ``# then`` labels (ratch ignores labels);
+- bodies with >=6 statements grouped by a blank line (ratch skips body shape).
 """
 
 from __future__ import annotations
@@ -32,22 +28,6 @@ def _test_functions() -> list[tuple[Path, ast.FunctionDef, str]]:
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
                 out.append((f, node, src))
     return out
-
-
-def test_every_test_should_carry_should_in_its_name_when_invoked() -> None:
-    functions = _test_functions()
-
-    offenders = [
-        f"{f.relative_to(TESTS.parent)}::{node.name}"
-        for f, node, _ in functions
-        if "_should_" not in node.name
-    ]
-
-    assert functions, "vacuity guard: no test functions scanned"
-    assert not offenders, (
-        "tests must be named subject_should_outcome_when_condition (BDD carpet "
-        f"convention); {len(offenders)} lack `_should_`:\n" + "\n".join(sorted(offenders))
-    )
 
 
 # A STANDALONE section-label comment only: the label word optionally with a
