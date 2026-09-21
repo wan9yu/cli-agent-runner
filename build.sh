@@ -45,9 +45,13 @@ case "${1:-help}" in
   vulture-whitelist)
     "$PY" -m tests.generate_vulture_whitelist
     ;;
+  ratch)
+    "$PY" -m ratch check
+    ;;
   check)
     "$0" lint
     "$0" vulture
+    "$0" ratch
     "$0" literate
     "$0" docs            # NOTE: must run before git diff --exit-code below
     git diff --exit-code docs/
@@ -68,9 +72,11 @@ Usage: $0 <task>
             a sub-512MB single-board machine) -- AR_TEST_JOBS=2 ./build.sh test.
   test-lf   Re-run only last-failed tests (red->green inner loop; not the gate).
   lint      ruff check + ruff format --check.
+  ratch     Hygiene gates we do not already run in pytest (conflict markers,
+            hash-named tests) plus catalog/heatmap eyes. Not a second pytest.
   vulture   Dead-code scan ([tool.vulture]); fails on any finding.
   vulture-whitelist  Regenerate .vulture-whitelist.py from @dataclass fields.
-  check     Full local-CI sweep: lint + vulture + literate + docs + test (gate).
+  check     Full local-CI sweep: lint + vulture + ratch + literate + docs + test (gate).
   coverage  Run unit + integration tests with coverage (HTML + terminal).
   e2e       Pi e2e suite (needs ssh alias 'pi' and AGENT_RUNNER_E2E_PI=1).
 HELP

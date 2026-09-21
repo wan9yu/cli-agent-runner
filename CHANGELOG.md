@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- First ratch cut (`ratch==0.1.2`): `ratch_checks.py` runs conflict-marker and hash-named-test gates plus catalog-size / commit-heatmap eyes. CI job `ratch check` sits beside pytest; no invariant tests were removed.
+
 ### Docs
 - `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names (`docs/architecture.md`, `docs/runbook.md`).
 - Play patterns live under `examples/` (script + README). Dropped `docs/recipes/between-rounds.md`, `docs/memory-efficiency.md` (stale 0.2.19 lede; footprint stays in invariant tests), and `docs/long-running-agents.md` (duplicated runbook/plugins).

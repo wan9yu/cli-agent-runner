@@ -59,6 +59,7 @@ dev = [
     "pytest-xdist>=3.8",  # -n auto --dist worksteal parallel gate (see [tool.pytest.ini_options] serial marker)
     "ruff>=0.16,<0.17",  # minor-pinned: unpinned linter broke CI when 0.16 shipped new format rules
     "vulture>=2.13",
+    "ratch==0.1.2",  # first cut: hygiene we do not already gate + eyes; not a second pytest
 ]
 e2e = [
     "pytest>=8",

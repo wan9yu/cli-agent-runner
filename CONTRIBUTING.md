@@ -12,9 +12,10 @@ pip install -e ".[dev]"
 ./build.sh check
 ```
 
-`./build.sh check` runs the full local-CI sweep: ruff (lint + format), unit
-+ integration tests, the literate quickstart, and the docs CI gate. It's
-what GitHub Actions runs on every push and PR.
+`./build.sh check` runs the full local-CI sweep: ruff (lint + format), vulture,
+ratch (`python -m ratch check`; not `pytest --ratch`), unit + integration tests,
+the literate quickstart, and the docs CI gate. It's what GitHub Actions runs on
+every push and PR.
 
 ## Workflow
 
