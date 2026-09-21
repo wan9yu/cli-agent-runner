@@ -1,7 +1,7 @@
 """ratch gates. One executor per fact; pytest keeps unmatched dialects.
 
 Not yet: forbidden-literal, ratch internal-refs (different forbidden set),
-injected-clock (sleep vs now), tests-repo-root-ssot.
+tests-repo-root-ssot.
 """
 
 from ratch.checks.ai_signatures import NoAiSignatures
@@ -15,6 +15,7 @@ from ratch.checks.doc_cli import DocCliExamplesValid
 from ratch.checks.first_person import NoFirstPerson
 from ratch.checks.font_cdn import NoExternalFontCdn
 from ratch.checks.hash_named_test import NoHashNamedTest
+from ratch.checks.injected_clock import InjectedClock
 from ratch.checks.loc_cap import LocCap
 from ratch.checks.manifest_purity import ManifestPurity
 from ratch.checks.pytest_skip import NoPytestSkip
@@ -28,6 +29,10 @@ CHECKS = [
     NoHashNamedTest(),
     NoPytestSkip(paths=("tests/invariants/**/*.py",)),
     LocCap(),
+    InjectedClock(
+        clock_paths=("agent_runner/clock.py",),
+        paths=("agent_runner/**/*.py",),
+    ),
     NoVacuousAssert(),
     NoAiSignatures(
         sources=("log", "tags", "files"),

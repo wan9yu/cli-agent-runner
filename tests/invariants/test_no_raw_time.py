@@ -1,14 +1,11 @@
-"""Invariant: reading the current time / sleeping happens ONLY in clock.py.
+"""Remainder time reads ratch ``injected-clock`` does not cover.
 
-Every other module must take a ``Clock`` (or read ``clock.SYSTEM_CLOCK``) so time
-is injectable — one ``FakeClock`` pins epoch/monotonic/sleep/now for a whole test
-instead of a monkeypatch per call site. See ``agent_runner/clock.py``.
+Ratch 0.1.4 binds stdlib ``time`` / ``datetime`` and flags ``ast.Call`` of
+``time`` / ``sleep`` / ``monotonic`` / ``perf_counter`` and ``datetime.now`` /
+``utcnow`` / ``today``. ``clock.sleep`` is the wait seam, not a leak.
 
-The scan RESOLVES import bindings first, so aliased (``import time as _t``) and
-from-imported (``from time import sleep``) forms cannot dodge it — a real review
-caught two such leaks that the naive ``time.<attr>`` match missed. ``_ALLOWLIST``
-is empty: the migration is complete, and a new current-time read anywhere but
-``clock.py`` fails here. Adding a file back is a regression — migrate it instead.
+This file keeps ``strftime`` / ``localtime`` / ``gmtime`` / ``*_ns`` /
+``process_time`` and ``date.today`` (including ``datetime.date.today()``).
 """
 
 from __future__ import annotations
@@ -18,22 +15,16 @@ from pathlib import Path
 
 _PKG = Path(__file__).resolve().parent.parent.parent / "agent_runner"
 
-# Attributes that read the current time / block, per source. Conversions
-# (fromisoformat/fromtimestamp) and formatting a KNOWN datetime (dt.strftime) are
-# pure and absent — only *reading now* or *sleeping* is forbidden outside clock.py.
+# ratch injected-clock already covers time/sleep/monotonic/perf_counter and
+# datetime.now/utcnow/today. These extras are still this twin's fact.
 _TIME_MOD_ATTRS = {
-    "time",
-    "monotonic",
-    "sleep",
     "strftime",
     "localtime",
     "gmtime",
-    "perf_counter",
     "time_ns",
     "monotonic_ns",
     "process_time",
 }
-_DATETIME_CLS_ATTRS = {"now", "utcnow", "today"}
 _DATE_CLS_ATTRS = {"today"}
 
 _ALLOWLIST: set[str] = set()  # migration complete — keep empty
@@ -52,7 +43,7 @@ def _bindings(tree: ast.AST) -> dict[str, tuple[str, str]]:
         elif isinstance(node, ast.ImportFrom):
             if node.module == "time":
                 for a in node.names:
-                    out[a.asname or a.name] = ("func", a.name)  # bare-name time call
+                    out[a.asname or a.name] = ("func", a.name)
             elif node.module == "datetime":
                 for a in node.names:
                     if a.name in ("datetime", "date"):
@@ -75,8 +66,6 @@ def _raw_time_calls(path: Path) -> list[str]:
             kind, origin = b
             if kind == "mod" and origin == "time" and func.attr in _TIME_MOD_ATTRS:
                 hits.append(f"L{node.lineno} {func.value.id}.{func.attr}")
-            elif kind == "cls" and origin == "datetime" and func.attr in _DATETIME_CLS_ATTRS:
-                hits.append(f"L{node.lineno} {func.value.id}.{func.attr}")
             elif kind == "cls" and origin == "date" and func.attr in _DATE_CLS_ATTRS:
                 hits.append(f"L{node.lineno} {func.value.id}.{func.attr}")
         elif isinstance(func, ast.Name):
@@ -88,23 +77,15 @@ def _raw_time_calls(path: Path) -> list[str]:
             and isinstance(func.value, ast.Attribute)
             and isinstance(func.value.value, ast.Name)
         ):
-            # Module-form: `import datetime` then `datetime.datetime.now()` /
-            # `datetime.date.today()` — a nested Attribute the branch above
-            # (single-level `x.attr`) never reaches. Latent: tree-clean today,
-            # but an unguarded gap is a silent future leak (defense in depth).
             b = binds.get(func.value.value.id)
             if b is not None and b[0] == "mod" and b[1] == "datetime":
-                cls_attrs = {
-                    "datetime": _DATETIME_CLS_ATTRS,
-                    "date": _DATE_CLS_ATTRS,
-                }.get(func.value.attr, set())
-                if func.attr in cls_attrs:
+                if func.value.attr == "date" and func.attr in _DATE_CLS_ATTRS:
                     name = f"{func.value.value.id}.{func.value.attr}.{func.attr}"
                     hits.append(f"L{node.lineno} {name}")
     return hits
 
 
-def test_raw_time_calls_should_be_absent_outside_clock_when_invoked() -> None:
+def test_extra_time_calls_should_be_absent_outside_clock_when_invoked() -> None:
     offenders = {}
     scanned = 0
     for path in _PKG.rglob("*.py"):
@@ -118,8 +99,8 @@ def test_raw_time_calls_should_be_absent_outside_clock_when_invoked() -> None:
 
     assert scanned > 0, "no agent_runner/*.py modules scanned"  # vacuity-guard
     assert not offenders, (
-        f"current-time reads outside clock.py: {offenders}. Take a Clock (or "
-        f"clock.SYSTEM_CLOCK) instead of time.time()/datetime.now()/time.sleep()/etc."
+        f"strftime/localtime/date.today outside clock.py: {offenders}. "
+        "Take a Clock (or clock.SYSTEM_CLOCK); ratch covers time.sleep/datetime.now."
     )
 
 
@@ -130,38 +111,32 @@ def test_allowlist_should_only_name_real_offenders_when_invoked() -> None:
     assert not stale, f"allowlist names clock-clean files — remove them: {stale}"
 
 
-def test_raw_time_scan_should_catch_dodges_without_flagging_pure_conversions_when_invoked(
+def test_extra_time_scan_should_catch_strftime_and_date_today_when_invoked(
     tmp_path: Path,
 ) -> None:
-    """Self-test: the two forms a real review found slipping past the naive match
-    (aliased module, missing attr) MUST now be caught, and pure conversions/method
-    formatting MUST NOT be."""
+    """Self-test: extras ratch 0.1.4 does not cover must still be caught; stdlib
+    sleep/now and Clock methods must not be."""
     caught = tmp_path / "caught.py"
     caught.write_text(
         "import time as _t\n"
-        "from time import sleep as _s\n"
-        "from datetime import datetime as _dt\n"
+        "from datetime import date as _d\n"
         "import datetime\n"
         "def f():\n"
-        "    _t.strftime('%Y')\n"  # aliased module + strftime (the vcs_state dodge)
-        "    _t.sleep(1)\n"  # aliased module sleep (the api.py dodge)
-        "    _s(2)\n"  # bare from-imported sleep
-        "    _dt.now()\n"  # aliased datetime class
-        "    datetime.datetime.now()\n"  # module-form (latent, tree clean today)
-        "    datetime.date.today()\n"  # module-form, date variant
+        "    _t.strftime('%Y')\n"
+        "    _d.today()\n"
+        "    datetime.date.today()\n"
     )
-    assert len(_raw_time_calls(caught)) == 6
+    assert len(_raw_time_calls(caught)) == 3
 
     clean = tmp_path / "clean.py"
     clean.write_text(
         "from datetime import datetime\n"
-        "import datetime as dtmod\n"
+        "import time\n"
         "from agent_runner.clock import SYSTEM_CLOCK\n"
         "def g(ts):\n"
-        "    SYSTEM_CLOCK.now_utc().strftime('%Y')\n"  # method on clock datetime — pure
-        "    datetime.fromisoformat(ts)\n"  # parse — pure
-        "    datetime.fromtimestamp(0)\n"  # conversion — pure
-        "    dtmod.datetime.fromisoformat(ts)\n"  # module-form parse — pure
-        "    dtmod.timedelta(seconds=1)\n"  # module-form, not a now/today attr
+        "    time.sleep(1)\n"  # ratch injected-clock, not this twin
+        "    datetime.now()\n"  # ratch injected-clock, not this twin
+        "    SYSTEM_CLOCK.now_utc().strftime('%Y')\n"
+        "    datetime.fromisoformat(ts)\n"
     )
     assert _raw_time_calls(clean) == []
