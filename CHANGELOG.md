@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- First ratch cut (`ratch==0.1.2`): `ratch_checks.py` runs conflict-marker and hash-named-test gates plus catalog-size / commit-heatmap eyes. CI job `ratch check` sits beside pytest; no invariant tests were removed.
+- First ratch cut (`ratch==0.1.2`): conflict markers, hash-named tests, `pytest.skip` in `tests/invariants/`, `agent_runner/` loc-cap 1000, vacuous `assert True/False`, plus catalog/heatmap eyes. Pytest twins for skip and module size were removed (one executor per fact). BDD and AI-signature scans stay in pytest until ratch matches those dialects.
 
 ### Docs
 - `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names (`docs/architecture.md`, `docs/runbook.md`).

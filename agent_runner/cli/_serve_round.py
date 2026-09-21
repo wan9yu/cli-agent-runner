@@ -4,7 +4,7 @@ give-up decision (config_broken / mem_loop / mem_loop_persistent / crash_loop
 / stalled_no_progress -> exit code).
 
 Split out of ``serve_cmd.py`` purely to buy LOC headroom
-under the module-size gate (``test_module_sizes.py``) and ``cmd()``'s
+under the module-size gate (ratch ``loc-cap`` on ``agent_runner/``) and ``cmd()``'s
 loop-size gate (``test_layer_2_loop_size.py``) -- no behavior changed.
 ``serve_cmd.py`` re-imports the names it calls directly
 (``_maybe_emit_recovered``, ``_maybe_pause_for_memory_pressure``,

@@ -5,7 +5,7 @@ decides whether the mid-round hard floor (``_serve_round._spawn_round``)
 should defer to kernel cgroup-OOM instead of terminating.
 
 Split out of ``_serve_round.py`` purely to buy LOC headroom under the
-module-size gate (``test_module_sizes.py``) -- no behavior changed.
+module-size gate (ratch ``loc-cap`` on ``agent_runner/``) -- no behavior changed.
 ``_serve_round`` imports ``_emit_round_cgroup_memory``,
 ``_maybe_emit_oom_killed``, and ``_stash_round_cgroup_state`` back into its
 own namespace for ``_spawn_round``/``post_round_verdicts`` to call;

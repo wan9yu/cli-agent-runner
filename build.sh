@@ -72,8 +72,8 @@ Usage: $0 <task>
             a sub-512MB single-board machine) -- AR_TEST_JOBS=2 ./build.sh test.
   test-lf   Re-run only last-failed tests (red->green inner loop; not the gate).
   lint      ruff check + ruff format --check.
-  ratch     Hygiene gates we do not already run in pytest (conflict markers,
-            hash-named tests) plus catalog/heatmap eyes. Not a second pytest.
+  ratch     Hygiene + loc-cap (agent_runner/) + no pytest.skip in invariants/.
+            Not a second pytest; not pytest --ratch.
   vulture   Dead-code scan ([tool.vulture]); fails on any finding.
   vulture-whitelist  Regenerate .vulture-whitelist.py from @dataclass fields.
   check     Full local-CI sweep: lint + vulture + ratch + literate + docs + test (gate).
