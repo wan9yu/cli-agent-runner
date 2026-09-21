@@ -1,8 +1,7 @@
 """ratch gates. One executor per fact; pytest keeps unmatched dialects.
 
-Not yet: whole-repo loc-cap (four test files >1000), forbidden-literal,
-ratch internal-refs (different forbidden set), injected-clock (sleep vs now),
-tests-repo-root-ssot.
+Not yet: forbidden-literal, ratch internal-refs (different forbidden set),
+injected-clock (sleep vs now), tests-repo-root-ssot.
 """
 
 from ratch.checks.ai_signatures import NoAiSignatures
@@ -28,7 +27,7 @@ CHECKS = [
     BddTestConventions(prefix="test_", blank_blocks=0),
     NoHashNamedTest(),
     NoPytestSkip(paths=("tests/invariants/**/*.py",)),
-    LocCap(paths=("agent_runner/**/*.py",), max_lines=1000),
+    LocCap(),
     NoVacuousAssert(),
     NoAiSignatures(
         sources=("log", "tags", "files"),
