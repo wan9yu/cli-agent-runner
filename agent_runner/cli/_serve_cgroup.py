@@ -261,8 +261,8 @@ def current_brake_state(cfg) -> str:
     the one-shot ``cgroup_memory_limits() -> cgroup_delegated(self_cgroup=...) ->
     brake_report_state`` sequence, shared by peek (cli.common.emit) and doctor
     so neither re-derives it inline."""
-    limits = metrics.cgroup_memory_limits()
-    delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
+    leaf = metrics.cgroup_memory_limits()["cgroup_path"]
+    delegated = metrics.cgroup_delegated(self_cgroup=leaf)
     return brake_report_state(cfg.monitor.host_health.brake.memory_high, delegated)
 
 
@@ -347,19 +347,16 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
     unit."""
     limits = metrics.cgroup_memory_limits()
     swap_total = metrics.swap_total_bytes()
-    # Reuse the leaf cgroup_memory_limits already resolved above -- skips
-    # re-walking /proc/self/cgroup + the ancestor chain a second time at
-    # startup. None (cgroup v2 unavailable) is passed through unchanged:
-    # cgroup_memory_high treats a supplied None the same as "not supplied"
-    # only via its own default-arg sentinel, and cgroup_memory_limits
-    # already returns cgroup_path=None in that exact case, so a bare
-    # `self_cgroup=limits["cgroup_path"]` dead-ends at the same place either
-    # way as calling with no override would.
-    memory_high = metrics.cgroup_memory_high(self_cgroup=limits["cgroup_path"])
-    delegated = metrics.cgroup_delegated(self_cgroup=limits["cgroup_path"])
+    cgroup_path = limits["cgroup_path"]
+    memory_max = limits["memory_max"]
+    swap_max = limits["memory_swap_max"]
+    bounding_cgroup_path = limits["bounding_cgroup_path"]
+    # Reuse the leaf already resolved above -- skips re-walking
+    # /proc/self/cgroup + the ancestor chain a second time at startup.
+    memory_high = metrics.cgroup_memory_high(self_cgroup=cgroup_path)
+    delegated = metrics.cgroup_delegated(self_cgroup=cgroup_path)
     if brake_memory_high:
         _BRAKE_ARMED_BY_LOG_DIR[log_dir] = delegated is True
-    swap_max = limits["memory_swap_max"]
     swap_cap_pct = (
         round(100.0 * swap_max / swap_total, 1) if swap_max is not None and swap_total > 0 else None
     )
@@ -372,15 +369,15 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
             "[monitor.host_health.pressure] in_round_terminate=false"
         )
     defer = (
-        limits["memory_max"] is not None
+        memory_max is not None
         and swap_max is not None
-        and limits["memory_max"] < metrics.mem_total_bytes()
+        and memory_max < metrics.mem_total_bytes()
         and swap_max <= swap_total  # 4th guard: a >> host-swap cap can't bind -> stay armed
     )
     own_scope = (
-        limits["memory_max"] is not None
+        memory_max is not None
         and memory_high is None
-        and limits["bounding_cgroup_path"] == limits["cgroup_path"]
+        and bounding_cgroup_path == cgroup_path
     )
     if own_scope:
         hint = (
@@ -404,9 +401,9 @@ def _probe_and_emit_cgroup_defer(log_dir: Path, *, brake_memory_high: bool = Fal
         print(f"agent-runner: {advisory}", file=sys.stderr)
     emit_host_cgroup_memory_limit(
         log_dir,
-        memory_max=limits["memory_max"],
+        memory_max=memory_max,
         memory_swap_max=swap_max,
-        cgroup_path=limits["cgroup_path"],
+        cgroup_path=cgroup_path,
         defer=defer,
         swap_total_bytes=swap_total,
         swap_cap_pct=swap_cap_pct,

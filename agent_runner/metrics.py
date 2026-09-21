@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import psutil
 
@@ -309,12 +309,19 @@ def _read_events_counters(path: Path) -> dict[str, int]:
     return out
 
 
+class CgroupMemoryLimits(TypedDict):
+    memory_max: int | None
+    memory_swap_max: int | None
+    cgroup_path: str | None
+    bounding_cgroup_path: str | None
+
+
 def cgroup_memory_limits(
     *,
     root: Path = _CGROUP_ROOT,
     proc_self_cgroup: Path = _PROC_SELF_CGROUP,
     self_cgroup: str | None = None,
-) -> dict[str, int | str | None]:
+) -> CgroupMemoryLimits:
     """Probe this process's cgroup v2 memory budget: the MIN FINITE
     ``memory.max`` and ``memory.swap.max`` across this cgroup and every
     ancestor up to ``root``, computed independently for each field. A
