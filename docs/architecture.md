@@ -92,9 +92,8 @@ which can also report `critical`):
 `oauth_fail`, `disk_critical`. Continuing in either state is harmful (burning
 API quota / writing to a near-full disk).
 
-`mem_pressure`'s own `auto_action` stays `"none"` — the graded, plugin-
-configurable admission lever through `on_alert` is 0.3. The actual
-coma-preventer is a separate, serve-local admission gate
+`mem_pressure`'s own `auto_action` stays `"none"`. The coma-preventer is a
+separate, serve-local admission gate
 (`agent_runner/host_health.py`, `metrics.py`, `cli/_serve_round.py` +
 `cli/_serve_cgroup.py`), independent of the
 monitor's `auto_action`: before starting a round the loop samples
@@ -103,11 +102,18 @@ only (`round_deferred` / `round_resumed`, mirroring `schedule_paused`/`resumed`)
 while a round is in flight it resamples every ~10s and, once pressure reads
 `critical` for several consecutive ticks in a row, **terminates** the round
 (`round_mem_terminated`) — unless a bounded cgroup lets it hand the child to
-the kernel's own OOM (`mem_pressure_deferred_to_cgroup`). Those two events
-are not `host_cgroup_memory_limit.defer`: that boot flag is `True` only when
-serve's **own leaf** has both `memory.max` and `memory.swap.max` finite and
-plausible (including `MemorySwapMax=0`). The `cgroup_path` on that event is
-the leaf, not a bounding ancestor. Two-arm pre-OOM proof is the gated e2e
+the kernel's own OOM (`mem_pressure_deferred_to_cgroup`).
+
+Admission pause, mid-round terminate-or-hand-off, and the boot field
+`host_cgroup_memory_limit.defer` are three different things. The boot flag
+is set when the **effective** budget — the min finite `memory.max` and
+`memory.swap.max` across the leaf **and ancestors**, each independently —
+is plausible: both finite, `memory.max` strictly below host RAM,
+`memory.swap.max` at most host swap, including a swap cap of zero.
+The `cgroup_path` on that event is still the leaf; the winning cap may sit
+on a parent (`metrics.cgroup_memory_limits`). Soft-brake still writes
+`memory.high` on the **own leaf** only (never an ancestor). Two-arm
+pre-OOM proof is the gated e2e
 (`AGENT_RUNNER_E2E_PI` / `AGENT_RUNNER_E2E_CGROUP`) on a dedicated unit — not
 a foreground grok loop under Tailscale SSH (`defer=false` on
 `tailscaled.service`).

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- `docs/architecture.md`: `host_cgroup_memory_limit.defer` follows the **effective** cgroup budget (min finite caps across leaf and ancestors), not "own leaf has both caps". Admission `round_deferred`, mid-round `mem_pressure_deferred_to_cgroup`, and the boot field are three names.
+
 ## [0.3.14] - 2026-09-21
 
 ### Added
