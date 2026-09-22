@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import pytest
 
 
@@ -34,10 +32,11 @@ def test_resolve_max_rounds_should_return_none_when_neither_cli_nor_config_set()
 def test_resolve_max_rounds_should_raise_when_cli_value_invalid(invalid: int):
     from agent_runner.cli.serve_cmd import _resolve_max_rounds
 
-    with pytest.raises(ValueError, match=r"--max-rounds must be positive") as caught:
+    with pytest.raises(ValueError) as caught:
         _resolve_max_rounds(cli_value=invalid, config_value=None)
 
-    assert re.search(r"--max-rounds must be positive", str(caught.value))
+    actual = str(caught.value)
+    assert "--max-rounds must be positive" in actual
 
 
 def test_max_rounds_arg_should_parse_as_int_when_passed_via_cli():

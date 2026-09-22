@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -45,10 +44,11 @@ def test_emit_should_write_json_line_when_kind_is_known(tmp_log_dir: Path) -> No
 def test_emit_should_raise_value_error_when_kind_is_unknown(tmp_log_dir: Path) -> None:
     kind = "made_up_event_xyz"
 
-    with pytest.raises(ValueError, match="unknown event kind") as caught:
+    with pytest.raises(ValueError) as caught:
         emit(tmp_log_dir, kind, round_num=1)
 
-    assert re.search(r"unknown event kind", str(caught.value))
+    actual = str(caught.value)
+    assert "unknown event kind" in actual
 
 
 def test_emit_should_append_to_one_file_when_two_emits_in_same_month(tmp_log_dir: Path) -> None:
@@ -308,40 +308,46 @@ def test_emit_should_still_raise_value_error_when_kind_is_unregistered(
     tmp_log_dir: Path,
 ) -> None:
 
-    with pytest.raises(ValueError, match="unknown event kind") as caught:
-        emit(tmp_log_dir, "typo_unregistered")
+    kind = "typo_unregistered"
 
-    assert caught.value is not None
+    with pytest.raises(ValueError) as caught:
+        emit(tmp_log_dir, kind)
+
+    actual = str(caught.value)
+    assert "unknown event kind" in actual
 
 
 def test_register_plugin_kind_should_raise_when_name_collides_with_builtin() -> None:
 
-    subject = "round_start"
+    kind = "round_start"
 
     with pytest.raises(ValueError) as caught:
-        register_plugin_kind(subject)
+        register_plugin_kind(kind)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert "collides with a builtin kind" in actual
 
 
 def test_register_plugin_kind_should_raise_when_first_segment_is_builtin_prefix() -> None:
 
-    subject = "round_myplugin"
+    kind = "round_myplugin"
 
     with pytest.raises(ValueError) as caught:
-        register_plugin_kind(subject)
+        register_plugin_kind(kind)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert "builtin-owned prefix" in actual
 
 
 def test_register_plugin_kind_should_raise_when_name_has_no_underscore() -> None:
 
-    subject = "plain"
+    kind = "plain"
 
     with pytest.raises(ValueError) as caught:
-        register_plugin_kind(subject)
+        register_plugin_kind(kind)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert "namespaced" in actual
 
 
 def test_register_plugin_kind_should_grow_known_event_kinds_when_registered() -> None:

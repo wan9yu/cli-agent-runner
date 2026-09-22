@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -51,10 +50,11 @@ def test_replace_block_should_raise_valueerror_when_block_unclosed() -> None:
 
     text = "<!-- gen:foo -->\nstuff\n(never closes)\n"
 
-    with pytest.raises(ValueError, match="foo") as caught:
+    with pytest.raises(ValueError) as caught:
         replace_block(text, "foo", "X")
 
-    assert re.search(r"foo", str(caught.value))
+    actual = str(caught.value)
+    assert "foo" in actual
 
 
 def test_render_defenses_table_should_list_one_row_per_catalog_entry_when_invoked() -> None:
@@ -125,8 +125,11 @@ def test_render_should_raise_when_gen_name_unknown(tmp_path: Path) -> None:
     arch = tmp_path / "x.md"
     arch.write_text("<!-- gen:does-not-exist -->\nfoo\n<!-- /gen:does-not-exist -->\n")
 
-    with pytest.raises(ValueError, match="does-not-exist"):
+    with pytest.raises(ValueError) as caught:
         render(docs_dir=tmp_path, write=False)
+
+    actual = str(caught.value)
+    assert "does-not-exist" in actual
 
 
 def test_render_should_name_failing_file_in_error_when_marker_unclosed(
@@ -137,8 +140,11 @@ def test_render_should_name_failing_file_in_error_when_marker_unclosed(
     bad = tmp_path / "bad.md"
     bad.write_text("<!-- gen:defenses-table -->\nstuff but no close\n")
 
-    with pytest.raises(ValueError, match="bad.md"):
+    with pytest.raises(ValueError) as caught:
         render(docs_dir=tmp_path, write=False)
+
+    actual = str(caught.value)
+    assert "bad.md" in actual
 
 
 def test_render_detector_list_should_mark_auto_stop_kinds_when_invoked() -> None:

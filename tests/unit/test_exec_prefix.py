@@ -60,7 +60,9 @@ def test_detect_container_run_should_fire_on_spawn_command_when_exec_prefix_is_d
         exec_prefix=["docker", "run", "--rm", "-v", "{work_dir}:/work", "img"],
     )
 
-    assert _detect_container_run(agent.spawn_command(Path("/srv"))) is not None
+    detected = _detect_container_run(agent.spawn_command(Path("/srv")))
+
+    assert detected == ("docker", 1)
 
     bare = AgentConfig(
         command=["claude", "-p"], prompt_arg_template=[], exec_prefix=["nice", "-n", "10"]

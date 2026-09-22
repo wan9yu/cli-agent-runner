@@ -36,7 +36,7 @@ def test_load_config_should_raise_when_transient_error_action_is_invalid(tmp_pat
         tmp_path, runtime_extra='transient_error_action = "explode"\n'
     )
 
-    with pytest.raises(ValueError, match=r"runtime\.transient_error_action.*explode") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
 
     assert re.search(r"runtime\.transient_error_action.*explode", str(caught.value))

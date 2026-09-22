@@ -100,8 +100,17 @@ def test_round_should_orphan_stash_dirty_tree_when_fake_agent_leaves_it_dirty(
     # Next round's round-context should mention the stash
     run_one_round(cfg)
     ctx = json.loads((cfg.runtime.log_dir / "round-context.json").read_text())
-    assert "orphan_stash" in ctx
-    assert ctx["orphan_stash"]["ref"].startswith("")  # SHA, not stash@{N}
+    ref = ctx["orphan_stash"]["ref"]
+    kind = subprocess.run(
+        ["git", "cat-file", "-t", ref],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    assert kind == "commit"
+    assert not ref.startswith("stash@{")
 
 
 def test_round_should_auto_commit_dirty_tree_and_emit_event_when_dirty_action_is_auto_commit(

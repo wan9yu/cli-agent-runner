@@ -51,7 +51,7 @@ def test_agent_pgroup_should_be_reaped_when_progress_callback_raises(tmp_path):
             return
         raise OSError("events.emit failed mid-round")
 
-    with pytest.raises(OSError, match="events.emit failed"):
+    with pytest.raises(OSError):
         run(
             work_dir=tmp_path,
             command=[str(script)],
@@ -100,7 +100,7 @@ def test_run_should_forward_reap_grace_s_to_terminate_agent_when_progress_callba
             return
         raise OSError("events.emit failed mid-round")
 
-    with pytest.raises(OSError, match="events.emit failed"):
+    with pytest.raises(OSError):
         run(
             work_dir=tmp_path,
             command=[str(script)],

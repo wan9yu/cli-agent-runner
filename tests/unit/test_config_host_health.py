@@ -154,8 +154,11 @@ def test_host_health_floors_should_reject_zero_and_non_int_values_when_invoked(
         f"[monitor.host_health.memory]\n{field} = 0\n",
     )
 
-    with pytest.raises(ConfigError, match=f"monitor.host_health.memory.{field}"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml_zero)
+
+    actual = str(caught.value)
+    assert f"monitor.host_health.memory.{field}" in actual
 
     toml_str = _write_toml(
         tmp_path,
@@ -165,8 +168,11 @@ def test_host_health_floors_should_reject_zero_and_non_int_values_when_invoked(
         f'[monitor.host_health.memory]\n{field} = "x"\n',
     )
 
-    with pytest.raises(ConfigError, match=f"monitor.host_health.memory.{field}"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml_str)
+
+    actual = str(caught.value)
+    assert f"monitor.host_health.memory.{field}" in actual
 
 
 def test_custom_mem_threshold_in_config_should_be_used_when_detect_mem_pressure_runs(
@@ -455,10 +461,11 @@ def test_host_health_psi_threshold_should_reject_out_of_range_value_when_invoked
     to fix, at the opposite extreme. See _require_positive_pct."""
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"{field} = {bad}\n")
 
-    with pytest.raises(ValueError, match=f"monitor.host_health.pressure.{field}") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
 
-    assert isinstance(caught.value, ValueError)
+    actual = str(caught.value)
+    assert f"monitor.host_health.pressure.{field}" in actual
 
 
 @pytest.mark.parametrize("field", ["full_avg10_critical", "some_avg10_warning"])
@@ -501,9 +508,7 @@ def test_critical_consecutive_samples_should_reject_invalid_values_when_invoked(
         tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"critical_consecutive_samples = {bad}\n"
     )
 
-    with pytest.raises(
-        ValueError, match="monitor.host_health.pressure.critical_consecutive_samples"
-    ) as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
 
     assert "critical_consecutive_samples" in str(caught.value)
@@ -527,8 +532,11 @@ def test_in_round_terminate_should_reject_non_bool_value_when_invoked(
 
     toml = _write_toml(tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"in_round_terminate = {bad}\n")
 
-    with pytest.raises(ValueError, match="monitor.host_health.pressure.in_round_terminate"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "monitor.host_health.pressure.in_round_terminate" in actual
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", '"x"', "true", "nan"])
@@ -540,10 +548,11 @@ def test_cgroup_growth_rate_warning_mb_per_min_should_reject_non_positive_else_b
         tmp_path, _HOST_HEALTH_PRESSURE_BASE + f"cgroup_growth_rate_warning_mb_per_min = {bad}\n"
     )
 
-    with pytest.raises(
-        ValueError, match="monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min"
-    ):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "monitor.host_health.pressure.cgroup_growth_rate_warning_mb_per_min" in actual
 
 
 @pytest.mark.parametrize(("literal", "expected"), [("256", 256.0), ("128.5", 128.5)])
@@ -637,5 +646,8 @@ def test_removed_field_error_should_point_to_migrate_command_when_invoked(tmp_pa
     )
     (tmp_path / "p.md").write_text("x" * 800, encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="agent-runner migrate"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "agent-runner migrate" in actual

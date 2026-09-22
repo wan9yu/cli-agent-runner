@@ -38,13 +38,13 @@ def _direct_inspect_import_hits() -> list[str]:
 
 
 def test_agent_runner_should_import_inspect_so_the_v04_dataclasses_lever_survives_when_invoked():
-    pkg = _PKG
+    files = list(_PKG.rglob("*.py"))
 
-    hits = _direct_inspect_import_hits()
+    actual = _direct_inspect_import_hits()
 
-    assert pkg.is_dir() and not hits, (
+    assert files and not actual, (
         "inspect must enter agent_runner ONLY transitively via dataclasses — a direct "
         "import keeps its ~0.95 MB ast/dis/tokenize tail resident even after the v0.4 "
         "dataclasses-removal footprint lever, silently killing that lever. Offending imports:\n  "
-        + "\n  ".join(hits)
+        + "\n  ".join(actual)
     )

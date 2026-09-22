@@ -232,13 +232,17 @@ def test_doctor_should_report_brake_state_in_text_and_json_when_invoked(tmp_path
 def test_doctor_should_never_emit_an_event_when_probing_cgroup(tmp_path, monkeypatch):
     from agent_runner import events
 
-    def _fail_if_called(*a, **k):
-        raise AssertionError("doctor must never emit an event")
+    emitted: list[tuple] = []
 
-    monkeypatch.setattr(events, "emit", _fail_if_called)
+    def _record(*args, **kwargs):
+        emitted.append((args, kwargs))
+
+    monkeypatch.setattr(events, "emit", _record)
     args = _args(_write_min_config(tmp_path))
 
     doctor_cmd.cmd_doctor(args)
+
+    assert emitted == []
 
 
 def test_doctor_should_print_cooperative_preset_names_when_invoked(tmp_path, capsys):

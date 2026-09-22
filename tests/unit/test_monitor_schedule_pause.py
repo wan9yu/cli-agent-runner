@@ -101,7 +101,10 @@ def test_detect_supervisor_stale_should_fire_when_no_schedule_events():
     old = now - timedelta(hours=2)
     events = [{"ts": _ts(old), "event": "round_end", "round_num": 5}]
 
-    assert monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600) is not None
+    actual = monitor.detect_supervisor_stale(events, now=now, stale_threshold_s=600)
+
+    assert actual is not None
+    assert actual.detector == "supervisor_stale"
 
 
 def test_detect_supervisor_stale_should_fall_back_to_ts_bound_when_resume_at_is_null():

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -32,7 +31,8 @@ def test_load_config_should_raise_when_fresh_eyes_every_n_is_invalid(tmp_path: P
 
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra=f"fresh_eyes_every_n = {invalid}\n")
 
-    with pytest.raises(ValueError, match=r"runtime\.fresh_eyes_every_n") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
 
-    assert re.search(r"runtime\.fresh_eyes_every_n", str(caught.value))
+    actual = str(caught.value)
+    assert "runtime.fresh_eyes_every_n" in actual

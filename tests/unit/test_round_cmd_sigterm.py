@@ -19,8 +19,11 @@ def test_install_term_handler_should_raise_keyboardinterrupt_when_sigterm_receiv
 
     round_cmd._install_term_handler()
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt) as caught:
         captured[signal.SIGTERM](signal.SIGTERM, None)
+
+    actual = str(caught.value)
+    assert "round received SIGTERM" in actual
 
 
 def test_round_cmd_should_return_130_when_keyboardinterrupt_raised(monkeypatch, tmp_path):

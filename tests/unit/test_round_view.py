@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -54,10 +53,11 @@ def test_garbage_arg_should_raise_when_resolved(tmp_path: Path) -> None:
 
     subject = "not-a-number"
 
-    with pytest.raises(KeyError, match="round") as caught:
+    with pytest.raises(KeyError) as caught:
         resolve_round_arg(subject, tmp_path)
 
-    assert re.search(r"round", str(caught.value))
+    actual = str(caught.value)
+    assert "round" in actual
 
 
 def test_round_with_log_should_include_log_tail_when_built(tmp_path: Path) -> None:

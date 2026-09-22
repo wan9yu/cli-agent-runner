@@ -1,5 +1,3 @@
-import re
-
 import pytest
 
 from agent_runner.config import ConfigError, load_config
@@ -53,19 +51,21 @@ def test_schedule_should_accept_run_windows_when_configured(tmp_path):
 def test_schedule_should_reject_config_when_timezone_invalid(tmp_path):
     block = '[schedule]\ntimezone = "Mars/Olympus"\npause_windows = ["09:00-12:00"]\n'
 
-    with pytest.raises(ConfigError, match="timezone") as caught:
+    with pytest.raises(ConfigError) as caught:
         load_config(_write(tmp_path, block))
 
-    assert re.search(r"timezone", str(caught.value))
+    actual = str(caught.value)
+    assert "timezone" in actual
 
 
 def test_schedule_should_reject_config_when_window_malformed(tmp_path):
     block = '[schedule]\npause_windows = ["9-12"]\n'
 
-    with pytest.raises(ConfigError, match="pause_windows") as caught:
+    with pytest.raises(ConfigError) as caught:
         load_config(_write(tmp_path, block))
 
-    assert re.search(r"pause_windows", str(caught.value))
+    actual = str(caught.value)
+    assert "pause_windows" in actual
 
 
 def test_schedule_should_parse_weekday_windows_when_days_specified(tmp_path):
@@ -80,7 +80,8 @@ def test_schedule_should_parse_weekday_windows_when_days_specified(tmp_path):
 def test_schedule_should_reject_config_when_pause_windows_is_scalar(tmp_path):
     block = '[schedule]\npause_windows = "09:00-12:00"\n'
 
-    with pytest.raises(ConfigError, match="must be a list") as caught:
+    with pytest.raises(ConfigError) as caught:
         load_config(_write(tmp_path, block))
 
-    assert re.search(r"must be a list", str(caught.value))
+    actual = str(caught.value)
+    assert "must be a list" in actual

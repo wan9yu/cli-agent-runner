@@ -619,10 +619,13 @@ def test_serve_should_release_lock_when_run_exits(tmp_path, monkeypatch):
 
     assert serve_cmd.cmd(_args(cfg_path)) == 0
 
-    # lock is released → we can acquire it non-blocking
     fd = os.open(tmp_path / "logs" / "serve.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    acquired = False
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # would raise if still held
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquired = True
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
+
+    assert acquired

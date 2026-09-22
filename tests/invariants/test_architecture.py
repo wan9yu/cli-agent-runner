@@ -207,29 +207,36 @@ def _imports_in(file: Path) -> tuple[set[str], list[tuple[str, set[str]]]]:
     return plain, from_imports
 
 
-def _assert_imports_within_allowlist(
+def _unsanctioned_imports(
     file: Path,
     *,
     label: str,
     allowed_plain: set[str],
     allowed_from: list[tuple[str, set[str]]],
     plain_exceptions: set[str] | frozenset[str] = frozenset(),
-) -> None:
+) -> list[str]:
     plain, froms = _imports_in(file)
+    offenders: list[str] = []
     bad_plain = plain - allowed_plain - plain_exceptions
-    assert not bad_plain, f"{label} has unsanctioned imports: {bad_plain}"
+    if bad_plain:
+        offenders.append(f"{label} has unsanctioned imports: {bad_plain}")
     for mod, names in froms:
-        if mod.startswith("agent_runner"):
-            allowed = next((n for m, n in allowed_from if m == mod), None)
-            assert allowed is not None, f"{label} imports {mod} (not in allowlist)"
-            extra = names - allowed
-            assert not extra, f"{label} imports {extra} from {mod} (not allowed)"
+        if not mod.startswith("agent_runner"):
+            continue
+        allowed = next((n for m, n in allowed_from if m == mod), None)
+        if allowed is None:
+            offenders.append(f"{label} imports {mod} (not in allowlist)")
+            continue
+        extra = names - allowed
+        if extra:
+            offenders.append(f"{label} imports {extra} from {mod} (not allowed)")
+    return offenders
 
 
 def test_serve_cmd_should_stay_within_import_allowlist_when_scanned() -> None:
     path = PKG / "cli/serve_cmd.py"
 
-    _assert_imports_within_allowlist(
+    actual = _unsanctioned_imports(
         path,
         label="serve_cmd",
         allowed_plain=ALLOWED_SERVE_IMPORTS,
@@ -241,33 +248,33 @@ def test_serve_cmd_should_stay_within_import_allowlist_when_scanned() -> None:
         },
     )
 
-    assert path.is_file()
+    assert actual == []
 
 
 def test_serve_round_should_stay_within_import_allowlist_when_scanned() -> None:
     path = PKG / "cli/_serve_round.py"
 
-    _assert_imports_within_allowlist(
+    actual = _unsanctioned_imports(
         path,
         label="_serve_round",
         allowed_plain=ALLOWED_SERVE_ROUND_IMPORTS,
         allowed_from=ALLOWED_SERVE_ROUND_FROM,
     )
 
-    assert path.is_file()
+    assert actual == []
 
 
 def test_serve_cgroup_should_stay_within_import_allowlist_when_scanned() -> None:
     path = PKG / "cli/_serve_cgroup.py"
 
-    _assert_imports_within_allowlist(
+    actual = _unsanctioned_imports(
         path,
         label="_serve_cgroup",
         allowed_plain=ALLOWED_SERVE_CGROUP_IMPORTS,
         allowed_from=ALLOWED_SERVE_CGROUP_FROM,
     )
 
-    assert path.is_file()
+    assert actual == []
 
 
 _EMIT_SUBMODULE_RE = re.compile(r"agent_runner\._emit\.\w+")

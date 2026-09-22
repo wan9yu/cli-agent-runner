@@ -139,8 +139,11 @@ def test_goal_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path
         + '[goal]\nledger = "ledger.md"\nbogus = true\n',
     )
 
-    with pytest.raises(ValueError, match=r"unknown \[goal\] field"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "unknown [goal] field" in actual
 
 
 def test_goal_check_unknown_field_should_raise_config_error_when_loaded(tmp_path: Path) -> None:
@@ -157,8 +160,11 @@ def test_goal_check_unknown_field_should_raise_config_error_when_loaded(tmp_path
         "bogus = 1\n",
     )
 
-    with pytest.raises(ValueError, match=r"unknown \[goal\.checks\.0\] field"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "unknown [goal.checks.0] field" in actual
 
 
 def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
@@ -177,8 +183,12 @@ def test_goal_check_timeout_over_cap_should_raise_config_error_when_loaded(
         "timeout_s = 999\n",
     )
 
-    with pytest.raises(ValueError, match=r"goal\.checks\.0\.timeout_s.*<= 30"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "goal.checks.0.timeout_s" in actual
+    assert "<= 30" in actual
 
 
 def test_goal_check_timeout_at_cap_should_load_successfully_when_invoked(tmp_path: Path) -> None:
@@ -219,8 +229,12 @@ def test_goal_check_timeout_one_over_cap_should_raise_config_error_when_invoked(
         "timeout_s = 31\n",
     )
 
-    with pytest.raises(ConfigError, match=r"goal\.checks\.0\.timeout_s.*<= 30"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "goal.checks.0.timeout_s" in actual
+    assert "<= 30" in actual
 
 
 def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected_when_invoked(
@@ -242,8 +256,12 @@ def test_goal_ledger_inside_work_dir_outside_log_dir_should_be_rejected_when_inv
         + '[goal]\nledger = "ledger.md"\n',
     )
 
-    with pytest.raises(ConfigError, match=r"inside runtime\.work_dir.*outside runtime\.log_dir"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "inside runtime.work_dir" in actual
+    assert "outside runtime.log_dir" in actual
 
 
 def test_goal_ledger_at_absolute_path_outside_work_dir_should_load_successfully_when_invoked(
@@ -341,8 +359,12 @@ def test_goal_scalar_checks_should_be_rejected_when_not_a_list(tmp_path: Path) -
         + '[goal]\nledger = "ledger.md"\nchecks = "nope"\n',
     )
 
-    with pytest.raises(ValueError, match=r"goal\.checks.*list of tables"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "goal.checks" in actual
+    assert "list of tables" in actual
 
 
 def test_goal_ledger_missing_from_prompt_files_should_raise_config_error_when_loaded(
@@ -357,8 +379,12 @@ def test_goal_ledger_missing_from_prompt_files_should_raise_config_error_when_lo
         + '[goal]\nledger = "ledger.md"\n',
     )
 
-    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "[prompt]: [goal] ledger" in actual
+    assert "index >= 1" in actual
 
 
 def test_goal_ledger_at_index_zero_should_raise_config_error_when_loaded(
@@ -373,8 +399,12 @@ def test_goal_ledger_at_index_zero_should_raise_config_error_when_loaded(
         + '[goal]\nledger = "ledger.md"\n',
     )
 
-    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "[prompt]: [goal] ledger" in actual
+    assert "index >= 1" in actual
 
 
 def test_goal_with_single_prompt_file_form_should_raise_config_error_when_loaded(
@@ -389,8 +419,12 @@ def test_goal_with_single_prompt_file_form_should_raise_config_error_when_loaded
         + '[goal]\nledger = "ledger.md"\n',
     )
 
-    with pytest.raises(ValueError, match=r"\[prompt\]: \[goal\] ledger .*index >= 1"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "[prompt]: [goal] ledger" in actual
+    assert "index >= 1" in actual
 
 
 def test_goal_ledger_at_index_one_should_load_successfully_when_invoked(tmp_path: Path) -> None:
@@ -423,8 +457,12 @@ def test_goal_with_phase_empty_prompt_files_should_raise_config_error_when_loade
         "[phases.dev.prompt]\nfiles = []\n" + '[goal]\nledger = "ledger.md"\n',
     )
 
-    with pytest.raises(ValueError, match=r"\[phases\.dev\.prompt\]: \[goal\] ledger .*index >= 1"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "[phases.dev.prompt]: [goal] ledger" in actual
+    assert "index >= 1" in actual
 
 
 def test_goal_with_phase_override_ledger_at_index_one_should_load_successfully_when_invoked(

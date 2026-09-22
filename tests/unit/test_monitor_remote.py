@@ -83,10 +83,13 @@ def test_explicit_kinds_and_remote_config_should_pass_through_when_argv_built() 
 def test_host_starting_with_dash_should_raise_value_error_when_relayed(tmp_path: Path) -> None:
     """A leading '-' would be read by ssh as an option (-oProxyCommand=...)."""
 
-    with pytest.raises(ValueError, match="starts with '-'") as caught:
-        remote_relay.relay_remote_events("-oProxyCommand=touch /tmp/x", log_dir=tmp_path)
+    host = "-oProxyCommand=touch /tmp/x"
 
-    assert caught.value is not None
+    with pytest.raises(ValueError) as caught:
+        remote_relay.relay_remote_events(host, log_dir=tmp_path)
+
+    actual = str(caught.value)
+    assert "starts with '-'" in actual
 
 
 # ---------------------------------------------------------------------------
@@ -241,8 +244,11 @@ def test_install_term_handler_should_raise_keyboardinterrupt_when_sigterm_receiv
 
     monitor_cmd._install_term_handler()
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt) as caught:
         captured[signal.SIGTERM](signal.SIGTERM, None)
+
+    actual = str(caught.value)
+    assert "relay received SIGTERM" in actual
 
 
 def test_relay_remote_events_should_not_install_sigterm_handler_when_run_on_worker_thread(

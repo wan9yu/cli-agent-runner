@@ -270,13 +270,12 @@ def test_live_children_should_include_backgrounded_child_when_present():
         live, ignored = _wait_for_children(
             p, lambda live, _ignored: any(c["name"] == "sleep" for c in live)
         )
+
         assert any(c["name"] == "sleep" for c in live)
         assert ignored == []
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
-
-    assert p.returncode is not None
 
 
 def test_live_children_should_return_empty_when_process_already_exited():
@@ -301,16 +300,28 @@ def test_children_rss_sum_bytes_should_sum_parent_and_child_rss_when_tree_alive(
     from agent_runner.agent_runtime import children_rss_sum_bytes
 
     p = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
+    seen: list[int] = []
+    real_memory_info = psutil.Process.memory_info
+
+    def _recording_memory_info(self):
+        info = real_memory_info(self)
+        seen.append(info.rss)
+        return info
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(psutil.Process, "memory_info", _recording_memory_info)
     box: dict = {}
 
     def _ready() -> bool:
+        seen.clear()
         box["total"] = children_rss_sum_bytes(p)
-        return box["total"] is not None and box["total"] > 0
+        return box["total"] is not None and len(seen) >= 2 and box["total"] == sum(seen)
 
     try:
-        assert poll_until(_ready, timeout_s=5.0), "rss sum never became positive"
-        assert box["total"] > 0
+        assert poll_until(_ready, timeout_s=5.0), "rss sum never matched the walked processes"
+        assert box["total"] == sum(seen)
     finally:
+        monkeypatch.undo()
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
 
@@ -338,13 +349,21 @@ def test_children_rss_sum_bytes_should_skip_a_vanished_child_when_others_remain(
         def children(self, recursive=True):
             return [_FailingChild()]
 
-    try:
-        monkeypatch.setattr(agent_runtime.psutil, "Process", lambda pid: _FakeParent(pid))
+    seen: list[int] = []
+    real_memory_info = psutil.Process.memory_info
 
+    def _recording_memory_info(self):
+        info = real_memory_info(self)
+        seen.append(info.rss)
+        return info
+
+    try:
+        monkeypatch.setattr(psutil.Process, "memory_info", _recording_memory_info)
+        monkeypatch.setattr(agent_runtime.psutil, "Process", lambda pid: _FakeParent(pid))
         total = children_rss_sum_bytes(p)
 
-        assert total is not None
-        assert total > 0  # parent's own RSS still counted
+        assert seen
+        assert total == sum(seen)
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
@@ -486,13 +505,12 @@ def test_live_children_should_treat_all_children_as_live_when_no_ignore_patterns
         live, ignored = _wait_for_children(
             p, lambda live, _ignored: any(c["name"] == "sleep" for c in live)
         )
+
         assert ignored == []
         assert any(c["name"] == "sleep" for c in live)
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
-
-    assert p.returncode is not None
 
 
 def test_run_should_kill_for_grace_when_only_ignored_helper_remains_alive(tmp_path, monkeypatch):
@@ -586,6 +604,7 @@ def test_live_children_should_not_leak_secret_when_argv0_rewritten():
 
     try:
         live, ignored = _wait_for_children(p, lambda live, _ignored: bool(live))
+
         assert live, "the backgrounded child never appeared -- nothing was actually checked"
         blob = repr(live + ignored)
         assert "hunter2-supersecret" not in blob and "PGPASSWORD" not in blob
@@ -593,8 +612,6 @@ def test_live_children_should_not_leak_secret_when_argv0_rewritten():
     finally:
         os.killpg(p.pid, signal.SIGKILL)
         p.wait()
-
-    assert p.returncode is not None
 
 
 def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
@@ -614,15 +631,13 @@ def test_live_children_should_record_matched_pattern_not_argv_when_ignored():
         live, ignored = _wait_for_children(
             p, lambda _live, ignored: bool(ignored), ignore_patterns=[re.compile(r"sk-MATCHME")]
         )
+
         assert ignored and ignored[0]["matched"] == "sk-MATCHME"
-        # Only name/pid/matched stored — not the raw cmdline
         assert all(set(c) == {"name", "pid", "matched"} for c in ignored)
-        assert ignored[0]["name"] != "sk-MATCHME"  # name is comm-derived, not argv[0]
+        assert ignored[0]["name"] != "sk-MATCHME"
     finally:
         os.killpg(os.getpgid(p.pid), signal.SIGKILL)
         p.wait()
-
-    assert p.returncode is not None
 
 
 # The KeyboardInterrupt-shielding property for _kill_pgroup's fd-driven grace

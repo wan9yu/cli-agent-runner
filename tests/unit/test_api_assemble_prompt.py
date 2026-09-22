@@ -50,8 +50,11 @@ def test_assemble_prompt_should_raise_when_first_file_missing(tmp_path: Path) ->
 
     cfg = load_config(_toml(tmp_path, prompt_block='files = ["nope.md"]'))
 
-    with pytest.raises(FileNotFoundError, match=r"prompt\.files\[0\] missing"):
+    with pytest.raises(FileNotFoundError) as caught:
         assemble_prompt(cfg, phase=None, context=None)
+
+    actual = str(caught.value)
+    assert "prompt.files[0] missing" in actual
 
 
 def test_assemble_prompt_should_warn_and_skip_missing_file_when_not_first(

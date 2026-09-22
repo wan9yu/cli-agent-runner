@@ -36,6 +36,7 @@ def test_alert_identity_should_dedup_when_hung_round_elapsed_grows() -> None:
 
     second = alert_identity(_hung(5, 130.0))
 
+    assert first == "hung:round_num=5"
     assert first == second
 
 
@@ -52,6 +53,7 @@ def test_alert_identity_should_key_on_detector_only_when_rate_type_alert() -> No
 
     a2 = Alert("warning", "disk_warning", "m", {"value": 93.0, "threshold": 90.0}, "t")
 
+    assert alert_identity(a1) == "disk_warning"
     assert alert_identity(a1) == alert_identity(a2)
 
 

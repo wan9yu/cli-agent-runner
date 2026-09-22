@@ -9,7 +9,6 @@ basename must keep working (no new break to dev-box paths).
 
 from __future__ import annotations
 
-import re
 from types import SimpleNamespace
 
 import pytest
@@ -41,19 +40,21 @@ def test_project_name_should_accept_cjk_basename_when_lenient(tmp_path):
 def test_project_name_should_reject_spaced_basename_when_strict(tmp_path):
     work_dir = tmp_path / "my project"
 
-    with pytest.raises(ValueError, match="invalid project name") as caught:
+    with pytest.raises(ValueError) as caught:
         _resolve.project_name(work_dir, strict=True)
 
-    assert re.search(r"invalid project name", str(caught.value))
+    actual = str(caught.value)
+    assert "invalid project name" in actual
 
 
 def test_project_name_should_reject_cjk_basename_when_strict(tmp_path):
     work_dir = tmp_path / "我的项目"
 
-    with pytest.raises(ValueError, match="invalid project name") as caught:
+    with pytest.raises(ValueError) as caught:
         _resolve.project_name(work_dir, strict=True)
 
-    assert re.search(r"invalid project name", str(caught.value))
+    actual = str(caught.value)
+    assert "invalid project name" in actual
 
 
 def test_project_name_should_accept_plain_basename_when_strict(tmp_path):
@@ -217,27 +218,36 @@ def test_guard_against_clobber_should_raise_when_existing_unit_owned_by_differen
     serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
     work_dir = tmp_path / "this-project"
 
-    with pytest.raises(FileExistsError, match=str(other_work_dir)):
+    with pytest.raises(FileExistsError) as caught:
         _resolve.guard_against_clobber(serve_path, work_dir, force=False)
+
+    actual = str(caught.value)
+    assert str(other_work_dir) in actual
 
 
 def test_guard_against_clobber_should_no_op_when_existing_unit_owned_by_same_work_dir(tmp_path):
     work_dir = tmp_path / "this-project"
 
     serve_path = tmp_path / "agent-runner@proj.service"
-    serve_path.write_text(f"WorkingDirectory={work_dir}\n")
+    before = f"WorkingDirectory={work_dir}\n"
+    serve_path.write_text(before)
 
     _resolve.guard_against_clobber(serve_path, work_dir, force=False)
+
+    assert serve_path.read_text() == before
 
 
 def test_guard_against_clobber_should_no_op_when_force_true_despite_different_owner(tmp_path):
     serve_path = tmp_path / "agent-runner@proj.service"
 
     other_work_dir = tmp_path / "other-project"
-    serve_path.write_text(f"WorkingDirectory={other_work_dir}\n")
+    before = f"WorkingDirectory={other_work_dir}\n"
+    serve_path.write_text(before)
     work_dir = tmp_path / "this-project"
 
     _resolve.guard_against_clobber(serve_path, work_dir, force=True)
+
+    assert serve_path.read_text() == before
 
 
 def test_guard_against_clobber_should_no_op_when_no_existing_unit_file(tmp_path):
@@ -246,3 +256,5 @@ def test_guard_against_clobber_should_no_op_when_no_existing_unit_file(tmp_path)
     work_dir = tmp_path / "this-project"
 
     _resolve.guard_against_clobber(serve_path, work_dir, force=False)
+
+    assert not serve_path.exists()

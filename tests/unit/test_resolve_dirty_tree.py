@@ -9,15 +9,26 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 import agent_runner.vcs_state as vcs_state
-from agent_runner.vcs_state import AutoCommitError, StashError, resolve_dirty_tree, stash_orphan
+from agent_runner.vcs_state import (
+    AutoCommitError,
+    StashError,
+    detect_dirty_files,
+    resolve_dirty_tree,
+    stash_orphan,
+)
 from tests._test_helpers import read_events_for_current_month
 
 
-def _resolve(tmp_git_repo: Path, action: str, dirty_files: list[str]):
+def _resolve(
+    tmp_git_repo: Path,
+    action: Literal["stash", "ignore", "auto_commit"],
+    dirty_files: list[str],
+):
     return resolve_dirty_tree(tmp_git_repo, action, 1, None, tmp_git_repo / "logs", dirty_files)
 
 
@@ -26,8 +37,18 @@ def test_resolve_dirty_tree_should_return_stashed_when_action_is_stash(tmp_git_r
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
     out = _resolve(tmp_git_repo, "stash", ["w.py"])
+    tip = subprocess.run(
+        ["git", "stash", "list", "-1", "--format=%H"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
-    assert out.kind == "stashed" and out.ref
+    assert out.kind == "stashed"
+    assert out.ref == tip
+    assert not str(out.ref).startswith("stash@{")
+    assert not (tmp_git_repo / "w.py").exists()
 
 
 def test_resolve_dirty_tree_should_return_ignored_when_action_is_ignore(tmp_git_repo):
@@ -44,8 +65,17 @@ def test_resolve_dirty_tree_should_return_committed_when_action_is_auto_commit(t
     (tmp_git_repo / "w.py").write_text("x=1\n")
 
     out = _resolve(tmp_git_repo, "auto_commit", ["w.py"])
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
-    assert out.kind == "committed" and out.ref
+    assert out.kind == "committed"
+    assert out.ref == head
+    assert "w.py" not in detect_dirty_files(tmp_git_repo)
 
 
 def test_resolve_dirty_tree_should_return_ignored_when_auto_commit_stages_nothing(
@@ -143,6 +173,15 @@ def test_resolve_dirty_tree_should_emit_idempotent_skip_when_stashed_twice_in_sa
     (tmp_git_repo / "w.py").write_text("x=2\n")
     second = _resolve(tmp_git_repo, "stash", ["w.py"])
 
+    tip = subprocess.run(
+        ["git", "stash", "list", "-1", "--format=%H"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    assert first.ref == tip
     assert first.ref == second.ref
     kinds = [e["event"] for e in read_events_for_current_month(tmp_git_repo / "logs")]
     assert kinds.count("orphan_stashed") == 1

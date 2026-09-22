@@ -120,11 +120,12 @@ def test_known_token_prefixes_should_be_masked_when_invoked():
 
 
 def test_redact_secrets_should_be_idempotent_when_invoked():
-    once = redact_secrets("x --api-key sk-foobar1234567890ABCD https://:p@h@x")
+    raw = "x --api-key sk-foobar1234567890ABCD https://:p@h@x"
 
-    actual = redact_secrets(once)
+    once = redact_secrets(raw)
 
-    assert actual == once
+    assert "sk-foobar1234567890ABCD" not in once
+    assert redact_secrets(once) == once
 
 
 # --- benign text that must pass through UNCHANGED (over-redaction regressions) ---

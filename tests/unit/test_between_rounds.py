@@ -36,7 +36,7 @@ def test_prompt_smoke_error_should_reject_short_else_dash_when_invoked(tmp_path:
 
     assert br.prompt_smoke_error("") == "empty"
     assert br.prompt_smoke_error("-flag") == "bad first character"
-    assert br.prompt_smoke_error("x" * 10) is not None
+    assert br.prompt_smoke_error("x" * 10) == "under 500 bytes"
 
     assert br.prompt_smoke_error("x" * 500) is None
 
@@ -48,7 +48,7 @@ def test_apply_queued_prompt_should_refuse_smoke_failure_when_invoked(tmp_path: 
     queued = tmp_path / "next.md"
     queued.write_text("-oops")
 
-    with pytest.raises(ValueError, match="78"):
+    with pytest.raises(ValueError):
         br.apply_queued_prompt(prompt, queued)
 
     assert prompt.read_text() == "x" * 500

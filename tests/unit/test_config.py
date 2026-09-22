@@ -86,8 +86,11 @@ def test_missing_required_field_should_raise_with_field_name_when_loaded(
 
     toml = _write_toml(tmp_path, "[agent]\ncommand = []\n")
 
-    with pytest.raises(ValueError, match="prompt_arg_template"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "prompt_arg_template" in actual
 
 
 def test_log_dir_with_project_placeholder_should_be_substituted_when_loaded(
@@ -116,10 +119,13 @@ def test_nonexistent_toml_should_raise_filenotfound_when_loaded(
     tmp_path: Path,
 ) -> None:
 
-    with pytest.raises(FileNotFoundError) as caught:
-        load_config(tmp_path / "nope.toml")
+    missing = tmp_path / "nope.toml"
 
-    assert caught.value is not None
+    with pytest.raises(FileNotFoundError) as caught:
+        load_config(missing)
+
+    actual = str(caught.value)
+    assert "nope.toml" in actual
 
 
 def test_work_dir_dot_should_resolve_project_to_cwd_basename_when_loaded(
@@ -255,10 +261,11 @@ context_injection_mode = "magic"
 """,
     )
 
-    with pytest.raises(ValueError, match="context_injection_mode") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
 
-    assert re.search(r"context_injection_mode", str(caught.value))
+    actual = str(caught.value)
+    assert "context_injection_mode" in actual
 
 
 def test_no_monitor_block_should_use_default_patterns_when_loaded(
@@ -356,8 +363,12 @@ disabled = ["future_plugin_name"]
 """,
     )
 
-    with pytest.raises(ConfigError, match=r"unknown \[plugins\] field.*disabled"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "unknown [plugins] field" in actual
+    assert "disabled" in actual
 
 
 def test_no_auto_stop_on_should_default_to_builtins_when_loaded(
@@ -429,8 +440,11 @@ auto_stop_on = "oauth_fail"
 """,
     )
 
-    with pytest.raises(ConfigError, match="monitor.auto_stop_on"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "monitor.auto_stop_on" in actual
 
 
 def test_goal_prefixed_auto_stop_on_should_raise_config_error_when_loaded(
@@ -457,8 +471,11 @@ auto_stop_on = ["oauth_fail", "goal_check"]
 """,
     )
 
-    with pytest.raises(ConfigError, match="monitor.auto_stop_on"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "monitor.auto_stop_on" in actual
 
 
 def test_agent_env_block_should_populate_env_when_loaded(tmp_path: Path) -> None:
@@ -577,11 +594,13 @@ def test_round_timeout_per_phase_dict_should_raise_config_error_with_migration_h
         'list = ["dev", "qa"]\n'
     )
 
-    with pytest.raises(
-        ValueError,
-        match=r"runtime\.round_timeout_per_phase.*removed in 0\.1\.16.*\[phases\.<name>\]",
-    ):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "round_timeout_per_phase" in actual
+    assert "removed in 0.1.16" in actual
+    assert "[phases.<name>]" in actual
 
 
 def test_runtime_config_should_have_no_round_timeout_per_phase_field_when_invoked() -> None:
@@ -613,7 +632,7 @@ file = "prompts/main.md"
 """,
     )
 
-    with pytest.raises(ValueError, match="round_budget_s.*must be an integer") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
 
     assert re.search(r"round_budget_s.*must be an integer", str(caught.value))
@@ -638,8 +657,12 @@ file = "prompts/main.md"
 """,
     )
 
-    with pytest.raises(ValueError, match="restart_delay_s.*must be positive"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "restart_delay_s" in actual
+    assert "must be positive" in actual
 
 
 def test_stash_idempotency_s_float_should_raise_value_error_when_loaded(
@@ -662,8 +685,12 @@ stash_idempotency_s = 1.5
 """,
     )
 
-    with pytest.raises(ValueError, match="stash_idempotency_s.*must be an integer"):
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "stash_idempotency_s" in actual
+    assert "must be an integer" in actual
 
 
 def test_no_monitor_block_should_default_remote_failure_tolerance_to_90_when_loaded(
@@ -753,10 +780,11 @@ remote_failure_tolerance_s = -5
 """,
     )
 
-    with pytest.raises(ValueError, match="must be >= 0") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(toml)
 
-    assert re.search(r"must be >= 0", str(caught.value))
+    actual = str(caught.value)
+    assert "must be >= 0" in actual
 
 
 def test_excessive_remote_failure_tolerance_should_raise_when_loaded(tmp_path: Path) -> None:
@@ -777,8 +805,11 @@ def test_excessive_remote_failure_tolerance_should_raise_when_loaded(tmp_path: P
     (tmp_path / "prompt.md").write_text("p")
     cfg_path = _write_toml(tmp_path, body)
 
-    with pytest.raises(ValueError, match="must be <= 3600"):
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "must be <= 3600" in actual
 
 
 def test_plugins_disable_list_should_be_parsed_when_loaded(
@@ -816,5 +847,8 @@ def test_bare_string_plugins_disable_should_raise_config_error_when_loaded(
         + '\n[plugins]\ndisable = "acme_prompt_assembly"\n',
     )
 
-    with pytest.raises(ConfigError, match="plugins.disable"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "plugins.disable" in actual

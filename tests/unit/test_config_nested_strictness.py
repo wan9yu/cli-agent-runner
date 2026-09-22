@@ -9,7 +9,6 @@ typo'd threshold dropped with no signal. This file pins the fix.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -32,8 +31,11 @@ def test_load_config_should_raise_configerror_when_agent_env_is_scalar(tmp_path:
         '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\nenv = "oops"\n',
     )
 
-    with pytest.raises(ConfigError, match=r"\[agent\.env\]"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "[agent.env]" in actual
 
 
 def test_load_config_should_raise_configerror_when_monitor_host_health_is_scalar(
@@ -48,8 +50,11 @@ def test_load_config_should_raise_configerror_when_monitor_host_health_is_scalar
         "[monitor]\nhost_health = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"\[monitor\.host_health\]"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "[monitor.host_health]" in actual
 
 
 def test_load_config_should_raise_configerror_when_monitor_host_health_has_unknown_key(
@@ -64,8 +69,11 @@ def test_load_config_should_raise_configerror_when_monitor_host_health_has_unkno
         "[monitor.host_health]\nbogus = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"\[monitor\.host_health\]"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "[monitor.host_health]" in actual
 
 
 def test_load_config_should_raise_configerror_when_brake_has_unknown_key(
@@ -80,8 +88,11 @@ def test_load_config_should_raise_configerror_when_brake_has_unknown_key(
         "[monitor.host_health.brake]\nbogus = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"monitor\.host_health\.brake"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "monitor.host_health.brake" in actual
 
 
 def test_load_config_should_raise_configerror_when_brake_step_pct_over_cap(
@@ -96,8 +107,11 @@ def test_load_config_should_raise_configerror_when_brake_step_pct_over_cap(
         "[monitor.host_health.brake]\nmemory_high_step_pct = 51\n",
     )
 
-    with pytest.raises(ConfigError, match=r"must be <= 50"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "must be <= 50" in actual
 
 
 def test_load_config_should_accept_brake_step_pct_zero_for_cap_at_current_when_invoked(
@@ -128,8 +142,11 @@ def test_load_config_should_raise_configerror_when_brake_step_pct_negative(
         "[monitor.host_health.brake]\nmemory_high_step_pct = -1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"must be >= 0"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "must be >= 0" in actual
 
 
 def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
@@ -144,8 +161,11 @@ def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
         "[phases.dev.schedule]\nbogus = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"phases\.dev\.schedule"):
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
+
+    actual = str(caught.value)
+    assert "phases.dev.schedule" in actual
 
 
 def test_load_config_should_name_schedule_when_top_level_schedule_has_bad_key(
@@ -161,7 +181,8 @@ def test_load_config_should_name_schedule_when_top_level_schedule_has_bad_key(
         "[schedule]\nbogus = 1\n",
     )
 
-    with pytest.raises(ConfigError, match=r"unknown \[schedule\]") as caught:
+    with pytest.raises(ConfigError) as caught:
         load_config(p)
 
-    assert re.search(r"unknown \[schedule\]", str(caught.value))
+    actual = str(caught.value)
+    assert "unknown [schedule]" in actual

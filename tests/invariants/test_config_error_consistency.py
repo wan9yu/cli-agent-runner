@@ -87,7 +87,7 @@ def test_config_error_should_subclass_value_error_when_invoked() -> None:
 
     actual = issubclass(ConfigError, ValueError)
 
-    assert actual
+    assert actual is True
 
 
 def test_load_config_should_raise_config_error_when_stdin_delivery_has_prompt_token(
@@ -101,8 +101,11 @@ def test_load_config_should_raise_config_error_when_stdin_delivery_has_prompt_to
         agent_extra='prompt_delivery = "stdin"\nprompt_arg_template = ["-p", "{prompt}"]\n',
     )
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "stdin delivery" in actual
 
 
 # --- table-as-scalar: parametrized behavioral (the AST scan above can't see
@@ -142,5 +145,8 @@ def test_load_config_should_raise_config_error_when_top_level_table_given_as_sca
 
     cfg_path = _write_config_with_scalar_table(tmp_path, table)
 
-    with pytest.raises(ConfigError, match=rf"\[{table}\] must be a table"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert f"[{table}] must be a table" in actual

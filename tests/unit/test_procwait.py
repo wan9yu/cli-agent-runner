@@ -9,6 +9,7 @@ by monkeypatching exit_fd to None, per the module's own documented contract.
 from __future__ import annotations
 
 import os
+import select
 import subprocess
 import time
 
@@ -18,16 +19,24 @@ from agent_runner.clock import SYSTEM_CLOCK
 
 
 def test_exit_fd_should_return_a_readable_fd_for_a_live_process_when_invoked():
-    proc = subprocess.Popen(["sleep", "5"])
+    proc = subprocess.Popen(["sleep", "30"])
+    fd = exit_fd(proc)
 
     try:
-        fd = exit_fd(proc)
-
         assert fd is not None
-        os.close(fd)
-    finally:
+        quiet, _, _ = select.select([fd], [], [], 0)
+        assert quiet == []
         proc.terminate()
         proc.wait()
+        ready, _, _ = select.select([fd], [], [], 2)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if fd is not None:
+            os.close(fd)
+
+    assert ready == [fd]
 
 
 def test_wait_exit_should_return_exited_when_proc_exits():
@@ -38,8 +47,7 @@ def test_wait_exit_should_return_exited_when_proc_exits():
     assert outcome == "exited"
     assert proc.returncode is None  # wait_exit itself did not reap
 
-    rc = proc.poll()  # the test reaps
-    assert rc is not None
+    assert proc.poll() == 0
 
 
 def test_wait_exit_should_short_circuit_to_exited_without_reopening_a_reaped_pid_when_invoked(

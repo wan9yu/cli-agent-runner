@@ -6,6 +6,7 @@ Skipped unless ``AGENT_RUNNER_E2E_PI=1`` is set. Tests use the `pi` ssh alias.
 from __future__ import annotations
 
 import json
+import shlex
 import time
 
 from .conftest import _ssh
@@ -82,9 +83,11 @@ def test_round_should_stash_orphan_changes_when_fake_agent_leaves_dirty_worktree
     _ssh(cmd_succeed)
 
     ctx = json.loads(_ssh(f"cat {pi_workdir}/logs/round-context.json").stdout)
-    assert "orphan_stash" in ctx
+    ref = ctx["orphan_stash"]["ref"]
+    listed = _ssh(f"git -C {shlex.quote(pi_workdir)} stash list -1 --format=%H").stdout.strip()
 
-    assert ctx["orphan_stash"]["ref"]
+    assert ref == listed
+    assert not ref.startswith("stash@{")
 
 
 def test_round_should_be_killed_when_fake_agent_hangs_past_timeout_on_pi(

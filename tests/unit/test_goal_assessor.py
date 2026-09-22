@@ -100,9 +100,9 @@ def test_assess_treadmill_should_return_advisory_when_dirty_and_check_unchanged(
     advisory = assess_treadmill(log_dir, current_round=4)
 
     assert advisory is not None
-    assert advisory.confidence in ("low", "medium", "high")
-    assert advisory.observation
-    assert advisory.question
+    assert advisory.confidence == "medium"
+    assert "never changed" in advisory.observation
+    assert "blocking progress" in advisory.question
     # Type-structural firewall: no kill/severity/action/terminate field exists
     # on the dataclass at all -- not merely unset.
     field_names = {f.name for f in dataclasses.fields(advisory)}
@@ -125,7 +125,11 @@ def test_assess_treadmill_should_ignore_in_progress_round_substrate_before_lande
         _write(log_dir, *_round(n, dirty=True))
     _write(log_dir, _pending_substrate_before(4))
 
-    assert assess_treadmill(log_dir, current_round=4) is not None
+    actual = assess_treadmill(log_dir, current_round=4)
+
+    assert actual is not None
+    assert actual.confidence == "medium"
+    assert "never changed" in actual.observation
 
 
 def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too_when_invoked(
@@ -137,7 +141,11 @@ def test_assess_treadmill_should_return_advisory_on_auto_committed_activity_too_
         _write(log_dir, *_round(n, auto_committed=True))
     _write(log_dir, _pending_substrate_before(4))
 
-    assert assess_treadmill(log_dir, current_round=4) is not None
+    actual = assess_treadmill(log_dir, current_round=4)
+
+    assert actual is not None
+    assert actual.confidence == "medium"
+    assert "never changed" in actual.observation
 
 
 def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_dirty_event_when_run(
@@ -149,7 +157,11 @@ def test_assess_treadmill_should_return_advisory_on_git_head_movement_with_no_di
         _write(log_dir, *_round(n, git_head_before=f"sha{n}", git_head_after=f"sha{n}moved"))
     _write(log_dir, _pending_substrate_before(4))
 
-    assert assess_treadmill(log_dir, current_round=4) is not None
+    actual = assess_treadmill(log_dir, current_round=4)
+
+    assert actual is not None
+    assert actual.confidence == "medium"
+    assert "never changed" in actual.observation
 
 
 def test_assess_treadmill_should_return_none_when_no_activity(tmp_path: Path) -> None:
@@ -239,7 +251,10 @@ def test_assess_treadmill_should_fire_with_no_agent_usage_recorded_event_anywher
     all_lines = (log_dir / "events-2026-08.jsonl").read_text(encoding="utf-8")
     assert "agent_usage_recorded" not in all_lines  # vacuity-guard on the test's own setup
 
-    assert assess_treadmill(log_dir, current_round=4) is not None
+    actual = assess_treadmill(log_dir, current_round=4)
+
+    assert actual is not None
+    assert "never changed" in actual.observation
 
 
 def test_assess_treadmill_should_not_refire_when_the_episode_outlasts_the_window(
@@ -279,4 +294,7 @@ def test_assess_treadmill_should_rearm_after_a_check_value_moves_when_invoked(
         _write(log_dir, *_round(n, dirty=True, check_value=3.0))  # new episode, new value
     _write(log_dir, _pending_substrate_before(8))
 
-    assert assess_treadmill(log_dir, current_round=8) is not None
+    actual = assess_treadmill(log_dir, current_round=8)
+
+    assert actual is not None
+    assert "never changed" in actual.observation

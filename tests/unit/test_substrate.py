@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,11 +18,13 @@ def test_compute_git_head_should_return_none_when_directory_not_git(tmp_path: Pa
 def test_compute_git_head_should_return_sha_when_directory_is_git(tmp_git_repo: Path):
     from agent_runner._substrate import compute_git_head
 
+    expected = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_git_repo, text=True
+    ).strip()
+
     result = compute_git_head(tmp_git_repo)
 
-    assert result is not None
-    assert len(result) >= 7  # at least short SHA
-    assert all(c in "0123456789abcdef" for c in result)
+    assert result == expected
 
 
 def test_compute_git_head_should_return_none_when_git_binary_missing(tmp_path: Path):

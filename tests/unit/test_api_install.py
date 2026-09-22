@@ -54,8 +54,11 @@ def test_agent_runner_script_path_should_raise_filenotfounderror_when_neither_so
         patch("agent_runner._install.shutil.which", return_value=None),
         patch("agent_runner._install.sysconfig.get_path", return_value=str(empty)),
     ):
-        with pytest.raises(FileNotFoundError, match=r"agent-runner script not found"):
+        with pytest.raises(FileNotFoundError) as caught:
             _agent_runner_script_path()
+
+        actual = str(caught.value)
+        assert "agent-runner script not found" in actual
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +70,7 @@ def test_check_user_systemd_available_should_raise_when_xdg_runtime_dir_missing(
     env = {}
 
     with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(RuntimeError, match=r"XDG_RUNTIME_DIR") as caught:
+        with pytest.raises(RuntimeError) as caught:
             _check_user_systemd_available()
 
     assert "XDG_RUNTIME_DIR" in str(caught.value)
@@ -81,8 +84,11 @@ def test_check_user_systemd_available_should_raise_when_dbus_session_unreachable
     with patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(fake_runtime)}):
         with patch("agent_runner._lifecycle.subprocess.run") as mock_run:
             mock_run.return_value.stderr = "Failed to connect to bus: No medium found\n"
-            with pytest.raises(RuntimeError, match=r"D-Bus session"):
+            with pytest.raises(RuntimeError) as caught:
                 _check_user_systemd_available()
+
+            actual = str(caught.value)
+            assert "D-Bus session" in actual
 
 
 def test_check_user_systemd_available_should_return_none_when_systemd_is_ok(tmp_path):
@@ -111,7 +117,7 @@ def test_install_should_raise_when_system_mode_used_without_root(tmp_path):
     )
 
     with patch("agent_runner._install.os.geteuid", return_value=1000):
-        with pytest.raises(RuntimeError, match=r"--system requires sudo") as caught:
+        with pytest.raises(RuntimeError) as caught:
             api.install(tmp_path, system=True)
 
     assert "--system requires sudo" in str(caught.value)
@@ -129,7 +135,7 @@ def test_install_should_raise_when_system_mode_used_without_sudo_user_env(tmp_pa
         patch("agent_runner._install.os.geteuid", return_value=0),
         patch.dict(os.environ, {}, clear=True),
     ):
-        with pytest.raises(RuntimeError, match=r"SUDO_USER") as caught:
+        with pytest.raises(RuntimeError) as caught:
             api.install(tmp_path, system=True)
 
     assert "SUDO_USER" in str(caught.value)
@@ -213,8 +219,11 @@ def test_install_should_raise_fileexistserror_when_sibling_unit_shares_basename_
     _write_project(site_b)
     api.install(site_a, system=False)  # installs agent-runner@myproj.service for site_a
 
-    with pytest.raises(FileExistsError, match="myproj"):
+    with pytest.raises(FileExistsError) as caught:
         api.install(site_b, system=False)
+
+    actual = str(caught.value)
+    assert "myproj" in actual
 
 
 def test_install_should_overwrite_sibling_unit_when_force_is_set(tmp_path, monkeypatch):

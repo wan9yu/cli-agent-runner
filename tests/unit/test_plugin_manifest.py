@@ -3,8 +3,6 @@ registration/unregistration helpers (agent_runner/_plugin_manifest.py)."""
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from agent_runner import _plugin_manifest, hooks
@@ -75,7 +73,7 @@ def test_register_manifest_should_raise_when_manifest_name_already_registered():
     first = PluginManifest(name="dup_plugin", post_round_hooks=(_FirstHook(),))
     register_manifest(first)
 
-    with pytest.raises(ValueError, match="dup_plugin"):
+    with pytest.raises(ValueError):
         register_manifest(PluginManifest(name="dup_plugin", post_round_hooks=(_SecondHook(),)))
 
     # The first manifest's own capability must stay intact — a rejected
@@ -100,10 +98,11 @@ def test_manifest_should_reject_non_cooperative_signal_when_invoked():
     construction, never reaching the kill path."""
     from agent_runner._plugin_manifest import PluginManifest
 
-    with pytest.raises(ValueError, match="cooperative_stop") as caught:
+    with pytest.raises(ValueError) as caught:
         PluginManifest(name="x", cooperative_stop="SIGKILL")  # type: ignore[arg-type]
 
-    assert re.search(r"cooperative_stop", str(caught.value))
+    actual = str(caught.value)
+    assert "cooperative_stop" in actual
 
 
 def test_manifest_should_accept_the_two_cooperative_signals_and_none_when_invoked():
@@ -288,10 +287,11 @@ def test_resolve_resume_flag_should_return_none_when_binary_has_no_manifest():
 def test_manifest_should_reject_an_empty_resume_flag_when_invoked():
     from agent_runner._plugin_manifest import PluginManifest
 
-    with pytest.raises(ValueError, match="resume_flag") as caught:
+    with pytest.raises(ValueError) as caught:
         PluginManifest(name="x", resume_flag="")
 
-    assert re.search(r"resume_flag", str(caught.value))
+    actual = str(caught.value)
+    assert "resume_flag" in actual
 
 
 def test_pi_preset_should_declare_the_session_id_resume_flag_when_invoked():

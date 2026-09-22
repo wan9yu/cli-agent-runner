@@ -57,10 +57,13 @@ def test_serve_should_raise_config_error_when_config_missing_at_boot(
     exception type main()'s handler relies on, mirroring round_cmd's own
     boundary conversion for the identical FileNotFoundError."""
 
-    with pytest.raises(ConfigError) as caught:
-        serve_cmd.cmd(FakeArgs(tmp_path / "nope.toml", once=False))
+    missing = tmp_path / "nope.toml"
 
-    assert caught.value is not None
+    with pytest.raises(ConfigError) as caught:
+        serve_cmd.cmd(FakeArgs(missing, once=False))
+
+    actual = str(caught.value)
+    assert "nope.toml" in actual
 
 
 def test_serve_should_raise_config_error_when_toml_syntax_broken_at_boot(
@@ -70,5 +73,8 @@ def test_serve_should_raise_config_error_when_toml_syntax_broken_at_boot(
 
     bad_toml.write_text("this is not [valid toml")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError) as caught:
         serve_cmd.cmd(FakeArgs(bad_toml, once=False))
+
+    actual = str(caught.value)
+    assert "Expected '=' after a key" in actual

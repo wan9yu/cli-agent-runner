@@ -35,8 +35,12 @@ def test_plugins_unknown_keys_should_raise_config_error_when_loaded(
         _MINIMAL_TOML_NO_PLUGINS.format(tmp_path=tmp_path) + '\n[plugins]\nacme_foo = "bar"\n',
     )
 
-    with pytest.raises(ConfigError, match=r"unknown \[plugins\] field.*acme_foo"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "unknown [plugins] field" in actual
+    assert "acme_foo" in actual
 
 
 def test_disable_pre_round_hooks_should_be_rejected_as_unknown_key_when_loaded(
@@ -55,8 +59,12 @@ def test_disable_pre_round_hooks_should_be_rejected_as_unknown_key_when_loaded(
     )
     cfg_path = _write_toml(tmp_path, body)
 
-    with pytest.raises(ConfigError, match=r"unknown \[runtime\] field.*disable_pre_round_hooks"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "unknown [runtime] field" in actual
+    assert "disable_pre_round_hooks" in actual
 
 
 def test_default_runtime_should_have_round_log_retention_zero_when_loaded(
@@ -127,8 +135,11 @@ def test_negative_round_log_retention_should_be_rejected_when_loaded(
         f'file = "{tmp_path}/prompt.md"\n'
     )
 
-    with pytest.raises(ValueError, match="round_log_retention: must be >= 0"):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "round_log_retention: must be >= 0" in actual
 
 
 def test_explicit_round_log_retention_should_be_used_when_loaded(
@@ -276,8 +287,12 @@ def test_phase_name_not_in_list_should_raise_config_error_when_loaded(
         "round_budget_s = 3600\n"
     )
 
-    with pytest.raises(ValueError, match=r"\[phases\.foo\].*not in phases\.list"):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "[phases.foo]" in actual
+    assert "not in phases.list" in actual
 
 
 def test_unknown_field_in_phase_sub_table_should_raise_config_error_when_loaded(
@@ -301,8 +316,12 @@ def test_unknown_field_in_phase_sub_table_should_raise_config_error_when_loaded(
         "made_up_field = 42\n"
     )
 
-    with pytest.raises(ValueError, match=r"unknown per-phase field.*made_up_field.*allowed"):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "unknown per-phase field" in actual
+    assert "made_up_field" in actual
 
 
 def test_no_phases_section_should_yield_none_list_when_loaded(
@@ -392,8 +411,13 @@ def test_both_prompt_file_and_files_set_should_raise_config_error_when_loaded(
         'files = ["other.md"]\n'
     )
 
-    with pytest.raises(ValueError, match=r"prompt\.file.*prompt\.files.*not both"):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "prompt.file" in actual
+    assert "prompt.files" in actual
+    assert "not both" in actual
 
 
 def test_custom_concat_separator_should_be_used_when_loaded(tmp_path: Path) -> None:
@@ -479,10 +503,13 @@ def test_dirty_action_invalid_value_should_raise_config_error_when_loaded(
         'dirty_action = "explode"\n'
     )
 
-    with pytest.raises(
-        ValueError, match=r"vcs\.dirty_action.*explode.*allowed.*stash.*ignore.*auto_commit"
-    ):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "vcs.dirty_action" in actual
+    assert "explode" in actual
+    assert "stash" in actual
 
 
 def test_orphan_action_in_toml_should_raise_with_migration_hint_when_loaded(
@@ -506,8 +533,11 @@ def test_orphan_action_in_toml_should_raise_with_migration_hint_when_loaded(
         'orphan_action = "stash"\n'
     )
 
-    with pytest.raises(ValueError, match=r"vcs\.orphan_action removed in 0\.1\.18"):
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "vcs.orphan_action removed in 0.1.18" in actual
 
 
 def test_relative_work_dir_should_anchor_to_config_parent_when_loaded_from_other_cwd(

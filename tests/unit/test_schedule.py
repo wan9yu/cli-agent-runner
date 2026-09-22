@@ -43,24 +43,25 @@ def test_contains_should_treat_2400_as_end_of_day_when_invoked():
 
 
 @pytest.mark.parametrize(
-    "bad",
+    ("spec", "needle"),
     [
-        "9:00-12:00",
-        "09:00_12:00",
-        "25:00-26:00",
-        "09:60-10:00",
-        "09:00-24:30",
-        "24:00-09:00",
-        "09:00-09:00",
+        ("9:00-12:00", "invalid window"),
+        ("09:00_12:00", "invalid window"),
+        ("25:00-26:00", "hour"),
+        ("09:60-10:00", "minute"),
+        ("09:00-24:30", "24:00"),
+        ("24:00-09:00", "24:00"),
+        ("09:00-09:00", "zero-length"),
     ],
 )
-def test_parse_window_should_raise_when_format_is_malformed(bad):
-    spec = bad
+def test_parse_window_should_raise_when_format_is_malformed(spec, needle):
+    window = spec
 
     with pytest.raises(ValueError) as caught:
-        schedule.parse_window(spec)
+        schedule.parse_window(window)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert needle in actual
 
 
 def _tz_now(tz, h, m):
@@ -188,14 +189,22 @@ def test_parse_window_should_apply_to_every_day_when_no_weekday_prefix_given():
     assert w.contains(5, 600) is True  # Saturday still matches
 
 
-@pytest.mark.parametrize("bad", ["Fri-Mon 09:00-12:00", "Xyz 09:00-12:00", "Mon- 09:00-12:00"])
-def test_parse_window_should_raise_when_weekday_spec_is_malformed(bad):
-    spec = bad
+@pytest.mark.parametrize(
+    ("spec", "needle"),
+    [
+        ("Fri-Mon 09:00-12:00", "ascending"),
+        ("Xyz 09:00-12:00", "invalid weekday"),
+        ("Mon- 09:00-12:00", "invalid weekday range"),
+    ],
+)
+def test_parse_window_should_raise_when_weekday_spec_is_malformed(spec, needle):
+    window = spec
 
     with pytest.raises(ValueError) as caught:
-        schedule.parse_window(spec)
+        schedule.parse_window(window)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert needle in actual
 
 
 def test_contains_should_respect_weekday_scope_when_window_has_weekday_prefix():

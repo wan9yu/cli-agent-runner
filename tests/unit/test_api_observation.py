@@ -110,8 +110,11 @@ def test_peek_should_raise_keyerror_when_select_invalid(
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
 
-    with pytest.raises(KeyError, match="nonexistent"):
+    with pytest.raises(KeyError) as caught:
         api.peek(tmp_git_repo, select="nonexistent")
+
+    actual = str(caught.value)
+    assert "nonexistent" in actual
 
 
 def test_poll_once_should_return_empty_when_no_alerts(
@@ -195,8 +198,11 @@ def test_peek_should_raise_keyerror_when_round_missing(
     api.init(tmp_git_repo, force=False, commit=False)
     _seed_logs(tmp_git_repo)
 
-    with pytest.raises(KeyError, match="round 99"):
+    with pytest.raises(KeyError) as caught:
         api.peek(tmp_git_repo, round=99)
+
+    actual = str(caught.value)
+    assert "round 99" in actual
 
 
 def test_poll_once_should_return_disk_critical_alert_when_disk_critical_seeded(
@@ -345,8 +351,11 @@ def test_project_name_should_raise_when_work_dir_has_shell_metachars(tmp_path: P
 
     bad_dir.mkdir()
 
-    with pytest.raises(ValueError, match="invalid project name"):
+    with pytest.raises(ValueError) as caught:
         api._project_name(bad_dir)
+
+    actual = str(caught.value)
+    assert "invalid project name" in actual
 
 
 def test_project_name_should_return_basename_when_work_dir_clean(tmp_path: Path) -> None:

@@ -51,7 +51,11 @@ CHECKS = [
     ConfinedImport(
         names=("asyncio", "select", "selectors"),
         attrs=("os.pidfd_open",),
-        allow_paths=("agent_runner/_procwait.py", "agent_runner/_notify.py"),
+        allow_paths=(
+            "agent_runner/_procwait.py",
+            "agent_runner/_notify.py",
+            "tests/unit/test_procwait.py",
+        ),
     ),
     RepoRootSSot(ssot="tests/_test_helpers.py"),
     NoVacuousAssert(),

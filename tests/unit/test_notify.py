@@ -125,6 +125,7 @@ def test_listener_exit_should_not_raise_when_unlink_fails(tmp_log_dir: Path):
 
     listener = Listener(tmp_log_dir)
     listener.__enter__()
+    fifo = listener._path
     os.chmod(notify_dir, 0o555)
     _skip_unless_chmod_blocks_write(notify_dir)
 
@@ -132,6 +133,8 @@ def test_listener_exit_should_not_raise_when_unlink_fails(tmp_log_dir: Path):
         listener.__exit__(None, None, None)
     finally:
         os.chmod(notify_dir, 0o755)
+
+    assert fifo.exists()
 
 
 def test_listener_enter_should_retry_when_a_concurrent_ring_unlinks_the_fresh_fifo(

@@ -4,8 +4,6 @@ Behavior-neutral for existing configs: with no per-phase agent/schedule the
 resolved profile returns base agent/runtime/schedule by identity.
 """
 
-import re
-
 import pytest
 
 from agent_runner.config import ConfigError, load_config
@@ -86,32 +84,36 @@ def test_flat_and_nested_runtime_twin_should_error_when_invoked(tmp_path):
         "[phases.a.runtime]\nround_budget_s = 900\n"
     )
 
-    with pytest.raises(ConfigError, match="both") as caught:
+    with pytest.raises(ConfigError) as caught:
         _cfg(tmp_path, block)
 
-    assert re.search(r"both", str(caught.value))
+    actual = str(caught.value)
+    assert "both" in actual
 
 
 def test_bad_phase_agent_should_fail_at_load_when_invoked(tmp_path):
     # stdin + {prompt} in argv template is the cross-check that must run on the MERGED agent
 
-    with pytest.raises(ConfigError) as caught:
-        _cfg(
-            tmp_path,
-            '[phases]\nlist = ["a"]\n'
-            '[phases.a.agent]\nprompt_delivery = "stdin"\nprompt_arg_template = ["{prompt}"]\n',
-        )
+    block = (
+        '[phases]\nlist = ["a"]\n'
+        '[phases.a.agent]\nprompt_delivery = "stdin"\nprompt_arg_template = ["{prompt}"]\n'
+    )
 
-    assert caught.value is not None
+    with pytest.raises(ConfigError) as caught:
+        _cfg(tmp_path, block)
+
+    actual = str(caught.value)
+    assert "stdin delivery" in actual
 
 
 def test_unknown_phase_agent_field_should_error_when_invoked(tmp_path):
     block = '[phases]\nlist = ["a"]\n[phases.a.agent]\nmade_up = 1\n'
 
-    with pytest.raises(ConfigError, match="made_up") as caught:
+    with pytest.raises(ConfigError) as caught:
         _cfg(tmp_path, block)
 
-    assert re.search(r"made_up", str(caught.value))
+    actual = str(caught.value)
+    assert "made_up" in actual
 
 
 def test_phase_policy_should_default_to_wait_when_invoked(tmp_path):
@@ -135,10 +137,11 @@ def test_phase_policy_should_parse_skip_value_when_invoked(tmp_path):
 def test_phase_policy_should_error_when_value_is_invalid(tmp_path):
     block = '[phases]\nlist = ["a"]\nphase_policy = "nope"\n'
 
-    with pytest.raises(ConfigError, match="phase_policy") as caught:
+    with pytest.raises(ConfigError) as caught:
         _cfg(tmp_path, block)
 
-    assert re.search(r"phase_policy", str(caught.value))
+    actual = str(caught.value)
+    assert "phase_policy" in actual
 
 
 def test_profile_for_should_return_base_identity_when_no_phases_configured(tmp_path):

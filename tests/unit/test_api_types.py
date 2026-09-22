@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import re
 from pathlib import Path
 
 import pytest
@@ -91,10 +90,11 @@ def test_select_path_should_raise_keyerror_when_segment_missing() -> None:
 
     state = SystemMetrics(mem_total_mb=8000, mem_available_mb=4000, disk_used_pct=50.0)
 
-    with pytest.raises(KeyError, match="nonexistent") as caught:
+    with pytest.raises(KeyError) as caught:
         select_path(state, "nonexistent")
 
-    assert re.search(r"nonexistent", str(caught.value))
+    actual = str(caught.value)
+    assert "nonexistent" in actual
 
 
 def test_alert_auto_action_should_be_none_string_when_default() -> None:
@@ -150,10 +150,13 @@ def test_throttle_state_import_should_raise_importerror_when_invoked() -> None:
     Consumers should switch to TransientErrorState.
     """
 
-    with pytest.raises(ImportError) as caught:
-        exec("from agent_runner.api_types import ThrottleState")
+    stmt = "from agent_runner.api_types import ThrottleState"
 
-    assert caught.value is not None
+    with pytest.raises(ImportError) as caught:
+        exec(stmt)
+
+    actual = str(caught.value)
+    assert "ThrottleState" in actual
 
 
 def test_metrics_collect_should_return_pgrep_count_when_agent_binary_given(tmp_path, monkeypatch):
@@ -241,10 +244,12 @@ def test_round_result_dirty_outcome_should_be_settable_independent_of_stashed_fl
         "stashed": False,
     }
 
-    r = RoundResult(**base, dirty_outcome=DirtyOutcome(kind="stashed", ref="sha"))
+    expected = DirtyOutcome(kind="stashed", ref="sha")
 
-    assert r.dirty_outcome is not None
-    assert r.dirty_outcome.kind == "stashed" and r.stashed is False
+    actual = RoundResult(**base, dirty_outcome=expected)
+
+    assert actual.dirty_outcome == expected
+    assert actual.stashed is False
 
 
 def test_run_result_and_round_result_ok_should_share_one_predicate_when_invoked() -> None:

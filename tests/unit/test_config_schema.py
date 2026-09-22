@@ -73,8 +73,12 @@ def test_unknown_base_table_key_should_raise_config_error_when_loaded(
         lines.append(f'[{table}]\nbogus_field = "x"\n')
     (tmp_path / "agent-runner.toml").write_text("".join(lines))
 
-    with pytest.raises(ConfigError, match=rf"unknown \[{table}\].*bogus_field"):
+    with pytest.raises(ConfigError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert f"unknown [{table}]" in actual
+    assert "bogus_field" in actual
 
 
 def test_scalar_key_under_phases_should_raise_config_error_when_loaded(
@@ -88,8 +92,12 @@ def test_scalar_key_under_phases_should_raise_config_error_when_loaded(
     lines.append('[phases]\nlist = ["dev"]\nbogus_field = "x"\n[phases.dev]\n')
     (tmp_path / "agent-runner.toml").write_text("".join(lines))
 
-    with pytest.raises(ConfigError, match=r"\[phases\].*bogus_field"):
+    with pytest.raises(ConfigError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "[phases]" in actual
+    assert "bogus_field" in actual
 
 
 def test_unknown_per_phase_prompt_key_should_raise_config_error_when_loaded(
@@ -108,8 +116,12 @@ def test_unknown_per_phase_prompt_key_should_raise_config_error_when_loaded(
     )
     (tmp_path / "agent-runner.toml").write_text("".join(lines))
 
-    with pytest.raises(ConfigError, match=r"phases\.dev\.prompt.*inject_context"):
+    with pytest.raises(ConfigError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "phases.dev.prompt" in actual
+    assert "inject_context" in actual
 
 
 def test_argv_prompt_arg_template_should_raise_config_error_when_placeholder_missing(
@@ -121,8 +133,12 @@ def test_argv_prompt_arg_template_should_raise_config_error_when_placeholder_mis
 
     cfg_path = write_min_config(tmp_path, agent_extra='prompt_arg_template = ["-p"]\n')
 
-    with pytest.raises(ConfigError, match=r"prompt_arg_template.*\{prompt\}"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "prompt_arg_template" in actual
+    assert "{prompt}" in actual
 
 
 def test_disabled_phase_agent_should_be_accepted_without_placeholder_when_loaded(
@@ -163,8 +179,12 @@ def test_enabled_phase_agent_should_raise_config_error_without_placeholder_when_
     )
     (tmp_path / "agent-runner.toml").write_text("".join(lines))
 
-    with pytest.raises(ConfigError, match=r"prompt_arg_template.*\{prompt\}"):
+    with pytest.raises(ConfigError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "prompt_arg_template" in actual
+    assert "{prompt}" in actual
 
 
 def test_load_config_should_parse_exec_prefix_when_set_on_base_agent(tmp_path: Path) -> None:
@@ -191,8 +211,12 @@ def test_load_config_should_reject_exec_prefix_when_set_on_a_phase_agent(tmp_pat
         ),
     )
 
-    with pytest.raises(ConfigError, match="exec_prefix.*base"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "exec_prefix" in actual
+    assert "base" in actual
 
 
 def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent_when_invoked(
@@ -204,8 +228,11 @@ def test_load_config_should_reject_bare_string_exec_prefix_on_base_agent_when_in
 
     cfg_path = write_min_config(tmp_path, agent_extra='exec_prefix = "docker"\n')
 
-    with pytest.raises(ConfigError, match="must be a list"):
+    with pytest.raises(ConfigError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "must be a list" in actual
 
 
 def test_agent_config_should_accept_terminal_marker_when_set_in_toml(tmp_path: Path) -> None:
@@ -264,8 +291,11 @@ def test_sigterm_grace_s_should_reject_non_positive_else_bool_values_when_invoke
 
     cfg_path = write_min_config(tmp_path, agent_extra=f"sigterm_grace_s = {bad}\n")
 
-    with pytest.raises(ValueError, match="sigterm_grace_s"):
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "sigterm_grace_s" in actual
 
 
 def test_sigterm_grace_s_should_reject_values_above_round_term_grace_when_invoked(
@@ -278,8 +308,11 @@ def test_sigterm_grace_s_should_reject_values_above_round_term_grace_when_invoke
         tmp_path, agent_extra=f"sigterm_grace_s = {_MAX_SIGTERM_GRACE_S + 1}\n"
     )
 
-    with pytest.raises(ValueError, match="sigterm_grace_s"):
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
+
+    actual = str(caught.value)
+    assert "sigterm_grace_s" in actual
 
 
 def test_runtime_config_should_expose_round_budget_s_when_constructed(tmp_path):
@@ -313,8 +346,11 @@ def test_load_config_should_reject_config_missing_schema_version_when_loaded(tmp
     toml = tmp_path / "agent-runner.toml"
     toml.write_text('[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n')
 
-    with pytest.raises(ConfigError, match="run 'agent-runner migrate'"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "run 'agent-runner migrate'" in actual
 
 
 def test_load_config_should_accept_schema_version_one_when_loaded(tmp_path):
@@ -325,7 +361,7 @@ def test_load_config_should_accept_schema_version_one_when_loaded(tmp_path):
 
     cfg = load_config(toml)
 
-    assert cfg is not None
+    assert cfg.agent.command == ["true"]
 
 
 def test_load_config_should_reject_newer_schema_version_when_loaded(tmp_path):
@@ -336,8 +372,11 @@ def test_load_config_should_reject_newer_schema_version_when_loaded(tmp_path):
         'schema_version = 2\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
     )
 
-    with pytest.raises(ConfigError, match="upgrade agent-runner"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "upgrade agent-runner" in actual
 
 
 def test_load_config_should_reject_older_schema_version_when_loaded(tmp_path):
@@ -348,8 +387,11 @@ def test_load_config_should_reject_older_schema_version_when_loaded(tmp_path):
         'schema_version = 0\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
     )
 
-    with pytest.raises(ConfigError, match="run 'agent-runner migrate'"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "run 'agent-runner migrate'" in actual
 
 
 def test_load_config_should_reject_non_integer_schema_version_when_loaded(tmp_path):
@@ -360,5 +402,8 @@ def test_load_config_should_reject_non_integer_schema_version_when_loaded(tmp_pa
         'schema_version = "1"\n[agent]\ncommand = ["true"]\nprompt_arg_template = ["{prompt}"]\n'
     )
 
-    with pytest.raises(ConfigError, match="schema_version must be an integer"):
+    with pytest.raises(ConfigError) as caught:
         load_config(toml)
+
+    actual = str(caught.value)
+    assert "schema_version must be an integer" in actual

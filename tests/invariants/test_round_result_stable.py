@@ -79,7 +79,7 @@ def test_round_result_should_be_frozen_when_constructed() -> None:
         stashed=False,
     )
 
-    with pytest.raises(FrozenInstanceError) as caught:
+    with pytest.raises(FrozenInstanceError):
         r.round_num = 99  # type: ignore[misc]
 
-    assert isinstance(caught.value, FrozenInstanceError)
+    assert r.round_num == 1

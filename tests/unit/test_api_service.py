@@ -11,6 +11,7 @@ import pytest
 from agent_runner import _install, api
 from agent_runner.api_types import InitResult, ServiceMode, ServiceStatus
 from agent_runner.config import PhaseOverride, PhasesConfig, load_config
+from agent_runner.service_unit import monitor_unit_filename, serve_unit_filename
 from tests._clock import FakeClock
 
 
@@ -132,8 +133,9 @@ def test_install_with_no_systemctl_should_return_install_result_when_called(
     )
 
     result = api.install(tmp_git_repo, system=False, with_monitor=False)
+    units = tmp_git_repo / "fake-systemd"
 
-    assert result.unit_path.exists()
+    assert result.unit_path == units / serve_unit_filename(tmp_git_repo.name)
     assert result.monitor_unit_path is None
 
 
@@ -153,10 +155,11 @@ def test_install_with_monitor_should_write_two_units_when_called(
     )
 
     result = api.install(tmp_git_repo, system=False, with_monitor=True)
+    units = tmp_git_repo / "fake-systemd"
+    project = tmp_git_repo.name
 
-    assert result.unit_path.exists()
-    assert result.monitor_unit_path is not None
-    assert result.monitor_unit_path.exists()
+    assert result.unit_path == units / serve_unit_filename(project)
+    assert result.monitor_unit_path == units / monitor_unit_filename(project)
 
 
 def test_installed_unit_should_be_removed_when_uninstall(
@@ -328,8 +331,11 @@ def test_pid_file_should_refuse_before_stopping_when_restart(
     (log_dir / "serve.pid").write_text("12345")
 
     with patch("agent_runner._lifecycle.send_signal_to_pid", return_value=True) as send:
-        with pytest.raises(RuntimeError, match="systemd"):
+        with pytest.raises(RuntimeError) as caught:
             api.restart(tmp_git_repo)
+
+        actual = str(caught.value)
+        assert "systemd" in actual
 
     send.assert_not_called()  # refused BEFORE stop()
 
@@ -344,8 +350,11 @@ def test_system_unit_should_refuse_with_systemctl_command_when_restart(
 
     monkeypatch.setattr("agent_runner._lifecycle._system_unit_exists", lambda project: True)
 
-    with pytest.raises(RuntimeError, match="sudo systemctl restart"):
+    with pytest.raises(RuntimeError) as caught:
         api.restart(tmp_git_repo)
+
+    actual = str(caught.value)
+    assert "sudo systemctl restart" in actual
 
 
 def test_system_unit_should_refuse_without_user_teardown_when_uninstall(

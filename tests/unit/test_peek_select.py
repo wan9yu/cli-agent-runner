@@ -30,8 +30,11 @@ def test_select_path_should_raise_key_error_when_selecting_removed_events_kind()
     # Minimal tree mirroring ProjectState shape; no 'events' attribute.
     tree = {"system": {"disk_used_pct": 50.0}, "plugins": {"post_round_hooks": []}}
 
-    with pytest.raises(KeyError, match="events"):
+    with pytest.raises(KeyError) as caught:
         select_path(tree, "events.agent_usage_recorded")
+
+    actual = str(caught.value)
+    assert "events" in actual
 
 
 def test_peek_should_reject_window_flag_via_argparse_when_invoked():

@@ -160,10 +160,13 @@ def test_acquire_lock_else_raise_should_raise_lockheld_when_lock_already_held(
     fd = _acquire_lock_or_raise(lock_path)
 
     try:
-        with pytest.raises(LockHeldError):
+        with pytest.raises(LockHeldError) as caught:
             _acquire_lock_or_raise(lock_path)
     finally:
         os.close(fd)
+
+    actual = str(caught.value)
+    assert str(lock_path) in actual
 
 
 def test_acquire_lock_else_raise_should_return_fd_when_no_existing_lock(tmp_path: Path) -> None:
@@ -449,7 +452,7 @@ def test_phase_for_should_use_override_when_explicit_phase_given() -> None:
 def test_phase_for_should_raise_when_override_not_in_phases() -> None:
     from agent_runner.runner import _phase_for
 
-    with pytest.raises(ValueError, match="not in.*phases") as caught:
+    with pytest.raises(ValueError) as caught:
         _phase_for(1, ["dev", "qa"], override="bogus")
 
     assert re.search(r"not in.*phases", str(caught.value))
@@ -458,10 +461,11 @@ def test_phase_for_should_raise_when_override_not_in_phases() -> None:
 def test_phase_for_should_raise_when_phases_not_configured() -> None:
     from agent_runner.runner import _phase_for
 
-    with pytest.raises(ValueError, match=r"\[phases\]") as caught:
+    with pytest.raises(ValueError) as caught:
         _phase_for(1, None, override="dev")
 
-    assert re.search(r"\[phases\]", str(caught.value))
+    actual = str(caught.value)
+    assert "[phases]" in actual
 
 
 def test_phase_for_should_rotate_by_round_num_when_no_override_given() -> None:

@@ -41,7 +41,10 @@ def test_memory_pressure_should_detect_pressure_from_sout_delta_when_mem_availab
 
     cur = {"swap_sout": _50MB, "mem_free_mb": 5, "mem_available_mb": 150, "psi_some_avg10": None}
 
-    assert host_health.memory_pressure(cur, prev, _cfg()) is not None
+    actual = host_health.memory_pressure(cur, prev, _cfg())
+
+    assert actual is not None
+    assert actual.signal == "swap_out_rate"
 
 
 def test_memory_pressure_should_be_critical_when_swap_and_memfree_match_field_episode() -> None:
@@ -364,7 +367,7 @@ def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys_when_i
     cfg = MonitorHostHealthConfig()
     base = {
         "psi_some_avg10": 1.0,
-        "psi_full_avg10": 0.5,
+        "psi_full_avg10": 70.0,
         "mem_available_mb": 400,
         "mem_free_mb": 200,
         "swap_sout": 0,
@@ -379,7 +382,10 @@ def test_memory_pressure_verdict_should_ignore_io_psi_and_full_total_keys_when_i
     a = host_health.memory_pressure(base, {}, cfg)
     b = host_health.memory_pressure(poisoned, {}, cfg)
 
-    assert a == b  # Pressure is a dataclass; verdict+context identical
+    assert a is not None
+    assert a.severity == "critical"
+    assert a.signal == "psi"
+    assert a == b
 
 
 def test_cgroup_growth_rate_pressure_should_return_none_when_rate_is_none() -> None:
@@ -432,6 +438,8 @@ def test_cgroup_growth_rate_pressure_should_read_threshold_from_cfg_when_invoked
         pressure=_HostHealthPressureConfig(cgroup_growth_rate_warning_mb_per_min=100.0)
     )
 
-    result = host_health.cgroup_growth_rate_pressure(150.0, cfg)
+    actual = host_health.cgroup_growth_rate_pressure(150.0, cfg)
 
-    assert result is not None
+    assert actual is not None
+    assert actual.signal == "cgroup_growth_rate"
+    assert actual.context["threshold_mb_per_min"] == 100.0

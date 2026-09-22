@@ -163,7 +163,9 @@ def test_disable_pre_round_hooks_should_be_dropped_and_load_clean_when_migrated(
     # Assert the actual TOML key assignment is gone, not just any substring.
     assert not re.search(r"^\s*disable_pre_round_hooks\s*=", cfg.read_text(), re.MULTILINE)
 
-    load_config(cfg)  # loads clean post-migrate
+    loaded = load_config(cfg)
+
+    assert not hasattr(loaded.runtime, "disable_pre_round_hooks")
 
 
 def test_bare_command_config_should_load_when_migrated(tmp_path):
@@ -177,7 +179,9 @@ def test_bare_command_config_should_load_when_migrated(tmp_path):
     rc = migrate_cmd.cmd(_args(cfg))
     assert rc == 0
 
-    load_config(cfg)  # the rewritten file loads clean under 0.2.12 strictness
+    loaded = load_config(cfg)
+
+    assert loaded.agent.command == ["true"]
 
 
 def test_flat_phase_alias_should_exit_0_with_guidance_when_present(tmp_path, capsys):
@@ -311,4 +315,8 @@ def test_rejected_config_should_be_guided_not_crashed_when_migrated(
     assert rc == 1  # manual: guided, not a crash
 
     cfg.write_text(cfg.read_text().replace(replace_from, replace_to))
-    load_config(cfg)  # now loads clean
+
+    loaded = load_config(cfg)
+
+    assert replace_from not in cfg.read_text()
+    assert loaded.agent.command == ["true"]

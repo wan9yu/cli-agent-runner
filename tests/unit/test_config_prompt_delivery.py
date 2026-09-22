@@ -1,5 +1,3 @@
-import re
-
 import pytest
 
 from agent_runner.config import load_config
@@ -31,10 +29,11 @@ def test_prompt_delivery_should_accept_stdin_when_template_has_no_prompt_token(t
 def test_prompt_delivery_should_reject_stdin_when_template_has_prompt_token(tmp_path):
     extra = 'prompt_delivery = "stdin"\nprompt_arg_template = ["-p", "{prompt}"]\n'
 
-    with pytest.raises(ValueError, match="stdin") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(_cfg(tmp_path, extra))
 
-    assert re.search(r"stdin", str(caught.value))
+    actual = str(caught.value)
+    assert "stdin" in actual
 
 
 def test_prompt_delivery_should_reject_invalid_value_when_invoked(tmp_path):

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 
@@ -22,10 +21,10 @@ def test_git_repo_should_create_three_files_when_scaffolded(tmp_git_repo: Path) 
 def test_existing_toml_should_raise_when_scaffolded_without_force(tmp_git_repo: Path) -> None:
     (tmp_git_repo / "agent-runner.toml").write_text("# old\n")
 
-    with pytest.raises(FileExistsError) as caught:
+    with pytest.raises(FileExistsError):
         scaffold_project(tmp_git_repo, force=False, commit=False)
 
-    assert isinstance(caught.value, FileExistsError)
+    assert (tmp_git_repo / "agent-runner.toml").read_text() == "# old\n"
 
 
 def test_existing_toml_should_be_overwritten_when_scaffolded_with_force(tmp_git_repo: Path) -> None:
@@ -75,10 +74,11 @@ def test_scaffold_should_create_git_commit_when_commit_true(tmp_git_repo: Path) 
 def test_non_git_dir_should_raise_when_scaffolded(tmp_path: Path) -> None:
     dest = tmp_path
 
-    with pytest.raises(RuntimeError, match="not a git") as caught:
+    with pytest.raises(RuntimeError) as caught:
         scaffold_project(dest, force=False, commit=False)
 
-    assert re.search(r"not a git", str(caught.value))
+    actual = str(caught.value)
+    assert "not a git" in actual
 
 
 def test_aider_preset_should_write_aider_toml_when_scaffolded(
@@ -100,10 +100,10 @@ def test_aider_preset_should_write_aider_toml_when_scaffolded(
 def test_unknown_preset_should_raise_when_scaffolded(tmp_git_repo: Path) -> None:
     preset = "nonexistent"
 
-    with pytest.raises((FileNotFoundError, ValueError)) as caught:
+    with pytest.raises(FileNotFoundError) as caught:
         scaffold_project(tmp_git_repo, preset=preset, force=False, commit=False)
 
-    assert isinstance(caught.value, (FileNotFoundError, ValueError))
+    assert preset in str(caught.value)
 
 
 def test_dirty_repo_should_commit_only_scaffold_files_when_scaffolded_with_commit(

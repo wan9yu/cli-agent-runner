@@ -39,6 +39,8 @@ def test_throttle_should_not_reach_the_offset_follow_path_when_scanned():
 def test_throttle_should_actually_use_the_event_log_scan_path_when_scanned():
     src = _THROTTLE.read_text(encoding="utf-8")
 
-    uses_scan = "event_log.scan" in src and "event_log.newest_month_files" in src
+    actual = [
+        token for token in ("event_log.scan", "event_log.newest_month_files") if token not in src
+    ]
 
-    assert uses_scan
+    assert actual == []

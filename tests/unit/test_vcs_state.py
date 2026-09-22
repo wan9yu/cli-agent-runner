@@ -81,7 +81,8 @@ def test_stash_orphan_should_create_marked_stash_when_tree_dirty(tmp_git_repo: P
 
     assert ref is not None
     assert isinstance(ref, StashRef)
-    assert ref.sha != ""
+    assert ref.sha == _stash_tip(tmp_git_repo)
+    assert not ref.sha.startswith("stash@{")
     assert ref.message.startswith("ORPHAN R42")
     assert detect_dirty_files(tmp_git_repo) == []  # tree clean after stash
 
@@ -105,7 +106,9 @@ def test_stash_orphan_should_return_existing_ref_when_called_again_within_idempo
     second = stash_orphan(tmp_git_repo, round_num=42, phase=None, idempotency_s=5)
 
     assert second is not None
-    assert second.sha == first.sha  # same ref returned, no new stash created
+    assert first is not None
+    assert second.sha == first.sha
+    assert first.sha == _stash_tip(tmp_git_repo)
 
 
 def test_stash_orphan_should_include_phase_in_message_when_phase_given(
@@ -116,12 +119,23 @@ def test_stash_orphan_should_include_phase_in_message_when_phase_given(
     ref = stash_orphan(tmp_git_repo, round_num=7, phase="diverge")
 
     assert ref is not None
+    assert ref.sha == _stash_tip(tmp_git_repo)
     assert "phase=diverge" in ref.message
 
 
 def _head(repo: Path) -> str:
     return subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _stash_tip(repo: Path) -> str:
+    return subprocess.run(
+        ["git", "stash", "list", "-1", "--format=%H"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -156,8 +170,8 @@ def test_try_auto_commit_should_commit_excluding_log_dir_when_evolving_change_pr
 
     sha = try_auto_commit(tmp_git_repo, 2, None, log_dir=log_dir)
 
-    assert sha and len(sha) >= 7  # commit SHA returned on success
-    assert _head(tmp_git_repo) != before
+    assert sha == _head(tmp_git_repo)
+    assert sha != before
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=tmp_git_repo, capture_output=True, text=True
     ).stdout
@@ -176,7 +190,8 @@ def test_stash_orphan_should_exclude_log_dir_from_stash_when_log_dir_under_work_
 
     ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
 
-    assert ref is not None  # the agent's work WAS stashed
+    assert ref is not None
+    assert ref.sha == _stash_tip(tmp_git_repo)
     assert not (tmp_git_repo / "work.py").exists()  # stashed away
     assert (log_dir / "agent-runner.lock").exists()  # NOT swept by stash -u
 
@@ -205,7 +220,8 @@ def test_stash_orphan_should_run_defense_when_log_dir_is_dash_prefixed_and_gitig
 
     ref = stash_orphan(tmp_git_repo, round_num=1, phase=None, log_dir=log_dir)
 
-    assert ref is not None  # push was not refused: the defense ran
+    assert ref is not None
+    assert ref.sha == _stash_tip(tmp_git_repo)
     assert not (tmp_git_repo / "work.py").exists()  # agent work stashed away
     assert (log_dir / "agent-runner.lock").exists()  # bookkeeping NOT swept
 
@@ -229,11 +245,7 @@ def test_try_auto_commit_should_return_sha_when_commit_succeeds(tmp_git_repo: Pa
 
     sha = try_auto_commit(tmp_git_repo, 1, None)
 
-    assert sha and len(sha) >= 7
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=tmp_git_repo, capture_output=True, text=True
-    ).stdout.strip()
-    assert head.startswith(sha) or sha == head
+    assert sha == _head(tmp_git_repo)
 
 
 def test_try_auto_commit_should_return_empty_string_when_nothing_staged(
@@ -253,4 +265,5 @@ def test_try_auto_commit_should_raise_auto_commit_error_when_not_git_repo(tmp_pa
     with pytest.raises(AutoCommitError) as caught:
         try_auto_commit(dest, 1, None)
 
-    assert str(caught.value)
+    actual = str(caught.value)
+    assert "git" in actual.lower()

@@ -195,7 +195,7 @@ def test_agent_runner_should_terminate_before_host_pressure_peaks_on_real_cgroup
         "means the fixture's cgroup shape is wrong (MemorySwapMax not really "
         "unbounded), not (a) or (b)."
     )
-    assert outcome is not None
+    assert outcome in {"TERMINATE", "BRAKE_ONLY"}
 
     # go/no-go legibility: which outcome fired must be visible, not hidden
     # behind the `or` above -- only the TERMINATE (+ reap) is the moat
@@ -385,7 +385,7 @@ def _assert_control(
     )
 
 
-def _run_control_arm(*, run, unit_info: dict, workdir: str) -> None:
+def _collect_control_arm(*, run, unit_info: dict, workdir: str) -> dict:
     unit = unit_info["unit"]
     cgroup_path = unit_info["cgroup_path"]
     events: list[dict] = []
@@ -416,14 +416,14 @@ def _run_control_arm(*, run, unit_info: dict, workdir: str) -> None:
     )
     serve_active = run(f"sudo systemctl is-active {unit}", check=False).stdout.strip() == "active"
     host = run("true", check=False)
-    _assert_control(
-        events,
-        cgroup_path,
-        host.returncode == 0,
-        leaf_oom_kill=leaf_oom_kill,
-        child_gone=child_gone,
-        serve_active=serve_active,
-    )
+    return {
+        "events": events,
+        "cgroup_path": cgroup_path,
+        "host_ok": host.returncode == 0,
+        "leaf_oom_kill": leaf_oom_kill,
+        "child_gone": child_gone,
+        "serve_active": serve_active,
+    }
 
 
 @pytest.mark.timeout(_CONTROL_WAIT_TIMEOUT_S + 600)
@@ -434,9 +434,16 @@ def test_agent_runner_should_let_cgroup_oom_kill_the_capped_child_when_swap_is_b
     unit_info = pi_pre_oom_control_unit
     workdir = pi_workdir
 
-    _run_control_arm(run=_ssh, unit_info=unit_info, workdir=workdir)
+    actual = _collect_control_arm(run=_ssh, unit_info=unit_info, workdir=workdir)
 
-    assert "cgroup_path" in unit_info
+    _assert_control(
+        actual["events"],
+        actual["cgroup_path"],
+        actual["host_ok"],
+        leaf_oom_kill=actual["leaf_oom_kill"],
+        child_gone=actual["child_gone"],
+        serve_active=actual["serve_active"],
+    )
 
 
 @pytest.mark.timeout(_CONTROL_WAIT_TIMEOUT_S + 120)
@@ -447,6 +454,13 @@ def test_agent_runner_should_let_cgroup_oom_kill_the_capped_child_when_swap_is_b
     unit_info = cgroup_pre_oom_control_unit
     workdir = cgroup_workdir
 
-    _run_control_arm(run=_local_sh, unit_info=unit_info, workdir=workdir)
+    actual = _collect_control_arm(run=_local_sh, unit_info=unit_info, workdir=workdir)
 
-    assert "cgroup_path" in unit_info
+    _assert_control(
+        actual["events"],
+        actual["cgroup_path"],
+        actual["host_ok"],
+        leaf_oom_kill=actual["leaf_oom_kill"],
+        child_gone=actual["child_gone"],
+        serve_active=actual["serve_active"],
+    )

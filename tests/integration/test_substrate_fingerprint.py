@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent_runner._substrate import compute_paths_hash
 from tests._test_helpers import make_toml_with_sections, read_events_for_current_month
 
 
@@ -66,8 +67,7 @@ def test_serve_should_populate_paths_hash_when_substrate_fingerprint_paths_confi
     events = read_events_for_current_month(log_dir)
     before_events = [e for e in events if e.get("event") == "round_substrate_before"]
     assert len(before_events) == 1
-    assert before_events[0]["paths_hash"] is not None
-    assert len(before_events[0]["paths_hash"]) == 64  # sha256 hex
+    assert before_events[0]["paths_hash"] == compute_paths_hash(tmp_path, ["*.py"])
 
 
 def test_serve_should_populate_git_head_when_work_dir_is_git_repo(tmp_path: Path):
@@ -101,6 +101,9 @@ def test_serve_should_populate_git_head_when_work_dir_is_git_repo(tmp_path: Path
     assert proc.returncode == 0, f"stderr={proc.stderr[:500]}"
     events = read_events_for_current_month(log_dir)
     before_events = [e for e in events if e.get("event") == "round_substrate_before"]
+    expected = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
+    ).strip()
+
     assert len(before_events) == 1
-    assert before_events[0]["git_head"] is not None
-    assert len(before_events[0]["git_head"]) >= 7  # SHA prefix at minimum
+    assert before_events[0]["git_head"] == expected

@@ -19,11 +19,12 @@ def test_preset_should_produce_loadable_toml_when_initialized(
     from agent_runner.config import load_config
 
     result = init(tmp_git_repo, preset=preset_name, commit=False)
+    written = tomllib.loads((tmp_git_repo / "agent-runner.toml").read_text(encoding="utf-8"))
+
+    cfg = load_config(tmp_git_repo / "agent-runner.toml")
 
     assert result.preset == preset_name
-    toml_path = tmp_git_repo / "agent-runner.toml"
-    cfg = load_config(toml_path)
-    assert cfg.agent.command
+    assert cfg.agent.command == written["agent"]["command"]
 
 
 def test_aider_preset_should_include_aider_specific_fields_when_initialized(
@@ -76,8 +77,11 @@ def test_init_should_raise_when_toml_exists_without_force(tmp_git_repo: Path) ->
 
     init(tmp_git_repo, preset="claude", commit=False)
 
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError) as caught:
         init(tmp_git_repo, preset="aider", commit=False)
+
+    actual = str(caught.value)
+    assert "already exists" in actual
 
 
 def test_init_should_overwrite_when_toml_exists_with_force(tmp_git_repo: Path) -> None:

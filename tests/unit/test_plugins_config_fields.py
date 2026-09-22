@@ -27,7 +27,7 @@ def test_parse_plugins_should_carry_disable_when_present():
 def test_parse_plugins_should_raise_when_unknown_key_present():
     raw = {"acme_setting": 5}
 
-    with pytest.raises(ConfigError, match="unknown \\[plugins\\] field.*acme_setting") as caught:
+    with pytest.raises(ConfigError) as caught:
         _parse_plugins(raw)
 
     assert re.search(r"unknown \[plugins\] field.*acme_setting", str(caught.value))

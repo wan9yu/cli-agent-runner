@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -30,7 +29,8 @@ def test_load_config_should_raise_when_max_rounds_is_invalid(tmp_path: Path, inv
 
     cfg_path = make_toml_with_sections(tmp_path, runtime_extra=f"max_rounds = {invalid}\n")
 
-    with pytest.raises(ValueError, match=r"runtime\.max_rounds") as caught:
+    with pytest.raises(ValueError) as caught:
         load_config(cfg_path)
 
-    assert re.search(r"runtime\.max_rounds", str(caught.value))
+    actual = str(caught.value)
+    assert "runtime.max_rounds" in actual

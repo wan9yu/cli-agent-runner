@@ -8,8 +8,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 from agent_runner.cli import _serve_round, serve_cmd
 from tests._test_helpers import read_events_for_current_month
 
@@ -111,7 +109,12 @@ def test_wedged_round_should_escalate_to_killpg_when_term_is_ignored(tmp_path, m
     ]
     assert len(wedged) == 1  # still emitted exactly once even though TERM alone failed
 
-    # No orphan: the process (its own session/pgroup leader) is fully reaped, not
-    # merely signaled — _terminate_round's post-killpg proc.wait() confirms exit.
-    with pytest.raises(ProcessLookupError):
-        os.kill(wedged[0]["pid"], 0)
+    pid = wedged[0]["pid"]
+
+    try:
+        os.kill(pid, 0)
+        alive = True
+    except ProcessLookupError:
+        alive = False
+
+    assert not alive

@@ -29,8 +29,11 @@ def test_load_config_should_reject_a_resume_preset_whose_command_already_has_the
         tmp_path, agent_extra='command = ["pi", "--session-id", "x", "--mode", "json"]\n'
     )
 
-    with pytest.raises(ValueError, match="--session-id"):
+    with pytest.raises(ValueError) as caught:
         load_config(tmp_path / "agent-runner.toml")
+
+    actual = str(caught.value)
+    assert "--session-id" in actual
 
 
 def test_load_config_should_accept_a_resume_preset_without_the_flag_in_command_when_invoked(
@@ -40,7 +43,9 @@ def test_load_config_should_accept_a_resume_preset_without_the_flag_in_command_w
 
     write_min_config(tmp_path, agent_extra='command = ["pi", "--mode", "json"]\n')
 
-    load_config(tmp_path / "agent-runner.toml")
+    loaded = load_config(tmp_path / "agent-runner.toml")
+
+    assert loaded.agent.command == ["pi", "--mode", "json"]
 
 
 def test_default_round_budget_should_survive_a_60s_pi_auto_retry_when_invoked():

@@ -46,8 +46,11 @@ def test_work_dir_from_args_should_raise_when_config_filename_wrong(
 
     args = argparse.Namespace(config=tmp_path / "custom-name.toml")
 
-    with pytest.raises(ValueError, match="agent-runner.toml"):
+    with pytest.raises(ValueError) as caught:
         work_dir_from_args(args)
+
+    actual = str(caught.value)
+    assert "agent-runner.toml" in actual
 
 
 # ---------------------------------------------------------------------------

@@ -55,7 +55,10 @@ def test_sample_should_never_shell_out_when_invoked(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(subprocess, "run", _boom)
 
-    sample()  # must not raise
+    actual = sample()
+
+    assert "mem_available_mb" in actual
+    assert "swap_sout" in actual
 
 
 def test_read_psi_should_return_none_when_no_psi_file(tmp_path: Path) -> None:

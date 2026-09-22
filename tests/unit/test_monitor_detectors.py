@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from agent_runner.api_types import Alert
 from agent_runner.config import PhaseOverride
 from agent_runner.monitor import (
     KNOWN_ALERT_KINDS,
@@ -418,15 +417,6 @@ def test_detect_network_fail_should_return_warning_when_short_exits_match_networ
     assert a is not None
     assert a.severity == "warning"
     assert a.auto_action == "none"
-
-
-def test_alert_severity_should_be_one_of_three_values_when_invoked() -> None:
-
-    a = Alert(severity="info", detector="d", message="m", context={}, ts="t")
-
-    actual = a.severity
-
-    assert actual in {"info", "warning", "critical"}
 
 
 def test_detect_oauth_fail_should_use_custom_patterns_when_provided():

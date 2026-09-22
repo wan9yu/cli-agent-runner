@@ -64,7 +64,12 @@ def test_config_digest_should_ignore_host_health_floors_when_invoked(tmp_path: P
     hh = dataclasses.replace(a.monitor.host_health, memory=mem)
     b = dataclasses.replace(a, monitor=MonitorConfig(host_health=hh))
 
-    assert config_digest(a, None) == config_digest(b, None)
+    before = config_digest(a, None)
+
+    assert config_digest(b, None) == before
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("y" * 500)
+    assert config_digest(a, None) != before
 
 
 def test_snapshot_fields_should_omit_agent_env_values_when_invoked(tmp_path: Path) -> None:

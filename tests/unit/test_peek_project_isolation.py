@@ -38,7 +38,10 @@ def test_named_project_resolution_should_raise_when_charset_invalid() -> None:
 
     from agent_runner import api
 
-    with pytest.raises(ValueError) as caught:
-        api.status("bad;name")
+    name = "bad;name"
 
-    assert str(caught.value)
+    with pytest.raises(ValueError) as caught:
+        api.status(name)
+
+    actual = str(caught.value)
+    assert "invalid project name" in actual

@@ -146,13 +146,14 @@ def test_preset_should_load_without_errors_when_loaded_via_load_config(name: str
     from agent_runner.config import load_config
 
     text = _preset_text(name).replace("{project}", "test-project")
+    parsed = tomllib.loads(text)
     target = tmp_path / "agent-runner.toml"
     target.write_text(text)
 
     cfg = load_config(target)
 
-    assert cfg.agent.command
-    assert cfg.agent.prompt_arg_template
+    assert cfg.agent.command == parsed["agent"]["command"]
+    assert cfg.agent.prompt_arg_template == parsed["agent"]["prompt_arg_template"]
 
 
 def test_gemini_preset_should_include_skip_trust_when_parsed() -> None:
