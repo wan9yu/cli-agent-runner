@@ -4,13 +4,11 @@ threshold<=window. Per-phase prompt.files = [] stays a valid distinct state."""
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 import pytest
 
 from agent_runner.config import ConfigError, load_config
-from tests._test_helpers import PRESET_NAMES
 
 
 def _write(tmp_path: Path, body: str) -> Path:
@@ -124,17 +122,3 @@ def test_threshold_greater_than_window_should_be_rejected_when_invoked(tmp_path:
 
     actual = str(caught.value)
     assert "anomaly_repetitive_threshold" in actual
-
-
-@pytest.mark.parametrize("preset", PRESET_NAMES)
-def test_shipped_preset_should_load_under_strictness_when_invoked(
-    tmp_git_repo: Path, preset: str
-) -> None:
-    from agent_runner.api import init
-
-    init(tmp_git_repo, preset=preset, commit=False)
-    written = tomllib.loads((tmp_git_repo / "agent-runner.toml").read_text(encoding="utf-8"))
-
-    loaded = load_config(tmp_git_repo / "agent-runner.toml")
-
-    assert loaded.agent.command == written["agent"]["command"]

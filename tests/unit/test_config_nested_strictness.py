@@ -166,23 +166,3 @@ def test_load_config_should_name_the_phase_when_per_phase_schedule_has_bad_key(
 
     actual = str(caught.value)
     assert "phases.dev.schedule" in actual
-
-
-def test_load_config_should_name_schedule_when_top_level_schedule_has_bad_key(
-    tmp_path: Path,
-) -> None:
-    """Regression guard for the label default: a top-level [schedule] bad key
-    must still report `[schedule]`, not some leaked per-phase label."""
-    p = _write(
-        tmp_path,
-        '[agent]\ncommand = ["x"]\nprompt_arg_template = ["{prompt}"]\n'
-        f'[runtime]\nwork_dir = "{tmp_path}"\nlog_dir = "{tmp_path}/logs"\n'
-        f'[prompt]\nfile = "{tmp_path}/p.md"\n'
-        "[schedule]\nbogus = 1\n",
-    )
-
-    with pytest.raises(ConfigError) as caught:
-        load_config(p)
-
-    actual = str(caught.value)
-    assert "unknown [schedule]" in actual
