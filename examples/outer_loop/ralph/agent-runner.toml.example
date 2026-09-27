@@ -1,0 +1,49 @@
+# Copy this file to agent-runner.toml beside the git repo, not inside it.
+# Edit that copy. --config opens agent-runner.toml, not this example.
+# STOP is the stop_file path, also beside the repo, absent at boot.
+# Replace WORK, PI, and STOP. Then:
+#   agent-runner --config /path/beside/the/repo/agent-runner.toml serve
+# Do not loop `agent-runner round`. Do not restart on exit 78, 75, or 70.
+# Start stop-watch.py before serve. It creates STOP only after a green
+# round_end, inside the delay, while the JSON pid is alive.
+
+schema_version = 1
+
+[agent]
+command = ["PI", "-p", "-na", "--mode", "json", "--model", "PROVIDER/MODEL"]
+prompt_arg_template = ["{prompt}"]
+name = "pi"
+terminal_marker = "\"type\":\"agent_end\""
+
+[agent.env]
+PI_OFFLINE = "1"
+
+[runtime]
+work_dir = "WORK"
+log_dir = "WORK/logs"
+round_budget_s = 1800
+restart_delay_s = 60
+round_log_retention = 0
+max_rounds = 6
+stop_file = "STOP"
+
+[prompt]
+# Index 0 is the prompt. The ledger is index >= 1. Do not use the single
+# `file =` form; it cannot carry the ledger. A missing ledger file at boot
+# is a cold-start skip, not a check-command change.
+files = ["prompts/main.md", "logs/lessons.md"]
+inject_context = true
+
+[goal]
+ledger = "logs/lessons.md"
+
+[[goal.checks]]
+name = "tests"
+cmd = ["python3", "-m", "unittest", "test_pair"]
+timeout_s = 5
+
+[vcs]
+# ignore: the child's edit to lane.py or bonus.py must still be in the tree
+# for the next round. stash can sweep that edit before round 2.
+dirty_action = "ignore"
+stash_idempotency_s = 5

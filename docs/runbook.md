@@ -544,6 +544,10 @@ active round's log — `tail -F {log_dir}/round-current.log` for live view.
 
 The same family naming applies to the agent's own transcripts in
 `{log_dir}/rounds/R<N>-<timestamp>.log`, one file per round.
+`round-<N>.log` is the operator log. Do not treat its size as the child
+transcript. For a pi `--mode json` child, assistant text is an `agent_end`
+message with `role == assistant` in `rounds/R<N>-*.log`. User text in that
+record does not count.
 
 <!-- authored: canonical round_log_retention=0 default; SSOT agent_runner/config/models.py -->
 **Neither family is pruned by default (0.2.6+).** `runtime.round_log_retention`

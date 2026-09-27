@@ -1,0 +1,45 @@
+# Copy this file to agent-runner.toml beside the git repo, not inside it.
+# Edit that copy. --config opens agent-runner.toml, not this example.
+# SNAPSHOT is the beside-repo snapshot.md. STATE is the beside-repo
+# state.txt. delay.py reads them as LH_SNAPSHOT and LH_STATE.
+# SNAPSHOT is a prompt file after the ledger. state.txt is not.
+# Replace WORK, PI, SNAPSHOT. Do not set stop_file.
+# Then serve with --config. Do not loop `agent-runner round`.
+# Do not restart on exit 78, 75, or 70.
+
+schema_version = 1
+
+[agent]
+command = ["PI", "-p", "-na", "--mode", "json", "--model", "PROVIDER/MODEL"]
+prompt_arg_template = ["{prompt}"]
+name = "pi"
+terminal_marker = "\"type\":\"agent_end\""
+
+[agent.env]
+PI_OFFLINE = "1"
+
+[runtime]
+work_dir = "WORK"
+log_dir = "WORK/logs"
+round_budget_s = 1800
+restart_delay_s = 60
+round_log_retention = 0
+max_rounds = 3
+
+[prompt]
+files = ["prompts/main.md", "logs/lessons.md", "SNAPSHOT"]
+inject_context = true
+
+[goal]
+ledger = "logs/lessons.md"
+
+[[goal.checks]]
+name = "marker"
+cmd = ["python3", "check_marker.py"]
+timeout_s = 5
+
+[vcs]
+# ignore: an outer edit to prompts/main.md and a child-created marker.txt
+# must still be in the tree for the next round. stash can sweep both.
+dirty_action = "ignore"
+stash_idempotency_s = 5

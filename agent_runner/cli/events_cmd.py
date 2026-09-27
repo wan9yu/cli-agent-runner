@@ -214,8 +214,7 @@ def _query_events(log_dir: Path, kind_set: set[str], window: int) -> int:
         print(f"Error: events file unreadable: {e}", file=sys.stderr)
         return 1
 
-    shown = matches[-window:] if window > 0 else []
-    for line in shown:
+    for line in matches[-window:] if window > 0 else []:
         print(line)
     return 0
 

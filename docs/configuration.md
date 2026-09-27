@@ -59,6 +59,11 @@ using. Past rounds: [events.md](events.md). Each `round_start` carries
 `config_digest` of listed prompt-file **paths and bytes** (plus check
 cmdlines, `[vcs]`, prompt delivery, agent env) — a label only; the kill path
 does not read it. It is not the assembled prompt and not every hot TOML key.
+`config_changed` is true when that digest differs from the previous
+`round_start`. The first round has no previous digest, so the flag is true.
+That is not a prompt rewrite. Compare `config_digest` across `round_start`,
+or hash the prompt file. A later change is a change in those hashed bytes.
+It is not, by itself, a check-command change.
 
 This split is for per-round prompt and check updates. It is not a general
 hot-reload. Changing config *mid-round* would still tear semantics (e.g.

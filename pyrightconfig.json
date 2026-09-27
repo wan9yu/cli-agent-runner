@@ -2,11 +2,5 @@
   "pythonVersion": "3.11",
   "venvPath": ".",
   "venv": ".venv",
-  "extraPaths": [".", ".venv/lib/python3.11/site-packages"],
-  "executionEnvironments": [
-    {
-      "root": ".",
-      "extraPaths": [".", ".venv/lib/python3.11/site-packages"]
-    }
-  ]
+  "extraPaths": [".", ".venv/lib/python3.11/site-packages"]
 }

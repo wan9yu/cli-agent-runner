@@ -109,7 +109,11 @@ breakers. Config lifetimes: [configuration.md](configuration.md) § Config reloa
 ### `agent-runner serve [--once]`
 
 Long-running supervisor loop. Traps SIGTERM (graceful stop) and SIGINT
-(graceful). Writes `serve.pid`. `--once` runs a single round then exits (debug).
+(graceful). Writes `log_dir/serve.pid` as JSON
+`{"pid": <int>, "create_time": <number>}` and unlinks it on exit. A legacy
+bare integer is only a back-compat read. A delay script must parse the
+object, then check that pid is alive. Requiring all-digit text skips every
+outer write. `--once` runs a single round then exits (debug).
 
 Flags:
 

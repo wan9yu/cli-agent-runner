@@ -20,6 +20,9 @@ don't recognize is silently ignored; a kind they recognize has stable fields.
 History is the monthly JSONL (read complete lines; the last line of a live
 file may be partial). `peek --json` is a live snapshot of current TOML and
 process state, not a replay of which config produced a past round.
+`config_changed` on `round_start` is true when `config_digest` differs from
+the previous `round_start`. The first round has no previous digest, so the
+flag is true. It is not, by itself, an edit.
 
 ## Why no explicit `schema_version: int` field?
 
