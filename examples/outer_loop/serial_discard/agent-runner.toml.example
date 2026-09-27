@@ -1,0 +1,48 @@
+# Copy this file to agent-runner.toml beside the git repo, not inside it.
+# Edit that copy. --config opens agent-runner.toml, not this example.
+# Replace WORK, PI, and CHECK before boot. WORK is the absolute attempt
+# directory. CHECK is the absolute path of visible_check.py, beside the
+# repo. Do not set stop_file. Do not set auto_commit.
+# Then serve with --config. Do not loop `agent-runner round`.
+# Do not restart on exit 78, 75, or 70. Do not create a worktree.
+# Start delay.py before serve. On a red gap it does not merge the attempt
+# into the keep tree, and it does not write the attempt source back.
+
+schema_version = 1
+
+[agent]
+command = ["PI", "-p", "-na", "--mode", "json", "--model", "PROVIDER/MODEL"]
+prompt_arg_template = ["{prompt}"]
+name = "pi"
+terminal_marker = "\"type\":\"agent_end\""
+
+[agent.env]
+PI_OFFLINE = "1"
+
+[runtime]
+work_dir = "WORK"
+log_dir = "WORK/logs"
+round_budget_s = 1800
+restart_delay_s = 60
+round_log_retention = 0
+max_rounds = 2
+
+[prompt]
+# Index 0 is the standing prompt. The ledger is index 1. Do not use the
+# single `file =` form. The keep directory is not a prompt path.
+files = ["prompts/program.md", "logs/lessons.md"]
+inject_context = true
+
+[goal]
+ledger = "logs/lessons.md"
+
+[[goal.checks]]
+name = "visible"
+cmd = ["python3", "CHECK"]
+timeout_s = 5
+
+[vcs]
+# ignore: a child edit inside the attempt must not be swept. stash is not
+# the discard. This script does not merge and does not write attempt.py back.
+dirty_action = "ignore"
+stash_idempotency_s = 5

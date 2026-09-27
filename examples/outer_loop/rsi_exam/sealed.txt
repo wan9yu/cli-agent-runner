@@ -1,0 +1,4 @@
+SEALED_ASSERT_7c1e9a
+6 6 12
+9 2 11
+3 8 11

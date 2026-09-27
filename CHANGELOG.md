@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD names (`prefix="test_"`, `blank_blocks=0`); pytest keeps label-comment and 6-stmt grouping only. Loc-cap covers every tracked `*.py` (default 1000).
 
 ### Docs
+- `examples/outer_loop/`: RSI-Exam, repeated-failure stop, and serial discard Example cells link copyable recipes. Harness-of-Harness stays without its own recipe.
 - `examples/outer_loop/`: Karpathy, RSIAgent, and ACE Example cells link copyable recipes. Karpathy's how-it-lands cell is the delay-script keep or discard, not a human edit of `program.md`. RSIAgent and ACE keep their existing landing sentences.
 - `examples/outer_loop/`: the map is not a task list. Ralph, loop engineering, and LongHorizon recipes are numbered steps: which files to copy, which `agent-runner.toml` `--config` opens, and which event line to read after serve stops.
 - `examples/outer_loop/ralph/`: same prompt until `[[goal.checks]]` passes. One source-file edit and one unittest per round, then stop even if red. Create `stop_file` inside the delay only when the check is true, while `logs/serve.pid` is a live JSON pid. Tests stay readable. The Map Example cell links the recipe.

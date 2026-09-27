@@ -1,0 +1,47 @@
+# Copy this file to agent-runner.toml beside the git repo, not inside it.
+# Edit that copy. --config opens agent-runner.toml, not this example.
+# Replace WORK and PI. Do not set stop_file. Do not add the holdout
+# scorer, sealed.txt, or score.txt to [prompt] files.
+# Then serve with --config. Do not loop `agent-runner round`.
+# Do not restart on exit 78, 75, or 70.
+# Start delay.py before serve. It scores the sealed file once after
+# round 2, inside the delay. It does not copy that scorer into the prompt.
+
+schema_version = 1
+
+[agent]
+command = ["PI", "-p", "-na", "--mode", "json", "--model", "PROVIDER/MODEL"]
+prompt_arg_template = ["{prompt}"]
+name = "pi"
+terminal_marker = "\"type\":\"agent_end\""
+
+[agent.env]
+PI_OFFLINE = "1"
+
+[runtime]
+work_dir = "WORK"
+log_dir = "WORK/logs"
+round_budget_s = 1800
+restart_delay_s = 60
+round_log_retention = 0
+max_rounds = 2
+
+[prompt]
+# Index 0 is the standing prompt. The ledger is index 1. Do not use the
+# single `file =` form. The holdout scorer is not a prompt path.
+files = ["prompts/program.md", "logs/lessons.md"]
+inject_context = true
+
+[goal]
+ledger = "logs/lessons.md"
+
+[[goal.checks]]
+name = "visible"
+cmd = ["python3", "visible.py"]
+timeout_s = 5
+
+[vcs]
+# ignore: the child edit to visible.py must still be in the tree for
+# round 2. stash can sweep that edit. This script does not restore it.
+dirty_action = "ignore"
+stash_idempotency_s = 5
