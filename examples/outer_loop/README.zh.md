@@ -32,8 +32,8 @@
 | [LongHorizon-Harness](https://arxiv.org/abs/2608.01964) Manage-Execute-Audit | 任务状态在孩子外面。下一步是环境给出的固定词，不是自由散文。要解决的是长任务被「我做完了」带着走。 | 红的一轮：轮间写入 `retry`，只改 instruction 行。第一次变绿：把检查的 value 追加到 `state.txt` 一次。后再绿不再追加。不创建 `stop_file`。关键：下一步来自检查，不来自孩子的散文。 | [longhorizon/](longhorizon/README.zh.md) |
 | 串行丢弃工作区 | 一次尝试一个目录。红的尝试不合并。要解决的是失败的一次弄脏本来要留的那棵树。 | 一次 serve，一个尝试目录，启动前定死。红的一轮之后，轮间不把那个目录合并进保留树。`stash` 不是丢掉。serve 不为下一轮再开 worktree。 | [serial_discard/](serial_discard/README.zh.md) |
 | 重复失败就停 | 同一种失败再出现就停，不是模型说卡住了才停。要解决的是红的结果没变还在空转。 | 第 1 轮红：记下 `satisfied` 和 `value`，不停。下一轮仍红：指纹没变，就在下一轮开始前的轮间创建 `stop_file`。value 变了不停。没有 `value` 时，指纹只是布尔。轮间的 advisory 不停。 | [repeat_fail/](repeat_fail/README.zh.md) |
-| [花费上限](https://aiarch.dev/patterns/bounded-agentic-loop) | token 或钱可以单独让循环停，步数和墙钟还有剩也停。要解决的是轮数很少、账单很大。 | 每一轮可能发出 `cost_usd`。轮间把这些事件加总，到上限就创建 `stop_file`。没有 usage 事件，不等于账单是零。`max_rounds` 和 `round_budget_s` 不是这个加总。 | — |
-| 工具白名单 | 预算挡不住一次仍在预算内的破坏性调用。目标里写一句不是授权。要解决的是 prompt 写了「不要」，工具却还在。 | 第 1 轮之前，在孩子 CLI 里拿掉那个工具。轮间写「不要……」不是门。停进程的路径不读 goal 笔记。 | — |
+| [花费上限](https://aiarch.dev/patterns/bounded-agentic-loop) | token 或钱可以单独让循环停，步数和墙钟还有剩也停。要解决的是轮数很少、账单很大。 | 每一轮可能发出 `cost_usd`。轮间把这些事件加总，到上限就创建 `stop_file`。没有 usage 事件，不等于账单是零。`max_rounds` 和 `round_budget_s` 不是这个加总。 | [spend_ceiling/](spend_ceiling/README.zh.md) |
+| 工具白名单 | 预算挡不住一次仍在预算内的破坏性调用。目标里写一句不是授权。要解决的是 prompt 写了「不要」，工具却还在。 | 第 1 轮之前，在孩子 CLI 里拿掉那个工具。轮间写「不要……」不是门。停进程的路径不读 goal 笔记。 | [tool_allow/](tool_allow/README.zh.md) |
 | 租约协调的 worker | 用心跳认领任务，死掉的 worker 可以被换掉。要解决的是死进程一直占着任务。这一行不加心跳。 | 轮间没有心跳。一轮一进程。死掉的 worker 不会在轮间被换掉。 | — |
 | 对尝试做树搜索 | 留一棵树，展开有希望的分支。要解决的是回头再试旧的分支。这里的历史是一条线，不是树。 | 轮间看到的是已经跑过的一条线。没有分叉可以选给下一轮。 | — |
 | [ralphctl](https://github.com/lukas-grigis/ralphctl) | 一个宿主去驱动很多 CLI。要解决的是包住 claude、codex 等等。不要在 serve 已经在跑的树上再放一个宿主。 | 不要把那个宿主插进轮间。循环是 Ralph 那一行。 | — |
