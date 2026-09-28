@@ -29,7 +29,7 @@
 | Subagent 扇出（Codex workers 等） | 并行的孩子，各自一份上下文。要解决的是想要很多 worker。这里一轮仍是一个进程。 | 一轮一进程。轮间不要 spawn worker。并行是另一个 `serve`，或内环 CLI。 | — |
 | [时间尺度、tick、级联智能](https://arxiv.org/abs/2609.19519) | 审查失败之后才换更强的模型。一个 tick 是驱动者的一步。要解决的是每一步都叫贵的模型，或一轮中途换模型。 | 每一轮用启动时就有的一个阶段命令。轮间：审查失败可以改选另一个阶段。不要在轮间改 `[agent] command`。两个阶段若共用 `pi` 二进制，限流键也共用。 | — |
 | [Harness-of-Harness](https://arxiv.org/abs/2609.01481) | 孩子看得到的检查，不是密封数据上的分数。和 RSI-Exam 同一个问题：考卷不能漏进练习。 | 同 RSI-Exam 那一行。每一轮跑可见检查。轮间：密封评分不进 prompt。 | — |
-| [LongHorizon-Harness](https://arxiv.org/abs/2608.01964) Manage-Execute-Audit | 任务状态在孩子外面。下一步是环境给出的固定词，不是自由散文。要解决的是长任务被「我做完了」带着走。 | 红的一轮：轮间写入 `retry`，只改 instruction 行。第一次变绿：把检查的 value 追加到 `state.txt` 一次。后再绿不再追加。不创建 `stop_file`。关键：下一步来自检查，不来自孩子的散文。 | [longhorizon/](longhorizon/README.zh.md) |
+| [LongHorizon-Harness](https://arxiv.org/abs/2608.01964) Manage-Execute-Audit | 任务状态在孩子外面。下一步是环境给出的固定词，不是自由散文。要解决的是长任务被孩子说的「做完了」带着走。 | 红的一轮：轮间写入 `retry`，只改 instruction 行。第一次变绿：把检查的 value 追加到 `state.txt` 一次。后再绿不再追加。不创建 `stop_file`。关键：下一步来自检查，不来自孩子的散文。 | [longhorizon/](longhorizon/README.zh.md) |
 | 串行丢弃工作区 | 一次尝试一个目录。红的尝试不合并。要解决的是失败的一次弄脏本来要留的那棵树。 | 一次 serve，一个尝试目录，启动前定死。红的一轮之后，轮间不把那个目录合并进保留树。`stash` 不是丢掉。serve 不为下一轮再开 worktree。 | [serial_discard/](serial_discard/README.zh.md) |
 | 重复失败就停 | 同一种失败再出现就停，不是模型说卡住了才停。要解决的是红的结果没变还在空转。 | 第 1 轮红：记下 `satisfied` 和 `value`，不停。下一轮仍红：指纹没变，就在下一轮开始前的轮间创建 `stop_file`。value 变了不停。没有 `value` 时，指纹只是布尔。轮间的 advisory 不停。 | [repeat_fail/](repeat_fail/README.zh.md) |
 | [花费上限](https://aiarch.dev/patterns/bounded-agentic-loop) | token 或钱可以单独让循环停，步数和墙钟还有剩也停。要解决的是轮数很少、账单很大。 | 每一轮可能发出 `cost_usd`。轮间把这些事件加总，到上限就创建 `stop_file`。没有 usage 事件，不等于账单是零。`max_rounds` 和 `round_budget_s` 不是这个加总。 | [spend_ceiling/](spend_ceiling/README.zh.md) |

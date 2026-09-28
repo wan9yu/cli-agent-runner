@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ratch `0.1.3`: AI-signature gate (commit log + tags + CHANGELOG) moved off pytest; loc-cap / invariant skip / vacuous-assert stay in ratch. Also: circular-import, todo-issue-ref, reassurance-words, autoclose commits, manifest-purity, font-cdn (N/A), doc-cli examples, first-person (public markdown). BDD names (`prefix="test_"`, `blank_blocks=0`); pytest keeps label-comment and 6-stmt grouping only. Loc-cap covers every tracked `*.py` (default 1000).
 
 ### Docs
+- `examples/outer_loop/`: the LongHorizon map row no longer uses a first-person done claim.
 - `examples/outer_loop/`: tool allow-list and spend ceiling Example cells link copyable recipes. Other rows stay without a recipe.
 - `examples/outer_loop/`: RSI-Exam, repeated-failure stop, and serial discard Example cells link copyable recipes. Harness-of-Harness stays without its own recipe.
 - `examples/outer_loop/`: Karpathy, RSIAgent, and ACE Example cells link copyable recipes. Karpathy's how-it-lands cell is the delay-script keep or discard, not a human edit of `program.md`. RSIAgent and ACE keep their existing landing sentences.
